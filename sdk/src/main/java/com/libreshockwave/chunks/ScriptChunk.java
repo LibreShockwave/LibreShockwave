@@ -72,8 +72,7 @@ public record ScriptChunk(
          * Get instruction index for a bytecode offset. Returns -1 if not found.
          */
         public int getInstructionIndex(int offset) {
-            Integer index = bytecodeIndexMap.get(offset);
-            return index != null ? index : -1;
+            return bytecodeIndexMap.getOrDefault(offset, -1);
         }
         public record Instruction(
             int offset,
@@ -284,7 +283,7 @@ public record ScriptChunk(
         }
 
         // Debug output for script type investigation
-        boolean debugScriptType = Boolean.getBoolean("libreshockwave.debug.scriptType");
+        boolean debugScriptType = "true".equals(System.getProperty("libreshockwave.debug.scriptType"));
         if (debugScriptType) {
             System.out.println("[ScriptChunk] id=" + id + " scriptNumber=" + scriptNumber +
                 " behaviorFlags=0x" + Integer.toHexString(behaviorFlags) +

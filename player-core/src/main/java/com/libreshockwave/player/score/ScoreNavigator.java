@@ -33,7 +33,7 @@ public class ScoreNavigator {
         ScoreChunk score = file.getScoreChunk();
         if (score == null) return;
 
-        boolean debug = Boolean.getBoolean("libreshockwave.debug.score");
+        boolean debug = "true".equals(System.getProperty("libreshockwave.debug.score"));
 
         for (ScoreChunk.FrameInterval interval : score.frameIntervals()) {
             ScoreChunk.FrameIntervalPrimary primary = interval.primary();
