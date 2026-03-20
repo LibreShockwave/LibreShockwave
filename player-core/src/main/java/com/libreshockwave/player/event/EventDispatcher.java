@@ -17,6 +17,7 @@ import com.libreshockwave.vm.util.AncestorChainWalker;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Dispatches events to scripts in the correct order.
@@ -173,7 +174,10 @@ public class EventDispatcher {
                     for (Datum target : snapshot) {
                         if (target instanceof Datum.ScriptInstance si) {
                             try {
-                                ControlFlowBuiltins.callHandlerOnInstance(vm, si, handlerName, args);
+                                dispatchScriptInstanceEvent(si, handlerName, args);
+                                if (AncestorChainWalker.hasHandler(si, handlerName)) {
+                                    ControlFlowBuiltins.callHandlerOnInstance(vm, si, handlerName, args);
+                                }
                             } catch (Exception e) {
                                 System.err.println("[EventDispatcher] Error in scriptInstanceList handler "
                                         + handlerName + " on sprite " + channel + ": " + e.getMessage());
@@ -206,7 +210,8 @@ public class EventDispatcher {
                 if (scriptInstances != null) {
                     for (Datum target : scriptInstances) {
                         if (target instanceof Datum.ScriptInstance si
-                                && AncestorChainWalker.hasHandler(si, handlerName)) {
+                                && (scriptInstanceHasProc(si, handlerName)
+                                || AncestorChainWalker.hasHandler(si, handlerName))) {
                             return true;
                         }
                     }
@@ -333,6 +338,72 @@ public class EventDispatcher {
         }
 
         return script.findHandler(handlerName, names) != null;
+    }
+
+    private boolean dispatchScriptInstanceEvent(Datum.ScriptInstance instance, String handlerName, List<Datum> args) {
+        if (!isMouseHandler(handlerName)) {
+            return false;
+        }
+        Datum procEntry = getScriptInstanceProcEntry(instance, handlerName);
+        if (!(procEntry instanceof Datum.List procList) || procList.items().isEmpty()) {
+            return false;
+        }
+
+        List<Datum> callbackArgs = new ArrayList<>(procList.items());
+        callbackArgs.addAll(args);
+        try {
+            vm.callHandler("executeMessage", callbackArgs);
+        } catch (Exception e) {
+            System.err.println("[EventDispatcher] Error executing broker proc "
+                    + handlerName + " on " + instance + ": " + e.getMessage());
+            if (debugEnabled) {
+                e.printStackTrace();
+            }
+        }
+        return true;
+    }
+
+    private boolean scriptInstanceHasProc(Datum.ScriptInstance instance, String handlerName) {
+        if (!isMouseHandler(handlerName)) {
+            return false;
+        }
+        return !getScriptInstanceProcEntry(instance, handlerName).isVoid();
+    }
+
+    private boolean isMouseHandler(String handlerName) {
+        return PlayerEvent.MOUSE_DOWN.getHandlerName().equals(handlerName)
+                || PlayerEvent.MOUSE_UP.getHandlerName().equals(handlerName)
+                || PlayerEvent.MOUSE_ENTER.getHandlerName().equals(handlerName)
+                || PlayerEvent.MOUSE_LEAVE.getHandlerName().equals(handlerName)
+                || PlayerEvent.MOUSE_WITHIN.getHandlerName().equals(handlerName)
+                || "mouseUpOutSide".equals(handlerName)
+                || PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName().equals(handlerName);
+    }
+
+    private Datum getScriptInstanceProcEntry(Datum.ScriptInstance instance, String handlerName) {
+        if (instance == null || handlerName == null) {
+            return Datum.VOID;
+        }
+
+        Datum procListDatum = AncestorChainWalker.getProperty(instance, "pProcList");
+        if (!(procListDatum instanceof Datum.PropList procList)) {
+            return Datum.VOID;
+        }
+
+        Datum direct = procList.get(handlerName);
+        if (direct != null) {
+            return direct;
+        }
+
+        String wanted = handlerName.toLowerCase(Locale.ROOT);
+        for (int i = 0; i < procList.size(); i++) {
+            String key = procList.getKey(i);
+            if (key != null && key.toLowerCase(Locale.ROOT).equals(wanted)) {
+                Datum value = procList.getValue(i);
+                return value != null ? value : Datum.VOID;
+            }
+        }
+        return Datum.VOID;
     }
 
     /**

@@ -11,6 +11,7 @@ import com.libreshockwave.player.score.ScoreNavigator;
 import com.libreshockwave.player.score.SpriteSpan;
 import com.libreshockwave.player.sprite.SpriteState;
 import com.libreshockwave.player.timeout.TimeoutManager;
+import com.libreshockwave.util.ValueProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.util.AncestorChainWalker;
@@ -31,7 +32,7 @@ public class FrameContext {
     private final EventDispatcher eventDispatcher;
 
     private TimeoutManager timeoutManager;  // Set by Player for system event forwarding
-    private java.util.function.Supplier<Datum> actorListSupplier;  // Provides _movie.actorList
+    private ValueProvider<Datum> actorListSupplier;  // Provides _movie.actorList
     private SpriteRegistry spriteRegistry;  // For checking puppet state during frame transitions
 
     private int currentFrame = 1;
@@ -68,7 +69,7 @@ public class FrameContext {
         this.timeoutManager = timeoutManager;
     }
 
-    public void setActorListSupplier(java.util.function.Supplier<Datum> supplier) {
+    public void setActorListSupplier(ValueProvider<Datum> supplier) {
         this.actorListSupplier = supplier;
     }
 

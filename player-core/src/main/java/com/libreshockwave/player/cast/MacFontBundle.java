@@ -2,10 +2,10 @@ package com.libreshockwave.player.cast;
 
 import com.libreshockwave.font.BitmapFont;
 import com.libreshockwave.font.TtfBitmapRasterizer;
+import com.libreshockwave.util.ValueProvider;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * Embedded Mac system fonts for Director movie compatibility.
@@ -78,7 +78,7 @@ public class MacFontBundle {
      * Embedded TTF byte suppliers keyed by "FilePrefix-Size".
      * Maps to sdk-fonts generated classes (no getResourceAsStream needed).
      */
-    private static final Map<String, Supplier<byte[]>> TTF_DATA = new HashMap<>();
+    private static final Map<String, ValueProvider<byte[]>> TTF_DATA = new HashMap<>();
     static {
         TTF_DATA.put("Geneva-9",  com.libreshockwave.fonts.mac.Geneva_9::getData);
         TTF_DATA.put("Geneva-10", com.libreshockwave.fonts.mac.Geneva_10::getData);
@@ -236,7 +236,7 @@ public class MacFontBundle {
 
     private static BitmapFont loadTtf(String filePrefix, int size, String fontKey) {
         String dataKey = filePrefix + "-" + size;
-        Supplier<byte[]> supplier = TTF_DATA.get(dataKey);
+        ValueProvider<byte[]> supplier = TTF_DATA.get(dataKey);
         if (supplier == null) return null;
         byte[] ttfBytes = supplier.get();
         if (ttfBytes == null) return null;

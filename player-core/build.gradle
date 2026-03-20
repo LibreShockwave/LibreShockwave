@@ -394,6 +394,28 @@ tasks.register('runNavigatorSSOTest', JavaExec) {
     }
 }
 
+tasks.register('runNavigatorClickTest', JavaExec) {
+    group = 'verification'
+    description = 'Navigator click test: click category row, verify navigator changes'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.NavigatorClickTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.register('runPurseTest', JavaExec) {
+    group = 'verification'
+    description = 'Purse test: open purse, render, pixel diff vs reference'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.PurseTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 tasks.register('runExternalCastDump', JavaExec) {
     group = 'verification'
     description = 'Dump all cast members from Mobiles Disco external .cct files, looking for English text'

@@ -13,6 +13,8 @@ import java.util.List;
  * 1. Cached splits for long strings being iterated (avoids O(n^2) re-splitting)
  * 2. Direct scanning for short strings on cache miss (avoids List allocation)
  */
+// Director treats all chars <= 0x20 (space) as word separators, including
+// control characters like \x02 (used as Habbo protocol field delimiter).
 public final class StringChunkUtils {
 
     private StringChunkUtils() {}
@@ -210,7 +212,7 @@ public final class StringChunkUtils {
             int count = 0;
             boolean inWord = false;
             for (int i = 0; i < str.length(); i++) {
-                if (Character.isWhitespace(str.charAt(i))) {
+                if (str.charAt(i) <= ' ') {
                     inWord = false;
                 } else if (!inWord) {
                     count++;
@@ -255,7 +257,7 @@ public final class StringChunkUtils {
             int wordStart = 0;
             boolean inWord = false;
             for (int i = 0; i <= str.length(); i++) {
-                boolean isSpace = i == str.length() || Character.isWhitespace(str.charAt(i));
+                boolean isSpace = i == str.length() || str.charAt(i) <= ' ';
                 if (!isSpace && !inWord) {
                     wordNum++;
                     wordStart = i;
@@ -424,7 +426,7 @@ public final class StringChunkUtils {
         StringBuilder sb = null;
 
         for (int i = 0; i <= str.length(); i++) {
-            boolean isSpace = i == str.length() || Character.isWhitespace(str.charAt(i));
+            boolean isSpace = i == str.length() || str.charAt(i) <= ' ';
             if (!isSpace && !inWord) {
                 wordNum++;
                 wordStart = i;
@@ -520,7 +522,7 @@ public final class StringChunkUtils {
             StringBuilder current = new StringBuilder();
             for (int i = 0; i < str.length(); i++) {
                 char c = str.charAt(i);
-                if (Character.isWhitespace(c)) {
+                if (c <= ' ') {
                     if (current.length() > 0) {
                         words.add(current.toString());
                         current.setLength(0);

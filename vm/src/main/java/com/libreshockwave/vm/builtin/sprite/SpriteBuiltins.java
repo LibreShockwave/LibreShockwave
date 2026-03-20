@@ -25,7 +25,7 @@ public final class SpriteBuiltins {
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
         builtins.put("puppettempo", SpriteBuiltins::puppetTempo);
         builtins.put("puppetsprite", SpriteBuiltins::puppetSprite);
-        builtins.put("cursor", (vm, args) -> Datum.VOID);  // No-op stub
+        builtins.put("cursor", SpriteBuiltins::cursor);
         builtins.put("pauseupdate", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("updatestage", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("movetofront", (vm, args) -> Datum.VOID);  // No-op stub
@@ -70,6 +70,19 @@ public final class SpriteBuiltins {
         MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
         if (provider != null) {
             provider.setMovieProp("puppetTempo", Datum.of(tempo));
+        }
+
+        return Datum.VOID;
+    }
+
+    private static Datum cursor(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) {
+            return Datum.VOID;
+        }
+
+        MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
+        if (provider != null) {
+            provider.setMovieProp("cursor", args.get(0));
         }
 
         return Datum.VOID;

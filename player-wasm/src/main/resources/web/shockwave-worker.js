@@ -266,185 +266,25 @@ WasmEngine.prototype._drainRequests = function() {
 /**
  * Detect if a URL points to a cast file (.cct or .cst).
  */
-function _isCastFile(url) {
-    if (!url) return false;
-    var lower = url.toLowerCase();
-    var qi = lower.indexOf('?');
-    if (qi > 0) lower = lower.substring(0, qi);
-    return lower.endsWith('.cct') || lower.endsWith('.cst');
-}
 
 WasmEngine.prototype._deliverResult = function(taskId, arrayBuffer, url) {
-    if (url && _isCastFile(url)) {
-        // Cast files: mark net task done (status-only), no data in WASM.
-        // Cast files: mark net task done (status-only), fetched on demand via deliverCastData.
-        try {
-            var urlBytes = new TextEncoder().encode(url);
-            var addr = this.exports.allocateNetBuffer(0); this._clearEx();
-            var sbuf = new Uint8Array(this._mem(), this.exports.getStringBufferAddress(), 4096);
-            this._clearEx();
-            sbuf.set(urlBytes);
-            this.exports.deliverFetchStatus(taskId, urlBytes.length, arrayBuffer.byteLength);
-            this._clearEx();
-        } catch (e) {
-            console.error('[WORKER] deliverFetchStatus error for ' + url + ': ' + e);
-            this._clearEx();
-        }
-    } else {
-        // Non-cast: deliver data normally
-        try {
-            var bytes = new Uint8Array(arrayBuffer);
-            var addr  = this.exports.allocateNetBuffer(bytes.length); this._clearEx();
-            new Uint8Array(this._mem(), addr, bytes.length).set(bytes);
-            this.exports.deliverFetchResult(taskId, bytes.length);
-            this._clearEx();
-        } catch (e) {
-            console.error('[WORKER] deliverFetchResult error for taskId=' + taskId + ': ' + e);
-            this._clearEx();
-        }
-    }
-};
-
-/**
- * Deliver cast file data into WASM for parsing (fetched synchronously).
- * URL written to stringBuffer, data to netBuffer. Returns true if delivered.
- */
-WasmEngine.prototype._wasmDead = false;
-
-// Cast files known to trigger WASM hangs (infinite loops in DirectorFile.load).
-// These are skipped entirely to prevent blocking the worker thread.
-WasmEngine.prototype._castBlocklist = {};
-
-WasmEngine.prototype._deliverCastData = function(url) {
-    if (this._wasmDead) return false;
-    // Check blocklist by base name
-    var bn = url.replace(/.*\//, '').replace(/\.[^.]+$/, '');
-    if (this._castBlocklist[bn]) {
-        console.log('[WORKER] BLOCKED cast (known bad): ' + url);
-        return false;
-    }
-    var data = _fetchSyncData(url, []);
-    if (!data) return false;
-    var urlBytes = new TextEncoder().encode(url);
-    var addr;
+    // Deliver all fetch results uniformly — cast file detection and caching
+    // is handled on the Java side in deliverFetchResult.
     try {
-        addr = this.exports.allocateNetBuffer(data.byteLength); this._clearEx();
-    } catch (e) {
-        console.error('[WORKER] allocateNetBuffer OOB for ' + url + ': ' + e);
-        this._wasmDead = true; return false;
-    }
-    var mem = this._mem();
-    var strAddr;
-    try {
-        strAddr = this.exports.getStringBufferAddress(); this._clearEx();
-    } catch (e) {
-        console.error('[WORKER] getStringBufferAddress failed: ' + e);
-        this._wasmDead = true; return false;
-    }
-    try {
-        new Uint8Array(mem, strAddr, urlBytes.length).set(urlBytes);
-        new Uint8Array(mem, addr, data.byteLength).set(new Uint8Array(data));
-    } catch (e) {
-        console.error('[WORKER] memcpy OOB for ' + url + ': ' + e);
-        return false;
-    }
-    try {
-        this.exports.deliverCastData(urlBytes.length, data.byteLength);
+        var bytes = new Uint8Array(arrayBuffer);
+        var addr  = this.exports.allocateNetBuffer(bytes.length); this._clearEx();
+        new Uint8Array(this._mem(), addr, bytes.length).set(bytes);
+        this.exports.deliverFetchResult(taskId, bytes.length);
         this._clearEx();
     } catch (e) {
-        console.error('[WORKER] deliverCastData WASM error for ' + url + ': ' + e);
-        // WASM OOB trap corrupts the instance — check if still alive
-        try { this.exports.getStringBufferAddress(); this._clearEx(); } catch (e2) {
-            console.error('[WORKER] WASM instance dead after ' + url);
-            this._wasmDead = true;
-        }
-        return false;
+        console.error('[WORKER] deliverFetchResult error for taskId=' + taskId + ': ' + e);
+        this._clearEx();
     }
-    // Verify WASM is still healthy after parsing
-    try { this.exports.getStringBufferAddress(); this._clearEx(); } catch (e) {
-        console.error('[WORKER] WASM instance dead after parsing ' + url);
-        this._wasmDead = true;
-        return false;
-    }
-    return true;
 };
 
-/**
- * Deliver all available static casts (fetched during preloadCasts) into WASM.
- */
-WasmEngine.prototype._deliverAvailableCasts = function() {
-    if (this._wasmDead) return 0;
-    var count = this.exports.getAvailableCastCount(); this._clearEx();
-    if (count === 0) return 0;
-    var strAddr = this.exports.getStringBufferAddress();
-    var delivered = 0;
-    for (var i = 0; i < count; i++) {
-        var urlLen = this.exports.getAvailableCastUrl(i); this._clearEx();
-        if (urlLen <= 0) continue;
-        var url = this._readString(strAddr, urlLen);
-        console.log('[WORKER] delivering static cast: ' + url);
-        if (this._deliverCastData(url)) {
-            delivered++;
-            console.log('[WORKER] delivered static cast: ' + url);
-        }
-    }
-    this.exports.drainAvailableCasts(); this._clearEx();
-    return delivered;
-};
+WasmEngine.prototype._wasmDead = false;
 
-/**
- * Deliver pending dynamic cast requests (from Lingo setting castLib.fileName).
- */
-// Track casts that caused WASM errors — never retry them
-WasmEngine.prototype._failedCastUrls = {};
 
-WasmEngine.prototype._deliverPendingCastRequests = function() {
-    if (this._wasmDead) return 0;
-    var count = this.exports.getPendingCastDataCount(); this._clearEx();
-    if (count === 0) return 0;
-    var strAddr = this.exports.getStringBufferAddress();
-    var baseDir = _getBaseDir(_movieBasePath);
-    var delivered = 0;
-    for (var i = 0; i < count; i++) {
-        if (this._wasmDead) break;
-        var nameLen = this.exports.getPendingCastDataUrl(i); this._clearEx();
-        if (nameLen <= 0) continue;
-        var fileName = this._readString(strAddr, nameLen);
-        // Try to find in cache. If fileName is already a full URL, check it directly.
-        // Otherwise construct basePath + fileName with .cct/.cst extensions.
-        var url = null;
-        if (/^https?:\/\//i.test(fileName)) {
-            // Full URL — check directly in cache (with and without extension variants)
-            if (_fetchSyncData(fileName, [])) {
-                url = fileName;
-            } else {
-                var baseName = fileName.replace(/\.[^.]+$/, '');
-                var cctUrl = baseName + '.cct';
-                var cstUrl = baseName + '.cst';
-                url = _fetchSyncData(cctUrl, []) ? cctUrl :
-                      _fetchSyncData(cstUrl, []) ? cstUrl : null;
-            }
-        } else {
-            var baseName = fileName.replace(/\.[^.]+$/, '');
-            var cctUrl = baseDir + baseName + '.cct';
-            var cstUrl = baseDir + baseName + '.cst';
-            url = _fetchSyncData(cctUrl, []) ? cctUrl :
-                  _fetchSyncData(cstUrl, []) ? cstUrl : null;
-        }
-        if (!url) continue;
-        if (this._failedCastUrls[url]) continue; // Skip known-bad casts
-        console.log('[WORKER] delivering dynamic cast: ' + url);
-        if (this._deliverCastData(url)) {
-            delivered++;
-            console.log('[WORKER] delivered dynamic cast: ' + url + ' (requested: ' + fileName + ')');
-        } else {
-            this._failedCastUrls[url] = true;
-            console.log('[WORKER] FAILED dynamic cast: ' + url);
-        }
-    }
-    this.exports.drainPendingCastDataRequests(); this._clearEx();
-    return delivered;
-};
 
 WasmEngine.prototype._deliverError = function(taskId, status) {
     this.exports.deliverFetchError(taskId, status || 0); this._clearEx();
@@ -505,21 +345,44 @@ WasmEngine.prototype._doFetchSync = function(taskId, url, method, postData, fall
 };
 
 /**
- * Deliver one queued fetch result into WASM per tick.
- * Delivering one at a time ensures the download manager sees concurrent
- * active tasks (as on a real network) instead of all completing at once.
+ * Deliver queued fetch results into WASM.
+ * Non-cast results are delivered one at a time to simulate real network latency.
+ * Cast file results (.cct/.cst) are delivered immediately so cast members are
+ * available when Lingo sets castLib.fileName on the same or next tick.
  * @return number of results delivered
  */
 WasmEngine.prototype.deliverQueuedResults = function() {
     if (_fetchQueue.length === 0) return 0;
-    var item = _fetchQueue.shift();
-    if (item.data !== undefined) {
-        this._deliverResult(item.taskId, item.data, item.url);
-    } else {
-        this._deliverError(item.taskId, item.error);
+    var delivered = 0;
+    // First pass: deliver all cast file results immediately
+    for (var i = _fetchQueue.length - 1; i >= 0; i--) {
+        var item = _fetchQueue[i];
+        if (item.data !== undefined && item.url && _isCastFileUrl(item.url)) {
+            _fetchQueue.splice(i, 1);
+            this._deliverResult(item.taskId, item.data, item.url);
+            delivered++;
+        }
     }
-    return 1;
+    // Second pass: deliver one non-cast result (rate-limited)
+    if (_fetchQueue.length > 0) {
+        var item = _fetchQueue.shift();
+        if (item.data !== undefined) {
+            this._deliverResult(item.taskId, item.data, item.url);
+        } else {
+            this._deliverError(item.taskId, item.error);
+        }
+        delivered++;
+    }
+    return delivered;
 };
+
+function _isCastFileUrl(url) {
+    if (!url) return false;
+    var lower = url.toLowerCase();
+    var qi = lower.indexOf('?');
+    if (qi > 0) lower = lower.substring(0, qi);
+    return lower.endsWith('.cct') || lower.endsWith('.cst');
+}
 
 /**
  * Drain pending requests from WASM and fire them all non-blocking.
@@ -915,14 +778,6 @@ self.onmessage = async function(e) {
                     console.error('[WORKER] prefetch error: ' + prefetchErr);
                 }
 
-                // Deliver available static casts into WASM (one at a time, parsed then freed)
-                try {
-                    var castsDel = _e._deliverAvailableCasts();
-                    if (castsDel > 0) console.log('[WORKER] delivered ' + castsDel + ' static casts');
-                } catch (castErr) {
-                    console.error('[WORKER] cast delivery error: ' + castErr);
-                }
-
                 self.postMessage({ type: 'castsDone' });
                 break;
             }
@@ -1079,37 +934,16 @@ self.onmessage = async function(e) {
                     var frame = null;
                     _tickNum++;
 
-                    // Phase 0: deliver pending dynamic cast requests from Lingo
-                    // and any newly-available static casts
-                    if (!_e._wasmDead) {
-                        try {
-                            _e._deliverPendingCastRequests();
-                            _e._deliverAvailableCasts();
-                        } catch (castErr) {
-                            console.error('[WORKER] cast delivery error: ' + castErr);
-                        }
-                    }
-
                     // Phase 1: deliver completed network results from previous ticks.
                     // This runs BEFORE tick() so netDone() returns true for finished fetches.
+                    // Cast files are automatically detected and cached in CastLibManager
+                    // when delivered, so they're available when Lingo sets castLib.fileName.
                     var nDelivered = 0;
                     if (!_e._wasmDead) {
                         try {
                             nDelivered = _e.deliverQueuedResults();
                         } catch (deliverErr) {
                             console.error('[WORKER] deliver error: ' + deliverErr);
-                        }
-                    }
-
-                    // Phase 1.5: deliver cast data for any casts just marked available
-                    // by deliverQueuedResults. Without this, Lingo sees netDone()=true
-                    // but cast members aren't loaded yet → "Cast number expected:" errors.
-                    if (!_e._wasmDead) {
-                        try {
-                            _e._deliverAvailableCasts();
-                            _e._deliverPendingCastRequests();
-                        } catch (castErr2) {
-                            console.error('[WORKER] post-deliver cast error: ' + castErr2);
                         }
                     }
 
