@@ -214,6 +214,16 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype._initInput = function(canvas) {
         var self = this;
 
+        function getCanvasPoint(clientX, clientY) {
+            var r = canvas.getBoundingClientRect();
+            var scaleX = r.width > 0 ? (canvas.width / r.width) : 1;
+            var scaleY = r.height > 0 ? (canvas.height / r.height) : 1;
+            return {
+                x: Math.round((clientX - r.left) * scaleX),
+                y: Math.round((clientY - r.top) * scaleY)
+            };
+        }
+
         // Make canvas focusable for keyboard events
         if (!canvas.hasAttribute('tabindex')) {
             canvas.setAttribute('tabindex', '0');
@@ -226,9 +236,9 @@ var LibreShockwave = (function() {
         canvas.addEventListener('blur', function() { self._canvasFocused = false; });
 
         canvas.addEventListener('mousemove', function(e) {
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(e.clientX - r.left);
-            var y = Math.round(e.clientY - r.top);
+            var pt = getCanvasPoint(e.clientX, e.clientY);
+            var x = pt.x;
+            var y = pt.y;
             self._mouseX = x;
             self._mouseY = y;
             self._cursorDirty = true;
@@ -241,10 +251,11 @@ var LibreShockwave = (function() {
             if (!self._worker || !self._workerReady) return;
             // Left-click only (right-click handled by context menu)
             if (e.button !== 0 && e.button !== 2) return;
+            self._canvasFocused = true;
             canvas.focus();
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(e.clientX - r.left);
-            var y = Math.round(e.clientY - r.top);
+            var pt = getCanvasPoint(e.clientX, e.clientY);
+            var x = pt.x;
+            var y = pt.y;
             console.log('[CLICK] mouseDown at (' + x + ',' + y + ') button=' + e.button);
             self._worker.postMessage({ type: 'mouseDown', x: x, y: y, button: e.button });
         });
@@ -253,9 +264,9 @@ var LibreShockwave = (function() {
             if (!self._canvasFocused) return;
             if (!self._worker || !self._workerReady) return;
             if (e.button !== 0 && e.button !== 2) return;
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(e.clientX - r.left);
-            var y = Math.round(e.clientY - r.top);
+            var pt = getCanvasPoint(e.clientX, e.clientY);
+            var x = pt.x;
+            var y = pt.y;
             self._worker.postMessage({ type: 'mouseUp', x: x, y: y, button: e.button });
         });
 
@@ -265,11 +276,12 @@ var LibreShockwave = (function() {
 
         canvas.addEventListener('touchstart', function(e) {
             e.preventDefault();
+            self._canvasFocused = true;
             canvas.focus();
             var touch = e.changedTouches[0];
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(touch.clientX - r.left);
-            var y = Math.round(touch.clientY - r.top);
+            var pt = getCanvasPoint(touch.clientX, touch.clientY);
+            var x = pt.x;
+            var y = pt.y;
             self._mouseX = x;
             self._mouseY = y;
             self._cursorDirty = true;
@@ -282,9 +294,9 @@ var LibreShockwave = (function() {
             if (!self._canvasFocused) return;
             e.preventDefault();
             var touch = e.changedTouches[0];
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(touch.clientX - r.left);
-            var y = Math.round(touch.clientY - r.top);
+            var pt = getCanvasPoint(touch.clientX, touch.clientY);
+            var x = pt.x;
+            var y = pt.y;
             self._mouseX = x;
             self._mouseY = y;
             self._cursorDirty = true;
@@ -296,9 +308,9 @@ var LibreShockwave = (function() {
             if (!self._canvasFocused) return;
             e.preventDefault();
             var touch = e.changedTouches[0];
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(touch.clientX - r.left);
-            var y = Math.round(touch.clientY - r.top);
+            var pt = getCanvasPoint(touch.clientX, touch.clientY);
+            var x = pt.x;
+            var y = pt.y;
             if (!self._worker || !self._workerReady) return;
             self._worker.postMessage({ type: 'mouseUp', x: x, y: y, button: 0 });
         }, { passive: false });
@@ -307,9 +319,9 @@ var LibreShockwave = (function() {
             if (!self._canvasFocused) return;
             var touch = e.changedTouches[0];
             if (!touch) return;
-            var r = canvas.getBoundingClientRect();
-            var x = Math.round(touch.clientX - r.left);
-            var y = Math.round(touch.clientY - r.top);
+            var pt = getCanvasPoint(touch.clientX, touch.clientY);
+            var x = pt.x;
+            var y = pt.y;
             if (!self._worker || !self._workerReady) return;
             self._worker.postMessage({ type: 'mouseUp', x: x, y: y, button: 0 });
         });
