@@ -31,8 +31,17 @@ public final class AncestorChainWalker {
      */
     public static boolean invokeHandler(LingoVM vm, Datum.ScriptInstance instance,
                                          String handlerName, List<Datum> args) {
+        return invokeHandlerWithResult(vm, instance, handlerName, args) != null;
+    }
+
+    /**
+     * Invoke a handler on the instance (or ancestor chain) and return its result.
+     * Returns null if the handler was not found.
+     */
+    public static Datum invokeHandlerWithResult(LingoVM vm, Datum.ScriptInstance instance,
+                                                String handlerName, List<Datum> args) {
         CastLibProvider provider = CastLibProvider.getProvider();
-        if (provider == null) return false;
+        if (provider == null) return null;
 
         Datum.ScriptInstance current = instance;
         for (int i = 0; i < MAX_ANCESTOR_DEPTH; i++) {
@@ -47,8 +56,7 @@ public final class AncestorChainWalker {
 
             if (location != null && location.script() instanceof ScriptChunk script
                     && location.handler() instanceof ScriptChunk.Handler handler) {
-                vm.executeHandler(script, handler, args, instance);
-                return true;
+                return vm.executeHandler(script, handler, args, instance);
             }
 
             // Walk to ancestor
@@ -59,7 +67,7 @@ public final class AncestorChainWalker {
                 break;
             }
         }
-        return false;
+        return null;
     }
 
     /**
