@@ -7,6 +7,7 @@ import com.libreshockwave.editor.EditorFrame;
 import com.libreshockwave.editor.cast.CastGridPanel;
 import com.libreshockwave.editor.cast.CastListPanel;
 import com.libreshockwave.editor.cast.CastThumbnailRenderer;
+import com.libreshockwave.editor.extraction.AssetExtractor;
 import com.libreshockwave.editor.extraction.ExportHandler;
 import com.libreshockwave.editor.model.CastMemberInfo;
 import com.libreshockwave.editor.model.MemberNodeData;
@@ -22,6 +23,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.lang.ref.SoftReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,6 +48,7 @@ public class CastWindow extends EditorPanel {
     private List<CastMemberInfo> allMembers = new ArrayList<>();
     private List<CastMemberInfo> filteredMembers = new ArrayList<>();
     private final Set<Integer> selectedMemberNums = new LinkedHashSet<>();
+    private String lastExportDirectory = "";
 
     private final Map<Integer, SoftReference<BufferedImage>> thumbnailCache = new HashMap<>();
     private SwingWorker<Void, ThumbnailResult> thumbnailWorker;
@@ -101,6 +104,7 @@ public class CastWindow extends EditorPanel {
         panel.add(castTabs, BorderLayout.CENTER);
         panel.add(statusLabel, BorderLayout.SOUTH);
 
+        installWindowActions(panel);
         setContentPane(panel);
         setSize(400, 350);
     }
@@ -284,8 +288,17 @@ public class CastWindow extends EditorPanel {
     }
 
     private void handleGridClick(CastGridPanel grid, MouseEvent e) {
+        if (!e.isPopupTrigger() && !SwingUtilities.isLeftMouseButton(e)) {
+            return;
+        }
+
         JPanel cell = findGridCellAt(grid, e.getPoint());
-        if (cell == null) return;
+        if (cell == null) {
+            if (e.isPopupTrigger()) {
+                showContextMenu(grid, e.getX(), e.getY(), null);
+            }
+            return;
+        }
 
         Object idxValue = cell.getClientProperty("memberIndex");
         if (!(idxValue instanceof Integer idx) || idx < 0 || idx >= filteredMembers.size()) return;
@@ -296,7 +309,7 @@ public class CastWindow extends EditorPanel {
                 selectSingleMember(info);
                 updateGridSelectionVisuals(grid);
             }
-            showContextMenu(grid, e, info);
+            showContextMenu(grid, e.getX(), e.getY(), info);
             return;
         }
 
@@ -371,14 +384,17 @@ public class CastWindow extends EditorPanel {
 
     private void showListPopup(JList<String> jList, MouseEvent e) {
         int idx = jList.locationToIndex(e.getPoint());
-        if (idx >= 0 && idx < filteredMembers.size()) {
+        Rectangle cellBounds = idx >= 0 ? jList.getCellBounds(idx, idx) : null;
+        if (cellBounds != null && cellBounds.contains(e.getPoint()) && idx < filteredMembers.size()) {
             CastMemberInfo info = filteredMembers.get(idx);
             if (!selectedMemberNums.contains(info.memberNum())) {
                 selectSingleMember(info);
                 applyListSelection(jList);
             }
-            showContextMenu(jList, e, info);
+            showContextMenu(jList, e.getX(), e.getY(), info);
+            return;
         }
+        showContextMenu(jList, e.getX(), e.getY(), null);
     }
 
     private void openMemberEditor(CastMemberInfo info) {
@@ -413,22 +429,37 @@ public class CastWindow extends EditorPanel {
         return w instanceof EditorFrame ef ? ef : null;
     }
 
-    private void showContextMenu(Component parent, MouseEvent e, CastMemberInfo info) {
+    private void showContextMenu(Component parent, int x, int y, CastMemberInfo info) {
         JPopupMenu popup = new JPopupMenu();
 
-        JMenuItem exportItem = new JMenuItem("Export...");
-        exportItem.addActionListener(ev -> exportMember(info));
-        popup.add(exportItem);
+        if (info != null) {
+            JMenuItem exportItem = new JMenuItem("Export...");
+            exportItem.addActionListener(ev -> exportMember(info));
+            popup.add(exportItem);
+        }
 
-        JMenuItem copyName = new JMenuItem("Copy Name");
-        copyName.addActionListener(ev -> {
-            java.awt.datatransfer.StringSelection sel =
-                new java.awt.datatransfer.StringSelection(info.name());
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, null);
-        });
-        popup.add(copyName);
+        if (selectedMemberNums.size() > 1) {
+            JMenuItem exportSelectedItem = new JMenuItem("Export All Selected (Ctrl+Shift+E)");
+            exportSelectedItem.addActionListener(ev -> exportAllSelectedMembers());
+            popup.add(exportSelectedItem);
+        } else {
+            JMenuItem selectAllItem = new JMenuItem("Select All (Ctrl+A)");
+            selectAllItem.setEnabled(!filteredMembers.isEmpty());
+            selectAllItem.addActionListener(ev -> selectAllAndRebuildSelection(parent));
+            popup.add(selectAllItem);
+        }
 
-        popup.show(parent, e.getX(), e.getY());
+        if (info != null) {
+            JMenuItem copyName = new JMenuItem("Copy Name");
+            copyName.addActionListener(ev -> {
+                java.awt.datatransfer.StringSelection sel =
+                    new java.awt.datatransfer.StringSelection(info.name());
+                Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, null);
+            });
+            popup.add(copyName);
+        }
+
+        popup.show(parent, x, y);
     }
 
     private void exportMember(CastMemberInfo info) {
@@ -442,7 +473,62 @@ public class CastWindow extends EditorPanel {
         handler.setStatusCallback(statusLabel::setText);
 
         JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
-        handler.export(parentFrame, dirFile, memberData, "");
+        handler.export(parentFrame, dirFile, memberData, lastExportDirectory);
+    }
+
+    private void exportAllSelectedMembers() {
+        DirectorFile dirFile = context.getFile();
+        if (dirFile == null || selectedMemberNums.size() <= 1) return;
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export All Selected");
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        if (!lastExportDirectory.isEmpty()) {
+            chooser.setCurrentDirectory(new File(lastExportDirectory));
+        }
+
+        JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+        if (chooser.showSaveDialog(parentFrame) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File outputDir = chooser.getSelectedFile();
+        lastExportDirectory = outputDir.getAbsolutePath();
+
+        AssetExtractor extractor = new AssetExtractor();
+        int exportedCount = 0;
+        for (CastMemberInfo info : filteredMembers) {
+            if (selectedMemberNums.contains(info.memberNum())
+                && extractor.extract(dirFile, info, outputDir.toPath())) {
+                exportedCount++;
+            }
+        }
+
+        statusLabel.setText(exportedCount > 0
+            ? " Exported " + exportedCount + " selected members"
+            : " Failed to export selected members");
+    }
+
+    private void selectAllAndRebuildSelection(Component source) {
+        selectAllFilteredMembers();
+        if (gridView) {
+            CastGridPanel grid = findAncestorOfType(source, CastGridPanel.class);
+            if (grid != null) {
+                updateGridSelectionVisuals(grid);
+            } else {
+                rebuildView();
+            }
+        } else {
+            JList<?> list = findAncestorOfType(source, JList.class);
+            if (list instanceof JList<?> rawList) {
+                @SuppressWarnings("unchecked")
+                JList<String> typedList = (JList<String>) rawList;
+                applyListSelection(typedList);
+            } else {
+                rebuildView();
+            }
+        }
     }
 
     private void installSelectAllAction(JComponent component, Runnable action) {
@@ -453,6 +539,20 @@ public class CastWindow extends EditorPanel {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 action.run();
+            }
+        });
+    }
+
+    private void installWindowActions(JComponent component) {
+        installSelectAllAction(component, this::selectAllAndRefreshCurrentView);
+
+        KeyStroke exportKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK);
+        component.getInputMap(JComponent.WHEN_FOCUSED).put(exportKeyStroke, "export-all-selected-cast-members");
+        component.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(exportKeyStroke, "export-all-selected-cast-members");
+        component.getActionMap().put("export-all-selected-cast-members", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                exportAllSelectedMembers();
             }
         });
     }
@@ -521,6 +621,22 @@ public class CastWindow extends EditorPanel {
             context.getSelectionManager().select(
                 SelectionEvent.castMember(0, filteredMembers.get(leadIdx).memberNum()));
         }
+    }
+
+    private void selectAllAndRefreshCurrentView() {
+        selectAllFilteredMembers();
+        rebuildView();
+    }
+
+    private <T> T findAncestorOfType(Component component, Class<T> type) {
+        Component current = component;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return type.cast(current);
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 
     private record ThumbnailResult(int memberNum, BufferedImage thumbnail) {}
