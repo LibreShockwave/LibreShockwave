@@ -317,6 +317,23 @@ public class LingoVM {
         }
         String hn = handlerName.toLowerCase();
 
+        // Reentrancy guard: if deconstruct is already on the call stack for the
+        // same receiver, skip re-entry. This prevents infinite recursion when
+        // deconstruct -> hideAll -> removeWindow -> Remove -> deconstruct cycles.
+        if ("deconstruct".equals(hn)) {
+            // Resolve the effective receiver: explicit receiver, or args[0] if it's a ScriptInstance
+            Datum effectiveReceiver = (receiver != null && !receiver.isVoid()) ? receiver
+                    : (!args.isEmpty() && args.get(0) instanceof Datum.ScriptInstance ? args.get(0) : null);
+            if (effectiveReceiver != null) {
+                for (Scope existing : callStack) {
+                    if ("deconstruct".equals(existing.getScript().getHandlerName(existing.getHandler()).toLowerCase())
+                            && effectiveReceiver == existing.getReceiver()) {
+                        return Datum.VOID;
+                    }
+                }
+            }
+        }
+
         if (callStack.size() >= MAX_CALL_STACK_DEPTH) {
             throw new LingoException("Call stack overflow (max " + MAX_CALL_STACK_DEPTH + " frames)");
         }
