@@ -22,6 +22,7 @@ public class CastGridPanel extends JPanel implements Scrollable {
     public CastGridPanel() {
         setLayout(new WrapLayout());
         setBackground(Color.WHITE);
+        setFocusable(true);
     }
 
     /**
@@ -119,6 +120,7 @@ public class CastGridPanel extends JPanel implements Scrollable {
         cell.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
         cell.setBackground(Color.WHITE);
         cell.putClientProperty("memberNum", info.memberNum());
+        cell.putClientProperty("memberIndex", getComponentCount());
 
         // Thumbnail area
         JLabel thumbnail = new JLabel();
@@ -126,6 +128,7 @@ public class CastGridPanel extends JPanel implements Scrollable {
         thumbnail.setPreferredSize(new Dimension(THUMB_SIZE, THUMB_SIZE));
         thumbnail.setOpaque(true);
         thumbnail.setBackground(new Color(240, 240, 240));
+        thumbnail.putClientProperty("memberNum", info.memberNum());
 
         // Create placeholder icon based on type
         String abbrev = getTypeAbbreviation(info.memberType());
@@ -141,6 +144,7 @@ public class CastGridPanel extends JPanel implements Scrollable {
         JLabel nameLabel = new JLabel(displayName, SwingConstants.CENTER);
         nameLabel.setFont(nameLabel.getFont().deriveFont(9f));
         nameLabel.setToolTipText(displayName);
+        nameLabel.putClientProperty("memberNum", info.memberNum());
 
         cell.add(thumbnail, BorderLayout.CENTER);
         cell.add(nameLabel, BorderLayout.SOUTH);

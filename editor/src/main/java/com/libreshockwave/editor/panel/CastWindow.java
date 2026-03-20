@@ -17,14 +17,18 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.lang.ref.SoftReference;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Cast window - Director MX 2004 cast member browser.
@@ -41,6 +45,7 @@ public class CastWindow extends EditorPanel {
     private boolean gridView = true;
     private List<CastMemberInfo> allMembers = new ArrayList<>();
     private List<CastMemberInfo> filteredMembers = new ArrayList<>();
+    private final Set<Integer> selectedMemberNums = new LinkedHashSet<>();
 
     private final Map<Integer, SoftReference<BufferedImage>> thumbnailCache = new HashMap<>();
     private SwingWorker<Void, ThumbnailResult> thumbnailWorker;
@@ -122,6 +127,7 @@ public class CastWindow extends EditorPanel {
         thumbnailCache.clear();
         allMembers.clear();
         filteredMembers.clear();
+        selectedMemberNums.clear();
         castTabs.removeAll();
         castTabs.addTab("Internal", new JLabel("No movie loaded", SwingConstants.CENTER));
         statusLabel.setText(" Ready");
@@ -149,6 +155,9 @@ public class CastWindow extends EditorPanel {
             filteredMembers.add(info);
         }
 
+        selectedMemberNums.retainAll(filteredMembers.stream()
+            .map(CastMemberInfo::memberNum)
+            .collect(java.util.stream.Collectors.toSet()));
         rebuildView();
         statusLabel.setText(" " + filteredMembers.size() + " of " + allMembers.size() + " members");
     }
@@ -197,6 +206,11 @@ public class CastWindow extends EditorPanel {
                 if (e.isPopupTrigger()) handleGridClick(grid, e);
             }
         });
+        installSelectAllAction(grid, () -> {
+            selectAllFilteredMembers();
+            updateGridSelectionVisuals(grid);
+        });
+        updateGridSelectionVisuals(grid);
 
         JScrollPane sp = new JScrollPane(grid);
         sp.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -270,34 +284,30 @@ public class CastWindow extends EditorPanel {
     }
 
     private void handleGridClick(CastGridPanel grid, MouseEvent e) {
-        // Find which cell was clicked based on component at point
-        Component comp = grid.getComponentAt(e.getPoint());
-        if (comp instanceof JPanel cell) {
-            int idx = -1;
-            Component[] children = grid.getComponents();
-            for (int i = 0; i < children.length; i++) {
-                if (children[i] == cell) { idx = i; break; }
-            }
-            if (idx >= 0 && idx < filteredMembers.size()) {
-                CastMemberInfo info = filteredMembers.get(idx);
-                context.getSelectionManager().select(
-                    SelectionEvent.castMember(0, info.memberNum()));
+        JPanel cell = findGridCellAt(grid, e.getPoint());
+        if (cell == null) return;
 
-                // Highlight selected cell
-                for (Component c : children) {
-                    if (c instanceof JPanel p) {
-                        p.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
-                    }
-                }
-                cell.setBorder(BorderFactory.createLineBorder(new Color(0, 102, 204), 2));
+        Object idxValue = cell.getClientProperty("memberIndex");
+        if (!(idxValue instanceof Integer idx) || idx < 0 || idx >= filteredMembers.size()) return;
 
-                if (e.isPopupTrigger()) {
-                    showContextMenu(grid, e, info);
-                } else {
-                    openMemberEditor(info);
-                }
+        CastMemberInfo info = filteredMembers.get(idx);
+        if (e.isPopupTrigger()) {
+            if (!selectedMemberNums.contains(info.memberNum())) {
+                selectSingleMember(info);
+                updateGridSelectionVisuals(grid);
             }
+            showContextMenu(grid, e, info);
+            return;
         }
+
+        grid.requestFocusInWindow();
+        if ((e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0) {
+            toggleSelectedMember(info);
+        } else {
+            selectSingleMember(info);
+            openMemberEditor(info);
+        }
+        updateGridSelectionVisuals(grid);
     }
 
     private JScrollPane buildListView() {
@@ -309,14 +319,35 @@ public class CastWindow extends EditorPanel {
 
         // Wire selection events from internal JList
         JList<String> jList = listPanel.getList();
+        jList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        applyListSelection(jList);
         jList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                int idx = jList.getSelectedIndex();
+                syncSelectionFromList(jList);
+            }
+        });
+        installSelectAllAction(jList, () -> {
+            selectAllFilteredMembers();
+            applyListSelection(jList);
+        });
+        jList.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "open-selected-member");
+        jList.getActionMap().put("open-selected-member", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                int idx = jList.getLeadSelectionIndex();
                 if (idx >= 0 && idx < filteredMembers.size()) {
-                    CastMemberInfo info = filteredMembers.get(idx);
-                    context.getSelectionManager().select(
-                        SelectionEvent.castMember(0, info.memberNum()));
-                    openMemberEditor(info);
+                    openMemberEditor(filteredMembers.get(idx));
+                }
+            }
+        });
+        jList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
+                    int idx = jList.locationToIndex(e.getPoint());
+                    if (idx >= 0 && idx < filteredMembers.size()) {
+                        openMemberEditor(filteredMembers.get(idx));
+                    }
                 }
             }
         });
@@ -341,8 +372,11 @@ public class CastWindow extends EditorPanel {
     private void showListPopup(JList<String> jList, MouseEvent e) {
         int idx = jList.locationToIndex(e.getPoint());
         if (idx >= 0 && idx < filteredMembers.size()) {
-            jList.setSelectedIndex(idx);
             CastMemberInfo info = filteredMembers.get(idx);
+            if (!selectedMemberNums.contains(info.memberNum())) {
+                selectSingleMember(info);
+                applyListSelection(jList);
+            }
             showContextMenu(jList, e, info);
         }
     }
@@ -409,6 +443,84 @@ public class CastWindow extends EditorPanel {
 
         JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
         handler.export(parentFrame, dirFile, memberData, "");
+    }
+
+    private void installSelectAllAction(JComponent component, Runnable action) {
+        KeyStroke keyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK);
+        component.getInputMap(JComponent.WHEN_FOCUSED).put(keyStroke, "select-all-cast-members");
+        component.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(keyStroke, "select-all-cast-members");
+        component.getActionMap().put("select-all-cast-members", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                action.run();
+            }
+        });
+    }
+
+    private void selectAllFilteredMembers() {
+        selectedMemberNums.clear();
+        for (CastMemberInfo info : filteredMembers) {
+            selectedMemberNums.add(info.memberNum());
+        }
+        if (!filteredMembers.isEmpty()) {
+            context.getSelectionManager().select(SelectionEvent.castMember(0, filteredMembers.get(0).memberNum()));
+        }
+    }
+
+    private void selectSingleMember(CastMemberInfo info) {
+        selectedMemberNums.clear();
+        selectedMemberNums.add(info.memberNum());
+        context.getSelectionManager().select(SelectionEvent.castMember(0, info.memberNum()));
+    }
+
+    private void toggleSelectedMember(CastMemberInfo info) {
+        if (!selectedMemberNums.add(info.memberNum())) {
+            selectedMemberNums.remove(info.memberNum());
+        }
+        context.getSelectionManager().select(SelectionEvent.castMember(0, info.memberNum()));
+    }
+
+    private void updateGridSelectionVisuals(CastGridPanel grid) {
+        for (Component component : grid.getComponents()) {
+            if (!(component instanceof JPanel cell)) continue;
+            Object memberNumValue = cell.getClientProperty("memberNum");
+            boolean selected = memberNumValue instanceof Integer memberNum && selectedMemberNums.contains(memberNum);
+            cell.setBorder(BorderFactory.createLineBorder(selected ? new Color(0, 102, 204) : Color.LIGHT_GRAY, selected ? 2 : 1));
+            cell.setBackground(selected ? new Color(217, 235, 255) : Color.WHITE);
+        }
+        grid.repaint();
+    }
+
+    private JPanel findGridCellAt(CastGridPanel grid, Point point) {
+        Component component = SwingUtilities.getDeepestComponentAt(grid, point.x, point.y);
+        while (component != null && component.getParent() != grid) {
+            component = component.getParent();
+        }
+        return component instanceof JPanel panel ? panel : null;
+    }
+
+    private void applyListSelection(JList<String> jList) {
+        DefaultListSelectionModel selectionModel = new DefaultListSelectionModel();
+        for (int i = 0; i < filteredMembers.size(); i++) {
+            if (selectedMemberNums.contains(filteredMembers.get(i).memberNum())) {
+                selectionModel.addSelectionInterval(i, i);
+            }
+        }
+        jList.setSelectionModel(selectionModel);
+    }
+
+    private void syncSelectionFromList(JList<String> jList) {
+        selectedMemberNums.clear();
+        for (int idx : jList.getSelectedIndices()) {
+            if (idx >= 0 && idx < filteredMembers.size()) {
+                selectedMemberNums.add(filteredMembers.get(idx).memberNum());
+            }
+        }
+        int leadIdx = jList.getLeadSelectionIndex();
+        if (leadIdx >= 0 && leadIdx < filteredMembers.size()) {
+            context.getSelectionManager().select(
+                SelectionEvent.castMember(0, filteredMembers.get(leadIdx).memberNum()));
+        }
     }
 
     private record ThumbnailResult(int memberNum, BufferedImage thumbnail) {}
