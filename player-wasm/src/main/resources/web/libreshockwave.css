@@ -10,6 +10,7 @@ body {
     font-family: Verdana, Arial, Helvetica, sans-serif;
     font-size: 11px;
     min-height: 100vh;
+    padding: 12px;
 }
 
 a { color: #003399; }
@@ -18,10 +19,11 @@ a:hover { color: #ff6600; }
 /* === Page Layout === */
 
 .page-table {
-    width: 780px;
-    margin: 12px auto;
+    width: min(780px, 100%);
+    margin: 0 auto;
     border-collapse: collapse;
     border: 1px solid #999999;
+    table-layout: fixed;
 }
 
 .page-cell {
@@ -124,6 +126,7 @@ a:hover { color: #ff6600; }
 .toolbar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 5px 8px;
     background: #f5f5f5;
@@ -239,16 +242,21 @@ a:hover { color: #ff6600; }
     background: #eeeeee;
     display: flex;
     justify-content: center;
+    overflow: hidden;
 }
 
 .stage-inset {
     background: #000000;
     display: inline-block;
     line-height: 0;
+    max-width: 100%;
 }
 
 canvas {
     display: block;
+    max-width: 100%;
+    height: auto;
+    touch-action: none;
 }
 
 /* === Transport Controls === */
@@ -256,6 +264,7 @@ canvas {
 .transport {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 5px 8px;
     background: #f5f5f5;
@@ -292,6 +301,8 @@ canvas {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     padding: 8px 12px;
     background: #336699;
     color: #aaccee;
@@ -557,4 +568,67 @@ textarea.param-value {
     font-size: 11px;
     color: #666666;
     padding: 3px 0;
+}
+
+@media (max-width: 720px) {
+    body {
+        padding: 0;
+    }
+
+    .page-table {
+        border-left: 0;
+        border-right: 0;
+    }
+
+    .header-build {
+        float: none;
+        display: block;
+        margin-top: 4px;
+    }
+
+    .toolbar {
+        align-items: stretch;
+    }
+
+    .toolbar-sep {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .toolbar-checkbox {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .url-input,
+    #url-input {
+        flex: 1 1 100%;
+        min-width: 0;
+        width: 100%;
+    }
+
+    #load-url-btn,
+    #params-btn,
+    #trace-apply-btn {
+        flex: 1 1 auto;
+    }
+
+    .btn,
+    .transport-btn {
+        min-height: 34px;
+    }
+
+    .frame-info {
+        min-width: 0;
+    }
+
+    .modal-window {
+        width: calc(100% - 16px);
+        max-width: calc(100% - 16px);
+        max-height: calc(100vh - 16px);
+    }
+
+    .modal-buttons {
+        flex-wrap: wrap;
+    }
 }
