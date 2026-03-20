@@ -127,6 +127,19 @@
             }
         });
 
+        // Query-string tempo override: ?tempo=15
+        var tempoParam = new URLSearchParams(window.location.search).get('tempo');
+        if (tempoParam) {
+            var tempoVal = parseInt(tempoParam, 10);
+            if (tempoVal > 0) {
+                Object.defineProperty(player, '_lastTempo', {
+                    get: function() { return tempoVal; },
+                    set: function() {},
+                    configurable: true
+                });
+            }
+        }
+
         // Pre-populate trace handlers from localStorage so they restore after movie load
         try {
             var savedTrace = localStorage.getItem('ls_traceHandlers');
