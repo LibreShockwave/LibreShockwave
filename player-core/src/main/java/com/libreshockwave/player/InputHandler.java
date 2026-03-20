@@ -52,7 +52,7 @@ public class InputHandler {
     public void onMouseMove(int stageX, int stageY) {
         inputState.setMousePosition(stageX, stageY);
         // Update rollover sprite
-        int hit = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY);
+        int hit = hitTest(stageX, stageY);
         inputState.setRolloverSprite(hit);
 
         // Drag-selection: extend selection while mouse is down over focused editable field
@@ -88,7 +88,7 @@ public class InputHandler {
             inputState.queueEvent(InputEvent.rightMouseDown(stageX, stageY));
         } else {
             inputState.setMouseDown(true);
-            int hit = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY);
+            int hit = hitTest(stageX, stageY);
             inputState.setClickOnSprite(hit);
             inputState.setClickLoc(stageX, stageY);
             inputState.queueEvent(InputEvent.mouseDown(stageX, stageY));
@@ -191,8 +191,7 @@ public class InputHandler {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
         switch (event.type()) {
             case MOUSE_DOWN -> {
-                int hitSprite = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(),
-                        event.stageX(), event.stageY());
+                int hitSprite = hitTest(event.stageX(), event.stageY());
                 // Director D6+: if the previously clicked sprite is different from
                 // the current one, send mouseUpOutSide to the old sprite (ScummVM behavior).
                 int lastClicked = inputState.getClickOnSprite();
@@ -213,9 +212,8 @@ public class InputHandler {
             case MOUSE_UP -> {
                 // Director dispatches mouseUp to the sprite currently under the mouse,
                 // NOT the sprite that received mouseDown (confirmed via ScummVM).
-                int hitSprite = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(),
-                        event.stageX(), event.stageY());
                 int pressedSprite = inputState.getClickOnSprite();
+                int hitSprite = hitTest(event.stageX(), event.stageY());
                 if (hitSprite > 0) {
                     dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_UP, List.of());
                 }
@@ -293,6 +291,12 @@ public class InputHandler {
         }
         // Clicked on non-editable sprite or empty stage — clear focus
         inputState.setKeyboardFocusSprite(0);
+    }
+
+    private int hitTest(int stageX, int stageY) {
+        EventDispatcher dispatcher = eventDispatcherSupplier.get();
+        return HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
+                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
     }
 
     // --- Text editing ---

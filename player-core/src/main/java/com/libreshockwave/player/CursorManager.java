@@ -55,7 +55,7 @@ public class CursorManager {
     public int getCursorAtMouse() {
         int mouseH = inputState.getMouseH();
         int mouseV = inputState.getMouseV();
-        int hitChannel = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), mouseH, mouseV);
+        int hitChannel = hitTest(mouseH, mouseV);
         RenderSprite hitSprite = findSpriteByChannel(hitChannel);
         boolean suppressInteractiveCursor = isNavigatorWhitespace(hitSprite, mouseH, mouseV);
         if (hitChannel > 0) {
@@ -110,7 +110,7 @@ public class CursorManager {
     public Bitmap getCursorBitmap() {
         int mouseH = inputState.getMouseH();
         int mouseV = inputState.getMouseV();
-        int hitChannel = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), mouseH, mouseV);
+        int hitChannel = hitTest(mouseH, mouseV);
         RenderSprite hitSprite = findSpriteByChannel(hitChannel);
         if (isNavigatorWhitespace(hitSprite, mouseH, mouseV)) {
             return null;
@@ -174,7 +174,7 @@ public class CursorManager {
     public int[] getCursorRegPoint() {
         int mouseH = inputState.getMouseH();
         int mouseV = inputState.getMouseV();
-        int hitChannel = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), mouseH, mouseV);
+        int hitChannel = hitTest(mouseH, mouseV);
         RenderSprite hitSprite = findSpriteByChannel(hitChannel);
         if (isNavigatorWhitespace(hitSprite, mouseH, mouseV)) {
             return null;
@@ -298,5 +298,11 @@ public class CursorManager {
         int green = (pixel >> 8) & 0xFF;
         int blue = pixel & 0xFF;
         return red >= 250 && green >= 250 && blue >= 250;
+    }
+
+    private int hitTest(int stageX, int stageY) {
+        EventDispatcher dispatcher = eventDispatcherSupplier != null ? eventDispatcherSupplier.get() : null;
+        return HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
+                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
     }
 }

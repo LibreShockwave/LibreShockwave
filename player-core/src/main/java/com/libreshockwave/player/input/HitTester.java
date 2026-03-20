@@ -6,6 +6,7 @@ import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 
 import java.util.List;
+import java.util.function.IntPredicate;
 
 /**
  * Determines which sprite is under a given stage coordinate.
@@ -23,7 +24,18 @@ public final class HitTester {
      * @return the sprite's channel number, or 0 if no sprite hit
      */
     public static int hitTest(StageRenderer renderer, int frame, int stageX, int stageY) {
-        RenderSprite sprite = findHitSprite(renderer, frame, stageX, stageY);
+        return hitTest(renderer, frame, stageX, stageY, channel -> false);
+    }
+
+    /**
+     * Find the front-most visible sprite containing the given point.
+     * The predicate can force specific channels to use bounding-box hits even
+     * when their ink would normally make transparent pixels click-through.
+     * @return the sprite's channel number, or 0 if no sprite hit
+     */
+    public static int hitTest(StageRenderer renderer, int frame, int stageX, int stageY,
+                              IntPredicate forceBoundingBox) {
+        RenderSprite sprite = findHitSprite(renderer, frame, stageX, stageY, forceBoundingBox);
         return sprite != null ? sprite.getChannel() : 0;
     }
 
@@ -32,7 +44,18 @@ public final class HitTester {
      * @return the sprite's SpriteType, or null if no sprite hit
      */
     public static RenderSprite.SpriteType hitTestType(StageRenderer renderer, int frame, int stageX, int stageY) {
-        RenderSprite sprite = findHitSprite(renderer, frame, stageX, stageY);
+        return hitTestType(renderer, frame, stageX, stageY, channel -> false);
+    }
+
+    /**
+     * Find the front-most visible sprite containing the given point and return its type.
+     * The predicate can force specific channels to use bounding-box hits even
+     * when their ink would normally make transparent pixels click-through.
+     * @return the sprite's SpriteType, or null if no sprite hit
+     */
+    public static RenderSprite.SpriteType hitTestType(StageRenderer renderer, int frame, int stageX, int stageY,
+                                                      IntPredicate forceBoundingBox) {
+        RenderSprite sprite = findHitSprite(renderer, frame, stageX, stageY, forceBoundingBox);
         return sprite != null ? sprite.getType() : null;
     }
 
@@ -40,7 +63,8 @@ public final class HitTester {
      * Find the front-most visible sprite at the given stage coordinate.
      * Iterates back-to-front, skipping transparent pixels for non-Copy ink sprites.
      */
-    private static RenderSprite findHitSprite(StageRenderer renderer, int frame, int stageX, int stageY) {
+    private static RenderSprite findHitSprite(StageRenderer renderer, int frame, int stageX, int stageY,
+                                              IntPredicate forceBoundingBox) {
         List<RenderSprite> sprites = renderer.getLastBakedSprites();
         if (sprites == null || sprites.isEmpty()) {
             sprites = renderer.getSpritesForFrame(frame);
@@ -57,7 +81,8 @@ public final class HitTester {
             int bottom = top + sprite.getHeight();
 
             if (stageX >= left && stageX < right && stageY >= top && stageY < bottom) {
-                if (isPixelTransparent(sprite, stageX - left, stageY - top)) {
+                if (isPixelTransparent(sprite, stageX - left, stageY - top,
+                        forceBoundingBox.test(sprite.getChannel()))) {
                     continue;
                 }
                 return sprite;
@@ -72,7 +97,10 @@ public final class HitTester {
      * In Director, sprites with non-Copy ink modes use pixel-level hit testing -
      * transparent areas are click-through. Copy ink (0) always uses bounding-box.
      */
-    private static boolean isPixelTransparent(RenderSprite sprite, int localX, int localY) {
+    private static boolean isPixelTransparent(RenderSprite sprite, int localX, int localY,
+                                             boolean forceBoundingBox) {
+        if (forceBoundingBox) return false;
+
         InkMode ink = sprite.getInkMode();
         // Copy ink: always bounding-box hit (opaque rect)
         if (ink == InkMode.COPY) return false;
