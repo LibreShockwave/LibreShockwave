@@ -49,7 +49,8 @@ public class DockingManager {
     // Suppress save during compound operations
     private boolean suppressSave = false;
 
-    private static final int SNAP_MARGIN = 50;
+    private static final int SNAP_TRIGGER_MARGIN = 24;
+    private static final double SNAP_PREVIEW_FRACTION = 0.18;
 
     public DockingManager(JFrame frame, JDesktopPane desktop, Map<String, EditorPanel> allPanels) {
         this.allPanels = allPanels;
@@ -632,12 +633,14 @@ public class DockingManager {
             if (edge == null) return;
             Graphics2D g2 = (Graphics2D) g.create();
             int w = getWidth(), h = getHeight();
+            int previewWidth = Math.max(80, (int) Math.round(w * SNAP_PREVIEW_FRACTION));
+            int previewHeight = Math.max(70, (int) Math.round(h * SNAP_PREVIEW_FRACTION));
 
             Rectangle r = switch (edge) {
-                case LEFT -> new Rectangle(0, 0, w / 4, h);
-                case RIGHT -> new Rectangle(w - w / 4, 0, w / 4, h);
-                case TOP -> new Rectangle(0, 0, w, h / 4);
-                case BOTTOM -> new Rectangle(0, h - h / 3, w, h / 3);
+                case LEFT -> new Rectangle(0, 0, previewWidth, h);
+                case RIGHT -> new Rectangle(w - previewWidth, 0, previewWidth, h);
+                case TOP -> new Rectangle(0, 0, w, previewHeight);
+                case BOTTOM -> new Rectangle(0, h - previewHeight, w, previewHeight);
             };
 
             g2.setColor(new Color(0, 120, 215, 50));
@@ -669,13 +672,13 @@ public class DockingManager {
             int fh = f.getHeight();
 
             Edge snap = null;
-            if (newX < SNAP_MARGIN) {
+            if (newX < SNAP_TRIGGER_MARGIN) {
                 snap = Edge.LEFT;
-            } else if (newX + fw > dw - SNAP_MARGIN) {
+            } else if (newX + fw > dw - SNAP_TRIGGER_MARGIN) {
                 snap = Edge.RIGHT;
-            } else if (newY < SNAP_MARGIN) {
+            } else if (newY < SNAP_TRIGGER_MARGIN) {
                 snap = Edge.TOP;
-            } else if (newY + fh > dh - SNAP_MARGIN) {
+            } else if (newY + fh > dh - SNAP_TRIGGER_MARGIN) {
                 snap = Edge.BOTTOM;
             }
 
