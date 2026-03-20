@@ -207,7 +207,7 @@ public class LayoutPersistence {
             if (tabs == null || tabs.isEmpty()) return;
             // First tab creates a new split, rest tab onto it
             String firstTitle = tabs.get(0).getAsString();
-            manager.dockAtEdgeNew(firstTitle, DockingManager.Edge.valueOf(edge));
+            manager.dockAtEdge(firstTitle, DockingManager.Edge.valueOf(edge));
             for (int i = 1; i < tabs.size(); i++) {
                 manager.dockAtEdge(tabs.get(i).getAsString(), DockingManager.Edge.valueOf(edge));
             }
