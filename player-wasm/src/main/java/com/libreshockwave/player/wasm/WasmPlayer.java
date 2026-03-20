@@ -34,6 +34,12 @@ public class WasmPlayer {
 
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
+
+        // When a fetch completes, cache cast files in CastLibManager so they're
+        // available immediately when Lingo sets castLib.fileName.
+        netProvider.setFetchCompleteCallback((fetchUrl, fetchData) ->
+                player.onNetFetchComplete(fetchUrl, fetchData));
+
         musBridge = new WasmMultiuserBridge();
         player.registerMultiuserXtra(musBridge);
         audioBackend = new WasmAudioBackend();

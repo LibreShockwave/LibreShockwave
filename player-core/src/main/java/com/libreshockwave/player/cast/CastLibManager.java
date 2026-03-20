@@ -495,6 +495,27 @@ public class CastLibManager implements CastLibProvider {
         }
     }
 
+    // Raw data cache keyed by baseName (e.g. "hh_interface").
+    // When a .cct is fetched via preloadNetThing, the raw bytes are cached here
+    // so that later castLib.fileName assignments can load instantly without
+    // a JS round-trip.
+    private final Map<String, byte[]> castDataCache = new HashMap<>();
+
+    /**
+     * Cache raw external cast data by base name for later reuse.
+     */
+    public void cacheExternalData(String url, byte[] data) {
+        String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
+        castDataCache.put(baseName, data);
+    }
+
+    /**
+     * Look up cached raw cast data by base name.
+     */
+    public byte[] getCachedExternalData(String baseName) {
+        return castDataCache.get(baseName);
+    }
+
     /**
      * Set external cast data from preloadNetThing.
      * @param castLibNumber The cast library number
