@@ -153,11 +153,6 @@ public class DockingManager {
         autoSave();
     }
 
-    /** Backward-compatible alias for edge docking. */
-    public void dockAtEdgeNew(String panelId, Edge edge) {
-        dockAtEdge(panelId, edge);
-    }
-
     /** Dock a panel adjacent to a specific leaf (creates a split). */
     public void dockAt(String panelId, DockLeaf targetLeaf, Edge direction) {
         EditorPanel panel = allPanels.get(panelId);
@@ -353,6 +348,8 @@ public class DockingManager {
             } else {
                 parent.setSecond(newNode);
             }
+            rootWrapper.revalidate();
+            rootWrapper.repaint();
         }
     }
 
@@ -399,50 +396,6 @@ public class DockingManager {
                     if (parent.getOrientation() == JSplitPane.VERTICAL_SPLIT
                             && parent.getFirst() == node) {
                         adjacent = parent.getSecond();
-                    }
-                }
-            }
-
-            node = parent;
-        }
-    }
-
-    /**
-     * Walk up from center looking for an adjacent DockLeaf at the given edge.
-     */
-    private DockLeaf findAdjacentLeaf(Edge edge) {
-        DockNode node = center;
-        while (true) {
-            DockSplit parent = findParent(node);
-            if (parent == null) return null;
-
-            switch (edge) {
-                case LEFT -> {
-                    if (parent.getOrientation() == JSplitPane.HORIZONTAL_SPLIT
-                            && parent.getSecond() == node
-                            && parent.getFirst() instanceof DockLeaf leaf) {
-                        return leaf;
-                    }
-                }
-                case RIGHT -> {
-                    if (parent.getOrientation() == JSplitPane.HORIZONTAL_SPLIT
-                            && parent.getFirst() == node
-                            && parent.getSecond() instanceof DockLeaf leaf) {
-                        return leaf;
-                    }
-                }
-                case TOP -> {
-                    if (parent.getOrientation() == JSplitPane.VERTICAL_SPLIT
-                            && parent.getSecond() == node
-                            && parent.getFirst() instanceof DockLeaf leaf) {
-                        return leaf;
-                    }
-                }
-                case BOTTOM -> {
-                    if (parent.getOrientation() == JSplitPane.VERTICAL_SPLIT
-                            && parent.getFirst() == node
-                            && parent.getSecond() instanceof DockLeaf leaf) {
-                        return leaf;
                     }
                 }
             }
@@ -517,8 +470,7 @@ public class DockingManager {
     // ---- Tab context menu (called from DockLeaf) ----
 
     void showTabContextMenu(DockLeaf leaf, String panelId, JTabbedPane tabs, int x, int y) {
-        EditorPanel panel = allPanels.get(panelId);
-        String displayName = panel != null ? panel.getTitle() : panelId;
+        Edge zoneEdge = findLeafZoneEdge(leaf);
 
         JPopupMenu menu = new JPopupMenu();
 
@@ -570,6 +522,28 @@ public class DockingManager {
         });
         menu.add(moveCenterItem);
 
+        if (zoneEdge == Edge.TOP || zoneEdge == Edge.BOTTOM) {
+            menu.addSeparator();
+
+            JMenuItem moveLeftItem = new JMenuItem("Move Left");
+            moveLeftItem.addActionListener(e -> movePanelWithinZone(leaf, panelId, Edge.LEFT));
+            menu.add(moveLeftItem);
+
+            JMenuItem moveRightItem = new JMenuItem("Move Right");
+            moveRightItem.addActionListener(e -> movePanelWithinZone(leaf, panelId, Edge.RIGHT));
+            menu.add(moveRightItem);
+        } else if (zoneEdge == Edge.LEFT || zoneEdge == Edge.RIGHT) {
+            menu.addSeparator();
+
+            JMenuItem moveUpItem = new JMenuItem("Move Up");
+            moveUpItem.addActionListener(e -> movePanelWithinZone(leaf, panelId, Edge.TOP));
+            menu.add(moveUpItem);
+
+            JMenuItem moveDownItem = new JMenuItem("Move Down");
+            moveDownItem.addActionListener(e -> movePanelWithinZone(leaf, panelId, Edge.BOTTOM));
+            menu.add(moveDownItem);
+        }
+
         menu.show(tabs, x, y);
     }
 
@@ -606,6 +580,89 @@ public class DockingManager {
 
     private static String edgeName(Edge e) {
         return e.name().charAt(0) + e.name().substring(1).toLowerCase();
+    }
+
+    private Edge findLeafZoneEdge(DockLeaf leaf) {
+        for (Edge edge : Edge.values()) {
+            DockNode edgeZone = findAdjacentNode(edge);
+            if (edgeZone != null && containsNode(edgeZone, leaf)) {
+                return edge;
+            }
+        }
+        return null;
+    }
+
+    private boolean containsNode(DockNode rootNode, DockNode target) {
+        if (rootNode == target) return true;
+        if (rootNode instanceof DockSplit split) {
+            return containsNode(split.getFirst(), target) || containsNode(split.getSecond(), target);
+        }
+        return false;
+    }
+
+    private void movePanelWithinZone(DockLeaf leaf, String panelId, Edge direction) {
+        Edge zoneEdge = findLeafZoneEdge(leaf);
+        if (zoneEdge == null) return;
+
+        if (leaf.getTabCount() > 1) {
+            splitTab(leaf, panelId, direction);
+            return;
+        }
+
+        moveLeafWithinZone(leaf, zoneEdge, direction);
+    }
+
+    private void moveLeafWithinZone(DockLeaf leaf, Edge zoneEdge, Edge direction) {
+        DockNode edgeZone = findAdjacentNode(zoneEdge);
+        if (edgeZone == null) return;
+
+        int zoneOrientation = zoneSplitOrientation(zoneEdge);
+        DockNode zoneUnit = findZoneUnit(edgeZone, leaf, zoneOrientation);
+        if (zoneUnit == null) return;
+
+        java.util.List<DockNode> units = new java.util.ArrayList<>();
+        collectZoneUnits(edgeZone, zoneOrientation, units);
+
+        int currentIndex = units.indexOf(zoneUnit);
+        if (currentIndex < 0) return;
+
+        int targetIndex = switch (direction) {
+            case LEFT, TOP -> currentIndex - 1;
+            case RIGHT, BOTTOM -> currentIndex + 1;
+        };
+        if (targetIndex < 0 || targetIndex >= units.size()) return;
+
+        java.util.Collections.swap(units, currentIndex, targetIndex);
+        DockNode rebuiltZone = rebuildZoneUnits(units, zoneOrientation);
+        replaceNode(edgeZone, rebuiltZone);
+        autoSave();
+    }
+
+    private int zoneSplitOrientation(Edge zoneEdge) {
+        return (zoneEdge == Edge.LEFT || zoneEdge == Edge.RIGHT)
+            ? JSplitPane.VERTICAL_SPLIT
+            : JSplitPane.HORIZONTAL_SPLIT;
+    }
+
+    private DockNode findZoneUnit(DockNode edgeZone, DockLeaf leaf, int zoneOrientation) {
+        return containsNode(edgeZone, leaf) ? leaf : null;
+    }
+
+    private void collectZoneUnits(DockNode node, int zoneOrientation, java.util.List<DockNode> units) {
+        if (node instanceof DockSplit split && split.getOrientation() == zoneOrientation) {
+            collectZoneUnits(split.getFirst(), zoneOrientation, units);
+            collectZoneUnits(split.getSecond(), zoneOrientation, units);
+            return;
+        }
+        units.add(node);
+    }
+
+    private DockNode rebuildZoneUnits(java.util.List<DockNode> units, int zoneOrientation) {
+        DockNode current = units.get(0);
+        for (int i = 1; i < units.size(); i++) {
+            current = new DockSplit(current, units.get(i), zoneOrientation, 0.5);
+        }
+        return current;
     }
 
     // ---- Snap overlay ----
@@ -687,7 +744,7 @@ public class DockingManager {
                 Edge edge = pendingSnap;
                 pendingSnap = null;
                 snapOverlay.setEdge(null);
-                SwingUtilities.invokeLater(() -> dockAtEdgeNew(panel.getPanelId(), edge));
+                SwingUtilities.invokeLater(() -> dockAtEdge(panel.getPanelId(), edge));
             } else {
                 pendingSnap = null;
                 snapOverlay.setEdge(null);
