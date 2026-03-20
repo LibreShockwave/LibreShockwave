@@ -63,6 +63,41 @@ public final class AncestorChainWalker {
     }
 
     /**
+     * Check whether a handler exists on a script instance or any ancestor.
+     * Uses the same scriptRef/ancestor lookup path as invokeHandler().
+     */
+    public static boolean hasHandler(Datum.ScriptInstance instance, String handlerName) {
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (provider == null) return false;
+
+        Datum.ScriptInstance current = instance;
+        for (int i = 0; i < MAX_ANCESTOR_DEPTH; i++) {
+            Datum scriptRefDatum = current.properties().get(Datum.PROP_SCRIPT_REF);
+            CastLibProvider.HandlerLocation location;
+
+            if (scriptRefDatum instanceof Datum.ScriptRef sr) {
+                location = provider.findHandlerInScript(sr.castLibNum(), sr.memberNum(), handlerName);
+            } else {
+                location = provider.findHandlerInScript(current.scriptId(), handlerName);
+            }
+
+            if (location != null && location.script() instanceof ScriptChunk script
+                    && location.handler() instanceof ScriptChunk.Handler) {
+                return true;
+            }
+
+            // Walk to ancestor
+            Datum ancestor = current.properties().get(Datum.PROP_ANCESTOR);
+            if (ancestor instanceof Datum.ScriptInstance ancestorInstance) {
+                current = ancestorInstance;
+            } else {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Get a property from a script instance, walking the ancestor chain if not found.
      * @param instance The script instance to start searching from
      * @param propName The property name to look for

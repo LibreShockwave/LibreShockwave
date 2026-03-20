@@ -13,6 +13,7 @@ import com.libreshockwave.player.sprite.SpriteState;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
+import com.libreshockwave.vm.util.AncestorChainWalker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -188,6 +189,46 @@ public class EventDispatcher {
     }
 
     /**
+     * Check whether a sprite exposes a specific handler through either score-based
+     * behaviors or dynamically attached script instances.
+     */
+    public boolean spriteHasHandler(int channel, String handlerName) {
+        for (BehaviorInstance instance : behaviorManager.getInstancesForChannel(channel)) {
+            if (behaviorHasHandler(instance, handlerName)) {
+                return true;
+            }
+        }
+
+        if (spriteRegistry != null) {
+            SpriteState sprite = spriteRegistry.get(channel);
+            if (sprite != null) {
+                List<Datum> scriptInstances = sprite.getScriptInstanceList();
+                if (scriptInstances != null) {
+                    for (Datum target : scriptInstances) {
+                        if (target instanceof Datum.ScriptInstance si
+                                && AncestorChainWalker.hasHandler(si, handlerName)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Generic mouse-interaction check used by cursor/UI affordances.
+     */
+    public boolean isSpriteMouseInteractive(int channel) {
+        return spriteHasHandler(channel, PlayerEvent.MOUSE_DOWN.getHandlerName())
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_UP.getHandlerName())
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_ENTER.getHandlerName())
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_LEAVE.getHandlerName())
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_WITHIN.getHandlerName());
+    }
+
+    /**
      * Dispatch an event to movie scripts only using a PlayerEvent constant.
      */
     public void dispatchToMovieScripts(PlayerEvent event, List<Datum> args) {
@@ -280,6 +321,18 @@ public class EventDispatcher {
                 e.printStackTrace();
             }
         }
+    }
+
+    private boolean behaviorHasHandler(BehaviorInstance instance, String handlerName) {
+        if (instance == null || instance.getScript() == null) return false;
+
+        ScriptChunk script = instance.getScript();
+        ScriptNamesChunk names = script.file() != null ? script.file().getScriptNamesForScript(script) : null;
+        if (names == null) {
+            return false;
+        }
+
+        return script.findHandler(handlerName, names) != null;
     }
 
     /**
