@@ -106,7 +106,7 @@ public class Player {
     private ExecutorService castParserExecutor;
     private Runnable castParserShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
-    private boolean vmRunning = false;
+    private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -180,10 +180,10 @@ public class Player {
         this.frameRenderPipeline = new FrameRenderPipeline(stageRenderer, spriteBaker);
         this.inputState = new InputState();
         this.bitmapResolver = new BitmapResolver(file, castLibManager, frameContext);
-        // Register active palette supplier so Datum.datumToArgb() can resolve palette indices
-        com.libreshockwave.vm.datum.Datum.setActivePaletteSupplier(() -> bitmapResolver.getMoviePalette());
+        // Set initial palette (updated each tick in setupProviders)
+        com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
         this.cursorManager = new CursorManager(stageRenderer, inputState, castLibManager,
-                bitmapResolver, this::getCurrentFrame);
+                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.inputHandler = new InputHandler(inputState, stageRenderer, castLibManager,
                 this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.movieProperties.setInputState(inputState);
@@ -286,10 +286,10 @@ public class Player {
         this.frameRenderPipeline = new FrameRenderPipeline(stageRenderer, spriteBaker);
         this.inputState = new InputState();
         this.bitmapResolver = new BitmapResolver(file, castLibManager, frameContext);
-        // Register active palette supplier so Datum.datumToArgb() can resolve palette indices
-        com.libreshockwave.vm.datum.Datum.setActivePaletteSupplier(() -> bitmapResolver.getMoviePalette());
+        // Set initial palette (updated each tick in setupProviders)
+        com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
         this.cursorManager = new CursorManager(stageRenderer, inputState, castLibManager,
-                bitmapResolver, this::getCurrentFrame);
+                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.inputHandler = new InputHandler(inputState, stageRenderer, castLibManager,
                 this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.movieProperties.setInputState(inputState);
@@ -654,7 +654,7 @@ public class Player {
      * Check if VM is currently running on background thread.
      */
     public boolean isVmRunning() {
-        return vmRunning;
+        return vmRunning.get();
     }
 
     /**
@@ -774,14 +774,14 @@ public class Player {
             return;
         }
 
-        vmRunning = true;
+        vmRunning.set(true);
         getVmExecutor().submit(() -> {
             try {
                 prepareMovie();
                 state = PlayerState.PLAYING;
                 log("playAsync()");
             } finally {
-                vmRunning = false;
+                vmRunning.set(false);
                 if (onReady != null) {
                     onReady.run();
                 }
@@ -871,11 +871,11 @@ public class Player {
      * @param onComplete Callback when frame is complete (called on VM thread)
      */
     public void stepFrameAsync(Runnable onComplete) {
-        if (vmRunning) {
+        if (vmRunning.get()) {
             return;
         }
 
-        vmRunning = true;
+        vmRunning.set(true);
         getVmExecutor().submit(() -> {
             try {
                 if (state == PlayerState.STOPPED) {
@@ -904,7 +904,7 @@ public class Player {
                     }
                 } while (debugController != null && debugController.isAwaitingStepContinuation());
             } finally {
-                vmRunning = false;
+                vmRunning.set(false);
                 if (onComplete != null) {
                     onComplete.run();
                 }
@@ -959,7 +959,7 @@ public class Player {
      * @param onComplete Callback invoked on completion (on the VM thread)
      */
     public void tickAsync(Runnable onComplete) {
-        if (state != PlayerState.PLAYING || vmRunning) {
+        if (state != PlayerState.PLAYING || vmRunning.get()) {
             return;
         }
 
@@ -968,7 +968,7 @@ public class Player {
             debugController.setGlobalsSnapshot(vm.getGlobals());
         }
 
-        vmRunning = true;
+        vmRunning.set(true);
         getVmExecutor().submit(() -> {
             try {
                 // Execute frames in a loop - if stepping completes without pausing
@@ -987,7 +987,7 @@ public class Player {
                     }
                 } while (debugController != null && debugController.isAwaitingStepContinuation());
             } finally {
-                vmRunning = false;
+                vmRunning.set(false);
                 if (onComplete != null) {
                     onComplete.run();
                 }
@@ -1007,6 +1007,9 @@ public class Player {
         TimeoutProvider.setProvider(timeoutManager);
         ExternalParamProvider.setProvider(externalParamProvider);
         SoundProvider.setProvider(soundManager);
+        // Refresh palette each tick so Datum colour resolution uses the current frame's palette.
+        // Stored as a direct reference (not a Supplier lambda) to avoid TeaVM monitorEnterSync.
+        com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
     }
 
     /**

@@ -5,12 +5,14 @@ import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
+import com.libreshockwave.player.event.EventDispatcher;
 import com.libreshockwave.player.input.HitTester;
 import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 import com.libreshockwave.player.sprite.SpriteState;
 
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /**
  * Manages cursor display: detects cursor type based on mouse position and sprite state,
@@ -24,15 +26,18 @@ public class CursorManager {
     private final CastLibManager castLibManager;
     private final BitmapResolver bitmapResolver;
     private final IntSupplier currentFrameSupplier;
+    private final Supplier<EventDispatcher> eventDispatcherSupplier;
 
     public CursorManager(StageRenderer stageRenderer, InputState inputState,
                          CastLibManager castLibManager, BitmapResolver bitmapResolver,
-                         IntSupplier currentFrameSupplier) {
+                         IntSupplier currentFrameSupplier,
+                         Supplier<EventDispatcher> eventDispatcherSupplier) {
         this.stageRenderer = stageRenderer;
         this.inputState = inputState;
         this.castLibManager = castLibManager;
         this.bitmapResolver = bitmapResolver;
         this.currentFrameSupplier = currentFrameSupplier;
+        this.eventDispatcherSupplier = eventDispatcherSupplier;
     }
 
     /**
@@ -72,6 +77,10 @@ public class CursorManager {
                 int spriteCursor = sprite.getCursor();
                 if (spriteCursor != 0) {
                     return spriteCursor;
+                }
+                EventDispatcher dispatcher = eventDispatcherSupplier != null ? eventDispatcherSupplier.get() : null;
+                if (dispatcher != null && dispatcher.isSpriteMouseInteractive(hitChannel)) {
+                    return 6; // pointer/hand for generic interactive sprites
                 }
             }
         }

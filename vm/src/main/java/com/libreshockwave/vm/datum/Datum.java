@@ -21,29 +21,27 @@ import java.util.function.Supplier;
  */
 public sealed interface Datum {
 
-    /** Package-private mutable holder for the active palette supplier. */
-    // Using a simple static field since interfaces can't have mutable static fields directly.
-    // We use a holder class instead.
-    // Note: no volatile — WASM is single-threaded, and TeaVM implements volatile via
-    // monitorEnterSync which throws IllegalStateException in the WASM backend.
+    /** Mutable holder for the active palette (no Supplier lambda — TeaVM wraps
+     *  lambda invocation in monitorEnterSync which throws in the WASM backend).
+     *  No volatile — WASM is single-threaded. */
     final class PaletteHolder {
-        static Supplier<Palette> supplier;
+        static Palette palette;
     }
 
     /**
-     * Set the global palette supplier. Called by Player at startup.
+     * Set the active palette directly. Called by Player before each frame tick
+     * (via setupProviders) so that Datum colour resolution uses the current palette.
      */
-    static void setActivePaletteSupplier(Supplier<Palette> supplier) {
-        PaletteHolder.supplier = supplier;
+    static void setActivePalette(Palette palette) {
+        PaletteHolder.palette = palette;
     }
 
     /**
      * Get the active palette for color resolution.
-     * Falls back to System Win palette if no supplier is set.
+     * Falls back to System Mac palette if none is set.
      */
     static Palette getActivePalette() {
-        Supplier<Palette> sup = PaletteHolder.supplier;
-        Palette p = sup != null ? sup.get() : null;
+        Palette p = PaletteHolder.palette;
         return p != null ? p : Palette.SYSTEM_MAC_PALETTE;
     }
 
