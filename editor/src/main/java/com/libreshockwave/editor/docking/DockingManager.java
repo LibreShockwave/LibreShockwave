@@ -118,7 +118,7 @@ public class DockingManager {
         autoSave();
     }
 
-    /** Dock a panel to a desktop edge. Adds as tab if a zone already exists there. */
+    /** Dock a panel to a desktop edge. Existing edge zones are extended side-by-side. */
     public void dockAtEdge(String panelId, Edge edge) {
         EditorPanel panel = allPanels.get(panelId);
         if (panel == null) return;
@@ -128,91 +128,34 @@ public class DockingManager {
 
         Container content = extractContent(panel);
 
-        // Check if there's already a leaf adjacent to the center at this edge
-        DockLeaf adjacent = findAdjacentLeaf(edge);
-        if (adjacent != null) {
-            adjacent.addTab(panelId, panel.getTitle(), content);
-            panelLeaves.put(panelId, adjacent);
-            autoSave();
-            return;
-        }
-
-        // Create new leaf and split around the center (or its nearest ancestor)
-        DockLeaf newLeaf = createLeaf();
-        newLeaf.addTab(panelId, panel.getTitle(), content);
-        panelLeaves.put(panelId, newLeaf);
-
-        DockNode target = center;
-        int orientation;
-        boolean newFirst;
-        double fraction;
-
-        switch (edge) {
-            case LEFT -> { orientation = JSplitPane.HORIZONTAL_SPLIT; newFirst = true; fraction = 0.15; }
-            case RIGHT -> { orientation = JSplitPane.HORIZONTAL_SPLIT; newFirst = false; fraction = 0.85; }
-            case TOP -> { orientation = JSplitPane.VERTICAL_SPLIT; newFirst = true; fraction = 0.15; }
-            case BOTTOM -> { orientation = JSplitPane.VERTICAL_SPLIT; newFirst = false; fraction = 0.70; }
-            default -> { return; }
-        }
-
-        DockSplit split = newFirst
-            ? new DockSplit(newLeaf, target, orientation, fraction)
-            : new DockSplit(target, newLeaf, orientation, fraction);
-
-        replaceNode(target, split);
-        autoSave();
-    }
-
-    /** Dock a panel to a desktop edge, always creating a new split (never tabs). */
-    public void dockAtEdgeNew(String panelId, Edge edge) {
-        EditorPanel panel = allPanels.get(panelId);
-        if (panel == null) return;
-        suppressSave = true;
-        if (panelLeaves.containsKey(panelId)) undock(panelId);
-        suppressSave = false;
-
-        Container content = extractContent(panel);
-
-        // If there's an adjacent leaf, split it instead of tabbing
-        DockLeaf adjacent = findAdjacentLeaf(edge);
-        if (adjacent != null) {
+        // If an edge zone already exists, split the whole zone again so repeated
+        // edge docking creates more side-by-side strips instead of tabs.
+        DockNode edgeZone = findAdjacentNode(edge);
+        if (edgeZone != null) {
             DockLeaf newLeaf = createLeaf();
             newLeaf.addTab(panelId, panel.getTitle(), content);
             panelLeaves.put(panelId, newLeaf);
 
-            int splitOrientation = (edge == Edge.LEFT || edge == Edge.RIGHT)
-                ? JSplitPane.VERTICAL_SPLIT : JSplitPane.HORIZONTAL_SPLIT;
-
-            DockSplit split = new DockSplit(adjacent, newLeaf, splitOrientation, 0.5);
-            replaceNode(adjacent, split);
+            DockSplit split = createEdgeZoneSplit(edgeZone, newLeaf, edge, 0.5);
+            replaceNode(edgeZone, split);
             autoSave();
             return;
         }
 
-        // No existing zone — same as dockAtEdge
+        // No existing zone: create a new edge strip around the center.
         DockLeaf newLeaf = createLeaf();
         newLeaf.addTab(panelId, panel.getTitle(), content);
         panelLeaves.put(panelId, newLeaf);
 
-        DockNode target = center;
-        int orientation;
-        boolean newFirst;
-        double fraction;
+        DockSplit split = createEdgeSplit(center, newLeaf, edge, edgeFraction(edge));
 
-        switch (edge) {
-            case LEFT -> { orientation = JSplitPane.HORIZONTAL_SPLIT; newFirst = true; fraction = 0.15; }
-            case RIGHT -> { orientation = JSplitPane.HORIZONTAL_SPLIT; newFirst = false; fraction = 0.85; }
-            case TOP -> { orientation = JSplitPane.VERTICAL_SPLIT; newFirst = true; fraction = 0.15; }
-            case BOTTOM -> { orientation = JSplitPane.VERTICAL_SPLIT; newFirst = false; fraction = 0.70; }
-            default -> { return; }
-        }
-
-        DockSplit newSplit = newFirst
-            ? new DockSplit(newLeaf, target, orientation, fraction)
-            : new DockSplit(target, newLeaf, orientation, fraction);
-
-        replaceNode(target, newSplit);
+        replaceNode(center, split);
         autoSave();
+    }
+
+    /** Backward-compatible alias for edge docking. */
+    public void dockAtEdgeNew(String panelId, Edge edge) {
+        dockAtEdge(panelId, edge);
     }
 
     /** Dock a panel adjacent to a specific leaf (creates a split). */
@@ -422,6 +365,49 @@ public class DockingManager {
     }
 
     /**
+     * Walk up from center looking for the outermost node occupying the given edge.
+     * Repeated edge splits should extend the actual edge, not insert new strips
+     * between the center and the existing edge zone.
+     */
+    private DockNode findAdjacentNode(Edge edge) {
+        DockNode node = center;
+        DockNode adjacent = null;
+        while (true) {
+            DockSplit parent = findParent(node);
+            if (parent == null) return adjacent;
+
+            switch (edge) {
+                case LEFT -> {
+                    if (parent.getOrientation() == JSplitPane.HORIZONTAL_SPLIT
+                            && parent.getSecond() == node) {
+                        adjacent = parent.getFirst();
+                    }
+                }
+                case RIGHT -> {
+                    if (parent.getOrientation() == JSplitPane.HORIZONTAL_SPLIT
+                            && parent.getFirst() == node) {
+                        adjacent = parent.getSecond();
+                    }
+                }
+                case TOP -> {
+                    if (parent.getOrientation() == JSplitPane.VERTICAL_SPLIT
+                            && parent.getSecond() == node) {
+                        adjacent = parent.getFirst();
+                    }
+                }
+                case BOTTOM -> {
+                    if (parent.getOrientation() == JSplitPane.VERTICAL_SPLIT
+                            && parent.getFirst() == node) {
+                        adjacent = parent.getSecond();
+                    }
+                }
+            }
+
+            node = parent;
+        }
+    }
+
+    /**
      * Walk up from center looking for an adjacent DockLeaf at the given edge.
      */
     private DockLeaf findAdjacentLeaf(Edge edge) {
@@ -461,8 +447,31 @@ public class DockingManager {
                 }
             }
 
-            node = parent; // keep walking up
+            node = parent;
         }
+    }
+
+    private DockSplit createEdgeSplit(DockNode target, DockLeaf newLeaf, Edge edge, double fraction) {
+        int orientation = (edge == Edge.LEFT || edge == Edge.RIGHT)
+            ? JSplitPane.HORIZONTAL_SPLIT : JSplitPane.VERTICAL_SPLIT;
+        boolean newFirst = (edge == Edge.LEFT || edge == Edge.TOP);
+        return newFirst
+            ? new DockSplit(newLeaf, target, orientation, fraction)
+            : new DockSplit(target, newLeaf, orientation, fraction);
+    }
+
+    private DockSplit createEdgeZoneSplit(DockNode target, DockLeaf newLeaf, Edge edge, double fraction) {
+        int orientation = (edge == Edge.LEFT || edge == Edge.RIGHT)
+            ? JSplitPane.VERTICAL_SPLIT : JSplitPane.HORIZONTAL_SPLIT;
+        return new DockSplit(target, newLeaf, orientation, fraction);
+    }
+
+    private double edgeFraction(Edge edge) {
+        return switch (edge) {
+            case LEFT, TOP -> 0.15;
+            case RIGHT -> 0.85;
+            case BOTTOM -> 0.70;
+        };
     }
 
     private void collapseEmptyLeaf(DockLeaf leaf) {
@@ -561,18 +570,6 @@ public class DockingManager {
         });
         menu.add(moveCenterItem);
 
-        menu.addSeparator();
-
-        // Move to edge as new split (side by side with existing zone)
-        for (Edge edge : Edge.values()) {
-            JMenuItem moveItem = new JMenuItem("Move to " + edgeName(edge) + " (New Split)");
-            moveItem.addActionListener(e -> {
-                undock(panelId);
-                dockAtEdgeNew(panelId, edge);
-            });
-            menu.add(moveItem);
-        }
-
         menu.show(tabs, x, y);
     }
 
@@ -599,12 +596,6 @@ public class DockingManager {
                     JMenuItem centerItem = new JMenuItem("Dock Center");
                     centerItem.addActionListener(ev -> dockCenter(id));
                     menu.add(centerItem);
-                    menu.addSeparator();
-                    for (Edge edge : Edge.values()) {
-                        JMenuItem item = new JMenuItem("Dock " + edgeName(edge) + " (New Split)");
-                        item.addActionListener(ev -> dockAtEdgeNew(id, edge));
-                        menu.add(item);
-                    }
                     menu.show(titleBar, e.getX(), e.getY());
                 }
             });
@@ -696,7 +687,7 @@ public class DockingManager {
                 Edge edge = pendingSnap;
                 pendingSnap = null;
                 snapOverlay.setEdge(null);
-                SwingUtilities.invokeLater(() -> dockAtEdge(panel.getPanelId(), edge));
+                SwingUtilities.invokeLater(() -> dockAtEdgeNew(panel.getPanelId(), edge));
             } else {
                 pendingSnap = null;
                 snapOverlay.setEdge(null);
