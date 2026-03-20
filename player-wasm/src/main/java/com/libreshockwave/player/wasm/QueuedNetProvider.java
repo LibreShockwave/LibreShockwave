@@ -25,8 +25,15 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
     private int nextTaskId = 1;
     private int lastTaskId = 0;
 
+    /** Called when a fetch completes with data, allowing Player to cache cast files. */
+    private java.util.function.BiConsumer<String, byte[]> fetchCompleteCallback;
+
     public QueuedNetProvider(String basePath) {
         this.basePath = basePath;
+    }
+
+    public void setFetchCompleteCallback(java.util.function.BiConsumer<String, byte[]> callback) {
+        this.fetchCompleteCallback = callback;
     }
 
     @Override
@@ -162,6 +169,10 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
             task.data = data;
             task.byteCount = data != null ? data.length : 0;
             task.done = true;
+
+            if (fetchCompleteCallback != null && task.url != null && data != null) {
+                fetchCompleteCallback.accept(task.url, data);
+            }
         }
     }
 

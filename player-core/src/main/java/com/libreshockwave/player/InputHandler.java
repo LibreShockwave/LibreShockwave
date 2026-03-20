@@ -10,12 +10,12 @@ import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.player.render.output.TextRenderer;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 import com.libreshockwave.player.sprite.SpriteState;
+import com.libreshockwave.util.IntValueProvider;
+import com.libreshockwave.util.ValueProvider;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.IntSupplier;
-import java.util.function.Supplier;
 
 /**
  * Handles all input processing: mouse/keyboard event dispatch, rollover tracking,
@@ -27,15 +27,15 @@ public class InputHandler {
     private final InputState inputState;
     private final StageRenderer stageRenderer;
     private final CastLibManager castLibManager;
-    private final IntSupplier currentFrameSupplier;
-    private final Supplier<EventDispatcher> eventDispatcherSupplier;
+    private final IntValueProvider currentFrameSupplier;
+    private final ValueProvider<EventDispatcher> eventDispatcherSupplier;
 
     // Rollover tracking for mouseEnter/mouseLeave/mouseWithin events
     private int previousRolloverSprite = 0;
 
     public InputHandler(InputState inputState, StageRenderer stageRenderer,
-                        CastLibManager castLibManager, IntSupplier currentFrameSupplier,
-                        Supplier<EventDispatcher> eventDispatcherSupplier) {
+                        CastLibManager castLibManager, IntValueProvider currentFrameSupplier,
+                        ValueProvider<EventDispatcher> eventDispatcherSupplier) {
         this.inputState = inputState;
         this.stageRenderer = stageRenderer;
         this.castLibManager = castLibManager;
@@ -52,7 +52,7 @@ public class InputHandler {
     public void onMouseMove(int stageX, int stageY) {
         inputState.setMousePosition(stageX, stageY);
         // Update rollover sprite
-        int hit = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY);
+        int hit = hitTest(stageX, stageY);
         inputState.setRolloverSprite(hit);
 
         // Drag-selection: extend selection while mouse is down over focused editable field
@@ -88,7 +88,7 @@ public class InputHandler {
             inputState.queueEvent(InputEvent.rightMouseDown(stageX, stageY));
         } else {
             inputState.setMouseDown(true);
-            int hit = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY);
+            int hit = hitTest(stageX, stageY);
             inputState.setClickOnSprite(hit);
             inputState.setClickLoc(stageX, stageY);
             inputState.queueEvent(InputEvent.mouseDown(stageX, stageY));
@@ -191,8 +191,7 @@ public class InputHandler {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
         switch (event.type()) {
             case MOUSE_DOWN -> {
-                int hitSprite = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(),
-                        event.stageX(), event.stageY());
+                int hitSprite = hitTest(event.stageX(), event.stageY());
                 // Director D6+: if the previously clicked sprite is different from
                 // the current one, send mouseUpOutSide to the old sprite (ScummVM behavior).
                 int lastClicked = inputState.getClickOnSprite();
@@ -213,11 +212,20 @@ public class InputHandler {
             case MOUSE_UP -> {
                 // Director dispatches mouseUp to the sprite currently under the mouse,
                 // NOT the sprite that received mouseDown (confirmed via ScummVM).
-                int hitSprite = HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(),
-                        event.stageX(), event.stageY());
+                int pressedSprite = inputState.getClickOnSprite();
+                int hitSprite = hitTest(event.stageX(), event.stageY());
                 if (hitSprite > 0) {
                     dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_UP, List.of());
                 }
+                // Navigator/Event Broker style UI can register mouseUp dynamically on the
+                // sprite that received mouseDown. If release-time hit testing no longer
+                // resolves to that sprite, still deliver mouseUp to the pressed sprite.
+                if (pressedSprite > 0
+                        && pressedSprite != hitSprite
+                        && dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP.getHandlerName())) {
+                    dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
+                }
+                inputState.setClickOnSprite(0);
                 dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_UP, List.of());
             }
             case RIGHT_MOUSE_DOWN -> {
@@ -283,6 +291,12 @@ public class InputHandler {
         }
         // Clicked on non-editable sprite or empty stage — clear focus
         inputState.setKeyboardFocusSprite(0);
+    }
+
+    private int hitTest(int stageX, int stageY) {
+        EventDispatcher dispatcher = eventDispatcherSupplier.get();
+        return HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
+                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
     }
 
     // --- Text editing ---

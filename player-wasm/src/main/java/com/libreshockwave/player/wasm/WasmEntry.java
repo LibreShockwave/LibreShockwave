@@ -8,11 +8,8 @@ import com.libreshockwave.vm.DebugConfig;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,13 +32,6 @@ public class WasmEntry {
     private static byte[] stringBuffer = new byte[65536];
     private static byte[] netBuffer;
 
-    // Cast data tracking for JS-side storage
-    private static final List<String> pendingCastDataRequests = new ArrayList<>();
-    private static final List<String> availableCastUrls = new ArrayList<>();
-
-    // Java-side cache of raw cast data bytes (keyed by baseName, e.g. "hh_interface")
-    // Used for synchronous re-delivery when Lingo sets castLib.fileName
-    private static final Map<String, byte[]> castDataCache = new HashMap<>();
     private static final Set<String> failedCasts = new HashSet<>();
 
     // Debug log: accumulates messages; read via getDebugLog() export
@@ -103,22 +93,19 @@ public class WasmEntry {
             wasmPlayer.shutdown();
         }
 
-        pendingCastDataRequests.clear();
-        availableCastUrls.clear();
-
         wasmPlayer = new WasmPlayer();
         if (!wasmPlayer.loadMovie(data, basePath,
                 (castLibNumber, fileName) -> {
-                    // Try to load directly from Java-side cache (instant, same tick).
+                    // Try to load directly from CastLibManager's cache (instant, same tick).
                     // This avoids a 1-tick delay that causes "Cast number expected" errors
                     // when objectmanager runs before cast data arrives via JS round-trip.
                     String baseName = FileUtil.getFileNameWithoutExtension(
                             FileUtil.getFileName(fileName));
-                    byte[] cached = castDataCache.get(baseName);
+                    var castLibManager = wasmPlayer.getPlayer().getCastLibManager();
+                    byte[] cached = castLibManager.getCachedExternalData(baseName);
                     if (cached != null) {
                         try {
-                            if (wasmPlayer.getPlayer().getCastLibManager()
-                                    .setExternalCastData(castLibNumber, cached)) {
+                            if (castLibManager.setExternalCastData(castLibNumber, cached)) {
                                 wasmPlayer.getPlayer().getBitmapCache().clear();
                                 wasmPlayer.bumpCastRevision();
                                 log("castDataRequestCallback: loaded " + baseName + " from cache (cast#" + castLibNumber + ")");
@@ -129,8 +116,7 @@ public class WasmEntry {
                             failedCasts.add(baseName);
                         }
                     }
-                    // Fallback: queue for JS-side delivery next tick
-                    pendingCastDataRequests.add(fileName);
+                    log("castDataRequestCallback: " + baseName + " not in cache (cast#" + castLibNumber + ")");
                 })) {
             return 0;
         }
@@ -641,9 +627,11 @@ public class WasmEntry {
     }
 
     /**
-     * Deliver a successful fetch result (non-cast data only).
-     * Cast files are delivered separately via deliverCastData.
+     * Deliver a successful fetch result.
      * Data must already be written to netBuffer.
+     * If the fetched URL is a cast file (.cct/.cst), the data is also
+     * cached and parsed in CastLibManager so it's available immediately
+     * when Lingo later sets castLib.fileName.
      */
     @Export(name = "deliverFetchResult")
     public static void deliverFetchResult(int taskId, int dataSize) {
@@ -654,6 +642,8 @@ public class WasmEntry {
 
             byte[] data = new byte[dataSize];
             System.arraycopy(netBuffer, 0, data, 0, dataSize);
+            // onFetchComplete fires the fetchCompleteCallback which routes
+            // cast files to Player.onNetFetchComplete → CastLibManager
             net.onFetchComplete(taskId, data);
         } catch (Throwable e) {
             captureError("deliverFetchResult", e);
@@ -663,7 +653,6 @@ public class WasmEntry {
     /**
      * Mark a fetch task as done without storing data in WASM.
      * Reports the byte count for Lingo's bytesSoFar check.
-     * If the URL is a cast file, adds it to availableCastUrls for later delivery.
      * URL must be written to stringBuffer before calling.
      */
     @Export(name = "deliverFetchStatus")
@@ -678,101 +667,12 @@ public class WasmEntry {
 
             // Mark the net task as done with byte count but no stored data
             net.onFetchStatusComplete(taskId, byteCount);
-
-            // Track cast URLs for later data delivery
-            if (url != null && isCastFile(url)) {
-                availableCastUrls.add(url);
-            }
         } catch (Throwable e) {
             captureError("deliverFetchStatus", e);
         }
     }
 
-    /**
-     * Deliver cast file data from JS.
-     * URL in stringBuffer[0..urlLen), data in netBuffer[0..dataSize).
-     * Parses the cast into chunks and bumps cast revision.
-     */
-    @Export(name = "deliverCastData")
-    public static void deliverCastData(int urlLen, int dataSize) {
-        try {
-            lastError = null;
-            if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return;
-            if (netBuffer == null || urlLen <= 0) return;
 
-            String url = new String(stringBuffer, 0, urlLen);
-            byte[] data = new byte[dataSize];
-            System.arraycopy(netBuffer, 0, data, 0, dataSize);
-
-            String baseName = FileUtil.getFileNameWithoutExtension(
-                    FileUtil.getFileName(url));
-            log("deliverCastData: url=" + url + " baseName=" + baseName + " size=" + dataSize);
-            boolean loaded = wasmPlayer.getPlayer().getCastLibManager()
-                    .setExternalCastDataByUrl(url, data);
-            log("  loaded=" + loaded);
-            // Always cache raw bytes for synchronous re-delivery when Lingo
-            // sets castLib.fileName later (loaded=false just means no cast lib
-            // has a matching fileName yet)
-            castDataCache.put(baseName, data);
-            if (loaded) {
-                wasmPlayer.getPlayer().getBitmapCache().clear();
-                wasmPlayer.bumpCastRevision();
-            }
-        } catch (Throwable e) {
-            String baseName = "unknown";
-            try { baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(
-                    new String(stringBuffer, 0, urlLen))); } catch (Exception ignored) {}
-            failedCasts.add(baseName);
-            captureError("deliverCastData", e);
-        }
-    }
-
-    // === Cast data request polling (JS reads pending dynamic cast requests) ===
-
-    @Export(name = "getPendingCastDataCount")
-    public static int getPendingCastDataCount() {
-        return pendingCastDataRequests.size();
-    }
-
-    @Export(name = "getPendingCastDataUrl")
-    public static int getPendingCastDataUrl(int index) {
-        if (index < 0 || index >= pendingCastDataRequests.size()) return 0;
-        return writeToStringBuffer(pendingCastDataRequests.get(index));
-    }
-
-    @Export(name = "drainPendingCastDataRequests")
-    public static void drainPendingCastDataRequests() {
-        pendingCastDataRequests.clear();
-    }
-
-    /**
-     * Re-queue a cast data request (for throttled delivery across ticks).
-     * fileName must be written to stringBuffer[0..nameLen).
-     */
-    @Export(name = "queueCastDataRequest")
-    public static void queueCastDataRequest(int nameLen) {
-        if (nameLen <= 0) return;
-        String fileName = new String(stringBuffer, 0, nameLen);
-        pendingCastDataRequests.add(fileName);
-    }
-
-    // === Available cast polling (JS reads static casts ready for data delivery) ===
-
-    @Export(name = "getAvailableCastCount")
-    public static int getAvailableCastCount() {
-        return availableCastUrls.size();
-    }
-
-    @Export(name = "getAvailableCastUrl")
-    public static int getAvailableCastUrl(int index) {
-        if (index < 0 || index >= availableCastUrls.size()) return 0;
-        return writeToStringBuffer(availableCastUrls.get(index));
-    }
-
-    @Export(name = "drainAvailableCasts")
-    public static void drainAvailableCasts() {
-        availableCastUrls.clear();
-    }
 
     /**
      * Deliver a fetch error.
@@ -1378,12 +1278,4 @@ public class WasmEntry {
         return len;
     }
 
-    private static boolean isCastFile(String url) {
-        if (url == null) return false;
-        String lower = url.toLowerCase();
-        // Strip query string for extension check
-        int qi = lower.indexOf('?');
-        if (qi > 0) lower = lower.substring(0, qi);
-        return lower.endsWith(".cct") || lower.endsWith(".cst");
-    }
 }

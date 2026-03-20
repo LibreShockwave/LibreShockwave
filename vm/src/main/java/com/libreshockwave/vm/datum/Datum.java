@@ -6,13 +6,13 @@ import com.libreshockwave.id.CastLibId;
 import com.libreshockwave.id.ChannelId;
 import com.libreshockwave.id.MemberId;
 import com.libreshockwave.id.VarType;
+import com.libreshockwave.util.ValueProvider;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
  * Runtime value in the Lingo VM.
@@ -305,7 +305,7 @@ public sealed interface Datum {
      */
     final class ImageRef implements Datum {
         private final Bitmap directBitmap;
-        private final java.util.function.Supplier<Bitmap> bitmapSupplier;
+        private final ValueProvider<Bitmap> bitmapSupplier;
 
         /** Create an ImageRef wrapping a specific bitmap (standalone images, duplicates, etc.) */
         public ImageRef(Bitmap bitmap) {
@@ -314,7 +314,7 @@ public sealed interface Datum {
         }
 
         /** Create an ImageRef that resolves the bitmap lazily (for member.image live references) */
-        public ImageRef(java.util.function.Supplier<Bitmap> supplier) {
+        public ImageRef(ValueProvider<Bitmap> supplier) {
             this.directBitmap = null;
             this.bitmapSupplier = supplier;
         }

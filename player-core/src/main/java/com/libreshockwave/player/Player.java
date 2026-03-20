@@ -183,7 +183,8 @@ public class Player {
         // Set initial palette (updated each tick in setupProviders)
         com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
         this.cursorManager = new CursorManager(stageRenderer, inputState, castLibManager,
-                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher());
+                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher(),
+                () -> movieProperties.getMovieProp("cursor"));
         this.inputHandler = new InputHandler(inputState, stageRenderer, castLibManager,
                 this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.movieProperties.setInputState(inputState);
@@ -289,7 +290,8 @@ public class Player {
         // Set initial palette (updated each tick in setupProviders)
         com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
         this.cursorManager = new CursorManager(stageRenderer, inputState, castLibManager,
-                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher());
+                bitmapResolver, this::getCurrentFrame, () -> frameContext.getEventDispatcher(),
+                () -> movieProperties.getMovieProp("cursor"));
         this.inputHandler = new InputHandler(inputState, stageRenderer, castLibManager,
                 this::getCurrentFrame, () -> frameContext.getEventDispatcher());
         this.movieProperties.setInputState(inputState);
@@ -435,6 +437,28 @@ public class Player {
 
     public CastLibManager getCastLibManager() {
         return castLibManager;
+    }
+
+    /**
+     * Called when a network fetch completes. If the fetched URL is a cast file
+     * (.cct/.cst), caches the raw data in CastLibManager and parses it into
+     * the matching cast library so members are available immediately.
+     */
+    public void onNetFetchComplete(String url, byte[] data) {
+        if (url == null || data == null) return;
+        String lower = url.toLowerCase();
+        int qi = lower.indexOf('?');
+        if (qi > 0) lower = lower.substring(0, qi);
+        if (!lower.endsWith(".cct") && !lower.endsWith(".cst")) return;
+
+        castLibManager.cacheExternalData(url, data);
+        try {
+            if (castLibManager.setExternalCastDataByUrl(url, data)) {
+                bitmapCache.clear();
+            }
+        } catch (Throwable e) {
+            // Cast parse failure — non-fatal, Lingo will see the error
+        }
     }
 
     public SoundManager getSoundManager() {

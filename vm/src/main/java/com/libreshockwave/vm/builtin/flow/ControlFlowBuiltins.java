@@ -153,16 +153,16 @@ public final class ControlFlowBuiltins {
         Datum targetList = args.get(1);
         List<Datum> extraArgs = args.size() > 2 ? args.subList(2, args.size()) : List.of();
 
-
+        Datum lastResult = Datum.VOID;
         if (targetList instanceof Datum.ScriptInstance instance) {
             // call(#handler, singleObject, args...) — call on one instance
-            callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+            lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
         } else if (targetList instanceof Datum.List list) {
             // Snapshot the list to avoid ConcurrentModificationException if handlers modify it
             List<Datum> snapshot = new ArrayList<>(list.items());
             for (Datum target : snapshot) {
                 if (target instanceof Datum.ScriptInstance instance) {
-                    callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+                    lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
                 }
             }
         } else if (targetList instanceof Datum.PropList propList) {
@@ -171,23 +171,26 @@ public final class ControlFlowBuiltins {
             for (Datum.PropEntry entry : propList.entries()) snapshot.add(entry.value());
             for (Datum target : snapshot) {
                 if (target instanceof Datum.ScriptInstance instance) {
-                    callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+                    lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
                 }
             }
         }
-        return Datum.VOID;
+        return lastResult;
     }
 
     /**
      * Call a handler on a script instance, walking the ancestor chain to find it.
+     * Returns the handler's return value, or VOID if the handler was not found or threw.
      * Public so the player-core event dispatcher can use it for scriptInstanceList.
      */
-    public static void callHandlerOnInstance(LingoVM vm, Datum.ScriptInstance instance,
+    public static Datum callHandlerOnInstance(LingoVM vm, Datum.ScriptInstance instance,
                                                String handlerName, List<Datum> extraArgs) {
         try {
-            AncestorChainWalker.invokeHandler(vm, instance, handlerName, extraArgs);
+            Datum result = AncestorChainWalker.invokeHandlerWithResult(vm, instance, handlerName, extraArgs);
+            return result != null ? result : Datum.VOID;
         } catch (Exception e) {
             System.err.println("[callHandlerOnInstance] Exception in '" + handlerName + "': " + e.getMessage());
+            return Datum.VOID;
         }
     }
 }

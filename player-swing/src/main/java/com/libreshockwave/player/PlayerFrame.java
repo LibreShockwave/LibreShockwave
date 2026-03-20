@@ -58,6 +58,8 @@ public class PlayerFrame extends JFrame {
     private DebugController debugController;
     private DetailedStackWindow detailedStackWindow;
     private JSplitPane splitPane;
+    private JToggleButton debugToggleButton;
+    private JCheckBoxMenuItem debugMenuItem;
     private boolean debugVisible = true;
     private boolean useAsyncExecution = true;  // Use async execution for debugger support
     private Path lastOpenedFile;
@@ -222,6 +224,14 @@ public class PlayerFrame extends JFrame {
         stepButton.addActionListener(e -> stepFrame());
         transportPanel.add(stepButton);
 
+        transportPanel.add(Box.createHorizontalStrut(10));
+
+        JToggleButton debugToggle = new JToggleButton("\uD83D\uDC1B", true);  // Bug emoji
+        debugToggle.setToolTipText("Toggle Debug Panel (Ctrl+D)");
+        debugToggle.addActionListener(e -> toggleDebugPanel(debugToggle.isSelected()));
+        transportPanel.add(debugToggle);
+        this.debugToggleButton = debugToggle;
+
         controlPanel.add(transportPanel, BorderLayout.WEST);
 
         // Frame slider
@@ -351,10 +361,10 @@ public class PlayerFrame extends JFrame {
         JMenu viewMenu = new JMenu("View");
         viewMenu.setMnemonic(KeyEvent.VK_V);
 
-        JCheckBoxMenuItem debugItem = new JCheckBoxMenuItem("Debug Panel", true);
-        debugItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.CTRL_DOWN_MASK));
-        debugItem.addActionListener(e -> toggleDebugPanel(debugItem.isSelected()));
-        viewMenu.add(debugItem);
+        debugMenuItem = new JCheckBoxMenuItem("Debug Panel", true);
+        debugMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.CTRL_DOWN_MASK));
+        debugMenuItem.addActionListener(e -> toggleDebugPanel(debugMenuItem.isSelected()));
+        viewMenu.add(debugMenuItem);
 
         JCheckBoxMenuItem detailedStackItem = new JCheckBoxMenuItem("Detailed Stack Window", false);
         detailedStackItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
@@ -936,6 +946,9 @@ public class PlayerFrame extends JFrame {
             splitPane.setRightComponent(null);
         }
         splitPane.revalidate();
+        // Keep toolbar button and menu item in sync
+        if (debugToggleButton != null) debugToggleButton.setSelected(visible);
+        if (debugMenuItem != null) debugMenuItem.setSelected(visible);
     }
 
     private void toggleDetailedStackWindow(boolean visible) {

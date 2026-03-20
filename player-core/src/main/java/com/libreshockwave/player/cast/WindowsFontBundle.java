@@ -2,10 +2,10 @@ package com.libreshockwave.player.cast;
 
 import com.libreshockwave.font.BitmapFont;
 import com.libreshockwave.font.TtfBitmapRasterizer;
+import com.libreshockwave.util.ValueProvider;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * Embedded Windows system fonts for Director movie compatibility.
@@ -24,12 +24,12 @@ public class WindowsFontBundle {
      * Font variant definition: supplier for raw TTF bytes (lazy-loaded from sdk-fonts).
      */
     private record FontVariants(
-        Supplier<byte[]> regular,
-        Supplier<byte[]> bold,
-        Supplier<byte[]> italic,
-        Supplier<byte[]> boldItalic
+        ValueProvider<byte[]> regular,
+        ValueProvider<byte[]> bold,
+        ValueProvider<byte[]> italic,
+        ValueProvider<byte[]> boldItalic
     ) {
-        Supplier<byte[]> get(int idx) {
+        ValueProvider<byte[]> get(int idx) {
             return switch (idx) {
                 case 1 -> bold;
                 case 2 -> italic;
@@ -83,7 +83,7 @@ public class WindowsFontBundle {
 
         // Select variant: 0=regular, 1=bold, 2=italic, 3=bolditalic
         int variantIdx = (bold ? 1 : 0) + (italic ? 2 : 0);
-        Supplier<byte[]> supplier = variants.get(variantIdx);
+        ValueProvider<byte[]> supplier = variants.get(variantIdx);
 
         // Fall back to regular if specific variant not available
         if (supplier == null) {
