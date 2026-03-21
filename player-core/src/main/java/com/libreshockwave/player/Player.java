@@ -229,19 +229,17 @@ public class Player {
             netManager.setBasePath(file.getBasePath());
         }
 
-        // Wire up network completion callback to handle external cast loading
+        // Wire up network completion callback to handle external cast loading.
+        // This runs synchronously so cast member lookup/state is ready before
+        // scripts observe a completed net task.
         netManager.setCompletionCallback((fileName, data) -> {
-            // Offload heavy DirectorFile.load() + CastLib.load() to dedicated thread pool
-            // so the NetManager worker can immediately handle more downloads
-            castParserExecutor.submit(() -> {
-                if (castLibManager.setExternalCastDataByUrl(fileName, data)) {
-                    System.out.println("[Player] Loaded external cast from: " + fileName);
-                    bitmapCache.clear();
-                    if (castLoadedListener != null) {
-                        castLoadedListener.run();
-                    }
+            if (castLibManager.setExternalCastDataByUrl(fileName, data)) {
+                System.out.println("[Player] Loaded external cast from: " + fileName);
+                bitmapCache.clear();
+                if (castLoadedListener != null) {
+                    castLoadedListener.run();
                 }
-            });
+            }
         });
 
         // Wire up event notifications
