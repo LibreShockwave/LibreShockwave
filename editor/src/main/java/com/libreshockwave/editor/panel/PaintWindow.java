@@ -58,10 +58,12 @@ public class PaintWindow extends EditorPanel {
     }
 
     public void loadMember(CastMemberInfo info) {
-        DirectorFile dirFile = context.getFile();
-        if (dirFile == null) return;
+        // Use the member's own DirectorFile (essential for external cast bitmaps)
+        DirectorFile memberFile = info.member().file();
+        if (memberFile == null) memberFile = context.getFile();
+        if (memberFile == null) return;
 
-        var bitmapOpt = dirFile.decodeBitmap(info.member());
+        var bitmapOpt = memberFile.decodeBitmap(info.member());
         if (bitmapOpt.isPresent()) {
             BufferedImage image = bitmapOpt.get().toBufferedImage();
             imageLabel.setIcon(new ImageIcon(image));

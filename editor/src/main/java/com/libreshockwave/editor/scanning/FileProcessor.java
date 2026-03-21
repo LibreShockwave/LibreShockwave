@@ -46,7 +46,7 @@ public class FileProcessor {
         return members;
     }
 
-    private String buildMemberDetails(DirectorFile dirFile, CastMemberChunk member) {
+    public String buildMemberDetails(DirectorFile dirFile, CastMemberChunk member) {
         MemberType type = member.memberType();
         String details = "";
 

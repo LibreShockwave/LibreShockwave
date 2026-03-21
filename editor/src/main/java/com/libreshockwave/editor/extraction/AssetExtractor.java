@@ -34,6 +34,10 @@ public class AssetExtractor {
      * Extracts a single asset and returns true if successful.
      */
     public boolean extract(DirectorFile dirFile, CastMemberInfo memberInfo, Path outputDir) {
+        // Use the member's own DirectorFile for chunk resolution (essential for external casts)
+        DirectorFile memberFile = memberInfo.member().file();
+        if (memberFile == null) memberFile = dirFile;
+
         try {
             Files.createDirectories(outputDir);
 
@@ -42,12 +46,12 @@ public class AssetExtractor {
                     .replaceAll("[^a-zA-Z0-9._-]", "_");
 
             return switch (memberInfo.memberType()) {
-                case BITMAP -> extractBitmap(dirFile, memberInfo, outputDir, safeName);
-                case SOUND -> extractSound(dirFile, memberInfo, outputDir, safeName);
-                case SCRIPT -> extractScript(dirFile, memberInfo, outputDir, safeName);
-                case TEXT, BUTTON -> extractText(dirFile, memberInfo, outputDir, safeName);
-                case PALETTE -> extractPalette(dirFile, memberInfo, outputDir, safeName);
-                default -> extractGeneric(dirFile, memberInfo, outputDir, safeName);
+                case BITMAP -> extractBitmap(memberFile, memberInfo, outputDir, safeName);
+                case SOUND -> extractSound(memberFile, memberInfo, outputDir, safeName);
+                case SCRIPT -> extractScript(memberFile, memberInfo, outputDir, safeName);
+                case TEXT, BUTTON -> extractText(memberFile, memberInfo, outputDir, safeName);
+                case PALETTE -> extractPalette(memberFile, memberInfo, outputDir, safeName);
+                default -> extractGeneric(memberFile, memberInfo, outputDir, safeName);
             };
         } catch (Exception e) {
             return false;

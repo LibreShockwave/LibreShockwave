@@ -29,6 +29,7 @@ public class EditorContext {
     public static final String PROP_FILE = "file";
     public static final String PROP_FRAME = "currentFrame";
     public static final String PROP_PLAYING = "playing";
+    public static final String PROP_CASTS_LOADED = "castsLoaded";
 
     private static final String PREF_BREAKPOINTS_PREFIX = "breakpoints:";
     private final Preferences prefs = Preferences.userNodeForPackage(EditorContext.class);
@@ -43,7 +44,6 @@ public class EditorContext {
     private int currentFrame = 1;
     private Path currentPath;
     private String currentMovieKey;
-    private Runnable castLoadedCallback;
 
     public void addPropertyChangeListener(PropertyChangeListener listener) {
         pcs.addPropertyChangeListener(listener);
@@ -77,9 +77,6 @@ public class EditorContext {
         return currentPath;
     }
 
-    public void setCastLoadedCallback(Runnable callback) {
-        this.castLoadedCallback = callback;
-    }
 
     public void openFile(Path path) {
         closeFile();
@@ -140,12 +137,10 @@ public class EditorContext {
             // Preload all external casts so their scripts are available for debugging
             newPlayer.preloadAllCasts();
 
-            // Refresh debugger when external casts finish loading
+            // Notify all panels when external casts finish loading
             newPlayer.setCastLoadedListener(() -> {
                 SwingUtilities.invokeLater(() -> {
-                    if (castLoadedCallback != null) {
-                        castLoadedCallback.run();
-                    }
+                    pcs.firePropertyChange(PROP_CASTS_LOADED, false, true);
                 });
             });
 

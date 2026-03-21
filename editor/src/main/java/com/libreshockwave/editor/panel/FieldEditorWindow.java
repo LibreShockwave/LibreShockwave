@@ -49,7 +49,8 @@ public class FieldEditorWindow extends EditorPanel {
     }
 
     public void loadMember(CastMemberInfo info) {
-        DirectorFile dirFile = context.getFile();
+        DirectorFile dirFile = info.member().file();
+        if (dirFile == null) dirFile = context.getFile();
         if (dirFile == null) return;
 
         TextChunk textChunk = MemberResolver.findTextForMember(dirFile, info.member());

@@ -274,13 +274,14 @@ public class BytecodeDebuggerWindow extends EditorPanel implements DebugStateLis
 
         // Register keyboard shortcuts
         DebugKeyboardHandler.registerShortcuts(getRootPane(), controller);
+    }
 
+    @Override
+    protected void onCastsLoaded() {
         // Refresh script list when external casts finish loading
-        context.setCastLoadedCallback(() -> {
-            scriptBrowser.refreshScriptList();
-            navigator = new HandlerNavigator(scriptBrowser.getAllScripts());
-            bytecodePanel.setNavigator(navigator);
-        });
+        scriptBrowser.refreshScriptList();
+        navigator = new HandlerNavigator(scriptBrowser.getAllScripts());
+        bytecodePanel.setNavigator(navigator);
     }
 
     @Override

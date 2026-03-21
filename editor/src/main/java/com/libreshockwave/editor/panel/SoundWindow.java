@@ -78,7 +78,8 @@ public class SoundWindow extends EditorPanel {
         stopPlayback();
         this.currentMember = info;
 
-        DirectorFile dirFile = context.getFile();
+        DirectorFile dirFile = info.member().file();
+        if (dirFile == null) dirFile = context.getFile();
         if (dirFile == null) return;
 
         SoundChunk soundChunk = MemberResolver.findSoundForMember(dirFile, info.member());
@@ -107,7 +108,8 @@ public class SoundWindow extends EditorPanel {
         stopPlayback();
         if (currentMember == null) return;
 
-        DirectorFile dirFile = context.getFile();
+        DirectorFile dirFile = currentMember.member().file();
+        if (dirFile == null) dirFile = context.getFile();
         if (dirFile == null) return;
 
         SoundChunk soundChunk = MemberResolver.findSoundForMember(dirFile, currentMember.member());
