@@ -109,7 +109,7 @@ public class Player {
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
-    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
+    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -925,6 +925,7 @@ public class Player {
                         processPendingResourceReindexes();
                         inputHandler.processInputEvents();
                         frameContext.executeFrame();
+                        processPendingResourceReindexes();
                         // Process Xtra callbacks AFTER frame execution so that
                         // prepareFrame (which runs CastLoad Manager download
                         // completions and member indexing) finishes before
@@ -974,6 +975,12 @@ public class Player {
             // Process queued mouse/keyboard input events before frame execution
             inputHandler.processInputEvents();
             frameContext.executeFrame();
+            // Process any resource reindexes queued during frame execution
+            // (e.g. by async net callbacks completing external cast loads).
+            // This must run before xtraManager.tickAll() so that getmemnum()
+            // can find newly-loaded cast members when server messages trigger
+            // room object creation.
+            processPendingResourceReindexes();
             // Process Xtra callbacks AFTER frame execution so that
             // prepareFrame (which runs CastLoad Manager download
             // completions and member indexing) finishes before
@@ -1016,6 +1023,7 @@ public class Player {
                         processPendingResourceReindexes();
                         inputHandler.processInputEvents();
                         frameContext.executeFrame();
+                        processPendingResourceReindexes();
                         // Process Xtra callbacks AFTER frame execution so that
                         // prepareFrame (which runs CastLoad Manager download
                         // completions and member indexing) finishes before
@@ -1305,7 +1313,8 @@ public class Player {
         @Override
         public void onError(String message, Exception error) {
             if (delegate != null) delegate.onError(message, error);
-            if (errorListener != null && error instanceof LingoException le) {
+            if (errorListener != null) {
+                LingoException le = error instanceof LingoException ? (LingoException) error : null;
                 errorListener.accept(message, le);
             }
         }
