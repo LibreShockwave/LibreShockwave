@@ -108,8 +108,8 @@ public class Player {
     private Runnable castParserShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
-    private final java.util.Set<Integer> pendingResourceReindexSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
