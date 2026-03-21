@@ -405,6 +405,17 @@ tasks.register('runNavigatorClickTest', JavaExec) {
     }
 }
 
+tasks.register('runNavigatorWelcomeLobbyErrorTest', JavaExec) {
+    group = 'verification'
+    description = 'Navigator repro: mouseUp 425,82 then 635,137 and tick until room-entry errors appear'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.NavigatorWelcomeLobbyErrorTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 tasks.register('runPurseTest', JavaExec) {
     group = 'verification'
     description = 'Purse test: open purse, render, pixel diff vs reference'
