@@ -558,10 +558,38 @@ public class CastLibManager implements CastLibProvider {
     public boolean setExternalCastDataByUrl(String url, byte[] data) {
         ensureInitialized();
 
+        boolean anyLoaded = false;
+        for (CastLib castLib : findCastLibsByUrl(url)) {
+            // Skip if already loaded with member data (prevents re-parsing same file)
+            if (castLib.isLoaded() && castLib.getMemberCount() > 0) {
+                anyLoaded = true;
+                continue;
+            }
+            if (setExternalCastData(castLib.getNumber(), data)) {
+                anyLoaded = true;
+            }
+        }
+        return anyLoaded;
+    }
+
+    /**
+     * Find cast library numbers whose file name matches the given URL/file name (by base name).
+     * Used to trigger post-load reindexing in the Resource Manager when external casts arrive late.
+     */
+    public java.util.List<Integer> getMatchingCastLibNumbersByUrl(String url) {
+        ensureInitialized();
+        java.util.List<Integer> result = new java.util.ArrayList<>();
+        for (CastLib castLib : findCastLibsByUrl(url)) {
+            result.add(castLib.getNumber());
+        }
+        return result;
+    }
+
+    private java.util.List<CastLib> findCastLibsByUrl(String url) {
         String extractedFileName = FileUtil.getFileName(url);
         String fileNameNoExt = FileUtil.getFileNameWithoutExtension(extractedFileName);
+        java.util.List<CastLib> result = new java.util.ArrayList<>();
 
-        boolean anyLoaded = false;
         for (CastLib castLib : castLibs.values()) {
             String castPath = castLib.getFileName();
             if (castPath == null || castPath.isEmpty()) continue;
@@ -569,17 +597,10 @@ public class CastLibManager implements CastLibProvider {
             String castFileNoExt = FileUtil.getFileNameWithoutExtension(
                     FileUtil.getFileName(castPath));
             if (castFileNoExt.equalsIgnoreCase(fileNameNoExt)) {
-                // Skip if already loaded with member data (prevents re-parsing same file)
-                if (castLib.isLoaded() && castLib.getMemberCount() > 0) {
-                    anyLoaded = true;
-                    continue;
-                }
-                if (setExternalCastData(castLib.getNumber(), data)) {
-                    anyLoaded = true;
-                }
+                result.add(castLib);
             }
         }
-        return anyLoaded;
+        return result;
     }
 
     @Override

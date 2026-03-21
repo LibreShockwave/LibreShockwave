@@ -29,6 +29,7 @@ import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 import com.libreshockwave.vm.builtin.media.SoundProvider;
 import com.libreshockwave.vm.builtin.timeout.TimeoutProvider;
 import com.libreshockwave.vm.builtin.xtra.XtraBuiltins;
+import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
 import com.libreshockwave.player.audio.AudioBackend;
 import com.libreshockwave.player.audio.SoundManager;
 import com.libreshockwave.player.timeout.TimeoutManager;
@@ -107,6 +108,8 @@ public class Player {
     private Runnable castParserShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.Set<Integer> pendingResourceReindexSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -236,6 +239,7 @@ public class Player {
             if (castLibManager.setExternalCastDataByUrl(fileName, data)) {
                 System.out.println("[Player] Loaded external cast from: " + fileName);
                 bitmapCache.clear();
+                queueResourceReindexForUrl(fileName);
                 if (castLoadedListener != null) {
                     castLoadedListener.run();
                 }
@@ -453,6 +457,7 @@ public class Player {
         try {
             if (castLibManager.setExternalCastDataByUrl(url, data)) {
                 bitmapCache.clear();
+                queueResourceReindexForUrl(url);
             }
         } catch (Throwable e) {
             // Cast parse failure — non-fatal, Lingo will see the error
@@ -879,6 +884,7 @@ public class Player {
 
         setupProviders();
         try {
+            processPendingResourceReindexes();
             frameContext.executeFrame();
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             frameContext.advanceFrame();
@@ -916,6 +922,7 @@ public class Player {
                 do {
                     setupProviders();
                     try {
+                        processPendingResourceReindexes();
                         inputHandler.processInputEvents();
                         xtraManager.tickAll();
                         frameContext.executeFrame();
@@ -959,6 +966,7 @@ public class Player {
             vm.setTickDeadline(System.currentTimeMillis() + deadlineMs);
         }
         try {
+            processPendingResourceReindexes();
             // Process queued mouse/keyboard input events before frame execution
             inputHandler.processInputEvents();
             // Process pending Xtra callbacks (e.g., Multiuser Xtra auto-fires
@@ -999,6 +1007,7 @@ public class Player {
                 do {
                     setupProviders();
                     try {
+                        processPendingResourceReindexes();
                         inputHandler.processInputEvents();
                         xtraManager.tickAll();
                         frameContext.executeFrame();
@@ -1106,10 +1115,58 @@ public class Player {
         if (data != null) {
             if (castLibManager.setExternalCastData(castLibNumber, data)) {
                 bitmapCache.clear();
+                queueResourceReindex(castLibNumber);
                 if (castLoadedListener != null) {
                     castLoadedListener.run();
                 }
             }
+        }
+    }
+
+    private void queueResourceReindexForUrl(String url) {
+        for (int castNum : castLibManager.getMatchingCastLibNumbersByUrl(url)) {
+            queueResourceReindex(castNum);
+        }
+    }
+
+    private void queueResourceReindex(int castNum) {
+        if (castNum <= 0) return;
+        if (pendingResourceReindexSet.add(castNum)) {
+            pendingResourceReindexQueue.offer(castNum);
+        }
+    }
+
+    /**
+     * Rebuild Resource Manager member index entries after delayed external cast loads.
+     * Runs on the VM thread with providers installed.
+     */
+    private void processPendingResourceReindexes() {
+        if (pendingResourceReindexQueue.isEmpty()) {
+            return;
+        }
+
+        Datum objectManager = vm.callHandler("getObjectManager", List.of());
+        if (!(objectManager instanceof Datum.ScriptInstance objMgr)) {
+            return;
+        }
+
+        Datum hasResourceManager = ControlFlowBuiltins.callHandlerOnInstance(
+                vm, objMgr, "managerExists", List.of(Datum.symbol("resource_manager")));
+        if (!hasResourceManager.isTruthy()) {
+            return;
+        }
+
+        Datum resourceManager = ControlFlowBuiltins.callHandlerOnInstance(
+                vm, objMgr, "getManager", List.of(Datum.symbol("resource_manager")));
+        if (!(resourceManager instanceof Datum.ScriptInstance manager)) {
+            return;
+        }
+
+        Integer castNum;
+        while ((castNum = pendingResourceReindexQueue.poll()) != null) {
+            pendingResourceReindexSet.remove(castNum);
+            ControlFlowBuiltins.callHandlerOnInstance(
+                    vm, manager, "preIndexMembers", List.of(Datum.of(castNum)));
         }
     }
 
