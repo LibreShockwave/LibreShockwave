@@ -248,10 +248,22 @@ public class NetManager implements NetBuiltins.NetProvider {
     /**
      * Look up cached download data by URL.
      * Used by the castDataRequestCallback to load cast data when Lingo sets castLib.fileName.
+     * Tries both .cst and .cct extensions since preloadNetThing may cache under the original
+     * extension while castLib.fileName may use a different one (e.g. .cst vs .cct).
      */
     public byte[] getCachedData(String url) {
         String cacheKey = FileUtil.getFileName(url);
-        return urlCache.get(cacheKey);
+        byte[] data = urlCache.get(cacheKey);
+        if (data != null) return data;
+
+        // Try alternate cast extension (.cst <-> .cct) since Director uses both interchangeably
+        String lower = cacheKey.toLowerCase();
+        if (lower.endsWith(".cct")) {
+            data = urlCache.get(cacheKey.substring(0, cacheKey.length() - 4) + ".cst");
+        } else if (lower.endsWith(".cst")) {
+            data = urlCache.get(cacheKey.substring(0, cacheKey.length() - 4) + ".cct");
+        }
+        return data;
     }
 
     /**
