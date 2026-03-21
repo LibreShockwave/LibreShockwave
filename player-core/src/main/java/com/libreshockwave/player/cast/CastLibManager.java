@@ -171,7 +171,8 @@ public class CastLibManager implements CastLibProvider {
     /**
      * Called when Lingo sets castLib.fileName, triggering a cast reload.
      * Delegates to castDataRequestCallback for data delivery.
-     * In WASM: synchronous delivery from JS cache. In JVM: async fetch.
+     * Falls back to castDataCache (populated by onNetFetchComplete) if the
+     * callback doesn't load the data.
      */
     private void tryLoadCastFromCache(int castLibNumber, String newFileName) {
         if (newFileName == null || newFileName.isEmpty()) return;
@@ -179,7 +180,21 @@ public class CastLibManager implements CastLibProvider {
         CastLib target = getCastLib(castLibNumber);
         if (target == null) return;
 
+        // Try the primary callback first (JVM: netManager cache, WASM: JS cache)
         castDataRequestCallback.accept(castLibNumber, newFileName);
+
+        // If the cast still has no actual members after the callback, try our own castDataCache.
+        // This handles the WASM path where the primary callback (JS) may not deliver data
+        // synchronously, but onNetFetchComplete already cached it by baseName.
+        // Note: getMemberCount() returns total SLOT count (including empties), so we check
+        // getMemberChunks() which only contains actually populated member entries.
+        if (!target.isLoaded() || target.getMemberChunks().isEmpty()) {
+            String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(newFileName));
+            byte[] cached = castDataCache.get(baseName);
+            if (cached != null) {
+                setExternalCastData(castLibNumber, cached);
+            }
+        }
     }
 
     @Override
