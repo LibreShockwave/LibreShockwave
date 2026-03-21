@@ -261,7 +261,7 @@ public final class StringMethodDispatcher {
         int count = 0;
         boolean inWord = false;
         for (int i = 0; i < str.length(); i++) {
-            if (Character.isWhitespace(str.charAt(i))) {
+            if (str.charAt(i) <= ' ') {
                 inWord = false;
             } else if (!inWord) {
                 count++;
