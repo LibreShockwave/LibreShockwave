@@ -46,7 +46,12 @@ public final class InkProcessor {
      */
     public static Bitmap applyInk(Bitmap src, int ink, int backColor,
                                    boolean useAlpha, Palette palette) {
-        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette);
+        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette, false);
+    }
+
+    public static Bitmap applyInk(Bitmap src, int ink, int backColor,
+                                   boolean useAlpha, Palette palette, boolean skipGraduatedAlpha) {
+        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette, skipGraduatedAlpha);
     }
 
     /**
@@ -61,6 +66,11 @@ public final class InkProcessor {
      */
     public static Bitmap applyInk(Bitmap src, InkMode ink, int backColor,
                                    boolean useAlpha, Palette palette) {
+        return applyInk(src, ink, backColor, useAlpha, palette, false);
+    }
+
+    public static Bitmap applyInk(Bitmap src, InkMode ink, int backColor,
+                                   boolean useAlpha, Palette palette, boolean skipGraduatedAlpha) {
         if (src == null || src.getWidth() == 0 || src.getHeight() == 0) {
             return src;
         }
@@ -126,7 +136,7 @@ public final class InkProcessor {
             if (bgColor < 0) {
                 return src; // 32-bit with useAlpha — skip processing
             }
-            return applyBackgroundTransparent(src, bgColor);
+            return applyBackgroundTransparent(src, bgColor, skipGraduatedAlpha);
         }
 
         return src;
@@ -230,6 +240,10 @@ public final class InkProcessor {
      * avoiding white halo artifacts around anti-aliased text glyphs.
      */
     static Bitmap applyBackgroundTransparent(Bitmap src, int bgColorRGB) {
+        return applyBackgroundTransparent(src, bgColorRGB, false);
+    }
+
+    static Bitmap applyBackgroundTransparent(Bitmap src, int bgColorRGB, boolean skipGraduatedAlpha) {
         int w = src.getWidth();
         int h = src.getHeight();
         int[] srcPixels = src.getPixels();
@@ -261,19 +275,21 @@ public final class InkProcessor {
             // not grayscale anti-aliased blends. Preserving them as opaque avoids
             // washing solid row strips and panel parts into translucent bars.
             if (src.getBitDepth() == 32) {
-                int r = (pixel >> 16) & 0xFF;
-                int g = (pixel >> 8) & 0xFF;
-                int b = pixel & 0xFF;
-                if (isApproximatelyGray(r, g, b)) {
-                    int recoveredAlpha = Math.max(Math.abs(r - bgR),
-                            Math.max(Math.abs(g - bgG), Math.abs(b - bgB)));
+                if (!skipGraduatedAlpha) {
+                    int r = (pixel >> 16) & 0xFF;
+                    int g = (pixel >> 8) & 0xFF;
+                    int b = pixel & 0xFF;
+                    if (isApproximatelyGray(r, g, b)) {
+                        int recoveredAlpha = Math.max(Math.abs(r - bgR),
+                                Math.max(Math.abs(g - bgG), Math.abs(b - bgB)));
 
-                    if (recoveredAlpha > 0 && recoveredAlpha < 255) {
-                        int fgR = unblendChannel(r, bgR, recoveredAlpha);
-                        int fgG = unblendChannel(g, bgG, recoveredAlpha);
-                        int fgB = unblendChannel(b, bgB, recoveredAlpha);
-                        result[i] = (recoveredAlpha << 24) | (fgR << 16) | (fgG << 8) | fgB;
-                        continue;
+                        if (recoveredAlpha > 0 && recoveredAlpha < 255) {
+                            int fgR = unblendChannel(r, bgR, recoveredAlpha);
+                            int fgG = unblendChannel(g, bgG, recoveredAlpha);
+                            int fgB = unblendChannel(b, bgB, recoveredAlpha);
+                            result[i] = (recoveredAlpha << 24) | (fgR << 16) | (fgG << 8) | fgB;
+                            continue;
+                        }
                     }
                 }
 
