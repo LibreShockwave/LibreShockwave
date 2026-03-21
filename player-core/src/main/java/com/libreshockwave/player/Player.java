@@ -924,8 +924,12 @@ public class Player {
                     try {
                         processPendingResourceReindexes();
                         inputHandler.processInputEvents();
-                        xtraManager.tickAll();
                         frameContext.executeFrame();
+                        // Process Xtra callbacks AFTER frame execution so that
+                        // prepareFrame (which runs CastLoad Manager download
+                        // completions and member indexing) finishes before
+                        // Multiuser Xtra messages trigger room object creation.
+                        xtraManager.tickAll();
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -969,10 +973,12 @@ public class Player {
             processPendingResourceReindexes();
             // Process queued mouse/keyboard input events before frame execution
             inputHandler.processInputEvents();
-            // Process pending Xtra callbacks (e.g., Multiuser Xtra auto-fires
-            // setNetMessageHandler callbacks when messages arrive)
-            xtraManager.tickAll();
             frameContext.executeFrame();
+            // Process Xtra callbacks AFTER frame execution so that
+            // prepareFrame (which runs CastLoad Manager download
+            // completions and member indexing) finishes before
+            // Multiuser Xtra messages trigger room object creation.
+            xtraManager.tickAll();
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             frameContext.advanceFrame();
         } finally {
@@ -1009,8 +1015,12 @@ public class Player {
                     try {
                         processPendingResourceReindexes();
                         inputHandler.processInputEvents();
-                        xtraManager.tickAll();
                         frameContext.executeFrame();
+                        // Process Xtra callbacks AFTER frame execution so that
+                        // prepareFrame (which runs CastLoad Manager download
+                        // completions and member indexing) finishes before
+                        // Multiuser Xtra messages trigger room object creation.
+                        xtraManager.tickAll();
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -1116,6 +1126,12 @@ public class Player {
             if (castLibManager.setExternalCastData(castLibNumber, data)) {
                 bitmapCache.clear();
                 queueResourceReindex(castLibNumber);
+                // Process reindexes immediately — this runs on the VM thread
+                // (triggered by Lingo setting castLib.fileName), so providers
+                // are already set up.  If we defer to the next tick, Lingo code
+                // in the same frame that calls getmemnum() won't find the
+                // newly-loaded members (causes "No good object" errors).
+                processPendingResourceReindexes();
                 if (castLoadedListener != null) {
                     castLoadedListener.run();
                 }
@@ -1147,19 +1163,19 @@ public class Player {
 
         Datum objectManager = vm.callHandler("getObjectManager", List.of());
         if (!(objectManager instanceof Datum.ScriptInstance objMgr)) {
-            return;
+            return;  // Resource manager not ready yet — leave queue intact for next tick
         }
 
         Datum hasResourceManager = ControlFlowBuiltins.callHandlerOnInstance(
                 vm, objMgr, "managerExists", List.of(Datum.symbol("resource_manager")));
         if (!hasResourceManager.isTruthy()) {
-            return;
+            return;  // Resource manager not ready yet — leave queue intact for next tick
         }
 
         Datum resourceManager = ControlFlowBuiltins.callHandlerOnInstance(
                 vm, objMgr, "getManager", List.of(Datum.symbol("resource_manager")));
         if (!(resourceManager instanceof Datum.ScriptInstance manager)) {
-            return;
+            return;  // Resource manager not ready yet — leave queue intact for next tick
         }
 
         Integer castNum;
