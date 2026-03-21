@@ -256,14 +256,30 @@ public class NetManager implements NetBuiltins.NetProvider {
         byte[] data = urlCache.get(cacheKey);
         if (data != null) return data;
 
-        // Try alternate cast extension (.cst <-> .cct) since Director uses both interchangeably
         String lower = cacheKey.toLowerCase();
+        String baseName = FileUtil.getFileNameWithoutExtension(cacheKey);
+
+        // Director cast URLs are commonly mixed between:
+        // - extensionless ("hh_room_nlobby")
+        // - .cct
+        // - .cst
+        // Try all normalized variants so castLib.fileName reloads can always
+        // reuse already-fetched bytes from preloadNetThing/getNetThing.
         if (lower.endsWith(".cct")) {
-            data = urlCache.get(cacheKey.substring(0, cacheKey.length() - 4) + ".cst");
-        } else if (lower.endsWith(".cst")) {
-            data = urlCache.get(cacheKey.substring(0, cacheKey.length() - 4) + ".cct");
+            data = urlCache.get(baseName + ".cst");
+            if (data != null) return data;
+            return urlCache.get(baseName);
         }
-        return data;
+        if (lower.endsWith(".cst")) {
+            data = urlCache.get(baseName + ".cct");
+            if (data != null) return data;
+            return urlCache.get(baseName);
+        }
+
+        // Extensionless lookup: try both known cast extensions.
+        data = urlCache.get(baseName + ".cct");
+        if (data != null) return data;
+        return urlCache.get(baseName + ".cst");
     }
 
     /**
@@ -329,8 +345,8 @@ public class NetManager implements NetBuiltins.NetProvider {
             try {
                 byte[] data = future.get();
                 if (data != null) {
-                    task.complete(data);
                     notifyCompletion(task.getOriginalUrl(), data);
+                    task.complete(data);
                 } else {
                     task.fail(404, "Load returned no data");
                 }
@@ -618,8 +634,8 @@ public class NetManager implements NetBuiltins.NetProvider {
                     byte[] data = response.body();
                     urlCache.put(cacheKey, data);  // Cache the result
                     System.out.println("[NetManager] Loaded URL: " + tryUrl + " (" + data.length + " bytes)");
-                    task.complete(data);
                     notifyCompletion(task.getUrl(), data);
+                    task.complete(data);
                     return;
                 }
                 lastStatusCode = statusCode;
