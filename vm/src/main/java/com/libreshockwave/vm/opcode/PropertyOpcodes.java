@@ -204,7 +204,6 @@ public final class PropertyOpcodes {
         Datum value = ctx.pop();
         Datum obj = ctx.pop();
 
-
         switch (obj) {
             case Datum.CastLibRef clr -> setCastLibProp(clr, propName, value);
             case Datum.CastMemberRef cmr -> setCastMemberProp(cmr, propName, value);
