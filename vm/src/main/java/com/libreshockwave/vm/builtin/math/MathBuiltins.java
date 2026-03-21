@@ -63,26 +63,26 @@ public final class MathBuiltins {
      * Converts a value to an integer.
      * - For floats: truncates to integer
      * - For numeric strings: converts to integer
-     * - For non-numeric strings: returns the original string unchanged
+     * - For non-numeric/empty strings: returns VOID (Director behavior)
+     *   This is critical for variable.index parsing: the dump handler uses
+     *   integerp(integer(val)) to decide if a value is numeric. Returning 0
+     *   instead of VOID makes "h" look like the integer 0, corrupting variables
+     *   like human.size.64=h → human.size.64=0.
      */
     private static Datum integer(LingoVM vm, List<Datum> args) {
         if (args.isEmpty()) return Datum.ZERO;
         Datum arg = args.get(0);
 
-        // For strings, convert to integer (Director returns 0 for empty/non-numeric strings)
         if (arg instanceof Datum.Str str) {
             String trimmed = str.value().trim();
-            if (trimmed.isEmpty()) return Datum.ZERO;
+            if (trimmed.isEmpty()) return Datum.VOID;
             try {
-                // Try integer first
                 return Datum.of(Integer.parseInt(trimmed));
             } catch (NumberFormatException e) {
                 try {
-                    // Try parsing as float and truncating
                     return Datum.of((int) Double.parseDouble(trimmed));
                 } catch (NumberFormatException e2) {
-                    // Director returns 0 for non-numeric strings
-                    return Datum.ZERO;
+                    return Datum.VOID;
                 }
             }
         }
