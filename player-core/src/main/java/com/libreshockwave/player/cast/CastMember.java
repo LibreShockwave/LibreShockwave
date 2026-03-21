@@ -108,6 +108,20 @@ public class CastMember {
         this.regPointX = chunk.regPointX();
         this.regPointY = chunk.regPointY();
 
+        // Clear name for text members that have no STXT data (empty placeholder slots).
+        // This prevents the Resource Manager from indexing them, avoiding false-positive
+        // memberExists() results (e.g. Habbo .props members with no property data).
+        // Clear name for text members with empty content (placeholder slots).
+        // This prevents the Resource Manager from indexing them, avoiding
+        // false-positive memberExists() results for .props members.
+        if ((memberType == MemberType.TEXT || memberType == MemberType.BUTTON)
+                && !this.name.isEmpty() && sourceFile != null) {
+            String earlyText = loadTextEagerly();
+            if (earlyText != null && earlyText.isEmpty()) {
+                this.name = "";
+            }
+        }
+
         // Fallback: parse regPoint from BitmapInfo for members that may have bypassed CastMemberChunk.read()
         if (regPointX == 0 && regPointY == 0 && chunk.isBitmap()
                 && chunk.specificData() != null && chunk.specificData().length >= 22) {
@@ -185,6 +199,26 @@ public class CastMember {
         script = sourceFile.getScriptByContextId(chunk.scriptId());
     }
 
+    /**
+     * Read text content eagerly (during construction) without full member load.
+     * Returns the text if an STXT chunk was found, or null if no text data exists.
+     */
+    private String loadTextEagerly() {
+        if (sourceFile == null || chunk == null) return "";
+        KeyTableChunk keyTable = sourceFile.getKeyTable();
+        if (keyTable != null) {
+            var entry = keyTable.findEntry(chunk.id(), ChunkType.STXT.getFourCC());
+            if (entry != null) {
+                var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
+                if (textChunk.isPresent()) {
+                    return textChunk.get().text();
+                }
+            }
+        }
+        var textChunk = sourceFile.getChunk(chunk.id(), TextChunk.class);
+        return textChunk.map(TextChunk::text).orElse("");
+    }
+
     private void loadText() {
         if (sourceFile == null || chunk == null) {
             textContent = "";
@@ -212,7 +246,7 @@ public class CastMember {
         if (textChunk.isPresent()) {
             textContent = textChunk.get().text();
         } else {
-            textContent = "";
+                textContent = "";
         }
     }
 

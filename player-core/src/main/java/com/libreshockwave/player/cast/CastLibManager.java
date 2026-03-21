@@ -658,7 +658,8 @@ public class CastLibManager implements CastLibProvider {
         }
 
         if (member != null) {
-            return member.getTextContent();
+            String tc = member.getTextContent();
+            return tc;
         }
 
         return "";
