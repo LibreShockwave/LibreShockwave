@@ -63,7 +63,8 @@ public final class MathBuiltins {
      * Converts a value to an integer.
      * - For floats: truncates to integer
      * - For numeric strings: converts to integer
-     * - For non-numeric/empty strings: returns VOID (Director behavior)
+     * - For empty strings: returns 0 (Director-compatible coercion used by protocol parsers)
+     * - For non-numeric strings: returns VOID
      *   This is critical for variable.index parsing: the dump handler uses
      *   integerp(integer(val)) to decide if a value is numeric. Returning 0
      *   instead of VOID makes "h" look like the integer 0, corrupting variables
@@ -75,7 +76,7 @@ public final class MathBuiltins {
 
         if (arg instanceof Datum.Str str) {
             String trimmed = str.value().trim();
-            if (trimmed.isEmpty()) return Datum.VOID;
+            if (trimmed.isEmpty()) return Datum.ZERO;
             try {
                 return Datum.of(Integer.parseInt(trimmed));
             } catch (NumberFormatException e) {
