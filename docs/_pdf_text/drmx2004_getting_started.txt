@@ -1,0 +1,2521 @@
+
+
+===== PAGE 1 =====
+/MT68/MT73/MT82/MT69/MT67/MT84/MT79/MT82
+/MT174
+/MT77/MT88
+/MT50/MT48/MT48/MT52
+Getting Started with Director
+
+===== PAGE 2 =====
+Trademarks
+Afterburner, AppletAce, Attain, Attain Enterprise Learning System, Attain Essentials, Attain Objects for Dreamweaver, 
+Authorware, Authorware Attain, Authorware Interactive Studio, Authorware Star, Authorware Synergy, Backstage, Backstage 
+Designer, Backstage Desktop Studio, Backstage Enterprise Studio, Backstage Internet Studio, Contribute, Design in Motion, 
+Director, Director Multimedia Studio, Doc Around the Clock, Dreamweaver, Dreamweaver Attain, Drumbeat, Drumbeat 2000, 
+Extreme 3D, Fireworks, Flash, Fontographer, FreeHand, FreeHand Graphics Studio, Generator, Generator Developer's Studio, 
+Generator Dynamic Graphics Server, Knowledge Objects, Knowledge Stream, Knowledge T rack, LikeMinds, Lingo, Live Effects, 
+MacRecorder Logo and Design, Macromedia, Macromedia Contribute, Macromedia Coursebuilder for Dreamweaver, 
+Macromedia M Logo & Design, Macromedia Flash, Macromedia Xres, Macromind, Macromind Action, MAGIC, Mediamaker, 
+Multimedia is the Message, Object Authoring, Power Applets, Priority Access, Roundtrip HTML, Scriptlets, SoundEdit, 
+ShockRave, Shockmachine, Shockwave, shockwave.com, Shockwave Remote, Shockwave Internet Studio, Showcase, T ools to 
+Power Your Ideas, Universal Media, Virtuoso, Web Design 101, Whirlwind and Xtra are trademarks of Macromedia, Inc. and 
+may be registered in the United States or in other jurisdictions including internationally. Other product names, logos, designs, 
+titles, words or phrases mentioned within this publication may be trademarks, servicemarks, or tradenames of Macromedia, Inc. 
+or other entities and may be registered in certain jurisdictions including internationally.
+This guide contains links to third-party Web sites that are not under the control of Macromedia, and Macromedia is not 
+responsible for the content on any linked site. If you access a third-party Web site mentioned in this guide, then you do so at your 
+own risk. Macromedia provides these links only as a convenience, and the inclusion of the link does not imply that Macromedia 
+endorses or accepts any responsibility for the content on those third-party sites.
+Apple Disclaimer
+APPLE COMPUTER, INC. MAKES NO WARRANTIES, EITHER EXPRESS OR IMPLIED, REGARDING THE 
+ENCLOSED COMPUTER SOFTW ARE PACKAGE, ITS MERCHANTABILITY OR ITS FITNESS FOR ANY 
+PARTICULAR PURPOSE. THE EXCLUSION OF IMPLIED W ARRANTIES IS NOT PERMITTED BY SOME STATES. 
+THE ABOVE EXCLUSION MAY NOT APPLY TO YOU. THIS WARRANTY PROVIDES YOU WITH SPECIFIC 
+LEGAL RIGHTS. THERE MAY BE OTHER RIGHTS THAT YOU MAY HAVE WHICH VARY FROM STATE TO 
+STATE.
+Copyright © 2004 Macromedia, Inc. All rights reserved. This manual may not be copied, photocopied, reproduced, 
+translated, or converted to any electronic or machine-readable form in whole or in part without prior written approval of 
+Macromedia, Inc. Part Number ZDR10M100
+First Edition: January 2004
+Macromedia, Inc. 
+600 T ownsend St. 
+San Francisco, CA 94103
+
+===== PAGE 3 =====
+3
+CONTENTS
+CHAPTER 1: Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+About Director . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+What’s new in Director MX 2004 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+Guide to instructional media. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+Getting online help  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+Sources of information . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+Document conventions  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+CHAPTER 2: Installing and Configuring Director  . . . . . . . . . . . . . . . . . . . . . . . . . 13
+System requirements . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+Installing Director . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+Installing Xtra extensions. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+Connecting to the Internet . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+CHAPTER 3: Getting to Know the Workspace . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+Understanding the Director metaphor. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+Navigating the Director workspace . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+Getting to know the default workspace. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+Manipulating the default workspace . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+Getting to know window types . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Using the Stage . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Moving around on the Stage. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Increasing or decreasing your view of the Stage. . . . . . . . . . . . . . . . . . . . . . . . . 21
+Using the offstage canvas  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+Using the Score . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+Navigating the Score. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+Showing and hiding the effects channels. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+Setting the number of Sprite channels  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+T urning channels on and off. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+Changing your view of the Score  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+Using the Control panel  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+Displaying the Control panel . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+Controlling movie playback . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+Navigating frames in a movie . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+Using the Cast window . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+
+===== PAGE 4 =====
+4 Contents
+Using the Property inspector . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27
+Controlling your view of the Property inspector . . . . . . . . . . . . . . . . . . . . . . . . 27
+Setting cast member and sprite properties. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
+Setting movie properties . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29
+Using the Script window . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30
+Using the Message window . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+Customizing your workspace. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+Customizing panel groups  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33
+Docking panel groups. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35
+Saving panel sets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36
+Opening, closing, and collapsing panel groups . . . . . . . . . . . . . . . . . . . . . . . . . 36
+Working with Xtra extensions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+Adding media . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38
+Adding script . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38
+Adding transitions  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39
+Distributing Xtra extensions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39
+CHAPTER 4: Building Your First Basic Movie  . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+What you will learn. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+Preparing to build the movie scenes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+View the completed movie . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+Open the movie . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+Set up the movie. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+View your cast members . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44
+Building the first scene with text and an image . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+Edit a text cast member  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+Add sprites to the Stage  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 46
+Add sprites to the Score  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+Add an existing button to the Stage  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+Create a new button cast member. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 49
+Observe the difference between sprites and cast members . . . . . . . . . . . . . . . . . 50
+Edit sprites in the Score window. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+Change the default length of sprites . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52
+Building the second scene with animation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52
+Place the background bitmap on the Stage . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52
+Name a cast member  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53
+Import media into Director  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53
+Animate the image to travel up. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54
+Scrub the playhead to view your animation  . . . . . . . . . . . . . . . . . . . . . . . . . . . 54
+Animate the image to travel down  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55
+Extend the background across additional frames. . . . . . . . . . . . . . . . . . . . . . . . 55
+Change the tempo of an animation  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 56
+Change the span of an animation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57
+Add an existing navigation button to the Score. . . . . . . . . . . . . . . . . . . . . . . . . 58
+Add a new navigation button to the Score  . . . . . . . . . . . . . . . . . . . . . . . . . . . . 58
+Arrange sprites in the Score  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 58
+Building the third scene with sound and video  . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+Import a digital video cast member. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+Play the digital video  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 60
+
+===== PAGE 5 =====
+Contents 5
+Create a QuickTime sprite . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 61
+Specify direct-to-Stage playback for a QuickTime cast member  . . . . . . . . . . . . 62
+Add custom buttons . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 62
+Import a sound. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64
+Add a sound to the Score . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64
+Add navigation buttons  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 65
+Writing scripts to control the movie  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 66
+Looping the playhead with Lingo . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 66
+Write a handler. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 67
+Reuse the handler . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 68
+Add a marker to the Score  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 68
+Create navigation in Lingo using marker names . . . . . . . . . . . . . . . . . . . . . . . . 69
+Add Lingo to navigation buttons  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 70
+Test your script . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 70
+Add markers to two additional scenes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Write script that refers to scenes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Add scripts to the animation scene . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Add one more script to the sound and video scene . . . . . . . . . . . . . . . . . . . . . . 72
+Controlling digital video with script . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 72
+Rewind the QuickTime sprite  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73
+Add a script that plays the QuickTime sprite  . . . . . . . . . . . . . . . . . . . . . . . . . . 74
+Add a script that pauses the QuickTime sprite . . . . . . . . . . . . . . . . . . . . . . . . . 74
+Control sound with script. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 74
+Modify the script for the Pause button . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 75
+Modify the script for the Rewind button  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 76
+Add sounds to buttons . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 76
+Publishing your movie. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 77
+Use a QuickTime Xtra extension  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 77
+Get linked media ready to play on your local computer . . . . . . . . . . . . . . . . . . 77
+Change Publish settings and publish your movie  . . . . . . . . . . . . . . . . . . . . . . . 78
+Summarizing what you learned . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 79
+INDEX  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 81
+
+===== PAGE 6 =====
+6 Contents
+
+===== PAGE 7 =====
+7
+CHAPTER 1
+Introduction
+Welcome to Macromedia Director MX 2004. With Director, you can develop high-performance 
+multimedia content and applications for CDs, DVDs, kiosks, and the Internet. This guide, 
+Getting Started with Director, is designed to get you up and running as quickly as possible. It 
+includes installation guidelines for both new and returning users as well as an orientation to 
+Director and tutorials for new users.
+In this chapter, you can get an overview of Director, learn about the features that are new in this 
+release of Director, and find additional sources of information.
+About Director
+With Director, a proven multimedia authoring tool for professionals, you can develop high-
+performance content and deploy it anywhere: on CDs, DVDs, intranets, kiosks, or the Internet. 
+Whether you are creating enhanced CD/DVD-ROM content, educational content, or 
+entertainment applications, Director handles the widest variety of media, letting you unleash your 
+creativity and build rich, interactive experiences that deliver measurable results. Director provides 
+all the tools you need to maximize productivity, including a choice of scripting languages and 
+cross-platform publishing.
+With Director, you can now do all of the following:
+• Embed most major media formats in your multimedia projects, including DVD-Video, 
+Windows Media, RealMedia, QuickTime, and Macromedia Flash content, in addition to 
+audio, bitmap, and 3D formats.
+• Work seamlessly with other Macromedia MX products, including Macromedia 
+Flash MX 2004. 
+• Extend the authoring environment and playback engine with the Xtra extension plug-in 
+architecture in Director. Use third-party Xtra extensions or write your own to control external 
+devices, such as joysticks and cameras, and perform sophisticated operating system-level tasks. 
+• Write scripts to add interactivity and automation to your projects, using the Lingo scripting 
+language, JavaScript syntax, or a combination of the two.
+• Publish content across platforms and to different formats, including Macintosh and 
+Windows projectors.
+
+===== PAGE 8 =====
+8 Chapter 1:  Introduction
+Users view your completed Director movies in one of the following ways:
+• In a projector, which plays on your user’s computer as a stand-alone application.
+• In the Macromedia Shockwave Player format, which plays in Shockwave-enabled web 
+browsers. Millions of web users already have the Shockwave Player on their computers, 
+browsers, or system software. Others have downloaded Shockwave Player, which is free, from 
+the Macromedia website at www.macromedia.com/shockwave/download/.
+Tip: To see some of the exciting and varied ways in which developers use Director, visit the Director 
+showcase at www.macromedia.com/go/discreet_inspiration. You can also see great examples of 
+Shockwave content at www.shockwave.com.
+What’s new in Director MX 2004
+Director MX 2004 introduces many new features, designed to save time during authoring or to 
+improve integration with other software, media types, and multimedia development processes.
+Importing Macromedia Flash MX 2004 content You can now access Macromedia Flash MX 
+2004 from within Director.
+Scripting in JavaScript syntax Director now supports script ing in JavaScript syntax, in 
+addition to Lingo. You can use whichever language is more familiar to you or use both languages 
+in the same movie to develop interactive features and functionality.
+Using prebuilt components Prebuilt Macromedia Flash MX 2004 components are now 
+available to reduce your scripting time. You can drop components, such as calendars and user 
+interface elements, into movies to cut the time that it takes to develop interactive features.
+Adding DVD-Video You can now embed, control, and play back the popular DVD-Video 
+format inside Director movies. This feature makes DVD possible and affordable for a wide variety 
+of developers—including entertainment studios, di stance learning professionals, DVD authors, 
+and corporate presentation specialists.
+Publishing to Mac and Windows in one step After you complete a movie, you can now 
+publish across platforms in one step, creating either stand-alone applications or web-based 
+Shockwave content that runs on Mac and Windows. The new projector publishing feature 
+eliminates extraneous dialog boxes, saves projector settings on a per-project basis, and eliminates 
+redundancies.
+Naming sprites and channels Sprites and channels can now have custom names, and absolute 
+references to sprites are no longer necessary. This feature is an advantage when you make last-
+minute changes to your movie. With absolute references, your Lingo or JavaScript syntax scripts 
+might break. But with sprite names, you can move sprites on the Score without worrying about 
+broken scripts.
+Customizing your workspace You can arrange your workspace in multiple configurations and 
+save each workspace for later use. As a new part of this feature, you can now create workspace 
+settings that include Movie in a Window (MIAW) windows that are docked alongside your other 
+windows. These docked MIAW windows can extend Director functionality.
+Integrating with other Macromedia Studio MX 2004 products If you already use other 
+Macromedia Studio MX 2004 products, such as Macromedia Flash MX 2004 and Macromedia 
+Fireworks MX 2004, then the Director interface is already familiar to you. In addition to a 
+common interface, you can now start and edit other Macromedia Studio MX 2004 files from 
+directly within Director.
+
+===== PAGE 9 =====
+Guide to instructional media 9
+Integrating with Macromedia server technologies You can now choose to integrate Director 
+with Macromedia server technologies, such as Macromedia ColdFusion MX 6.1 and Macromedia 
+Flash Communication Server MX. For multi-user games, distance learning content, and other 
+server-controlled content, this link between your Director content and IT infrastructure extends 
+your interactivity options.
+Getting help from the reference panel A new reference panel is now available in Director to 
+simplify getting help with using Director, behaviors, Xtra extensions, and application 
+programming interfaces (APIs) for both Lingo and JavaScript syntax.
+Guide to instructional media
+Director contains a variety of information sources to help you learn the program quickly and 
+become proficient in creating multimedia. This information includes several printable PDF files 
+and online help. The Director workspace contains tooltips and context-sensitive help, and 
+additional help is available on the Director website at www.macromedia.com/go/
+director_support. 
+Getting online help
+As you use Director, you can get immediate online help by opening Director Help. You can also 
+get help with the specific item in Director that you are currently using. This feature is called 
+context-sensitive help.
+To access Director Help:
+1 Select Help > Director Help.
+2 Browse for a topic on the Contents tab, or type a keyword on the Search tab.
+
+===== PAGE 10 =====
+10 Chapter 1:  Introduction
+To access context-sensitive help, do one of the following:
+• If you are working in a window, display the Options menu for that window and select Help. 
+• If you are working in a dialog box, click the Help button.
+Director Help opens and displays a topic that relates to the window or dialog box that you 
+are using.
+Sources of information
+Getting Started with Director This printed manual contains the essential information that you 
+need to get started, including information about installing the latest version of Director. This 
+manual also guides you through the workspace and offers a tutorial, designed for those who are 
+new to Director.
+Director Help Panel This online help system is the comprehensive information source for all 
+Director features. It includes overviews of the features, examples, how-to procedures, descriptions 
+of interface elements, and a reference of all scripting objects in both Lingo and JavaScript syntax. 
+T opics are linked and indexed to make finding information and jumping to related topics quick 
+and easy. T o view the Director Help Panel, select Help > Director Help while you are working 
+in Director.
+Using Director This manual is available in prin table PDF format from the Director 
+Documentation Center at www.macromedia.com/go/director_docs. It explains how to use all of 
+the features and functionality offered in Director. Information in the manual is also available in 
+the online Director Help.
+
+
+===== PAGE 11 =====
+Guide to instructional media 11
+Director Scripting Reference This manual is available in printable PDF format from the 
+Director Documentation Center at www.macromedia.com/go/director_docs. It provides a 
+complete reference of the Director application programming interfaces (APIs), including both 
+Lingo and JavaScript syntax. Information in the manual is also available in the online 
+Director Help.
+Creating Your First 3D Movie in Director This tutorial is available in printable PDF format 
+from the 3D tutorial page on the Macromedia website at www.macromedia.com/go/
+drmx2004_3d_tutorial_en. It takes you step by step through creating a simple 3D movie.
+Tooltips When you place your mouse pointer over a Director tool or another item in the 
+Director workspace for a few seconds, a small tooltip appears that explains what you can do with 
+the item.
+Director Support Center The Director Support Center website ( www.macromedia.com/go/
+director_support) contains the latest information about Director, plus additional topics, 
+examples, tips, and updates. Check the website often for the latest news and how to get the most 
+out of Director.
+Document conventions
+Director Help and the Director product manuals all follow a few basic conventions:
+• The term Director typically refers to the most recent version of Director.
+• Lingo refers to a scripting language that is shipped with Director. JavaScript syntax refers to the 
+Director implementation of JavaScript.
+• How-to procedures are identified with bold headings that begin with “To...” and end with a 
+colon. For example, if T o access Director Help: appears in a heading, then the heading is 
+followed by a set of steps.
+• Examples of Lingo and JavaScript syntax are shown in a fixed-width font. For example, 
+answer = 2 + 2 is a sample Lingo statement. 
+• Variables used to represent parameters in Lingo and JavaScript syntax appear in italics. For 
+example, whichCastMember is commonly used to indicate where you should insert the name 
+of a cast member in Lingo or JavaScript syntax.
+• T ext that you should type in a window or dialog box is shown in a bold font.
+
+===== PAGE 12 =====
+12 Chapter 1:  Introduction
+
+===== PAGE 13 =====
+13
+CHAPTER 2
+Installing and Configuring Director
+Installing Macromedia Director MX 2004 takes only a few minutes. After installation, you may 
+want to customize Macromedia Director MX 2004 to fit your authoring needs. You can install 
+Xtra extensions to add functionality and set up an Internet connection for remote access to files. 
+You can configure Director immediately after installation, or you can return to configuration at 
+any time.
+System requirements
+The following hardware and software are the minimum required to author Director movies:
+• For Microsoft Windows: An Intel Pentium III 600 MHz (or later processor running Windows 
+2000 or Windows XP; at least 128 MB of available RAM (256 recommended); and 200 MB 
+of available disk space
+• For Macintosh: A Power Macintosh G3 500 MHz (or later) running Mac OS X 10.2.6 or 
+10.3; at least 128 MB of available RAM (256 recommended); and 200 MB of available 
+disk space
+The following hardware and software are the minimum required to play back Director movies:
+• For Microsoft Windows: An Intel Pentium II with 64 MB of available RAM running 
+Windows 98, or an Intel Pentium III with 128 MB of available RAM running Windows 2000 
+or Windows XP; one of the following web browsers: Netscape 7.1, Microsoft Internet 
+Explorer 5.01 Service Pack 2, Microsoft Internet Explorer 5.5 Service Pack 2, or Microsoft 
+Internet Explorer 6 Service Pack 1
+• For Macintosh OS X: A Power Macintosh G3 with 128 MB of available RAM running 
+Mac OS X 10.1.5, 10.2.6, or 10.3; one of the following web browsers: Netscape 7.1, Microsoft 
+Internet Explorer 5.2 or later, or Safari 1.1
+• For Macintosh Classic: A Power Macintosh G3 with 64 MB of available RAM running 
+System 9.2; Microsoft Internet Explorer 5.1
+Note: Complete and updated system requirements are available on the Macromedia System 
+Requirements page at www.macromedia.com/go/sysreqs.
+
+===== PAGE 14 =====
+14 Chapter 2:  Installing and Configuring Director
+Installing Director
+Follow these steps to install Director on either a Windows or a Macintosh computer. On the 
+Macintosh, you need administrator privileges and an administrator password to complete 
+the installation.
+To install Director on a Windows or a Macintosh computer:
+1 Insert the Director CD into the computer’s CD-ROM drive and do one of the following:
+■ In Windows, if the installation program does not start automatically, select Run from the 
+Windows Start menu, type d:\setup.exe (where d is your CD-ROM drive letter), and 
+click OK.
+■ On the Macintosh, double-click the Director Installer icon.
+2 Follow the on-screen instructions. Before you can use Director, you must activate your 
+license by phone or on the Internet. To learn how to activate your license, see the on-screen 
+instructions.
+3 Make sure that Director is properly installed and ready to start by doing one of the following:
+■ In Windows, if you chose the default program group when you installed, select Start > 
+All Programs > Macromedia > Macromedia Director MX 2004.
+■ On the Macintosh, double-click the Director icon in the Macromedia Director MX 2004 
+folder.
+If Director starts, then you are ready to begin using or configuring Director.
+Installing Xtra extensions
+Xtra extensions add features and functionality to Director. Some Xtra extensions are included 
+with the standard installation of Director; others must be installed separately. You should follow 
+the steps below only if you have an Xtra extension that requires separate installation.
+If you are interested in finding and downloading Xtra extensions, visit the Macromedia Director 
+Exchange at www.macromedia.com/cfusion/exchange/. Then, for more information about Xtra 
+extensions, see “Working with Xtra extensions” on page 37.
+To make a custom Xtra extension available to Director:
+1 Close Director if it is open.
+2 Place the custom Xtra extension in the Xtras folder. The Xtras folder is located as a subfolder in 
+a Configuration folder in the same folder as the Director application. 
+■ For example on a PC, the location of the Xtras folder might be c:\Program Files\ 
+Macromedia\Director MX 2004\Configuration\Xtras.
+■ On a Macintosh, the location of the Xtras folder might be /Applications/Macromedia 
+Director MX 2004/Configuration/Xtras.
+An Xtra extension can be stored in a folder up to five folders below the Xtras folder.
+3 Start Director.
+Note: Copies of the same Xtra extension can have different filenames or have the same filename but 
+reside in different folders. If duplicate Xtra extensions are available when Director starts, Director 
+displays an alert. Delete any duplicate Xtra extensions.
+
+===== PAGE 15 =====
+Connecting to the Internet 15
+Connecting to the Internet
+Director can connect to the Internet to import media files and retrieve data. Follow the steps here 
+before you try to connect to the Internet, if you plan to access files remotely while using Director. 
+Use the settings in the Network Preferences dialog box to control how the connection works and 
+to define a preferred browser.
+To select Internet connection settings:
+1 Select Edit > Preferences > Network.
+Note: On Macintosh OS X operating systems, select Director > Preferences > Network instead.
+2 In the Preferred Browser text box, type the file path to your preferred web browser, or click the 
+Browse button and navigate to the correct file path. 
+By specifying this file path, you select which web browser should open on your system when 
+you play a movie that is programmed to open a web browser. 
+3 Select or clear Launch When Needed. When this option is selected, web browser launching 
+is enabled.
+4 In the Disk Cache Size text box, type the maximum number of kilobytes that you want Director 
+to use to cache data from the Internet on your hard disk. 
+Tip: To immediately empty the cache, click Clear.
+5 To specify how often cached data is compared with the same data on the server, select one of 
+the following Check Documents options:
+Once Per Session checks for data revisions only once from the time you start to the time you 
+quit Director. This option improves performance but might not always display the most 
+current version of a page.
+Every Time checks for changes whenever you request a page. This option slows performance 
+but ensures that you are always viewing the most current version of a page.
+6 To specify the configuration of your system’s proxy server, select one of the following 
+Proxies options:
+No Proxies specifies that you have a direct connection to the Internet.
+Manual Configuration allows you to customize proxy settings for your system. Enter the 
+HTTP or FTP location and port number of your proxy server.
+Browsers usually do not require proxy servers to interact with the network services of external 
+sources, but in some network configurations where a firewall blocks the connection between 
+the browser software and a remote server, interaction with a proxy might be required.
+A firewall protects information in internal computer networks from external access, and in 
+doing so, it can limit the ability to exchange information. T o overcome this limitation, browser 
+software can interact with proxy software. A proxy server interacts with the firewall and acts as 
+a conduit, providing a specific connection for each network service protocol. If you are 
+running browser software on an internal network from behind a firewall, you need the name 
+and associated port number for the server running proxy software for each network service.
+
+===== PAGE 16 =====
+16 Chapter 2:  Installing and Configuring Director
+
+===== PAGE 17 =====
+17
+CHAPTER 3
+Getting to Know the Workspace
+The Macromedia Director MX 2004 workspace is designed to make the most efficient use of the 
+space on your screen. Windows, also called panels, can be organized into tabbed panel groups, 
+and panel groups can be docked together. T o make the most of the features in Director, you 
+should take a few minutes to understand how to navigate and customize your workspace.
+As you get to know the workspace, you will also learn about the features that Director has to offer. 
+For example, learning about the Script window and the Message window can help those who are 
+new to scripting in Director. If you have not scripted in Director before and would like to start, 
+make sure to read about the Script window and the Message window.
+Before you begin working in Director for the first time, you should also understand the movie 
+metaphor upon which Director is based. By understanding this metaphor, you can more easily 
+recognize components of your workspace, like the Stage and Cast window.
+Understanding the Director metaphor
+The Director user interface is designed around a movie metaphor. Each project you create can be 
+thought of as a movie, with a cast of characters, a score, a stage where the action takes place, and a 
+director (you, the author). Each media element that appears in your movie (sound, video, images, 
+text, buttons, and so on) can be thought of as a member of the movie’s cast. In Director, the Cast 
+window is where you view the list of media elements that appear in your movie. 
+As with a real movie, each Director movie has a score. However, the score of a Director movie 
+contains more than just music. The Score window in Director contains information about when 
+and where each of the cast members appears on the Stage. The Score describes the action that 
+happens in the movie. 
+
+===== PAGE 18 =====
+18 Chapter 3:  Getting to Know the Workspace
+The action in a Director movie takes place in a window called the Stage. T o create a Director 
+movie, you add cast members (media elements) to the Cast window by creating them in Director 
+or importing them. Next, you place them on the Stage as sprites. A sprite is simply a copy of a cast 
+member that appears on the Stage. Then you refine the actions of the sprites by editing them on 
+the Stage or in the Score.
+The Cast window, the Stage, and the Score in Director
+Navigating the Director workspace
+When you first start Director, several windows open in the default workspace. The T ool palette 
+and the Stage are stand-alone windows. Other windows are docked together. For example, the 
+Score and the Cast window are docked together by default. In the right docking channel, you can 
+find the Property inspector, along with a group of windows called Design and another group of 
+windows called Code.
+Stage
+Score
+Cast
+
+===== PAGE 19 =====
+Navigating the Director workspace 19
+Getting to know the default workspace
+When creating and editing a basic movie, you typically work in four of the windows that appear 
+in the default workspace: the Stage, the Score, the Cast window, and the Property inspector. From 
+the Cast window, you import, create, and edit the cast members, or media elements, of your 
+movie. In the Property inspector, you control the properties of the cast members. With the Score 
+and the Stage, you control how, where, when, and for how long those media elements appear in 
+your movie.
+The default Director workspace (Windows platform)
+Manipulating the default workspace
+The default workspace is designed for most people who are new to using Director, but you can 
+also manipulate this workspace to suit your needs. You can display additional windows as you 
+need them and hide windows to keep your workspace clean and easy to work with. You can also 
+control how windows display their contents by changing window preferences.
+To display or hide a window:
+1 Open the Window menu.
+2 Select one of the window names that are listed on the menu. A check mark or bullet mark next 
+to a window name indicates that the window is currently displayed.
+For information on customizing your workspace further, see “Customizing your workspace” 
+on page 32.
+Tools Stage
+Property inspector
+Cast Score
+
+
+===== PAGE 20 =====
+20 Chapter 3:  Getting to Know the Workspace
+To change window preferences:
+1 Select Edit > Preferences.
+2 Select one of the following commands: General, Score, Sprite, Cast, Paint, Editors, or Script. 
+These commands all open dialog boxes that allow you to modify the behavior of windows. The 
+General command controls windows in general, while the other commands control a specific 
+window or set of windows. (The Network command is also available, but it does not control 
+window preferences. Rather, it controls Internet connection settings.)
+Getting to know window types
+There are two types of windows in Director: document windows and tool windows. You typically 
+use document windows to create or edit content; you use tool windows to view or modify 
+properties of that content. 
+For example, the Paint window is a document window. It allows you to create and edit images. 
+In contrast, the Property inspector is a tool window. It allows you to change the properties of an 
+image that you created in the Paint window in addition to the properties of other content.
+Both types of windows, document windows and tool windows, are available from the Window 
+menu. A few examples of document windows include the following:
+• Stage
+• Score
+• Cast
+• Various media editors (for example, T ext, QuickTime, and DVD)
+A few examples of tool windows include the following:
+• Property inspector
+• T ool palette
+• Te x t i n s pe c to r
+• Control panel
+Using the Stage
+The Stage is the part of a movie that your users will see. You use the Stage to determine where 
+media elements, or cast members, should appear onscreen. When you determine where you want 
+the cast member to appear, you place a copy of that cast member, called a sprite, on the Stage.
+During authoring, you can define the properties of the Stage, such as its size and color. For 
+example, as you work on your movie, you can make the Stage either larger or smaller than its 
+original size. You can also scale the coordinates for the sprites on the Stage, so that they continue 
+to fill the entire screen. Guides, grids, and Align and T weak windows are available to align sprites 
+on the Stage.
+Moving around on the Stage
+A large-sized Stage sometimes does not fit in your workspace. If you can see only part of your 
+Stage at one time, you can move to a different part of the Stage whenever you need to. 
+
+===== PAGE 21 =====
+Using the Stage 21
+To move around on the Stage:
+1 If the Stage is not already displayed, select Window > Stage.
+2 Do one of the following:
+■ From the T ool palette, select the Hand tool.
+■ Press and hold the Spacebar.
+3 Place the hand on the Stage, and click and drag to move the Stage.
+Increasing or decreasing your view of the Stage
+You can author in Director on a zoomed Stage—on e that is either larger or smaller than the 
+normal size of the movie. The Stage’s title bar indicates the Stage size expressed as a percentage of 
+the normal Stage size. 
+When you change the size of the Stage, any guides or grids that you use to assist you with 
+alignment also scale to the zoomed size, and you can manipulate sprites in the same way that you 
+would on a Stage that is not zoomed.
+To zoom in on the Stage:
+1 From the Tool palette, select the Magnifying Glass tool.
+2 Click the Stage until it reaches the desired size.
+To zoom out from the Stage:
+1 From the Tool palette, select the Magnifying Glass tool.
+2 Press and hold the Alt key (Windows) or the Option key (Macintosh), and then click the Stage 
+until it reaches the desired size.
+Using the offstage canvas
+The Stage includes an offstage canvas area within the Stage window but outside of the active 
+movie area. This canvas area is useful for assembling your sprites either before or after they appear 
+on the Stage.
+The offstage canvas is also useful as a way to preload content. For example, you can place sprites 
+on the offstage canvas so that they are loaded into memory and ready to play immediately when 
+needed in a subsequent frame of the movie.
+The offstage canvas and the onstage canvas
+Offstage canvas
+Onstage canvas
+
+===== PAGE 22 =====
+22 Chapter 3:  Getting to Know the Workspace
+Using the Score
+Like the Stage, the Score provides a view of your movie. The Stage provides a graphical view, 
+while the Score provides a view of the movie’s timeline. The Stage displays the point in time that 
+is selected within the Score.
+The Score organizes and controls a movie’s content over time in rows called channels. The Score 
+includes many Sprite channels for the movie’s sprites. Sprite channels are numbered and control 
+when sprites appear in the movie. Additionally, the Score includes effects channels that control 
+the movie’s tempo, sound, color palettes, transitions, and scripted behaviors.
+The Score displays channels in the order shown in the following figure. Only the Sprite channels 
+are displayed by default.
+Effects and sprite channels in the Score
+While the rows of the Score contain channels, the columns of the Score contain frames. A frame 
+in a movie represents a single point in time, which is similar in theory to a frame in a celluloid 
+film. Frame numbers are listed above the columns in the Score. 
+A red vertical line, called the playhead, moves across the frames in the Score to indicate which 
+point in time is currently displayed on the Stage. You can also click any frame in the Score to 
+move the playhead to that frame, and you can drag the playhead backward or forward 
+through frames. 
+Navigating the Score 
+The first channel in the Score is the Marker channel. It contains markers that identify important 
+points in time, such as the beginning of a new scene. Markers help you make quick jumps to 
+specific frames in a movie. If you need to jump to a frame that is not marked with a marker, you 
+can also move the playhead.
+Tempo channel
+Palette channel
+Transition channel
+Behavior channel
+Sound channels
+Sprite channels
+Markers channel
+
+===== PAGE 23 =====
+Using the Score 23
+To create a new marker:
+1 If the Score is not already displayed, select Window > Score.
+2 Display the frame that you want to mark with a marker.
+3 Directly above the frame that you want to mark, click the white bar in the Marker channel.
+4 Select the New Marker text, and type a new name for the marker.
+A new marker on a frame in the Score
+To jump to a marker in the Score:
+1 On the Marker channel, open the Markers menu.
+2 Select the name of the marker that you want to jump to.
+To jump to a frame in the Score:
+• Click the frame that you want to jump to.
+Showing and hiding the effects channels
+The effects channels—like T empo,  T ransition, and Sound—can be either displayed or hidden. 
+When you begin working with Director, you may want to have the effects channels shown at all 
+times. As you become comfortable with Director, you can hide the effects channels until you need 
+to use them. Settings on the effects channels remain in place even when the channels are hidden 
+from view.
+Markers menu
+
+===== PAGE 24 =====
+24 Chapter 3:  Getting to Know the Workspace
+To show or hide the effects channels:
+• Click the Hide/Show Effects Channels button in the upper right corner of the Score to change 
+the display.
+Setting the number of Sprite channels
+Although the Score can include as many as 1000 Sprite channels, most movies use as few as 
+possible to improve performance in the authoring environment and during playback. Sprites in 
+higher channels appear on the Stage in front of sprites in lower channels. You use the Property 
+inspector’s Movie tab to control the number of channels in the Score for the current movie. 
+To set the number of Sprite channels:
+1 Make sure that the Score is the active window.
+2 In the Property inspector, select the Movie tab. 
+3 On the Movie tab, in the Channels text box, enter a number from 1 to 1000.
+The numbered Sprite channels in the Score increase or decrease, according to the number in 
+the Channels text box.
+Turning channels on and off
+T o hide the contents of any channel on the Stage, or to disable the contents if they are not visible 
+sprites, you use the button to the left of the channel. When you turn off an effects channel, the 
+channel’s data has no effect on the movie. You should turn off Score channels when testing 
+performance or working on complex overlapping animations. 
+To turn off a Score channel:
+• Click the gray button to the left of the channel. A darkened button indicates that the 
+channel is off.
+To turn multiple Score channels off and on:
+1 Press and hold the Alt key (Windows) or the Option key (Macintosh).
+2 Click a channel that is on to turn all of the other channels off, or click a channel that is off to 
+turn the other channels on.
+Changing your view of the Score
+To narrow or widen the Score, you change the zoom percentage. Zooming in widens each frame, 
+which lets you see more data in a frame. Zooming out shows more frames in less space and is 
+useful when moving large blocks of Score data. 
+Hide/Show Effects Channels button
+This channel is on
+This channel is off
+
+===== PAGE 25 =====
+Using the Control panel 25
+To change the zoom setting:
+1 On the right side of the Score, click the Zoom Menu button.
+2 Select a size from the Zoom menu. Sizes are displayed as a percentage of full size.
+Using the Control panel
+The Control panel governs how movies play back in the authoring environment. You can jump to 
+specific frames within the movie, control how many frames per second play on the Stage, and 
+change the volume at which sounds play. You can also use the Control panel to start, stop, and 
+rewind movies on the Stage.
+Displaying the Control panel
+Part of the Control panel, called the Control toolbar, is docked to the bottom of the Stage for easy 
+access. To use all of the buttons on the Control panel, you can also display the full Control panel 
+as a floating window.
+To display or hide the Control panel:
+• Select Window > Control Panel.
+To display or hide the Control toolbar:
+• Select View > Control T oolbar.
+Controlling movie playback
+As you build a movie, you may want to check your progress periodically by watching the movie 
+on the Stage. You can use the Control panel for this purpose.
+To start, stop, or rewind a movie:
+1 If the Control panel is not already displayed, select Window > Control Panel.
+2 On the Control panel, click the Rewind, Stop, or Play button. These three buttons appear on 
+the far left side of the Control panel.
+To change the volume at which sounds play:
+• On the Control panel, click the Volume button, and then select a volume level from the menu.
+Movie playback options in the floating Control panel
+Zoom Menu button
+Volume buttonRewind, Stop, and Play buttons
+
+===== PAGE 26 =====
+26 Chapter 3:  Getting to Know the Workspace
+Navigating frames in a movie
+As you build a movie, you sometimes need to check individual frames or examine transitions 
+from one frame to the next. The Control panel allows you to check these details.
+To step through a movie one frame at a time:
+• On the Control panel, click the Step Forward button.
+To go to a specific frame in a movie:
+• Enter a frame number in the frame counter, and press Enter (Windows) or Return 
+(Macintosh). 
+Frame navigation options in the floating Control panel
+Using the Cast window
+The Cast window contains the cast members of your movie. You can use the Cast window to 
+create or import new cast members, to view existing cast members, and to control the properties 
+of each cast member. 
+As you work in Director, you can expect to use two types of cast members:
+• Cast members can be the media elements of your movie, such as sounds, text, graphics, 
+animation, and video. These cast members are placed on the Stage as sprites. 
+• Some cast members may appear in the Score but not on the Stage. These cast members include 
+scripts, palettes, fonts, and transitions, which you can use in the effects channels on the Score.
+In the Cast window, you can create or import new cast members to appear as sprites on the Stage. 
+Creating a Director movie consists largely of defining sprites’ properties, where they appear, when 
+they appear in the movie, and how they behave. Different sprites can be created from a single cast 
+member. Each sprite can have its own values for different properties, and most changes to these 
+properties do not affect the cast member. Most changes to a cast member, however, will change 
+the sprites created from that cast member.
+The Cast window filled with cast members
+Frame counter
+Step Forward button
+
+
+===== PAGE 27 =====
+Using the Property inspector 27
+To create a new cast member:
+1 If the Cast window is not already displayed, select Window > Cast.
+2 On the Tool palette, select a text, drawing, or control button.
+3 Click the Stage to place the new cast member. 
+The cast member now appears in the Cast window.
+To import a cast member from an existing media file:
+1 If the Cast window is not already in thumbnail view, click the Cast View Style button.
+2 In thumbnail view in the Cast window, right-click an empty cast member, and select Import.
+3 Navigate to a media file, select the file, and click the Import button.
+The cast member now appears in the Cast window.
+Using the Property inspector
+Every cast member and sprite in a movie has properties. You can view and change these properties 
+by using the Property inspector. In addition to cast members and sprites, the entire movie also has 
+a set of properties. The Property inspector displays a Movie tab, where you can view and change 
+these properties.
+Controlling your view of the Property inspector
+Like other windows in Director, the Property inspector allows you to control its appearance. You 
+can choose between a list view and a graphical view. You can also save space by showing only the 
+most frequently used options in the Property inspector, or you can show the full set of options.
+Text, drawing, and control buttons
+Cast View Style button
+
+===== PAGE 28 =====
+28 Chapter 3:  Getting to Know the Workspace
+To switch between a list view and a graphical view:
+1 If the Property inspector is not already displayed, select Window > Property Inspector.
+2 Near the top of the Property inspector, click the List View Mode button.
+To show more or less information in the Property inspector:
+• Click the expander arrow in the Property inspector.
+Setting cast member and sprite properties
+Each time you select a sprite, cast member, or multiple sprites and cast members, your view of the 
+Property inspector changes. New options and tabs appear, depending on what you have selected. 
+If you select multiple sprites and cast members, the Property inspector displays only the properties 
+that apply to all the selected items.
+List View Mode button
+Expander arrow
+
+===== PAGE 29 =====
+Using the Property inspector 29
+To set the properties of a sprite or cast member:
+1 Do one of the following:
+■ On the Stage or in the Score, select a sprite. 
+■ In the Cast window, select a cast member.
+2 In the Property inspector, change one of the properties.
+3 Click the Stage to enter your selection. Then look on the Stage to see the effect of the 
+new property.
+Setting movie properties
+On the Movie tab, you can control how colors are defined, the size and location of the Stage, the 
+number of channels in the Score, copyright information, and font mapping. The Movie tab is 
+available whenever an item on the Stage or in the Score is selected. You do not have access to the 
+Movie tab when a cast member is selected.
+The Movie tab in the Property inspector
+To set movie properties:
+1 Make sure that the Property inspector is in graphical view, and select the Movie tab.
+2 In the Stage Size row, select a preset value or enter values in the Width and Height text boxes 
+to set the size of the Stage.
+3 In the Channels text box, specify the number of channels in the Score.
+4 In the Color text box, enter an RGB value for the color of the Stage, or double-click the color 
+icon and select a color.
+5 In the Palette box, select a color palette for the movie. This palette remains selected until 
+Director encounters a different palette setting in the Palette channel.
+6 To determine how the movie assigns colors, select either RGB or Index.
+RGB makes the movie assign all color values as absolute RGB values.
+Index makes the movie assign color according to its position in the current palette. 
+7 In the Preferred 3D Renderer box, select a default renderer used to draw 3D sprites within the 
+movie, if that renderer is available on the client computer.
+OpenGL specifies the openGL drivers for hardware acceleration that work with Macintosh and 
+Windows platforms.
+DirectX 7.0 specifies the DirectX 7 drivers for hardware acceleration that work only with 
+Windows platforms.
+
+
+===== PAGE 30 =====
+30 Chapter 3:  Getting to Know the Workspace
+DirectX 5.2 specifies the DirectX 5.2 drivers for hardware acceleration that work only with 
+Windows platforms.
+Software specifies the Director built-in software renderer that works with Macintosh and 
+Windows platforms.
+Auto specifies that the most suitable renderer should be selected. This option is the default 
+value for this property.
+Note: If the preferred renderer is not available on the client computer, the movie selects the most 
+suitable available renderer.
+8 In the About and Copyright boxes, enter copyright and other information about the movie.
+This information is important if your movie will be downloaded from the Internet and saved 
+on a user’s system.
+9 To save the current font map settings in a text file named Fontmap.txt, click Save. To load the 
+font mapping assignments specified in the selected font map file, click Load.
+Note: More advanced movie properties are available on the Display Template tab, next to the Movie 
+tab in the Property inspector. For example, you can control the location of the stage on a user’s 
+screen by using the Display Template tab in the Property inspector.
+Using the Script window
+The Script window in Director allows you to add advanced, scripting-based interactivity to 
+movies. In the Script window, you can code in either Lingo or JavaScript syntax. Lingo is the 
+traditional scripting language of Director, while JavaScript syntax was recently introduced to 
+support multimedia developers who prefer working with JavaScript.
+
+===== PAGE 31 =====
+Using the Script window 31
+By scripting in the Script window, you can accomplish many of the same tasks that you can in the 
+graphical interface of Director—such as moving sprites on the Stage or playing sounds. But much 
+of the usefulness of scripting is in the flexibility that it brings to a movie. Instead of playing a 
+series of frames exactly as the Score dictates, a movie can have scripts that control frame play in 
+response to specific conditions and events.
+The Script window
+Here are a few examples of what you can do with scripts:
+• Control the movement of a sprite based on whether the user clicks a specific button.
+• Control when a sound plays, based on how much of the sound has already streamed 
+from the Internet. 
+• Create animation, stream movies from the web, perform navigation, format text, and respond 
+to user actions with the keyboard and mouse.
+• Create and manage data arrays, perform mathematical operations, and combine strings of text. 
+For more complete information on scripting in Director, see the Scripting Reference topics in the 
+Director Help Panel. To view Help in Director, select Help > Director Help.
+Note: In addition to the Script window, where you can create your own scripts, Director includes a set 
+of prepackaged instructions, called behaviors, that you can simply drag to sprites and frames. 
+Behaviors let you add script-based interactivity without writing scripts. For more information on 
+behaviors, see the Behaviors topics in the Director Help Panel.
+
+
+===== PAGE 32 =====
+32 Chapter 3:  Getting to Know the Workspace
+Using the Message window
+The Message window supports testing and debugging in Director. These features are especially 
+important as you add script-based interactivity to your movies. Like the Script window, the 
+Message window offers both Lingo and JavaScript syntax. The Message window offers two 
+modes—a standard mode and a trace mode:
+• In standard mode, you can enter script into the Input pane to test the result before you add it 
+to the movie. In this mode, the Message window helps you test scripting results immediately, 
+instead of having to play the whole movie to check the results.
+• In trace mode, you can play a movie and watch the Output pane to see script as it runs in the 
+movie. In this mode, the Message window helps you find the source of bugs in your movie by 
+showing you what script is running when an error occurs.
+To switch between standard and trace modes:
+1 If the Message window is not already displayed, select Window > Message.
+2 In the Message window, click the Trace button.
+When the T race button is indented, the Message window is in trace mode. 
+For more information on how to use the Message window for testing and debugging, see the 
+Scripting Reference topics in the Director Help Panel. To view Help in Director, select Help > 
+Director Help.
+Customizing your workspace
+In Director, some windows, or panels, can be grouped together into a tabbed set of panels called 
+a panel group. Director comes preconfigured with several default panel groups. But you can also 
+customize panel groups to maximize your productivity. Whether you use the defaults or create 
+customized panel groups, you can display or hide panel groups, just as you do with standard 
+windows.
+T o make the most efficient use of your workspace, Director also supports default and customized 
+docking of panel groups. You can dock panel groups to each other or to one of the docking 
+channels. (Docking channels are available only in Windows.) After you customize the panel 
+groups, you can save the workspace layout as a panel set. With panel sets, you can switch between 
+different layouts to suit different types of work.
+Trace button
+
+===== PAGE 33 =====
+Customizing your workspace 33
+Most panels or panel groups have a header bar that displays the name and includes the following 
+features: an expander arrow to collapse and expand the panel or panel group, a gripper to dock 
+and undock the panel or panel group, and an Options menu for managing the panel or 
+panel group.
+Features in the header bar
+Customizing panel groups
+Director comes preconfigured with several default panel groups. Some of these panel groups 
+contain multiple panels on tabs. For example, the Design panel group has three tabs—Text 
+Inspector, Align, and T weak. Other panel groups contain only one panel. For example, the 
+Property inspector is a stand-alone panel.
+You can use the default panel groups or customize panel groups to fit your preferences. T o 
+customize, you can move a tab from one panel group to another, or you can separate a tab and 
+create a new stand-alone panel.
+Panels that you can combine in a tabbed panel group are restricted by window type and 
+functionality. The following combinations are allowed:
+• Casts with other casts
+• Media editor windows with other media editors (for example, Vector Shape with 
+Shockwave 3D)
+• Script windows with media editors (for example, Script with Paint)
+• T ool windows with other tool windows (for example, T ext inspector with Memory 
+inspector windows)
+You cannot place the Property inspector, T ool palette, Stage, Score, or Message window in a 
+tabbed panel group. They must remain stand-alone panels.
+Expander arrow to collapse and expand panels or panel groups
+Gripper to dock and undock panels or panel groups
+Options menu button
+
+===== PAGE 34 =====
+34 Chapter 3:  Getting to Know the Workspace
+To move a panel to a different panel group:
+1 Select a stand-alone panel or a panel within a panel group.
+2 From the Options menu, select Group [panel name] With, where [panel name] is the name of 
+the panel that you selected.
+Note: If Group [panel name] With is not available on the Options menu, then the panel cannot be 
+moved to a new panel group.
+3 From the Group [panel name] With menu, do one of the following:
+■ T o move the panel to an existing tabbed panel group, select a panel group name.
+■ To move the panel to a new standalone panel, select New Panel Group.
+Note: The New Panel Group option is dimmed if the panel is already a stand-alone panel.
+To rename a panel group:
+1 From a panel group’s Options menu, select Rename Panel Group.
+2 In the Rename Panel Group dialog box, enter a new name for the panel group, and click OK.
+To rearrange the order of tabs within a panel group:
+1 Select a tab within a panel group.
+2 From the panel group’s Options menu, select Group [panel name] With, where [panel name] 
+is the name of the tab that is selected. 
+3 From the Group [panel name] With menu, select the same panel group that already contains 
+the tab.
+The tab is moved to the last (rightmost) position in the panel group.
+Tip: When you customize your panel groups, it is a good idea to save your new layout for later use. 
+See “Docking panel groups” on page 35.
+
+
+===== PAGE 35 =====
+Customizing your workspace 35
+Docking panel groups
+You can dock stand-alone panels and panel groups in two ways: to each other and to the docking 
+channels. (Docking channels are available only in Windows and cannot be used for docking 
+document windows.) In Windows, the docking channels run along the left and right sides of the 
+application window. The area between these docking channels is called the View Port.
+Docking is restricted by window type. In both Macintosh and Windows versions of Director, 
+document windows can be docked together (for example, the Stage with the Cast window), and 
+tool windows can be docked together (for example, the Property inspector with the Behavior 
+inspector). A document window cannot be docked with a tool window.
+Dockable panels and panel groups have a header bar just below their title bar. The following 
+illustration shows what this header bar looks like. Panels and panel groups that do not have this 
+header bar are not dockable.
+A header bar with a gripper, indicating that the panel is dockable
+To dock a panel or panel group:
+• On the header bar below the title bar, click and drag the gripper to another dockable panel 
+group or to one of the docking channels. When you see a thick black line where you want to 
+place the panel or panel group, release the gripper.
+Note: The Tool palette cannot be docked with other windows. It can be docked only to a docking 
+channel in Windows.
+To undock a panel or panel group: 
+• On the header bar below the title bar, click and drag the gripper until the panel or panel group 
+is separated from its docking location, and release the gripper.
+Gripper is present in the header bar
+
+===== PAGE 36 =====
+36 Chapter 3:  Getting to Know the Workspace
+Saving panel sets
+You can save your current workspace layout as a panel set. Later, you can open that panel set to 
+return to the workspace layout. You can manage your workspace by saving multiple panel sets, 
+removing panel sets that you no longer use, and restoring the default panel set.
+To save a panel set:
+1 Select Window > Panel Sets > Save Panel Layout.
+2 Name the panel layout, and click OK.
+To open a saved panel set, do one of the following:
+• T o switch to a customized layout, select Window > Panel Sets, and select one of the saved 
+panel sets.
+• To return to the default layout, select Window > Panel Sets > Default.
+To remove a panel set:
+1 Select Window > Panel Sets > Remove Panel Set.
+2 From the Panel Set list, select the panel set that you want to remove.
+3 Click Remove.
+Opening, closing, and collapsing panel groups
+Panels groups can be open, closed, or collapsed. Open panel groups may be floating on the 
+workspace or (only in Windows) docked to one of the docking channels. Collapsed panel groups 
+are still available on the workspace with only the header bar displayed, while closed panel groups 
+are removed entirely from the workspace.
+To close a panel group:
+• From the Options menu, select Close Panel Group.
+To open a panel group:
+• From the Window menu, select one of the panels in the panel group.
+When you display one of the panels in a panel group, the entire panel group is displayed.
+
+
+===== PAGE 37 =====
+Working with Xtra extensions 37
+To collapse or expand a panel group:
+• Click the expander arrow or the panel group’s title in the header bar.
+To close or collapse a docked collection of panel groups:
+• If the panel groups are docked to each other, click the Close button in the title bar.
+• If the panel groups are docked to the docking channel (Windows only), click the arrow in the 
+center of the docking channel’s separator bar.
+To close all tool panels and docking channels:
+• Select Window > Hide Panels. 
+Working with Xtra extensions
+Xtra extensions are software components that extend Director functionality; some Xtra extensions 
+are installed with Director and others are available separately for download and installation. 
+Additionally, if you know the C programming language, you can create custom Xtra extensions. 
+For information on creating custom Xtra extensions, see the Macromedia Xtras Developers 
+Support page in the Director Support Center at www.macromedia.com/support/xtras/.
+Xtra extensions provide several types of additional functionality. After they are installed, they are 
+available for your use whenever you open Director. Xtra extensions can bring the following 
+elements into Director:
+Media Introduce additional media types as cast members into your movie.
+Scripting Access additional Lingo or JavaScript syntax if you script in Director.
+Transitions Choose from additional transitions between movie scenes.
+Tools Use additional tools to make the authoring process easier.
+Click to expand or collapse a panel
+
+===== PAGE 38 =====
+38 Chapter 3:  Getting to Know the Workspace
+Adding media
+Xtra extensions can import media as cast members into Director. Some of these media Xtra 
+extensions are built into Director, such as Macromedia Flash, Vector Shape, and Animated GIF . 
+Other media Xtra extensions come from third-party developers; they can include databases, 3D 
+graphics processors, special types of graphics, and so on. 
+To see which media Xtra extensions are available to add to your movie:
+• Select Insert > Media Element. 
+The Media Element submenu displays all of the built-in media Xtra extensions. If a media 
+element appears in this list, then you can import files of this type as cast members. 
+Note: Third-party media Xtra extensions might not appear here and might require implementation 
+through scripting.
+Adding script
+Scripting Xtra extensions make additional objects, methods, and properties available in Director. 
+The built-in NetLingo scripting Xtra extension, for example, allows you to control Internet 
+functions. 
+To see which scripting Xtra extensions are available to add to your movie:
+1 If the Script window is not already open, select Window > Script.
+2 Click the Scripting Xtras button.
+The Scripting Xtras menu displays all of the installed scripting Xtra extensions.
+3 Click one of the scripting Xtra extensions to see all of the methods and properties that are 
+included with that Xtra extension.
+For more information on the objects, methods, and properties in standard Director scripting Xtra 
+extensions, see the Scripting Reference topics in the Director Help Panel. To view Help in 
+Director, select Help > Director Help.
+
+
+===== PAGE 39 =====
+Working with Xtra extensions 39
+Adding transitions
+T ransition Xtra extensions supply transitions in addition to the predefined transitions that are 
+available in Director. You can access these additional transitions in the same place that you access 
+the standard transitions.
+To see which transition Xtra extensions are available to add to your movie:
+1 Select a frame in the Score.
+2 Select Modify > Frame > Transition.
+The Frame Properties: T ransition dialog box shows all of the transitions that you can use in 
+your movie, including the transition Xtra extensions.
+Distributing Xtra extensions
+When you distribute a movie, you must package your media Xtra extensions, scripting Xtra 
+extensions, and transition Xtra extensions along with the movie. If you do not package the Xtra 
+extensions with the movie, your users will not be able to view all of the movie’s content or use all 
+of its features. Xtra extensions can be packaged with projectors, or your user can download your 
+required Xtra extensions from the Internet. 
+If your user is missing an Xtra extension that Director requires, an alert appears when the movie 
+opens. For missing transition Xtra extensions, the movie performs a simple cut transition instead. 
+For missing media Xtra extensions, Director displays a red X as a placeholder for the cast member.
+For more information on distributing Xtra extensions with your movie, see “Packaging Movies for 
+Distribution” in the Director Help Panel. To view Help in Director, select Help > Director Help.
+
+===== PAGE 40 =====
+40 Chapter 3:  Getting to Know the Workspace
+
+===== PAGE 41 =====
+41
+CHAPTER 4
+Building Your First Basic Movie
+This tutorial takes you through the steps of creating your first movie in Macromedia Director MX 
+2004. If you are new to using Director, follow this tutorial to learn hands-on how to create a 
+simple interactive movie with animation, sound, and video. The movie is designed to suggest 
+what is possible with Director rather than simulate a fully developed Director project.
+Before stepping through this tutorial, you should first take a few moments to read Chapter 3, 
+“Getting to Know the Workspace,” on page 17. It introduces you to the Director user interface 
+and provides an important foundation for this tutorial.
+What you will learn
+This tutorial introduces you to the basic skills needed to build a Director movie. These include 
+the following:
+• Setting movie properties
+• Importing cast members into Director
+• Placing cast members on the Stage and in the Score to create sprites, which are copies of 
+cast members
+• Animating sprites
+• Creating buttons
+• Scripting in Lingo to create user interactivity
+• Controlling digital video and audio
+• Publishing a movie on the Internet
+Preparing to build the movie scenes
+Before you begin to build scenes, you will get familiar with how the completed movie should 
+look, and you will prepare the Stage.
+
+===== PAGE 42 =====
+42 Chapter 4:  Building Your First Basic Movie
+View the completed movie
+Start by viewing a completed version of the tutorial movie to become familiar with how your 
+finished movie should look.
+1 Start Director.
+2 Select File > Open. 
+3 Within your Director MX 2004 application folder, browse to Tutorials/Basics/Finished and 
+double-click the Basic_finished.dir file. 
+4 If windows obscure the Stage, drag them out of the way.
+5 To play the movie, click the Play button at the bottom of the Stage.
+6 Use the buttons in the movie to navigate from one scene to another and control the playback 
+of the video clip. 
+The movie consists of three scenes. The first is a title scene that contains buttons for navigating 
+to the other two scenes. The second scene is an animation of a tire bouncing. The third scene 
+contains a digital video and buttons that control it. Each of these scenes also contain 
+navigation buttons. 
+7 When you finish viewing the movie, click the Stop button at the bottom of the Stage.
+Open the movie
+To begin the tutorial, open a partially completed Director file. 
+1 Select File > Open.
+2 Within your Director MX 2004 application folder, browse to Tutorials/Basics/Start and 
+double-click the Basic_start.dir file. 
+Note: When you open this file, Director closes the Basic_finished.dir file. If you made any changes 
+to that file, do not save them.
+3 Select File > Save As.
+4 Name the file My_Basic_start. Save the movie in the Start folder.
+By making a copy of the file, you or another user can complete this tutorial again with the 
+Basic_start.dir file.
+Set up the movie
+You can now arrange your workspace and set properties for your movie, such as the Stage size and 
+color and the number of channels in your Score. During the authoring process, you view Director 
+movies on the Stage. You can set up the size and color of the Stage window. 
+1 Select Window > Panel Sets > Default to display the default workspace.
+2 If the Property inspector is not already displayed, select Window > Property Inspector.
+3 In the Property inspector, click the Movie tab.
+VolumePlay
+Stop
+Rewind
+
+===== PAGE 43 =====
+Preparing to build the movie scenes 43
+If the Property inspector is not in graphical view, as shown in the following illustration, click 
+the List View Mode button to switch to the graphical view.
+Tip: To see the names of buttons (like the List View Mode button), place your mouse pointer over 
+the button. The name of the button appears in a floating box next to the button until you move 
+the mouse.
+4 Click the Stage Size arrow, and select 500 x 330. 
+The size of the Stage increases.
+5 If the Score is not open, select Window > Score. 
+6 In the Property inspector, type 50 in the Channels text box and press Enter (Windows) or 
+Return (Macintosh), and then click OK in the dialog box that appears.
+The number of channels in the Score decreases from 150 to 50, making the movie’s file 
+size smaller.
+Note: In Windows, the Enter key on the numeric keypad plays the movie. Be sure to use Enter on 
+the alphanumeric section of the keyboard when entering information in Director.
+7 In the Property inspector, click the Color button, and select dark gray from the color picker.
+8 Select File > Save.
+Note: As you complete the tutorial, remember to save your work frequently.
+List View Mode button
+Stage Size arrow
+Color button
+
+===== PAGE 44 =====
+44 Chapter 4:  Building Your First Basic Movie
+View your cast members
+T o create a Director movie, you need cast members. Cast members are the objects that appear on 
+the Stage and in the Score. Some of these elements might be text, graphics, sound, video, or 
+scripting behaviors.
+The movie you create in this tutorial consists of three scenes. Some cast members appear in more 
+than one scene, and some appear in one scene only. First, use the Cast window to view your 
+current set of media. Next, you will begin adding new cast members. You add cast members to a 
+Director movie by creating them in Director or by importing files made in other applications.
+1 If the Cast window is not already open, select Window > Cast.
+You can view the Cast window in two views: List and Thumbnail. In List view, you can sort 
+cast members by name, number, date modified, type, and other criteria. Thumbnail view lets 
+you see a thumbnail image of each cast member. In Thumbnail view, cast members are always 
+shown in numerical order. For this tutorial, you will use the Thumbnail view. If your Cast 
+window is in List view, you need to switch to Thumbnail view. 
+2 To toggle from List view to Thumbnail view, click the Cast View Style button in the upper left 
+corner of the Cast window.
+The Cast window contains cast members that you can use in your movie. The first is a text cast 
+member. It contains the text “T rio Motor Company.” The text cast member thumbnail image that 
+appears in the Cast window contains a small A icon in the lower right corner. This is the cast 
+member type icon, and the A indicates that it is a text cast member.
+The second cast member is a button. Button cast members have special functionality built into 
+them, such as changing color when clicked, so that they behave in the way most users expect 
+buttons to behave. This button contains the text “Go to Animation.” Its cast member type icon is 
+a small square button shape.
+The third cast slot is empty. You will add a cast member to that slot later. The fourth cast member 
+is a bitmap image. Its cast member type icon is a paintbrush. 
+The ninth, tenth, and eleventh cast slots contain bitmaps that you will use as custom buttons. 
+Using a bitmap image lets you control the appearance of the button, but it does not provide the 
+built-in functions of the Director button cast member type. However, you can add these 
+functions with script, using either the Director scripting language called Lingo or JavaScript 
+syntax. In this tutorial, you will use Lingo to add these functions.
+Cast View Style button
+
+===== PAGE 45 =====
+Building the first scene with text and an image 45
+Building the first scene with text and an image
+Building a scene in Director requires creating or importing the cast members for the scene and 
+placing sprites on the Stage. As you learned in Chapter 3, “Getting to Know the Workspace,” 
+on page 17, sprites are objects that control when, where, and how cast members appear in a 
+movie. You create sprites by placing cast members on the Stage or in the Score. T o build the first 
+scene of the movie, you will place sprites of the TitleT ext cast member and two buttons on the 
+Stage. One of the buttons is already in the cast, and you will create the other button.
+Edit a text cast member
+The first cast member you will use in your movie is the text cast member containing the words 
+“T rio Motor Company.” You will edit the text to give it a more appealing graphic design.
+1 In the Cast window, double-click the text cast member in cast slot 1.
+The T ext window opens. 
+You use the T ext window to edit text cast members. You will find that most Director cast 
+member types have associated windows that you can use to view and edit the cast member.
+Note: While completing the tutorial, you might find it useful to undo a change that you made. 
+To undo, select Edit > Undo. Conversely, you can redo what you have undone by selecting 
+Edit > Repeat.
+2 Select Edit > Select All. The entire text block is selected.
+Cast Member Name
+Size
+Italic
+Bold
+
+===== PAGE 46 =====
+46 Chapter 4:  Building Your First Basic Movie
+3 Click the Bold button and the Italic button. The style of the selected text changes from plain to 
+bold and italic.
+4 Give the text cast member a name. Click the Cast Member Name text box at the top of the 
+window. Then type TitleText, and press Enter (Windows) or Return (Macintosh).
+5 Close the Text window, and save your movie.
+Add sprites to the Stage
+T o begin building the scene, you drag the TitleT ext cast member, button cast member, and 
+bitmap cast member from the Cast window to the Stage or Score. Because the first scene should 
+occur at the beginning of the movie, you put the cast members at the beginning of the Score. The 
+Score is discussed in detail later in this tutorial.
+1 Click the Rewind button at the bottom of the Stage. This ensures that the cast members you 
+place on the Stage are in the first frame of the Score, the beginning of your movie. 
+2 In the Cast window, click the TitleText cast member and drag it anywhere on the Stage to create 
+a sprite from the TitleText cast member.
+The background of the new text sprite is white.
+3 Click the new text sprite on the Stage to select it. 
+4 On the Sprite tab in the Property inspector, do the following:
+a In the Ink box, select Background Transparent.
+Inks control the way a sprite color appears on the Stage. Background T ransparent ink makes 
+the white background of the sprite appear transparent.
+
+
+===== PAGE 47 =====
+Building the first scene with text and an image 47
+b Click the Forecolor color picker, and select white.
+c In the X text box, type 15. In the Y text box, type 15, and press Enter (Windows) or Return 
+(Macintosh). The text is placed at precise coordinates on the Stage.
+
+
+===== PAGE 48 =====
+48 Chapter 4:  Building Your First Basic Movie
+Add sprites to the Score
+When you place a cast member on the Stage, the sprite is added to both the Stage and the Score. 
+You can also place cast members on the Score. When you place a cast member on the Score, the 
+sprite is added to the Stage as well.
+1 Click the Trio cast member in cast slot 6.
+2 Drag the Trio cast member to the Score window so that it fills channel 2, just below the 
+TitleText sprite. Make sure that the sprite begins in frame 1 of the Score.
+Dragging a cast member to the Score centers the sprite on the Stage. 
+Add an existing button to the Stage
+In addition to the title text, the first scene of your movie will contain two buttons. You will 
+add the first button to the Stage. Then you will create a new button on the Stage to complete 
+the scene.
+You begin by naming the button cast member in cast slot 2 of the Cast window. Earlier, you 
+named the TitleT ext cast member by entering a name in the T ext window. You can also give cast 
+members names directly in the Cast window.
+1 Click the button cast member in cast slot 2.
+2 Click the Cast Member Name text box at the top of the Cast window, and type Animation. 
+Press Enter (Windows) or Return (Macintosh).
+3 Drag the Animation button cast member from the Cast window to the Stage. Place it on the 
+lower right side of the Stage.
+4 Select the button sprite on the Stage. 
+5 On the Sprite tab of the Property inspector, do the following: In the X text box, type 375. In 
+the Y text box, type 300, and then press Enter (Windows) or Return (Macintosh).
+The button sprite is now placed at precise coordinates.
+Cast Member Name text box
+
+
+===== PAGE 49 =====
+Building the first scene with text and an image 49
+Create a new button cast member
+Now you are ready to create the second button. 
+Remember that button cast members contain special functionality to automatically highlight 
+when clicked. Creating button cast members in Director is different from creating most other 
+cast members. Cast members are often created in separate windows and then dragged from the 
+Cast window to the Stage. You create a button cast member directly on the Stage, using the 
+Tool palette. You will use the Button tool to create a new button.
+1 If the Tool palette is not displayed, select Window > Tool Palette.
+2 Make sure that the Tool palette is in Classic view. At the top of the Tool palette, display the list 
+of views and select Classic.
+3 On the Tool palette, click the Button tool.
+4 Drag a horizontal rectangle toward the right side of the Stage, as shown in the 
+following illustration:
+Button tool
+Classic view
+
+
+===== PAGE 50 =====
+50 Chapter 4:  Building Your First Basic Movie
+5 When you release the mouse button, the rectangle you created becomes an editable text box in 
+which you enter the text that you want to appear on your button. Type Go to Sound and Video 
+in the text box.
+Note: If the text is too long for your button, you can enlarge the button. Click the button with the 
+Arrow tool selected, and then drag the sizing handle on the right edge of the button to the right.
+6 On the Sprite tab of the Property inspector, do the following: In the X text box, type 200. In 
+the Y text box, type 300, and press Enter (Windows) or Return (Macintosh).
+7 Click the Stage outside the button. 
+The editable text box changes to a completed button sprite. In the Cast window, the new 
+button cast member takes the next available cast slot, appearing in cast slot 3.
+8 Select the new button in the Cast window.
+9 In the Cast Member Name text box at the top of the Cast window, type SoundVideo and press 
+Enter (Windows) or Return (Macintosh).
+You have now created a new button cast member and added all of the graphic sprites for the first 
+scene of your movie.
+Observe the difference between sprites and cast members
+As you learned earlier in this tutorial, when you drag cast members onto the Stage, you create 
+sprites. Sprites are instances of cast members that appear on the Stage and in the Score window. 
+The Score window displays all the frames in your movie and shows in which frames the sprites 
+appear on the Stage. You can view information about sprites and edit them from both the Stage 
+and the Score, while you view and edit cast members from the Cast window.
+Several sprites can refer to the same cast member and can appear on the Stage simultaneously. 
+1 Drag the TitleText cast member from the Cast window to the Stage a second time. 
+T wo TitleT ext sprites appear on the Stage but only one TitleT ext cast member appears in the 
+Cast window. Both TitleT ext sprites are instances of the TitleT ext cast member.
+2 In the Score, click the extra TitleText sprite on channel 4.
+3 Press the Backspace key or the Delete key. 
+The TitleT ext cast member in the Cast window remains unaffected when you delete the 
+extra sprite.
+
+
+===== PAGE 51 =====
+Building the first scene with text and an image 51
+Edit sprites in the Score window
+You can shorten or lengthen sprites as needed. T o make the Score information for your entire 
+movie easier to read on the screen without scrolling, you will shorten the sprites for scene 1. 
+1 In the Score window, click the end of the TitleText sprite, and drag it to the left to frame 10.
+Note: You can also lengthen sprites by dragging their end frames to the right to higher-numbered 
+frames, and you can edit more than one sprite at the same time by selecting multiple sprite end 
+frames. 
+2 Click the Trio bitmap sprite in channel 2 of the Score.
+3 Press and hold the Shift key, and click the Animation and SoundVideo sprites.
+4 Click frame 10 in the frame number bar above channel 1. The playhead moves to frame 10.
+5 Select Modify > Extend Sprite. 
+The sprites shorten in length so they occupy only frames 1 through 10. You can use the Extend 
+Sprite command to either lengthen or shorten sprites.
+
+
+===== PAGE 52 =====
+52 Chapter 4:  Building Your First Basic Movie
+Change the default length of sprites
+You can change the default length of sprites that you drag to the Stage and Score by editing the 
+Sprite Preferences. You will now change the default sprite length to 10 frames, which makes it 
+easier to compose a movie that consists only of 10-frame scenes.
+1 Select Edit > Preferences > Sprite to open the Sprite Preferences dialog box.
+2 In the Span Duration text box, type 10 and click OK. This new default sprite duration applies 
+to all of your movies in Director, not just the movie that you are building now.
+Scene 1 of your movie is almost complete. Later, you will return to this scene to add Lingo 
+commands to the navigation buttons. Now you will start building scene 2.
+Note: As you complete the tutorial, remember to save your work frequently.
+Building the second scene with animation
+The second scene of your movie will contain a simple animation of a tire bouncing. You will 
+import an image cast member for this scene and animate it to travel up and down on the screen, 
+creating a bouncing effect. This scene will also include a new button that returns users to the 
+first scene.
+Place the background bitmap on the Stage
+A bitmap is comprised of colored pixels arranged to form a graphic. The fourth cast member in 
+the cast is a bitmap that will serve as a background for your animation. Because the animated 
+scene will start in frame 15, you will place a sprite of the background on the Stage in frame 15.
+
+
+===== PAGE 53 =====
+Building the second scene with animation 53
+• From cast slot 4, drag the black background image to channel 1, frame 15 of the Score.
+When you place a sprite on the Score, Director automatically centers the sprite on the Stage.
+Name a cast member
+The background cast member has not yet been named. Naming cast members makes it easier to 
+identify the sprites in the Score. 
+1 In the Cast window, select the cast member in cast slot 4. 
+2 In the Cast Member Name text box at the top of the Cast window, type Background. Press 
+Enter (Windows) or Return (Macintosh). 
+Import media into Director
+The tire graphic for the animation is a Macromedia Fireworks PNG file, but you can import lots 
+of other media formats as well. Once a file is imported as a cast member, you can use it just as you 
+would use any other cast member.
+1 Select File > Import. 
+2 In the Import Files dialog box, navigate within your Director MX folder to Tutorials/Basics/
+BasicsMedia.
+3 Select the tire.png file, and click the Add button.
+
+
+===== PAGE 54 =====
+54 Chapter 4:  Building Your First Basic Movie
+4 Click the Import button.
+5 In the Image Options dialog box, click the OK button.
+The tire has taken up the first available slot in the Cast window. The new cast member has 
+adopted the file name from “tire.png” as the cast member name.
+Animate the image to travel up
+You are now ready to add the tire to the scene and create an animation of it bouncing. You can 
+create the animation effect by placing a sprite of the tire cast member on the Stage and then 
+moving the sprite to a new position in each frame. Later, you will use a technique called tweening 
+to make the animation look more realistic.
+1 From the Cast window, drag the tire cast member to channel 2, frame 15 of the Score.
+2 On the Stage, move the tire sprite so that it sits just above the shadow near the bottom of 
+the Stage.
+3 With the tire sprite selected, press and hold the Shift key, click the center red dot, and drag it 
+about one third of the distance toward the top of the Stage. 
+By holding the Shift key, you maintain a straight vertical line in your animation.
+Scrub the playhead to view your animation
+You can move the playhead to preview your animation. Scrubbing the playhead is useful when 
+you want to make sure that an animation or other multimedia effect works like you want it to.
+• In the Score, drag the playhead back and forth from frame 15 to frame 24. This is called 
+“scrubbing the playhead.”
+The tire moves up along the path that you just created. Now you will animate the tire 
+returning to the ground.
+
+
+===== PAGE 55 =====
+Building the second scene with animation 55
+Animate the image to travel down
+You now have an animation of a tire rising off the ground. T o animate the tire returning to its 
+starting point, you can use the same method that you used when animating the tire to travel up. 
+But you can also use a shortcut to create a reversed copy of the tire sprite.
+1 In the Score, click channel 2 anywhere between frames 16 and 23. 
+The tire sprite that you created previously is selected.
+2 Select Edit > Copy Sprites to copy the sprite.
+3 In the Score, click channel 2, frame 25.
+4 Select Edit > Paste Sprites.
+If you scrub the playhead at this point, you will see the tire animation repeated twice. Next, 
+you will reverse the motion of the second tire animation.
+5 In the Score, click channel 2 anywhere between frames 26 and 33.
+The new copy of the tire sprite is selected.
+6 Select Modify > Reverse Sequence.
+7 Scrub the playhead from frames 15 to 34 to see the tire rise and then fall.
+Extend the background across additional frames
+You may have noticed as you scrubbed the playhead that the background sprite disappears as the 
+tire falls. The background sprite exists only between frames 15 and 24. You can extend it to 
+additional frames.
+
+
+===== PAGE 56 =====
+56 Chapter 4:  Building Your First Basic Movie
+1 In the Score, click channel 1, frame 24 and drag it to frame 34.
+2 Scrub the playhead again. This time, the background sprite exists through the whole 
+tire animation.
+Change the tempo of an animation
+For the tire animation to be more realistic, the tire should slow as it reaches the top and accelerate 
+as is returns to the ground. You can achieve this effect through a technique called tweening.
+1 In the Score, move the playhead to the up phase of the animation (between frames 15 and 24).
+2 On the Stage, select the tire sprite.
+3 Select Modify > Sprite > Tweening.
+4 Move the Ease-Out slider bar to 100% and click the OK button.
+The yellow dots in the animation path have become bunched close together near the top of 
+the animation. 
+5 Scrub the playhead. The tire slows as it reaches the apex.
+6 In the Score, move the playhead to the down phase of the animation (between frames 25 
+and 34).
+7 On the Stage, select the tire sprite.
+8 Select Modify > Sprite > Tweening.
+9 Move the Ease-In slider bar to 100% and click the OK button.
+
+
+===== PAGE 57 =====
+Building the second scene with animation 57
+10 Scrub the playhead. The tire accelerates as it reaches the bottom.
+Change the span of an animation
+It may seem that the tire is bouncing too rapidly. To make the animation run at a slower rate, you 
+can add frames to the animation. You should also keep the separation between the up and down 
+phases of the tire animation near the middle of the animation span. 
+1 In the Score, click the end frame of the Background sprite in frame 34, and drag it to frame 50.
+2 In the Score, click the end frame of the down phase tire sprite in frame 34, and drag it to 
+frame 50.
+3 In the Score, click the beginning frame of the down phase tire sprite in frame 25, and drag it to 
+frame 33.
+4 In the Score, click the end frame of the up phase tire sprite in frame 24, and drag it to frame 32.
+Later in this tutorial, you will add Lingo script to make the tire animation loop.
+
+
+===== PAGE 58 =====
+58 Chapter 4:  Building Your First Basic Movie
+Add an existing navigation button to the Score
+To complete the animation scene, you will add navigation buttons. First, you will use the Go 
+to Sound and Video button that you created earlier for scene 1. Then you will create a new 
+button that returns users to the first scene. Later, you will add Lingo to these buttons to make 
+them function.
+1 In the Score, click frame 15.
+2 From the Cast window, drag the SoundVideo cast member to the lower side of the Stage. A new 
+sprite appears in the Score beginning in frame 15.
+3 In the Score, click and drag the end of the new SoundVideo sprite from frame 24 to frame 50.
+4 On the Stage, click the SoundVideo button. 
+5 In the Property inspector, display the Sprite tab.
+6 On the Sprite tab of the Property inspector, do the following:
+a In the X text box, type 350.
+b In the Y text box, type 300, and press Enter (Windows) or Return (Macintosh).
+Note: If the button is too wide to fit on the Stage, you can shrink the button. Click the button with 
+the Arrow tool selected, and then drag the sizing handle on the right edge of the button to the left.
+Add a new navigation button to the Score
+Next, you will create a new button that returns users to the first scene.
+1 In the Score, click frame 15.
+2 On the Tool palette, click the Button tool.
+3 On the lower left side of the Stage, drag a horizontal rectangle toward the right side of the Stage.
+4 When you release the mouse button, the rectangle you created becomes an editable text box in 
+which you enter the text that you want to appear on your button. Type Go to Start in the 
+text box.
+Note: If the text is too long for your button, you can enlarge the button. Click the button with the 
+Arrow tool selected, and then drag the sizing handle on the right edge of the button to the right.
+5 In the Cast window, select the new button cast member.
+6 In the Cast Member Name text box at the top of the Cast window, type GoStart, and press 
+Enter (Windows) or Return (Macintosh).
+7 In the Score, drag the end of the new button sprite in channel 4 from frame 24 to frame 50.
+8 On the Sprite tab of the Property inspector, do the following: In the X text box, type 15. In the 
+Y text box, type 300, and press Enter (Windows) or Return (Macintosh).
+Arrange sprites in the Score
+T o make the Score easier to read, arrange the sprites of the animation scene in the Score so that 
+there is an empty channel between the graphic sprites and the button sprites.
+1 In the Score, select the SoundVideo sprite that begins in frame 15. 
+2 Press the Shift key, and select the GoStart sprite. Both sprites should be selected.
+3 Drag the two sprites down one channel so that they occupy channels 4 and 5. Be sure not to 
+move them left or right. The sprites should still occupy frames 15 through 50.
+
+===== PAGE 59 =====
+Building the third scene with sound and video 59
+4 At the bottom of the Stage, click the Rewind button, and then click the Play button. 
+The movie plays from beginning to end, flashing scene 1 briefly on the Stage and playing the 
+tire animation once before returning to frame 1 and playing again. 
+5 If your movie plays only once, turn on looping by selecting Control > Loop Playback.
+6 When you finish viewing the movie, click the Stop button at the bottom of the Stage.
+Later in this tutorial, you will add Lingo scripts to make the buttons function and prevent the 
+playhead from moving from one scene to the next without navigation.
+Note: As you complete the tutorial, remember to save your work frequently.
+Building the third scene with sound and video
+The sound and video scene will introduce you to using sound and video in your movies. You can 
+include sound and video with or without Lingo, depending on the complexity of the effect you 
+want to achieve. In this scene, you will add video to the Stage, add a sound effect, and add 
+buttons that control the sound and video. 
+Import a digital video cast member
+When you import a file into Director, you can import the entire file into your Director movie file 
+or leave it as a separate file, creating only a reference to the external file in your Director movie. If 
+you import a file by reference, it is crucial not to move it from the location where it’s referenced. 
+If you move it, Director will not be able to find it the next time you open your Director file, and 
+the movie will not play as intended. Advantages of importing by reference include the following:
+• The file size of your Director movie is smaller when you reference, rather than fully import, 
+your media.
+• Referencing media offers greater flexibility in terms of how you manage and where you locate 
+your media assets.
+When the referenced file is edited using the Launch and Edit feature of Director, there is no need 
+to import the edited file again.
+The first cast member in the sound and video scene will be a QuickTime digital video file. Digital 
+video files are always imported by reference, leaving the digital video file separate from the 
+Director file.
+1 Select File > Import. In the Import Files dialog box, navigate within your Director MX folder 
+to Tutorials/Basics/BasicsMedia and select the file named walkaround.mov.
+2 Click the Add button.
+3 In the Media pop-up menu, select Link to External File.
+By selecting the Link to External File option, you specify importing by reference.
+
+===== PAGE 60 =====
+60 Chapter 4:  Building Your First Basic Movie
+4 Click the Import button.
+The new digital video cast member appears in the Cast window in the first available cast slot. It 
+is named after the imported file.
+Play the digital video
+You can view the QuickTime cast member by opening the QuickTime window. This window 
+contains controls for playing the video file but not for editing the video; you cannot edit digital 
+video files in Director.
+1 In the Cast window, double-click the walkaround cast member. 
+The QuickTime window opens.
+2 Play the video by using the controls at the bottom of the QuickTime window:
+■ Click the Play button in the lower left corner of the window. The video begins playing, and 
+the Play button changes to a Pause button.
+■ T o pause the video, click the Pause button in the lower left corner of the window. The video 
+pauses, and the Pause button reverts to a Play button. 
+The QuickTime window has its own playhead that moves to the right as the video plays. You 
+can use the playhead to jump to a specific point in the video or to scrub through the video. 
+■ To jump to a specific point in the video, click in the bar to the right or left of the playhead. 
+The playhead moves to the point that you clicked in the bar, and the window displays the 
+corresponding frame of video.
+■ T o scrub through the video, drag the playhead to the right to scrub forward and to the left 
+to scrub in reverse.
+
+
+===== PAGE 61 =====
+Building the third scene with sound and video 61
+3 When you finish playing the video, close the QuickTime window.
+Create a QuickTime sprite
+You are now ready to place the QuickTime sprite on the Stage. The sound and video scene should 
+start in frame 55.
+1 In the Score, click frame 55. The playhead moves to frame 55.
+2 From the Cast window, drag the walkaround QuickTime cast member to near the top-center 
+of the Stage. 
+The new sprite appears on the Stage and in the Score in channel 1, frames 55 through 64.
+
+
+===== PAGE 62 =====
+62 Chapter 4:  Building Your First Basic Movie
+Specify direct-to-Stage playback for a QuickTime cast member
+Director can play QuickTime video using direct-to-Stage playback, which lets the video play 
+at the fastest possible speed. When direct-to-Stage playback is selected for digital video, the 
+video appears in front of all other sprites, regardless of the channel that contains the sprite. T o 
+verify that direct-to-Stage playback is selected for the new QuickTime sprite, complete the 
+following steps.
+1 In the Cast window, select the walkaround cast member. (Make sure that you do not select 
+the sprite on the Stage.)
+2 In the Property inspector, select the QuickTime tab.
+3 On the QuickTime tab, verify that the DTS checkbox is selected. DTS stands for 
+direct-to-Stage.
+The Video, Audio, and Streaming check boxes should also be selected, by default. 
+Add custom buttons
+Next, you will add buttons that control playback of the QuickTime sprite. These buttons are 
+already included in the Cast window in cast slots 9, 10, and 11. Unlike the standard Director 
+button cast members, these cast members are bitmap graphics that do not include automatic 
+button functionality. Later, you will add Lingo to the buttons to make them control the 
+QuickTime sprite. 
+1 In the Score, click frame 55 if the frame is not already selected.
+2 In the Cast window, find the Play cast member and drag it to the Stage. Place the Play button 
+on the Stage underneath the QuickTime sprite. Because you will align all three buttons soon, 
+do not worry about precise placement yet.
+The Play button’s sprite appears on the Stage and in channel 2, frames 55 through 64, 
+of the Score.
+3 In the Cast window, find the Pause cast member and drag it to the Stage. Place the Pause button 
+on the Stage underneath the QuickTime sprite, just to the right of the Play button. Again, 
+precise placement is not necessary yet.
+
+
+===== PAGE 63 =====
+Building the third scene with sound and video 63
+The Pause button’s sprite appears on the Stage and in channel 3, frames 55 through 64, 
+of the Score.
+4 In the Cast window, find the Rewind cast member and drag it to the Stage. Place the Rewind 
+button on the Stage underneath the QuickTime sprite, just to the right of the Pause button.
+The Rewind button’s sprite appears on the Stage and in channel 4, frames 55 through 64 of 
+the Score.
+5 In the Score or on the Stage, press the Shift key and click the three buttons. 
+All three buttons are selected, so you can now place all three of them precisely on the Stage.
+6 Select Window > Align.
+The Align tab on the Design panel is displayed on the lower right side of the screen.
+7 On the Align tab, click the Align Vertical Center button. This option aligns the buttons along 
+the X axis.
+8 On the Align tab, click the Distribute Horizontal Center button. This option unifies the 
+distances between the three buttons.
+Later in this tutorial, you will add Lingo to these custom buttons to make them functional.
+Align vertical center
+Distribute horizontal center
+
+===== PAGE 64 =====
+64 Chapter 4:  Building Your First Basic Movie
+Import a sound
+The QuickTime movie has no sound track. You can make the scene more interesting by adding 
+sound to accompany the video. The easiest way to add sound to a Director movie is to import a 
+sound cast member and place it in one of the sound channels in the Score. Whenever the 
+playhead plays frames that include sound sprites, the sound plays. You can also play sounds by 
+using Lingo instead of the sound channels, which you will learn later in this tutorial.
+1 Select File > Import. 
+2 In the Import Files dialog box, navigate within your Director MX application folder to 
+Tutorials/Basics/BasicsMedia folder, and open the Sounds folder.
+3 Select the sound file named track1, and click the Add button.
+4 In the Media box at the bottom of the dialog box, select the Link to External File option. 
+This option tells Director to import only a reference to the file, leaving the sound file separate 
+from the Director movie file. 
+5 Click the Import button. The track1 sound file is imported into the Cast window.
+Add a sound to the Score
+Now you can add the sound to the Score. Because sounds are heard and not seen, they do not 
+appear on the Stage. You place sound sprites directly in the Score. 
+1 In the Score, click the Hide/Show Effects Channels button if the effects channels are not visible. 
+The effects channels should appear above the frame number bar in the Score. 
+The Hide/Show Effects Channels button
+How the effects channels should look when they are visible
+2 In the Score, click frame 55. 
+Sound channels
+
+===== PAGE 65 =====
+Building the third scene with sound and video 65
+3 From the Cast window, drag the track1 cast member to frame 55 in sound channel 1 of 
+the Score.
+The sound is now ready to play when frames 55 to 64 of your movie play. 
+4 Rewind and play your movie. 
+The playhead moves through the frames of your movie quickly. There is not enough time for 
+the QuickTime sprite or the track1 sound to play through before the playhead reaches frame 
+64. Later, you will add Lingo to solve this problem.
+5 When you finish viewing the movie, click the Stop button at the bottom of the Stage.
+Add navigation buttons
+The last sprites that you will add to the sound and video scene are the navigation buttons. 
+You will then be ready to add some simple Lingo script, the Director scripting language, to 
+the buttons.
+The sound and video scene needs a button that returns users to the start scene and a button that 
+is linked to the animation scene. You already have each of these buttons in the Cast window and 
+in the Score. You will use two slightly different techniques to place these buttons in the sound and 
+video scene.
+You used the GoStart button in the animation scene and placed it at the very bottom left corner 
+of the Stage. Since it is appropriate for that button to be in the same location on the Stage in the 
+sound and video scene, you can use the same sprite for both scenes. By simply lengthening the 
+GoStart button sprite from the animation scene, you can extend it in the Score to the sound and 
+video scene. When you do this, the button occupies the same space on the Stage in both scenes.
+After lengthening the GoStart sprite, you will need to add the button that navigates to the 
+animation scene. Because the button will occupy a different location on the Stage than it did in 
+the start scene, you will make a new sprite for it in the sound and video scene. 
+1 On the Score, find the GoStart sprite in channel 5 and drag its end frame to frame 64. 
+The sprite lengthens in the Score and appears in the lower left corner of the Stage in the sound 
+and video scene.
+2 On the Score, select frame 55 in channel 6.
+
+
+===== PAGE 66 =====
+66 Chapter 4:  Building Your First Basic Movie
+3 From the Cast window, drag the Animation cast member to the Stage, placing it in the lower 
+right corner of the Stage.
+The new Animation button sprite appears on the Stage and in frames 55 through 64 in 
+channel 6 of the Score. Because you already selected frame 55 in channel 6, the sprite 
+appears in that location when you drag it to the Stage. If you do not preselect a channel in 
+the Score, the sprite appears in the first available channel in the frame where the playhead 
+is located. 
+4 On the Stage, click the Go to Animation button. 
+5 Use the Sprite tab in the Property inspector, as you did earlier, to give the button an x coordinate 
+of 350 and a y coordinate of 300.
+Each scene of your movie is graphically complete. You are now ready to add Lingo to the buttons, 
+to let users navigate through the movie.
+Note: As you complete the tutorial, remember to save your work frequently.
+Writing scripts to control the movie
+By scripting, you can implement almost any kind of user interaction and multimedia effect that 
+you can imagine. You can make simple buttons function, as you will soon do in this tutorial. You 
+can also script more complex tasks, including controlling every aspect of a movie’s content 
+without using the Score.
+Director supports scripting in two languages: Lingo and JavaScript syntax. In this tutorial, you 
+will script in Lingo only, but if you are already familiar with JavaScript, you may want to try 
+JavaScript syntax instead. Lingo is designed to be easy to learn, so don’t be intimidated. After you 
+know the basic concepts, you can use the extensive scripting vocabulary to control anything in 
+your movie.
+Looping the playhead with Lingo
+The scenes of your movie are not much good as scenes if the playhead simply races through them 
+without stopping to let the user absorb their content. In this movie, the playhead must stay in one 
+scene until the user makes a decision to go to a different scene. In this tutorial, you will add Lingo 
+to a special Script channel in the Score and to your button sprites.
+
+
+===== PAGE 67 =====
+Writing scripts to control the movie 67
+T o make the playhead stay in one scene, you loop it in a single frame or a series of frames. For the 
+start scene and the sound and video scene, the playhead can loop in one frame. For the animation 
+scene, where the animation occurs over a series of frames, the playhead should loop over the same 
+series of frames.
+To control the movement of the playhead without using buttons, you use the Script channel in 
+the Score. As with the sound channels, the Script channel is one of the effects channels that 
+appear above the frame number bar in the Score. 
+Write a handler
+The start scene is the first one that needs a script to loop the playhead. Each time the playhead 
+leaves one frame to go to the next, an event, called an exitFrame event, occurs. In this case, the 
+word event refers to an action executed in Director. Your first script will use the exitFrame event 
+as its trigger. 
+Each script you write is composed of handlers. A handler is a set of Lingo commands that handle 
+a specific event, such as the exitFrame event. Some scripts have only one handler and some have 
+multiple handlers. Each handler begins with the name of the triggering event, such as exitFrame, 
+and ends with the word end.
+When you need to enter or edit scripts in Director, you use the Script window. Each script 
+becomes a cast member. The Script window contains tools for editing scripts easily. 
+1 In the Script channel of the Score, double-click frame 10, the last frame of the start scene. The 
+Script window opens, and it already includes a default handler:
+on exitFrame me
+end
+2 In between these two lines of script, enter the following additional script:
+_movie.go(_movie.frame)
+The result is a handler that should look like this:
+on exitFrame me
+_movie.go(_movie.frame)
+end
+3 Close the Script window. The new script cast member appears in the Cast window in the first 
+available cast slot. A sprite for the script also appears in the Script channel in frame 10. 
+4 In the Cast window, select the new script. 
+5 In the Cast Member Name text box at the top of the Cast window, type Loop. Press Enter 
+(Windows) or Return (Macintosh).
+6 At the bottom of the Stage, below the movie, click the Rewind button. Then also at the bottom 
+of the Stage, click the Play button to play your movie. 
+The movie plays to frame 10 and stops. The movie continues to play, even though it loops at 
+frame 10. 
+Script channel
+
+===== PAGE 68 =====
+68 Chapter 4:  Building Your First Basic Movie
+7 At the bottom of the Stage, click the Stop button to stop the movie.
+The handler that you wrote has three parts: 
+• The first line, on exitFrame me, tells Director to run this script when the playhead leaves the 
+frame where the script is located. This is frame 10. 
+• The second line, beginning with _movie.go, tells Director to send the playhead back to the 
+current frame. The .frame in (_movie.frame) always refers to the frame number where the 
+playhead is currently located. Again, this is frame 10. 
+• The last line of any handler contains the word end. It signals the end of the script. 
+The result of the new handler is that the playhead continually loops in frame 10 as it is sent back 
+to frame 10 each time it tries to go to frame 11. Your Director movie plays to frame 10 and loops 
+there until the user clicks a button to go to a different scene.
+Reuse the handler
+You can use the same script cast member in the last frame of your movie, frame 64. The script 
+creates the same looping effect in frame 64 for the sound and video scene as you achieved in frame 
+10 for the start scene.
+1 Make sure that the Cast window and Score are open.
+2 In the Score, display frame 64.
+3 From the Cast window, drag the Loop script cast member to frame 64 in the Script channel of 
+the Score. 
+A new sprite for the script appears in frame 64. The default length of script sprites is one 
+frame. Now the same looping effect from frame 10 also occurs in frame 64. So the movie keeps 
+playing the sound and video scene until the user clicks a button. 
+Add a marker to the Score
+In the animation scene, you constructed an animation that takes place from frame 15 to frame 
+50. If you loop the playhead only in frame 50, the animation does not play while the movie is 
+waiting for the user to click a button. In this case, you should loop the playhead over the entire 
+range of frames that contain the animation.
+T o do this, you can use a script that is similar to the one you just wrote and place it in the last 
+frame of the animation scene. However, this new script will send the playhead to the first frame 
+of the animation rather than to the frame where the script is located. 
+Because the first frame of the animation scene is frame 15, you could simply write a script 
+that says:
+_movie.go(15)
+The problem with this script is that it is not flexible. If you decide to move the animation scene to 
+a different range of frames in the Score, the script would be incorrect. T o make the script more 
+flexible, you can place markers in the Score and send the playhead to a marker rather than a 
+specific frame number. 
+Markers are a way of giving a name to a specific frame in the Score. If you name the first frame of 
+the animation scene and then decide to move the scene, you can simply move the marker in the 
+Score along with the rest of the scene.
+
+===== PAGE 69 =====
+Writing scripts to control the movie 69
+1 In the Score, display frame 15.
+2 Click the Marker bar above frame 15. 
+A new marker appears in the Marker bar in frame 15. The text box next to the new marker 
+contains “New Marker” as placeholder text.
+3 In the text box next to the new marker, type Animation, and press Enter (Windows) or Return 
+(Macintosh) to name the marker.
+Create navigation in Lingo using marker names
+You can write a script that loops the playhead in frames 15 through 50 using the name of 
+the marker.
+1 Double-click the Script channel in frame 50, the last frame of the animation scene. The script 
+window opens with the default on exitFrame script already entered.
+2 Inside the default script, on line 2, type the following:
+_movie.go("Animation")
+3 In the Name text box at the top of the window, type AnimLoop, and close the Script window. 
+The new script cast member appears in the first available cast slot of the Cast window, and the 
+new sprite appears in frame 50 of the Script channel in the Score. 
+4 Click frame 15 in the frame number bar in the Score, and click the Play button at the bottom 
+of the Stage. 
+The animation scene plays, and the playhead loops back to frame 15 when it reaches frame 50. 
+The animation of the tire bouncing repeats continuously.
+5 Click the Stop button at the bottom of the Stage.
+Each of the scenes in your movie has a script that prevents the playhead from moving to 
+a different scene. Now you’ll add scripts to the navigation buttons so the user can move from 
+scene to scene.
+Marker menu Marker bar
+
+===== PAGE 70 =====
+70 Chapter 4:  Building Your First Basic Movie
+Add Lingo to navigation buttons
+T o make the navigation buttons function, you need to add scripts to the buttons. These scripts 
+should be attached to the button sprites, rather than to frames in the script channel. Your frame 
+scripts respond to exitFrame events. After you write the button scripts, they will respond to 
+mouse clicks.
+You start by adding scripts to the button sprites in the start scene. 
+1 In the Score, display frames 1 through 10.
+2 Right-click (Windows) or Control-click (Macintosh) the Animation button sprite in channel 3, 
+frames 1 through 10.
+3 In the context menu, select Script. 
+The Script window opens with a default handler entered:
+on mouseUp me
+end
+4 On the second line, type the following script:
+_movie.go("Animation")
+You see the following result:
+on mouseUp me
+_movie.go("Animation")
+end
+5 In the Name text box at the top of the Script window, type GoAnim.
+6 Close the Script window, and save your movie.
+This handler has three parts. The first line tells Director to trigger this handler when the user 
+clicks on the button sprite to which the script is attached. Specifically, the mouseUp event refers to 
+the action of releasing the mouse button after it has been pressed. This way the script does not 
+run until the user releases the mouse button when clicking.
+The second line of the handler contains the same code as the previous script that you wrote. It 
+sends the playhead to the frame that contains the marker named Animation. The difference 
+between these two scripts is that this one performs its action based on a mouse click, not on 
+an exitFrame event.
+Again, the word end on the last line tells Director that the script is finished.
+Test your script
+You are now ready to try out your new button script.
+1 If necessary, bring the Stage window to the foreground by clicking its title bar.
+2 Rewind and play your movie. 
+The movie plays, and the start scene remains on the screen. The playhead does not move to 
+another scene until you click your newly scripted button.
+3 Click the Go to Animation button on the Stage. 
+The button provides feedback by changing color when it is clicked. The playhead moves to the 
+first frame of the animation scene, and the tire bounces. 
+4 Stop your movie.
+
+===== PAGE 71 =====
+Writing scripts to control the movie 71
+Add markers to two additional scenes
+Your first button is complete. To use similar scripts on the remaining navigation buttons, you can 
+add markers to the start scene as well as the sound and video scene.
+1 Display frame 1 of the Score.
+2 In the Score, click the marker bar in frame 1, the first frame of the start scene.
+A new marker appears. 
+3 In the text box next to the new marker, type Start, and press Enter (Windows) or 
+Return (Macintosh).
+4 Display frame 55 of the Score.
+5 Click the marker bar in frame 55, the first frame of the sound and video scene. 
+6 In the text box next to the new marker, type SoundVideo, and press Enter (Windows) or 
+Return (Macintosh).
+Write script that refers to scenes
+You can write scripts that refer to any of the three scenes by name. You can now add a script to the 
+Go to Sound and Video button in the start scene.
+1 In the Score, display frames 1 through 10.
+2 In frames 1 through 10, right-click (Windows) or Control-click (Macintosh) the SoundVideo 
+sprite. 
+3 In the context menu, select Script. 
+The Script window opens with the default on mouseUp handler.
+4 On the second line of the handler, type: 
+_movie.go("SoundVideo")
+5 In the Name text box at the top of the Script window, type GoSndVid.
+6 Close the Script window, and save your movie.
+7 To test the script, rewind and play your movie, and then click the Go to Sound and 
+Video button in the start scene.
+The movie jumps to the sound and video scene, and the QuickTime sprite plays.
+Add scripts to the animation scene
+The animation scene contains two buttons: the Go to Start button and the Go to Sound and 
+Video button. Because you already have a script for the Go to Sound and Video button, you can 
+reuse it. For the Go to Start button, you need to write another new script.
+
+
+===== PAGE 72 =====
+72 Chapter 4:  Building Your First Basic Movie
+1 Make sure that the Cast window and the Score are both open.
+2 Display frame 15 of the Score.
+3 From the Cast window, drag the GoSndVid script cast member onto the SoundVideo button 
+sprite that appears in frames 15 through 50 of the Score. 
+The script is now attached to this sprite in the same way it is attached to the SoundVideo 
+button sprite in scene 1.
+4 To write a new script for the Go to Start button, right-click (Windows) or Control-click 
+(Macintosh) the GoStart button sprite that starts on frame 15 of the Score. 
+5 Select Script from the context menu. 
+The Script window opens with the default on mouseUp handler. 
+6 On the second line of the handler, type the following:
+_movie.go("Start")
+7 In the Name text box at the top of the Script window, type GoT oStart, and then press Enter 
+(Windows) or Return (Macintosh). 
+8 Close the Script window and save your movie.
+Because this Go to Start button sprite extends all the way into the sound and video scene, you do 
+not need to do anything else to enable the button in that scene. The last step to enable all the of 
+navigation buttons is to add the GoAnim script to the Go to Animation button in the sound and 
+video scene.
+Add one more script to the sound and video scene
+You already added the navigation script to the Go to Start button in the sound and video scene. 
+To complete the navigation buttons, you only need to add a script to the Go to Animation 
+button. 
+1 Make sure that the Cast window and the Score are both open.
+2 Display frames 55 through 64 of the Score.
+3 From the Cast window, drag the GoAnim script onto the Animation button sprite in frames 55 
+through 64 of the Score.
+Your movie’s navigation functionality is now complete. You can now move among all three 
+scenes of your movie. 
+4 Rewind and play your movie.
+5 Use each of the navigation buttons in all three scenes. Verify that each button sends the 
+playhead to the correct scene.
+Controlling digital video with script
+Although Director movies and digital video movies share some similarities, differences also exist 
+between the two types of movies. Both Director movies and digital videos comprise a sequence of 
+frames that display on the screen. Director plays its movies by moving the playhead through the 
+Score and displaying each frame the playhead comes to. If the computer on which the movie plays 
+is slow and takes a long time to display each frame, then the Director movie plays slowly. The way 
+that Director plays movies is called frame-based animation. 
+
+===== PAGE 73 =====
+Writing scripts to control the movie 73
+Digital video movies use a timeline instead of a Score. The timing of the video playback is tied 
+closely to the sound track of the video. For example, if the video has a sound track, the timing of 
+the video and sound must remain synchronized during the entire playback of the video. For this 
+reason, digital videos will skip frames if necessary to keep up with the sound track. On slower 
+computers, several frames might be skipped during video playback. This kind of animation is 
+called time-based. These differences are the reason you navigate a Director movie by jumping to 
+different frames in the movie, and you navigate a digital video by jumping to different times 
+within the video. 
+Now you are ready to add scripts to the bitmap graphic buttons for controlling the digital video 
+playback. The bitmap graphic buttons are a Play button, a Pause button, and a Rewind button. 
+For these buttons, you use some new scripting terms, including the movieRate and movieTime 
+properties of the QuickTime sprite. By changing the values of these properties with Lingo, you 
+change the way the video plays on the Stage.
+When the user navigates to the sound and video scene from a different scene, the digital video 
+plays from start to finish once. To play the video again without first leaving the scene, you need to 
+rewind it. You rewind the video by setting its movieTime property. 
+The movieTime property indicates the time, within the digital video, that currently appears on 
+the screen. The movieTime is measured in ticks, or 60ths of a second. For example, when the 
+movie displays the very first frame of video, the movieTime is 0. When 1 second of the video has 
+played, the movieTime equals 60. When 3 seconds of the video have played, the movieTime 
+equals 180. By setting the movieTime to a number that you select, you can make the video jump 
+to a different frame.
+Rewind the QuickTime sprite
+You can rewind the QuickTime sprite by setting its movieTime to 0.
+1 In the Score, display frames 55 through 64.
+2 In frames 55 through 64, right-click (Windows) or Control-click (Macintosh) the Rewind 
+button sprite.
+3 Select Script from the context menu. 
+The Script window opens with a default on mouseUp handler already entered.
+4 On the second line of the handler, type the following Lingo to rewind the QuickTime sprite:
+sprite(1).movieTime = 0
+5 Press Enter (Windows) or Return (Macintosh). 
+6 On the third line of the handler, type the following Lingo:
+sprite(1).movieRate = 0
+The movieRate property indicates the speed at which the QuickTime sprite is playing. When 
+the video is stopped, the movieRate is 0. 
+The result looks like this:
+On mouseUp me
+sprite(1).movieTime = 0
+sprite(1).movieRate = 0
+end
+7 In the Name text box at the top of the Script window, type RewindScript. 
+8 Close the Script window, and save your movie.
+
+===== PAGE 74 =====
+74 Chapter 4:  Building Your First Basic Movie
+9 Rewind and play your movie. 
+10 In the start scene, click the Go to Sound and Video button.
+The movie jumps to the sound and video scene, and the QuickTime sprite begins to play.
+11 When the QuickTime sprite finishes playing, click the Rewind button on the Stage. The 
+QuickTime sprite rewinds to the beginning of the video.
+Add a script that plays the QuickTime sprite
+When the video is playing normally, the movieRate is 1. You can now add the movieRate 
+property to the Play button. This time, scripting makes the QuickTime sprite play when the user 
+clicks the Play button in the movie on the Stage.
+1 In the Score, right-click (Windows) or Control-click (Macintosh) the Play button sprite in 
+frames 55 through 64. 
+2 Select Script from the context menu. 
+3 In the Script window, on the second line of the handler, type the following Lingo:
+sprite(1).movieRate = 1
+This script starts the QuickTime sprite playing at normal speed.
+4 In the Name text box at the top of the Script window, type PlayScript. 
+5 Close the Script window, and save your movie.
+Add a script that pauses the QuickTime sprite
+When the video is paused, the movieRate is 0. You can play a video at faster than normal speed 
+by using numbers greater than 1 and at slow speed by using numbers less than 1. 
+1 In the Score, right-click (Windows) or Control-click (Macintosh) the Pause button sprite in 
+frames 55 through 64.
+2 Select Script from the context menu. 
+3 On the second line of the handler in the Script window, type the following Lingo:
+sprite(1).movieRate = 0
+This Lingo pauses the QuickTime sprite.
+4 In the Name text box at the top of the Script window, type PauseScript. 
+5 Close the Script window, and save your movie.
+6 Now all your video control buttons work. Rewind and play your movie to test the buttons.
+Control sound with script
+The sound and video scene plays the sound file that you placed in the Score, but only the first 
+time you go to the scene. You can add script to make the music play each time you play the 
+video. You can also add script to make a short sound effect play when the video control buttons 
+are clicked. 
+T o control sound with script, you use commands that are specifically intended for use with 
+sounds. In this tutorial, the first step is to add Lingo to play the track1 sound when the video 
+plays a second time. For this task, add a play function to the PlayScript cast member that you 
+have already written in Lingo.
+
+===== PAGE 75 =====
+Writing scripts to control the movie 75
+1 In the Cast window, select the PlayScript cast member. 
+2 Click the Cast Member Script button near the upper right corner of the window. 
+The Script window opens with the Lingo from the PlayScript cast member visible.
+3 Place the insertion point at the end of the second line of the handler that reads as follows:
+sprite(1).movieRate = 1 
+4 Press Enter (Windows) or Return (Macintosh), and type the following on the new line: 
+sound(1).play(member("track1"))
+This Lingo tells Director to play the sound cast member named track1 in sound channel 1. In 
+the Score, there are two sound channels. When you use Lingo, you can use as many as eight 
+sound channels. 
+5 Close the Script window, and save your movie.
+6 Rewind and play your movie. The track1 sound now plays each time you press the Play button 
+in the sound and video scene of the movie.
+Modify the script for the Pause button
+Now you need to modify the PauseScript cast member so that the sound pauses when the user 
+clicks the Pause button on the Stage to pause the video.
+1 In the Cast window, select the PauseScript cast member.
+2 Click the Cast Member Script button in the upper right corner of the Cast window. The Script 
+window opens with the PauseScript Lingo displayed.
+3 Place the insertion point at the end of the second line of the handler that reads as follows:
+sprite(1).movieRate = 0
+4 Press Enter (Windows) or Return (Macintosh). On the new line, type the following:
+sound(1).pause()
+This Lingo tells Director to pause the sound in sound channel 1.
+5 Close the Script window and save your movie.
+Now when you click the Pause button in the sound and video scene of the movie, the sound and 
+video pause at the same time. When you click the Play button in the movie again, the video 
+resumes and the sound plays again.
+Cast Member Script button
+
+===== PAGE 76 =====
+76 Chapter 4:  Building Your First Basic Movie
+Modify the script for the Rewind button
+You can modify the RewindScript cast member so that the sound stops when the user clicks the 
+Rewind button.
+1 In the Cast window, select the RewindScript cast member.
+2 Click the Cast Member Script button in the upper right corner of the Cast window. 
+3 In the Script window, place the insertion point at the end of the third line of the handler that 
+reads as follows:
+sprite(1).movieRate = 0
+4 Press Enter (Windows) or Return (Macintosh). On the new line, type the following:
+sound(1).stop()
+This Lingo tells Director to stop the sound in sound channel 1.
+5 Close the Script window, and save your movie.
+Now when you click the Rewind button in the sound and video scene of the movie, the video 
+rewinds and the sound stops playing. When you click the Play button in the movie, the video 
+restarts and the sound plays again.
+Add sounds to buttons
+The final effect to add is to make a short sound play when users click any of the video control 
+buttons in the sound and video scene. This sound file is small; there is no compelling reason not 
+to import the file directly into your Director file. Then you will add a play function to each of 
+the scripts that are attached to the video control buttons. This command plays the new sound cast 
+member in the second sound channel.
+1 Select File > Import. 
+2 In the Import Files dialog box, navigate within your Director MX folder to Tutorials/Basics/
+BasicsMedia/Sounds.
+3 Select the file named button.wav, and click the Add button.
+4 In the Media pop-up menu, select Standard Import.
+5 Click the Import button. 
+The new sound cast member appears in the Cast window in the next available cast slot.
+6 In the Cast window, select the RewindScript cast member.
+7 Click the Cast Member Script button in the upper right corner of the Script window. 
+8 In the Script window, create a new line after the first line of the handler.
+9 On the new line, type the following Lingo:
+sound(2).play(member("button"))
+The (2) specifies the second sound channel.
+10 Close the Script window, and save your movie.
+11 Repeat steps 6 through 10 for the PlayScript and PauseScript cast members.
+You have now completed authoring your Director movie. You can play the movie and move from 
+scene to scene with the navigation buttons that you created. You can control the playback of the 
+digital video with the bitmap graphic buttons that you added. Next, you will publish the movie to 
+play on the web.
+
+===== PAGE 77 =====
+Publishing your movie 77
+Publishing your movie
+In general, you can publish your movie for the web by simply selecting File > Publish. Using 
+default Publish settings, Director creates a Macromedia Shockwave version of your movie, with 
+the Director movie (DCR) extension, in the same directory as your original movie. An HTML 
+page includes the necessary tags to embed the movie. Your browser window opens, and your 
+Shockwave content plays within the browser.
+When you use QuickTime video, you must complete a few additional steps to ensure that your 
+movie plays correctly. These steps involve specifying that a QuickTime Xtra extension downloads 
+to your user’s system, if necessary, and placing your files in a specific folder if you are publishing 
+your movie on a local computer.
+Use a QuickTime Xtra extension
+Xtra extensions are software components that extend the functionality of Shockwave content and 
+projectors. A QuickTime Xtra extension is necessary to ensure your QuickTime movie plays 
+correctly when published. When you imported the QuickTime movie, Director automatically 
+added the QT3 Asset Xtra to the Xtra extensions list for your movie. You now need to select the 
+Xtra extension from the list to make it available to your users.
+1 Select Modify > Movie > Xtras.
+2 In the Movie Xtras dialog box, select the following Xtra extension, according to your 
+operating system:
+■ Windows users should select QT6Asset.x32.
+■ Macintosh users should select QuickTime Asset.
+Note: Both versions of the QuickTime Xtra extension are cross-platform.
+3 Select the Download if Needed check box.
+4 Click the OK button.
+5 Save your movie.
+The Xtra extension will now download transparently to the user’s computer, from a 
+Macromedia secure server, if the user does not have the Xtra extension.
+Get linked media ready to play on your local computer
+The Macromedia Shockwave Player plays DCRs in safe mode on your local computer to avoid 
+security breeches, such as a movie accessing data on your hard drive. For the Shockwave Player to 
+access the linked media in your tutorial (the QuickTime movie and track1 sound) in safe mode, 
+the files must be in a folder named dswmedia. This is the only folder name that lets Shockwave 
+Player access linked local files. The file naming convention applies only to DCR movies that you 
+play on your local computer; if you upload your files to an Internet server, your linked media does 
+not need to reside in a folder named dswmedia.
+Complete the following steps to create a copy of your movie within a dswmedia folder.
+1 Save your movie and exit Director (File > Exit).
+2 On your desktop, create a new folder and name it dswmedia.
+3 Within your Director MX 2004 application folder, browse to Tutorials/Basics.
+
+===== PAGE 78 =====
+78 Chapter 4:  Building Your First Basic Movie
+4 From the Basics folder, copy the Start folder and all of its contents to the dswmedia folder on 
+your desktop.
+5 From the Basics folder, copy the BasicsMedia folder and all of its contents to the dswmedia 
+folder on your desktop.
+Note: The Start and BasicsMedia folders must be at the same level within the dswmedia folder for 
+the linked media to play correctly.
+Change Publish settings and publish your movie
+When you use the Publish command, you can take advantage of the default Publish settings of 
+Director, or you can modify them with the Publish Settings dialog box.
+For the tutorial movie, you will publish the movie using the Detect Shockwave HTML page 
+which, in addition to including OBJECT and EMBED tags that are necessary to display your movie 
+correctly in a browser, includes JavaScript that detects if your user has the correct version of 
+Shockwave Player. If necessary, a message appears that advises your user to update the Shockwave 
+Player installation.
+1 Open the version of the movie that resides in the dswmedia folder on your desktop.
+2 In Director, select File > Publish Settings.
+3 On the Formats tab of the Publish Settings dialog box, select both Shockwave File (DCR) and 
+HTML. None of the other Publish options should be selected.
+4 Verify that Preview after publishing is selected, and click OK.
+5 Save your movie.
+6 Select File > Publish. 
+Your browser opens and plays your tutorial movie.
+When you save your movie, Director also saves any changes you made in the Publish Settings 
+dialog box. The next time that you want to publish your movie in the same way, you can 
+simply select File > Publish without having to modify the Publish Settings dialog box again.
+
+
+===== PAGE 79 =====
+Summarizing what you learned 79
+Summarizing what you learned
+By completing this tutorial, you have become familiar with the basic tasks and procedures used to 
+create Director movies. You now know how to do the following:
+• Import cast members
+• Edit movie properties
+• Create sprites
+• Use inks
+• Animate sprites
+• Create bitmap graphics
+• Create vector shapes
+• Create button cast members
+• Edit the Score
+• Use sounds
+• Write simple Lingo scripts
+• Publish your movie for web playback
+
+===== PAGE 80 =====
+80 Chapter 4:  Building Your First Basic Movie
+
+===== PAGE 81 =====
+81
+INDEX
+Numerics
+3D properties  29
+B
+Behavior channel  22
+behaviors, definition of  31
+browser, choosing preferred  15
+C
+cache, clearing  15
+canvas, definition of  21
+Cast
+definition of  19
+metaphor explained  17
+cast members
+compared to sprites  26
+creating  27
+editing  28
+importing  27
+types of  26
+Cast window, definition of  26
+channels
+definition of  22
+naming  8
+number of  24
+showing and hiding  23
+turning on and off  24
+clearing cache  15
+closing panels and panel groups  36
+ColdFusion MX  9
+color palette  29
+color, selecting RGB or index  29
+components, reducing scripting time with  8
+connecting to Internet  15
+Control panel
+definition of  25
+displaying and hiding  25
+using  25
+Control toolbar, displaying and hiding  25
+copyright date, setting  30
+creating
+cast members  27
+new markers  23
+cross-platform features  8
+customer support  11
+customizing your workspace  8,  32
+D
+debugging movies  32
+decreasing view of Stage  21
+default workspace, settings of  19
+deleting panel sets  36
+Disk Cache Size option  15
+displaying windows  19
+docking channels  32
+docking panels and panel groups  35
+document windows, definition of  20
+DVD-Video features  8
+E
+editing
+movies  29
+sprites and cast members  28
+effects channels
+definition of  22
+showing and hiding  23
+examples of movies
+tutorial  41
+website  8
+expander arrow in Property inspector  28
+
+===== PAGE 82 =====
+82 Index
+F
+Flash Communication Server MX  9
+Flash MX 2004  8
+font maps  30
+frames
+definition of  22
+navigating  23,  26
+G
+graphical view mode in Property inspector  28
+H
+help
+new features  9
+online help  9
+where to get more information  10
+hiding
+effects channels  23
+information in Property inspector  28
+windows  19
+I
+importing cast members  27
+importing media
+DVD-Video  8
+Flash MX 2004  8
+increasing view of Stage  21
+index color  29
+installation
+Director software  14
+Xtra extensions  14
+integration with Macromedia Studio MX 2004  8
+Internet connection settings  15
+introduction to Director  7,  17
+introduction to workspace  19
+J
+JavaScript syntax
+introduction to  30
+scripting in  8
+jumping to markers  23
+L
+learning to use Director  41
+Lingo, introduction to  30
+list view mode in Property inspector  28
+location of Stage  30
+M
+Macromedia Studio MX 2004, integration with  8
+manuals available with Director  10
+mapping fonts  30
+markers  22
+Markers channel  22
+media Xtra extensions  38
+memory, preloading content into  21
+Message window  32
+Movie tab  29
+movies
+adding copyright date to  30
+changing sound volume of  25
+examples of  8,  41
+properties of  27
+selecting colors for  29
+setting properties of  29
+starting, stopping, and rewinding  25
+tutorial  41
+Xtra extensions in  39
+moving around on Stage  21
+N
+naming sprites and channels  8
+navigating to markers  23
+network preferences  15
+new features in Director  8
+O
+offstage canvas  21
+online help  9
+onstage canvas  21
+opening panel sets  36
+opening panels and panel groups  36
+Options menu, location of  33
+P
+palette  29
+Palette channel  22
+panel groups
+adding new tabs to  34
+closing, opening, and collapsing  36
+custom versus default  33
+customizing  32
+definition of  32
+docking  35
+rearranging tabs in  34
+renaming  34
+
+===== PAGE 83 =====
+Index 83
+panel sets
+definition of  32
+saving, opening, and removing  36
+panels
+closing, opening, and collapsing  36
+definition of  32
+docking  35
+moving between panel groups  34
+playhead
+location of  22
+moving  23
+playing DVD-Video  8
+prebuilt components  8
+preferences
+for windows  20
+network  15
+number of sprite channels  24
+Property inspector
+changing view of  27
+definition of  19,  27
+editing cast members and sprites  28
+information not appearing in  28
+setting 3D properties  29
+setting movie properties  29
+Proxies option  15
+publishing  8
+R
+removing panel sets  36
+rewinding movies  25
+RGB color  29
+S
+saving panel sets  36
+Score
+compared to Stage  22
+definition of  19,  22
+frames in  22
+metaphor explained  17
+navigating  23,  26
+number of sprite channels in  24
+playhead in  22
+turning channels on and off  24
+zooming  24,  25
+Script window, definition of  30
+scripting
+JavaScript syntax  8
+Xtra extensions  38
+scripts, testing and debugging scripts  32
+server technologies, integration with  9
+setting properties
+movies  29
+sprites and cast members  28
+showing effects channels  23
+showing more or less of Property inspector  28
+size of Stage  29
+Sound channels  22
+sounds, changing volume of  25
+sprite channels
+definition of  22
+setting the number of  24
+sprites
+compared to cast members  26
+editing  28
+introduction to  18
+naming  8
+Stage
+compared to Score  22
+definition of  19,  20
+location of  30
+metaphor explained  17
+moving around on  21
+offstage canvas  21
+setting properties of  29
+size of  29
+zooming  21
+standard mode in Message window  32
+starting movies  25
+stepping through movies  26
+stopping movies  25
+Support Center  11
+system requirements  13
+T
+tabs in panel groups, rearranging  34
+T empo channel  22
+testing movies  32
+tool windows, definition of  20
+tooltips  11
+trace mode in Message window  32
+training in Director  41
+T ransition channel  22
+transition Xtra extensions  39
+turning channels on and off  24
+tutorial  41
+
+===== PAGE 84 =====
+84 Index
+U
+undocking panels and panel groups  35
+V
+View Port  35
+volume, changing  25
+W
+Window menu  20
+windows
+changing preferences  20
+displaying and hiding  19
+moving between panel groups  34
+types of  20
+workspace
+customizing  8,  19,  32
+default settings of  19
+X
+Xtra extensions
+definition of  37
+media  38
+packaging movies with  39
+scripting  38
+transition  39
+Z
+zooming
+Score  24
+Stage  21
