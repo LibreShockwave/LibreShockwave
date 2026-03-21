@@ -2,6 +2,7 @@ package com.libreshockwave.editor.panel;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.cast.MemberType;
+import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.editor.EditorContext;
 import com.libreshockwave.editor.EditorFrame;
 import com.libreshockwave.editor.cast.CastGridPanel;
@@ -13,6 +14,9 @@ import com.libreshockwave.editor.model.CastMemberInfo;
 import com.libreshockwave.editor.model.MemberNodeData;
 import com.libreshockwave.editor.scanning.FileProcessor;
 import com.libreshockwave.editor.selection.SelectionEvent;
+import com.libreshockwave.player.Player;
+import com.libreshockwave.player.cast.CastLib;
+import com.libreshockwave.player.cast.CastLibManager;
 
 import javax.swing.*;
 import java.awt.*;
@@ -31,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Cast window - Director MX 2004 cast member browser.
@@ -39,10 +44,11 @@ import java.util.Set;
  */
 public class CastWindow extends EditorPanel {
 
-    private final JTabbedPane castTabs;
+    private final JComboBox<CastLibEntry> castSelector;
     private final JTextField searchField;
     private final JComboBox<String> typeFilter;
     private final JLabel statusLabel;
+    private final JPanel contentPanel;
 
     private boolean gridView = true;
     private List<CastMemberInfo> allMembers = new ArrayList<>();
@@ -58,9 +64,16 @@ public class CastWindow extends EditorPanel {
 
         JPanel panel = new JPanel(new BorderLayout());
 
-        // Toolbar with view toggle, search, and filter
+        // Toolbar with cast selector, view toggle, search, and filter
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
+
+        // Cast library dropdown
+        castSelector = new JComboBox<>();
+        castSelector.addItem(new CastLibEntry(0, "Internal"));
+        castSelector.addActionListener(e -> onCastSelected());
+        toolbar.add(castSelector);
+        toolbar.addSeparator();
 
         JButton gridViewBtn = new JButton("Grid");
         JButton listViewBtn = new JButton("List");
@@ -92,16 +105,16 @@ public class CastWindow extends EditorPanel {
         typeFilter.addActionListener(e -> applyFilterAndRebuild());
         toolbar.add(typeFilter);
 
-        // Cast library tabs (bottom tabs like Director MX 2004)
-        castTabs = new JTabbedPane(JTabbedPane.BOTTOM);
-        castTabs.addTab("Internal", new JLabel("No movie loaded", SwingConstants.CENTER));
+        // Content panel for cast member display
+        contentPanel = new JPanel(new BorderLayout());
+        contentPanel.add(new JLabel("No movie loaded", SwingConstants.CENTER), BorderLayout.CENTER);
 
         // Status bar
         statusLabel = new JLabel(" Ready");
         statusLabel.setBorder(BorderFactory.createLoweredBevelBorder());
 
         panel.add(toolbar, BorderLayout.NORTH);
-        panel.add(castTabs, BorderLayout.CENTER);
+        panel.add(contentPanel, BorderLayout.CENTER);
         panel.add(statusLabel, BorderLayout.SOUTH);
 
         installWindowActions(panel);
@@ -118,11 +131,16 @@ public class CastWindow extends EditorPanel {
 
     @Override
     protected void onFileOpened(DirectorFile file) {
-        FileProcessor processor = new FileProcessor();
-        allMembers = processor.processMembers(file);
-        filteredMembers = new ArrayList<>(allMembers);
-        rebuildView();
-        statusLabel.setText(" " + allMembers.size() + " members");
+        populateCastSelector();
+        loadSelectedCast();
+    }
+
+    @Override
+    protected void onCastsLoaded() {
+        // Re-populate the dropdown when external casts finish loading
+        int previousCastNum = getSelectedCastLibNumber();
+        populateCastSelector();
+        selectCastByNumber(previousCastNum);
     }
 
     @Override
@@ -132,8 +150,12 @@ public class CastWindow extends EditorPanel {
         allMembers.clear();
         filteredMembers.clear();
         selectedMemberNums.clear();
-        castTabs.removeAll();
-        castTabs.addTab("Internal", new JLabel("No movie loaded", SwingConstants.CENTER));
+        castSelector.removeAllItems();
+        castSelector.addItem(new CastLibEntry(0, "Internal"));
+        contentPanel.removeAll();
+        contentPanel.add(new JLabel("No movie loaded", SwingConstants.CENTER), BorderLayout.CENTER);
+        contentPanel.revalidate();
+        contentPanel.repaint();
         statusLabel.setText(" Ready");
         searchField.setText("");
         typeFilter.setSelectedIndex(0);
@@ -168,18 +190,22 @@ public class CastWindow extends EditorPanel {
 
     private void rebuildView() {
         cancelThumbnailWorker();
-        castTabs.removeAll();
+        contentPanel.removeAll();
 
         if (filteredMembers.isEmpty() && allMembers.isEmpty()) {
-            castTabs.addTab("Internal", new JLabel("No movie loaded", SwingConstants.CENTER));
+            contentPanel.add(new JLabel("No members", SwingConstants.CENTER), BorderLayout.CENTER);
+            contentPanel.revalidate();
+            contentPanel.repaint();
             return;
         }
 
         if (gridView) {
-            castTabs.addTab("Internal", buildGridView());
+            contentPanel.add(buildGridView(), BorderLayout.CENTER);
         } else {
-            castTabs.addTab("Internal", buildListView());
+            contentPanel.add(buildListView(), BorderLayout.CENTER);
         }
+        contentPanel.revalidate();
+        contentPanel.repaint();
     }
 
     private JScrollPane buildGridView() {
@@ -237,9 +263,6 @@ public class CastWindow extends EditorPanel {
     }
 
     private void launchThumbnailWorker(Map<Integer, JLabel> thumbnailLabels) {
-        DirectorFile dirFile = context.getFile();
-        if (dirFile == null) return;
-
         // Collect bitmap members that need decoding
         List<CastMemberInfo> bitmapMembers = new ArrayList<>();
         for (CastMemberInfo info : filteredMembers) {
@@ -254,7 +277,10 @@ public class CastWindow extends EditorPanel {
                 for (CastMemberInfo info : bitmapMembers) {
                     if (isCancelled()) break;
                     try {
-                        dirFile.decodeBitmap(info.member()).ifPresent(bitmap -> {
+                        // Use the member's own DirectorFile for decoding (works for external casts too)
+                        DirectorFile memberFile = info.member().file();
+                        if (memberFile == null) continue;
+                        memberFile.decodeBitmap(info.member()).ifPresent(bitmap -> {
                             BufferedImage fullImage = bitmap.toBufferedImage();
                             BufferedImage thumb = CastThumbnailRenderer.createBitmapThumbnail(fullImage, 48);
                             thumbnailCache.put(info.memberNum(), new SoftReference<>(thumb));
@@ -637,6 +663,126 @@ public class CastWindow extends EditorPanel {
             current = current.getParent();
         }
         return null;
+    }
+
+    // --- Cast library selector ---
+
+    private void populateCastSelector() {
+        castSelector.removeAllItems();
+        Player player = context.getPlayer();
+        if (player == null) {
+            castSelector.addItem(new CastLibEntry(0, "Internal"));
+            return;
+        }
+
+        CastLibManager clm = player.getCastLibManager();
+        Map<Integer, CastLib> castLibs = clm.getCastLibs();
+
+        // Sort by cast lib number
+        for (int num : new TreeMap<>(castLibs).keySet()) {
+            CastLib cl = castLibs.get(num);
+            String label = cl.getName();
+            if (label == null || label.isEmpty()) {
+                label = "Cast " + num;
+            }
+            if (cl.isExternal() && !cl.isLoaded()) {
+                label += " (not loaded)";
+            }
+            castSelector.addItem(new CastLibEntry(num, label));
+        }
+
+        if (castSelector.getItemCount() == 0) {
+            castSelector.addItem(new CastLibEntry(0, "Internal"));
+        }
+    }
+
+    private void onCastSelected() {
+        loadSelectedCast();
+    }
+
+    private int getSelectedCastLibNumber() {
+        CastLibEntry entry = (CastLibEntry) castSelector.getSelectedItem();
+        return entry != null ? entry.castLibNumber : 0;
+    }
+
+    private void selectCastByNumber(int castLibNumber) {
+        for (int i = 0; i < castSelector.getItemCount(); i++) {
+            if (castSelector.getItemAt(i).castLibNumber == castLibNumber) {
+                castSelector.setSelectedIndex(i);
+                return;
+            }
+        }
+        // Fallback to first item
+        if (castSelector.getItemCount() > 0) {
+            castSelector.setSelectedIndex(0);
+        }
+    }
+
+    private void loadSelectedCast() {
+        thumbnailCache.clear();
+        selectedMemberNums.clear();
+
+        int castLibNumber = getSelectedCastLibNumber();
+        Player player = context.getPlayer();
+
+        if (player == null || castLibNumber <= 0) {
+            // Fallback: load from DirectorFile's internal members
+            DirectorFile file = context.getFile();
+            if (file != null) {
+                FileProcessor processor = new FileProcessor();
+                allMembers = processor.processMembers(file);
+            } else {
+                allMembers = new ArrayList<>();
+            }
+        } else {
+            CastLibManager clm = player.getCastLibManager();
+            CastLib castLib = clm.getCastLib(castLibNumber);
+            if (castLib != null && castLib.isLoaded()) {
+                allMembers = buildMembersFromCastLib(castLib);
+            } else {
+                allMembers = new ArrayList<>();
+            }
+        }
+
+        filteredMembers = new ArrayList<>(allMembers);
+        searchField.setText("");
+        typeFilter.setSelectedIndex(0);
+        rebuildView();
+        statusLabel.setText(" " + allMembers.size() + " members");
+    }
+
+    private List<CastMemberInfo> buildMembersFromCastLib(CastLib castLib) {
+        List<CastMemberInfo> members = new ArrayList<>();
+        DirectorFile sourceFile = castLib.getSourceFile();
+
+        Map<Integer, CastMemberChunk> chunks = castLib.getMemberChunks();
+        for (var entry : new TreeMap<>(chunks).entrySet()) {
+            CastMemberChunk member = entry.getValue();
+            if (member.memberType() == MemberType.NULL) continue;
+
+            String name = member.name();
+            if (name == null || name.isEmpty()) {
+                name = "Unnamed #" + entry.getKey();
+            }
+
+            String details = "";
+            if (sourceFile != null) {
+                FileProcessor processor = new FileProcessor();
+                details = processor.buildMemberDetails(sourceFile, member);
+            }
+
+            members.add(new CastMemberInfo(
+                entry.getKey(), name, member, member.memberType(), details
+            ));
+        }
+        return members;
+    }
+
+    private record CastLibEntry(int castLibNumber, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 
     private record ThumbnailResult(int memberNum, BufferedImage thumbnail) {}

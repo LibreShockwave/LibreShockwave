@@ -43,6 +43,7 @@ public abstract class EditorPanel extends JInternalFrame implements SelectionLis
                 int frame = (int) evt.getNewValue();
                 onFrameChanged(frame);
             }
+            case EditorContext.PROP_CASTS_LOADED -> onCastsLoaded();
         }
     }
 
@@ -69,6 +70,13 @@ public abstract class EditorPanel extends JInternalFrame implements SelectionLis
      * Called when the current frame changes.
      */
     protected void onFrameChanged(int frame) {
+        // Override in subclasses
+    }
+
+    /**
+     * Called when external casts finish loading.
+     */
+    protected void onCastsLoaded() {
         // Override in subclasses
     }
 

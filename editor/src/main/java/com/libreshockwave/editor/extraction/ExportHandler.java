@@ -32,6 +32,10 @@ public class ExportHandler {
      * Exports a single member with a save dialog.
      */
     public void export(JFrame parent, DirectorFile dirFile, MemberNodeData memberData, String lastOutputDir) {
+        // Use the member's own DirectorFile for chunk resolution (essential for external casts)
+        DirectorFile memberFile = memberData.memberInfo().member().file();
+        if (memberFile == null) memberFile = dirFile;
+
         MemberType type = memberData.memberInfo().memberType();
 
         // Sanitize name for default filename
@@ -46,9 +50,9 @@ public class ExportHandler {
         }
 
         if (type == MemberType.BITMAP) {
-            exportBitmap(parent, chooser, dirFile, memberData, safeName);
+            exportBitmap(parent, chooser, memberFile, memberData, safeName);
         } else if (type == MemberType.SOUND) {
-            exportSound(parent, chooser, dirFile, memberData, safeName);
+            exportSound(parent, chooser, memberFile, memberData, safeName);
         } else {
             setStatus("Export not supported for " + type.getName() + " members");
         }

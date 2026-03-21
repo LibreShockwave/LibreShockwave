@@ -60,7 +60,8 @@ public class ScriptEditorWindow extends EditorPanel {
     }
 
     public void loadMember(CastMemberInfo info) {
-        DirectorFile dirFile = context.getFile();
+        DirectorFile dirFile = info.member().file();
+        if (dirFile == null) dirFile = context.getFile();
         if (dirFile == null) return;
 
         ScriptChunk script = MemberResolver.findScriptForMember(dirFile, info.member());
