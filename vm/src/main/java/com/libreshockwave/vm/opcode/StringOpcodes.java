@@ -45,8 +45,10 @@ public final class StringOpcodes {
         // Skip concat + Datum.of allocation when either side is empty (common in loops)
         String aStr = a.toStr();
         String bStr = b.toStr();
-        if (aStr.isEmpty()) { ctx.push(b); return true; }
-        if (bStr.isEmpty()) { ctx.push(a); return true; }
+        // Only reuse original Datum if it's already a string to avoid type confusion
+        // (e.g., Int(0) & "" must produce Str("0"), not Int(0))
+        if (aStr.isEmpty()) { ctx.push(b instanceof Datum.Str ? b : Datum.of(bStr)); return true; }
+        if (bStr.isEmpty()) { ctx.push(a instanceof Datum.Str ? a : Datum.of(aStr)); return true; }
         String result = aStr + bStr;
         ctx.push(Datum.of(result));
         return true;

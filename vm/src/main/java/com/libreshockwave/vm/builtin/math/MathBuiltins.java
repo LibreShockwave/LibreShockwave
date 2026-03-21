@@ -69,9 +69,10 @@ public final class MathBuiltins {
         if (args.isEmpty()) return Datum.ZERO;
         Datum arg = args.get(0);
 
-        // For strings, only convert if it's actually numeric
+        // For strings, convert to integer (Director returns 0 for empty/non-numeric strings)
         if (arg instanceof Datum.Str str) {
             String trimmed = str.value().trim();
+            if (trimmed.isEmpty()) return Datum.ZERO;
             try {
                 // Try integer first
                 return Datum.of(Integer.parseInt(trimmed));
@@ -80,8 +81,8 @@ public final class MathBuiltins {
                     // Try parsing as float and truncating
                     return Datum.of((int) Double.parseDouble(trimmed));
                 } catch (NumberFormatException e2) {
-                    // Return the original string unchanged if not a valid number
-                    return arg;
+                    // Director returns 0 for non-numeric strings
+                    return Datum.ZERO;
                 }
             }
         }
