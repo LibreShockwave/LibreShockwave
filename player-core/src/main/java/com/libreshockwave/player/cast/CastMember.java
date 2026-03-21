@@ -871,6 +871,27 @@ public class CastMember {
     public Datum callMethod(String methodName, java.util.List<Datum> args) {
         String method = methodName.toLowerCase();
         return switch (method) {
+            case "getprop" -> {
+                // Director: member.getProp(#propName, index)
+                // Returns a sub-element of a compound property (e.g., Point, Rect)
+                if (args.size() < 2) yield Datum.VOID;
+                String propSymbol = args.get(0) instanceof Datum.Symbol sym
+                        ? sym.name() : args.get(0).toStr();
+                int index = args.get(1).toInt();
+                Datum propValue = getProp(propSymbol.toLowerCase());
+                if (propValue instanceof Datum.Point p) {
+                    yield Datum.of(index == 1 ? p.x() : p.y());
+                } else if (propValue instanceof Datum.Rect r) {
+                    yield switch (index) {
+                        case 1 -> Datum.of(r.left());
+                        case 2 -> Datum.of(r.top());
+                        case 3 -> Datum.of(r.right());
+                        case 4 -> Datum.of(r.bottom());
+                        default -> Datum.VOID;
+                    };
+                }
+                yield propValue;
+            }
             case "charposttoloc", "charpostoloc" -> {
                 // charPosToLoc(charIndex) → point(x, y)
                 if (args.isEmpty()) yield new Datum.Point(0, 0);
