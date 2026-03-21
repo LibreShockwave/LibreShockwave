@@ -103,6 +103,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                 yield Datum.VOID;
             }
             case "ilk" -> Datum.symbol("sprite");
+            case "rotation" -> Datum.of(0.0);
             case "fliph" -> Datum.of(sprite.isFlipH() ? 1 : 0);
             case "flipv" -> Datum.of(sprite.isFlipV() ? 1 : 0);
             case "moveable", "moveablesprite" -> Datum.of(0);
