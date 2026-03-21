@@ -93,7 +93,7 @@ public final class ScriptInstanceMethodDispatcher {
                                 pl.setValue(index, value);
                             }
                         } else {
-                            // PropList: set by key
+                            // PropList: set by key (type-unaware, preserves existing type)
                             pl.put(keyName, value);
                         }
                     }
