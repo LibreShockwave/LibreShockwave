@@ -24,6 +24,7 @@ public final class ImageMethodDispatcher {
             case "draw" -> { bmp.markScriptModified(); yield draw(bmp, args); }
             case "copypixels" -> {
                 bmp.markScriptModified();
+                // Debug: log copyPixels calls on avatar-sized canvases
                 // Debug removed
                 yield copyPixels(bmp, args);
             }
@@ -245,7 +246,9 @@ public final class ImageMethodDispatcher {
             return Datum.VOID;
         }
         Bitmap src = srcRef.bitmap();
-
+        if (src == null) {
+            return Datum.VOID;
+        }
 
         Datum destRectDatum = args.get(1);
         Datum srcRectDatum = args.get(2);
