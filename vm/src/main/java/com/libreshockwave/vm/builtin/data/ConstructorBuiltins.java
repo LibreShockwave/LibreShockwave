@@ -22,6 +22,8 @@ public final class ConstructorBuiltins {
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
         builtins.put("point", ConstructorBuiltins::point);
         builtins.put("rect", ConstructorBuiltins::rect);
+        builtins.put("union", ConstructorBuiltins::union);
+        builtins.put("intersect", ConstructorBuiltins::intersect);
         builtins.put("color", ConstructorBuiltins::color);
         builtins.put("rgb", ConstructorBuiltins::rgb);
         builtins.put("paletteindex", ConstructorBuiltins::paletteIndex);
@@ -128,10 +130,53 @@ public final class ConstructorBuiltins {
     }
 
     private static Datum rect(LingoVM vm, List<Datum> args) {
+        // Director supports rect(point1, point2) → rect(p1.x, p1.y, p2.x, p2.y)
+        if (args.size() == 2 && args.get(0) instanceof Datum.Point p1 && args.get(1) instanceof Datum.Point p2) {
+            return new Datum.Rect(p1.x(), p1.y(), p2.x(), p2.y());
+        }
         int left = args.size() > 0 ? args.get(0).toInt() : 0;
         int top = args.size() > 1 ? args.get(1).toInt() : 0;
         int right = args.size() > 2 ? args.get(2).toInt() : 0;
         int bottom = args.size() > 3 ? args.get(3).toInt() : 0;
+        return new Datum.Rect(left, top, right, bottom);
+    }
+
+    /**
+     * union(rect1, rect2) - returns the smallest rect encompassing both rects.
+     */
+    private static Datum union(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) return Datum.VOID;
+        if (!(args.get(0) instanceof Datum.Rect r1) || !(args.get(1) instanceof Datum.Rect r2)) {
+            return Datum.VOID;
+        }
+        // If either rect is empty (zero area), return the other
+        boolean r1Empty = (r1.right() <= r1.left()) || (r1.bottom() <= r1.top());
+        boolean r2Empty = (r2.right() <= r2.left()) || (r2.bottom() <= r2.top());
+        if (r1Empty && r2Empty) return new Datum.Rect(0, 0, 0, 0);
+        if (r1Empty) return r2;
+        if (r2Empty) return r1;
+        return new Datum.Rect(
+                Math.min(r1.left(), r2.left()),
+                Math.min(r1.top(), r2.top()),
+                Math.max(r1.right(), r2.right()),
+                Math.max(r1.bottom(), r2.bottom()));
+    }
+
+    /**
+     * intersect(rect1, rect2) - returns the intersection of two rects.
+     */
+    private static Datum intersect(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) return Datum.VOID;
+        if (!(args.get(0) instanceof Datum.Rect r1) || !(args.get(1) instanceof Datum.Rect r2)) {
+            return Datum.VOID;
+        }
+        int left = Math.max(r1.left(), r2.left());
+        int top = Math.max(r1.top(), r2.top());
+        int right = Math.min(r1.right(), r2.right());
+        int bottom = Math.min(r1.bottom(), r2.bottom());
+        if (right <= left || bottom <= top) {
+            return new Datum.Rect(0, 0, 0, 0);
+        }
         return new Datum.Rect(left, top, right, bottom);
     }
 
