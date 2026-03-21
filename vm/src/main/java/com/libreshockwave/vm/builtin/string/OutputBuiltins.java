@@ -23,14 +23,20 @@ public final class OutputBuiltins {
     }
 
     private static Datum put(LingoVM vm, List<Datum> args) {
-        if (!DebugConfig.isDebugPlaybackEnabled()) {
-            return Datum.VOID;
-        }
-        StringBuilder sb = new StringBuilder("[PUT] ");
+        StringBuilder sb = new StringBuilder();
         for (Datum arg : args) {
             sb.append(arg.toStr()).append(' ');
         }
-        System.out.println(sb.toString().trim());
+        String text = sb.toString().trim();
+        // Route Lingo error() messages to the trace listener so they are
+        // visible to Player.setErrorListener() and test harnesses.
+        if (text.startsWith("Error:")) {
+            vm.fireTraceError("[PUT] " + text, null);
+        }
+        if (!DebugConfig.isDebugPlaybackEnabled()) {
+            return Datum.VOID;
+        }
+        System.out.println("[PUT] " + text);
         return Datum.VOID;
     }
 

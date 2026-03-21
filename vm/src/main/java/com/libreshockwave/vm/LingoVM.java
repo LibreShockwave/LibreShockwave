@@ -121,6 +121,15 @@ public class LingoVM {
     }
 
     /**
+     * Notify the trace listener of an error (e.g. Lingo-level error() calls).
+     */
+    public void fireTraceError(String message, Exception error) {
+        if (traceListener != null) {
+            traceListener.onError(message, error);
+        }
+    }
+
+    /**
      * Set a per-handler instruction step limit. 0 = unlimited (the default).
      */
     public void setStepLimit(int limit) {
