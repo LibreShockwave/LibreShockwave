@@ -82,6 +82,13 @@ public class NavigatorWelcomeLobbyErrorTest {
             } else {
                 System.out.printf(Locale.ROOT, "Captured %d target error(s).%n", targetErrors.size());
             }
+
+            // Tick extra frames to let the room update cycle fully activate
+            System.out.println("Ticking 200 extra frames for room update cycle...");
+            tickAndSleep(player, 200);
+            FrameSnapshot lateSnap = player.getFrameSnapshot();
+            saveSnapshot(lateSnap, "05_late_snapshot");
+            NavigatorSSOTest.dumpSpriteInfo(lateSnap, OUTPUT_DIR.resolve("05_late_sprite_info.txt"));
         } finally {
             player.shutdown();
         }
@@ -200,7 +207,7 @@ public class NavigatorWelcomeLobbyErrorTest {
             Thread.sleep(67);
 
             if (!targetErrors.isEmpty()) {
-                System.out.printf("Target error reached at tick +%d%n", i);
+                System.out.printf("Target error reached at tick +%d, stopping%n", i);
                 return;
             }
 
