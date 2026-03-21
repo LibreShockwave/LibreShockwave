@@ -68,7 +68,6 @@ public final class ListBuiltins {
         }
 
         if (container instanceof Datum.PropList pl) {
-            // Try key-based lookup first for symbols and strings
             if (keyOrIndex instanceof Datum.Symbol sym) {
                 return pl.getOrDefault(sym.name(), Datum.VOID);
             }
@@ -125,13 +124,13 @@ public final class ListBuiltins {
         }
 
         if (container instanceof Datum.PropList pl) {
-            // Try key-based set for symbols and strings
+            // Type-aware set for symbols and strings
             if (keyOrIndex instanceof Datum.Symbol sym) {
-                pl.put(sym.name(), value);
+                pl.putTyped(sym.name(), true, value);
                 return Datum.VOID;
             }
             if (keyOrIndex instanceof Datum.Str s) {
-                pl.put(s.value(), value);
+                pl.putTyped(s.value(), false, value);
                 return Datum.VOID;
             }
             // Integer positional set (1-based)
@@ -230,6 +229,7 @@ public final class ListBuiltins {
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
         String key = args.get(1).toKeyName();
+        // Type-unaware: matches first entry by key, preserves existing type flag
         pl.put(key, args.get(2));
         return Datum.VOID;
     }
@@ -243,7 +243,8 @@ public final class ListBuiltins {
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
         String key = args.get(1).toKeyName();
-        pl.add(key, args.get(2));
+        boolean isSym = args.get(1) instanceof Datum.Symbol;
+        pl.add(key, args.get(2), isSym);
         return Datum.VOID;
     }
 

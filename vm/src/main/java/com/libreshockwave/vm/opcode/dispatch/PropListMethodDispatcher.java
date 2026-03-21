@@ -43,14 +43,16 @@ public final class PropListMethodDispatcher {
         if ("setprop".equalsIgnoreCase(methodName) || "setaprop".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.VOID;
             String key = args.get(0).toKeyName();
+            // Type-unaware: matches first entry by key, preserves existing type flag
             propList.put(key, args.get(1));
             return Datum.VOID;
         }
         if ("addprop".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.VOID;
             String key = args.get(0).toKeyName();
+            boolean isSym = args.get(0) instanceof Datum.Symbol;
             // addProp always appends — allows duplicate keys
-            propList.add(key, args.get(1));
+            propList.add(key, args.get(1), isSym);
             return Datum.VOID;
         }
         if ("getat".equalsIgnoreCase(methodName)) {
@@ -78,7 +80,7 @@ public final class PropListMethodDispatcher {
                     propList.setValue(index, value);
                 }
             } else {
-                propList.put(keyOrIndex.toKeyName(), value);
+                propList.putTyped(keyOrIndex.toKeyName(), keyOrIndex instanceof Datum.Symbol, value);
             }
             return Datum.VOID;
         }
@@ -96,7 +98,8 @@ public final class PropListMethodDispatcher {
         }
         if ("deleteprop".equalsIgnoreCase(methodName)) {
             if (args.isEmpty()) return Datum.VOID;
-            propList.remove(args.get(0).toKeyName());
+            String key = args.get(0).toKeyName();
+            propList.remove(key);
             return Datum.VOID;
         }
         if ("findpos".equalsIgnoreCase(methodName)) {

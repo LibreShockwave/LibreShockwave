@@ -92,7 +92,20 @@ public sealed interface Datum {
     }
 
     /** Key-value entry in a PropList. */
-    record PropEntry(String key, Datum value) {}
+    /**
+     * A key-value entry in a PropList.
+     * {@code isSymbolKey} tracks whether the key originated from a Lingo symbol (#foo)
+     * vs a string ("foo").  In Director these are separate namespaces:
+     * {@code [#foo: 1, "foo": 2]} has two entries.  The flag is checked by
+     * {@link PropList#get(String, boolean)} so that symbol-keyed entries don't
+     * collide with string-keyed entries.
+     */
+    record PropEntry(String key, Datum value, boolean isSymbolKey) {
+        /** Convenience constructor — defaults to string key (non-symbol). */
+        public PropEntry(String key, Datum value) {
+            this(key, value, false);
+        }
+    }
 
     /**
      * Property list [#a: 1, #b: 2].
@@ -113,10 +126,28 @@ public sealed interface Datum {
         public int size() { return entries.size(); }
         public boolean isEmpty() { return entries.isEmpty(); }
 
-        /** Get first value matching key (case-insensitive, Director semantics). */
+        /**
+         * Get first value matching key (case-insensitive).
+         * Ignores key type (symbol vs string) — used by getaProp which treats
+         * #foo and "foo" as equivalent.
+         */
         public Datum get(String key) {
             for (PropEntry e : entries) {
                 if (e.key().equalsIgnoreCase(key)) return e.value();
+            }
+            return null;
+        }
+
+        /**
+         * Type-aware get: matches key text (case-insensitive) AND key type.
+         * In Director, [#foo: 1, "foo": 2] has two entries — symbol and string
+         * keys are separate namespaces.
+         */
+        public Datum get(String key, boolean isSymbolKey) {
+            for (PropEntry e : entries) {
+                if (e.isSymbolKey() == isSymbolKey && e.key().equalsIgnoreCase(key)) {
+                    return e.value();
+                }
             }
             return null;
         }
@@ -127,15 +158,62 @@ public sealed interface Datum {
             return v != null ? v : defaultVal;
         }
 
-        /** Set first matching key's value, or append if not found (case-insensitive). */
+        /** Type-aware getOrDefault. */
+        public Datum getOrDefault(String key, boolean isSymbolKey, Datum defaultVal) {
+            Datum v = get(key, isSymbolKey);
+            return v != null ? v : defaultVal;
+        }
+
+        /**
+         * Set first matching key's value, or append if not found (case-insensitive).
+         * Type-unaware — used by setaProp.
+         */
         public void put(String key, Datum value) {
             for (int i = 0; i < entries.size(); i++) {
                 if (entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.set(i, new PropEntry(entries.get(i).key(), value));
+                    entries.set(i, new PropEntry(entries.get(i).key(), value, entries.get(i).isSymbolKey()));
                     return;
                 }
             }
             entries.add(new PropEntry(key, value));
+        }
+
+        /** Type-aware put (strict — only matches same key type). */
+        public void put(String key, boolean isSymbolKey, Datum value) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).isSymbolKey() == isSymbolKey
+                        && entries.get(i).key().equalsIgnoreCase(key)) {
+                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                    return;
+                }
+            }
+            entries.add(new PropEntry(key, value, isSymbolKey));
+        }
+
+        /**
+         * Typed put with fallback: prefer same-type match, then any-type match,
+         * then create new entry. Used by setAt to avoid creating duplicates
+         * when the existing entry was stored without a type flag.
+         */
+        public void putTyped(String key, boolean isSymbolKey, Datum value) {
+            // Pass 1: look for same-type match
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).isSymbolKey() == isSymbolKey
+                        && entries.get(i).key().equalsIgnoreCase(key)) {
+                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                    return;
+                }
+            }
+            // Pass 2: fallback to any-type match (backward compat for untyped entries)
+            // Upgrades the type flag to match the caller's key type
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).key().equalsIgnoreCase(key)) {
+                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                    return;
+                }
+            }
+            // Pass 3: no match at all — create new entry with type
+            entries.add(new PropEntry(key, value, isSymbolKey));
         }
 
         /** Always append — allows duplicate keys (Director's addProp behavior). */
@@ -143,10 +221,26 @@ public sealed interface Datum {
             entries.add(new PropEntry(key, value));
         }
 
-        /** Remove first entry matching key (case-insensitive). */
+        /** Always append with explicit key type. */
+        public void add(String key, Datum value, boolean isSymbolKey) {
+            entries.add(new PropEntry(key, value, isSymbolKey));
+        }
+
+        /** Remove first entry matching key (case-insensitive, type-unaware). */
         public void remove(String key) {
             for (int i = 0; i < entries.size(); i++) {
                 if (entries.get(i).key().equalsIgnoreCase(key)) {
+                    entries.remove(i);
+                    return;
+                }
+            }
+        }
+
+        /** Type-aware remove. */
+        public void remove(String key, boolean isSymbolKey) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).isSymbolKey() == isSymbolKey
+                        && entries.get(i).key().equalsIgnoreCase(key)) {
                     entries.remove(i);
                     return;
                 }

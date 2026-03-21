@@ -56,7 +56,7 @@ public final class ListOpcodes {
         for (int i = 0; i + 1 < items.size(); i += 2) {
             Datum key = items.get(i);
             Datum value = items.get(i + 1);
-            pl.add(key.toKeyName(), value);
+            pl.add(key.toKeyName(), value, key instanceof Datum.Symbol);
         }
         ctx.push(pl);
         return true;
