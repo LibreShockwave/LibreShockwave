@@ -197,8 +197,13 @@ public class SpriteBaker {
                     return liveBmp;
                 }
                 if (InkProcessor.shouldProcessInk(sprite.getInk())) {
+                    // Script-modified bitmaps (avatar canvases, window buffers) use
+                    // simple exact-match color-key transparency. The graduated alpha
+                    // unblending in applyBackgroundTransparent is designed for text
+                    // anti-aliasing, but destroys intentionally grayscale body parts
+                    // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
                     return InkProcessor.applyInk(liveBmp, sprite.getInk(),
-                            sprite.getBackColor(), false, null);
+                            sprite.getBackColor(), false, null, true);
                 }
                 return liveBmp;
             }
