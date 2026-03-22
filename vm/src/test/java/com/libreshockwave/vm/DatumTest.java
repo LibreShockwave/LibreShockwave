@@ -91,8 +91,8 @@ class DatumTest {
     void testPropListDuplicateKeys() {
         // Director's PropList supports duplicate keys (e.g. [#string: "user", #string: "pass"])
         Datum.PropList pl = new Datum.PropList();
-        pl.add("string", Datum.of("username"));
-        pl.add("string", Datum.of("password"));
+        pl.add("string", Datum.of("username"), true);
+        pl.add("string", Datum.of("password"), true);
 
         // Both entries must be preserved
         assertEquals(2, pl.size());
@@ -116,9 +116,9 @@ class DatumTest {
     void testPropListDuplicateKeysViaPushPropList() {
         // Verify that the propList literal [#string: a, #string: b] preserves both entries
         Datum.PropList pl = new Datum.PropList();
-        pl.add("short", Datum.of(1));
-        pl.add("string", Datum.of("hello"));
-        pl.add("short", Datum.of(2));  // duplicate key
+        pl.add("short", Datum.of(1), true);
+        pl.add("string", Datum.of("hello"), true);
+        pl.add("short", Datum.of(2), true);  // duplicate key
 
         assertEquals(3, pl.size());
         // get returns first match
@@ -132,12 +132,12 @@ class DatumTest {
     @Test
     void testPropListPutUpdatesFirstMatch() {
         Datum.PropList pl = new Datum.PropList();
-        pl.add("a", Datum.of(1));
-        pl.add("b", Datum.of(2));
-        pl.add("a", Datum.of(3));
+        pl.add("a", Datum.of(1), true);
+        pl.add("b", Datum.of(2), true);
+        pl.add("a", Datum.of(3), true);
 
         // put updates FIRST match only
-        pl.put("a", Datum.of(99));
+        pl.put("a", true, Datum.of(99));
         assertEquals(3, pl.size());
         assertEquals(99, pl.getValue(0).toInt());  // first "a" updated
         assertEquals(3, pl.getValue(2).toInt());    // second "a" unchanged

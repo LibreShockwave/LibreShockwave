@@ -93,8 +93,9 @@ public final class ScriptInstanceMethodDispatcher {
                                 pl.setValue(index, value);
                             }
                         } else {
-                            // PropList: set by key (type-unaware, preserves existing type)
-                            pl.put(keyName, value);
+                            // PropList: set by key
+                            boolean isSym = subKey instanceof Datum.Symbol;
+                            pl.put(keyName, isSym, value);
                         }
                     }
                 }

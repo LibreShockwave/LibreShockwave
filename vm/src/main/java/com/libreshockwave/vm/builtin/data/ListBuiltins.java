@@ -69,34 +69,10 @@ public final class ListBuiltins {
 
         if (container instanceof Datum.PropList pl) {
             if (keyOrIndex instanceof Datum.Symbol sym) {
-                return pl.getOrDefault(sym.name(), Datum.VOID);
+                return pl.getOrDefault(sym.name(), true, Datum.VOID);
             }
             if (keyOrIndex instanceof Datum.Str s) {
-                // String key:
-                // - Prefer exact-case match.
-                // - Keep a case-insensitive symbol fallback for general compatibility.
-                // - Preserve the Room_interface guard to avoid the known deconstruct cascade.
-                String key = s.value();
-                Datum fallback = null;
-                for (Datum.PropEntry e : pl.entries()) {
-                    if (e.key().equalsIgnoreCase(key)) {
-                        if (e.key().equals(key)) {
-                            return e.value();
-                        }
-                        if (e.isSymbolKey()
-                                && "Room_interface".equalsIgnoreCase(key)
-                                && !e.key().equals(key)) {
-                            continue;
-                        }
-                        if (fallback == null) {
-                            fallback = e.value();
-                        }
-                    }
-                }
-                if (fallback != null) {
-                    return fallback;
-                }
-                return Datum.VOID;
+                return pl.getOrDefault(s.value(), false, Datum.VOID);
             }
             // Integer positional access (1-based)
             int index = keyOrIndex.toInt() - 1;
@@ -252,9 +228,10 @@ public final class ListBuiltins {
         Datum container = args.get(0);
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
-        String key = args.get(1).toKeyName();
-        // Type-unaware: matches first entry by key, preserves existing type flag
-        pl.put(key, args.get(2));
+        Datum keyDatum = args.get(1);
+        String key = keyDatum.toKeyName();
+        boolean isSym = keyDatum instanceof Datum.Symbol;
+        pl.put(key, isSym, args.get(2));
         return Datum.VOID;
     }
 

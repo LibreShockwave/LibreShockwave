@@ -179,10 +179,10 @@ public class MultiuserXtra implements Xtra {
 
         MultiuserNetBridge.NetMessage msg = state.currentMessage;
         Datum.PropList pl = new Datum.PropList();
-        pl.add("errorCode", Datum.of(msg.errorCode()));
-        pl.add("senderID", Datum.of(msg.senderID()));
-        pl.add("subject", Datum.of(msg.subject()));
-        pl.add("content", msg.content() != null ? msg.content() : Datum.VOID);
+        pl.add("errorCode", Datum.of(msg.errorCode()), true);
+        pl.add("senderID", Datum.of(msg.senderID()), true);
+        pl.add("subject", Datum.of(msg.subject()), true);
+        pl.add("content", msg.content() != null ? msg.content() : Datum.VOID, true);
         return pl;
     }
 

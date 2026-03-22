@@ -42,9 +42,10 @@ public final class PropListMethodDispatcher {
         }
         if ("setprop".equalsIgnoreCase(methodName) || "setaprop".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.VOID;
-            String key = args.get(0).toKeyName();
-            // Type-unaware: matches first entry by key, preserves existing type flag
-            propList.put(key, args.get(1));
+            Datum keyDatum = args.get(0);
+            String key = keyDatum.toKeyName();
+            boolean isSym = keyDatum instanceof Datum.Symbol;
+            propList.put(key, isSym, args.get(1));
             return Datum.VOID;
         }
         if ("addprop".equalsIgnoreCase(methodName)) {
@@ -59,30 +60,9 @@ public final class PropListMethodDispatcher {
             if (args.isEmpty()) return Datum.VOID;
             Datum keyOrIndex = args.get(0);
             if (keyOrIndex instanceof Datum.Str s) {
-                // String key:
-                // - Prefer exact-case match.
-                // - Keep a case-insensitive symbol fallback for general compatibility.
-                // - Preserve the Room_interface guard to avoid the known deconstruct cascade.
-                String key = s.value();
-                Datum fallback = null;
-                for (Datum.PropEntry e : propList.entries()) {
-                    if (e.key().equalsIgnoreCase(key)) {
-                        if (e.key().equals(key)) {
-                            return e.value();
-                        }
-                        if (e.isSymbolKey()
-                                && "Room_interface".equalsIgnoreCase(key)
-                                && !e.key().equals(key)) {
-                            continue;
-                        }
-                        if (fallback == null) {
-                            fallback = e.value();
-                        }
-                    }
-                }
-                return fallback != null ? fallback : Datum.VOID;
+                return propList.getOrDefault(s.value(), false, Datum.VOID);
             } else if (keyOrIndex instanceof Datum.Symbol sym) {
-                return propList.getOrDefault(sym.name(), Datum.VOID);
+                return propList.getOrDefault(sym.name(), true, Datum.VOID);
             } else {
                 int index = keyOrIndex.toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
