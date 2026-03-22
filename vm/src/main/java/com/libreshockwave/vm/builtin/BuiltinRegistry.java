@@ -65,6 +65,7 @@ public class BuiltinRegistry {
         if (func != null) {
             return func.apply(vm, args);
         }
+        System.err.println("[LingoVM] Missing builtin: " + name);
         return Datum.VOID;
     }
 

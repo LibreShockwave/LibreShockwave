@@ -112,7 +112,12 @@ public final class CallOpcodes {
             } else {
                 // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
                 // Director compiles these as EXT_CALL with 0 args when used without "the"
-                result = args.isEmpty() ? PropertyOpcodes.getBuiltinConstant(handlerName) : Datum.VOID;
+                if (args.isEmpty()) {
+                    result = PropertyOpcodes.getBuiltinConstant(handlerName);
+                } else {
+                    System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                    result = Datum.VOID;
+                }
             }
         }
         if (!noRet) {

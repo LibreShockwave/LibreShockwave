@@ -579,9 +579,7 @@ public class LingoVM {
                 scope.advanceBytecodeIndex();
             }
         } else {
-            if (traceEnabled) {
-                System.err.println("Unimplemented opcode: " + op);
-            }
+            System.err.println("[LingoVM] Unimplemented opcode: " + op);
             scope.advanceBytecodeIndex();
         }
     }
