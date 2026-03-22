@@ -66,8 +66,9 @@ class DatumTest {
         Datum sym = Datum.symbol("mySymbol");
 
         assertTrue(sym.isSymbol());
-        assertEquals("mySymbol", ((Datum.Symbol) sym).name());
-        assertEquals("#mySymbol", sym.toString());
+        // Director symbols are always lowercase
+        assertEquals("mysymbol", ((Datum.Symbol) sym).name());
+        assertEquals("#mysymbol", sym.toString());
     }
 
     @Test
