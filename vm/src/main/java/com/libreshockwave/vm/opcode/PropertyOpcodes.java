@@ -149,6 +149,7 @@ public final class PropertyOpcodes {
                 if ("ilk".equalsIgnoreCase(propName)) {
                     yield Datum.symbol(TypeBuiltins.getIlkType(obj));
                 }
+                System.err.println("[LingoVM] Missing get accessor: " + propName + " on " + obj.getClass().getSimpleName());
                 yield Datum.VOID;
             }
         };
@@ -252,7 +253,7 @@ public final class PropertyOpcodes {
                 if ("loch".equalsIgnoreCase(propName) || "x".equalsIgnoreCase(propName)) point.setX(v);
                 else if ("locv".equalsIgnoreCase(propName) || "y".equalsIgnoreCase(propName)) point.setY(v);
             }
-            default -> { /* ignore */ }
+            default -> System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
         }
 
         return true;
