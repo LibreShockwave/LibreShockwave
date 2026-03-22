@@ -4,6 +4,7 @@ import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.player.input.HitTester;
 import com.libreshockwave.player.render.pipeline.FrameSnapshot;
+import com.libreshockwave.vm.datum.Datum;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -62,12 +63,17 @@ public class NavigatorWelcomeLobbyErrorTest {
         try {
             startAndLoadNavigator(player);
 
+            // Quick check at hotel view
+            quickDiag(player, "HOTEL_VIEW");
+
             FrameSnapshot navigatorSnap = player.getFrameSnapshot();
             saveSnapshot(navigatorSnap, "01_navigator_loaded");
             writeClickReport(player, navigatorSnap, OUTPUT_DIR.resolve("01_click_targets.txt"));
 
             performClick(player, FIRST_CLICK_X, FIRST_CLICK_Y, "02_after_first_click", TICKS_AFTER_FIRST_CLICK);
             performClick(player, ENTER_CLICK_X, ENTER_CLICK_Y, "03_after_enter_click", TICKS_AFTER_SECOND_CLICK);
+
+            quickDiag(player, "BEFORE_ROOM_ENTRY");
 
             waitForRoomEntryError(player, targetErrors);
 
@@ -89,6 +95,9 @@ public class NavigatorWelcomeLobbyErrorTest {
             FrameSnapshot lateSnap = player.getFrameSnapshot();
             saveSnapshot(lateSnap, "05_late_snapshot");
             NavigatorSSOTest.dumpSpriteInfo(lateSnap, OUTPUT_DIR.resolve("05_late_sprite_info.txt"));
+
+            // Diagnostic: check room bar state
+            diagnosticRoomBar(player);
         } finally {
             player.shutdown();
         }
@@ -211,6 +220,10 @@ public class NavigatorWelcomeLobbyErrorTest {
                 return;
             }
 
+            if (i >= 20 && i <= 45) {
+                quickDiag(player, "WAIT_TICK_" + i);
+            }
+
             if (i % 30 == 0) {
                 FrameSnapshot snap = player.getFrameSnapshot();
                 System.out.printf("  post-enter tick %d, frame=%d, sprites=%d%n",
@@ -246,6 +259,171 @@ public class NavigatorWelcomeLobbyErrorTest {
         return msg.contains("User object not found")
                 || msg.contains("No good object:")
                 || msg.contains("Failed to define room object");
+    }
+
+    private static void quickDiag(Player player, String label) {
+        var vm = player.getVM();
+        try {
+            var f = Player.class.getDeclaredField("castLibManager");
+            f.setAccessible(true);
+            var clm = (com.libreshockwave.player.cast.CastLibManager) f.get(player);
+            com.libreshockwave.vm.builtin.cast.CastLibProvider.setProvider(clm);
+            var f2 = Player.class.getDeclaredField("spriteProperties");
+            f2.setAccessible(true);
+            com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.setProvider(
+                    (com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider) f2.get(player));
+            var f3 = Player.class.getDeclaredField("movieProperties");
+            f3.setAccessible(true);
+            com.libreshockwave.vm.builtin.movie.MoviePropertyProvider.setProvider(
+                    (com.libreshockwave.vm.builtin.movie.MoviePropertyProvider) f3.get(player));
+
+            Datum guiObj = vm.callHandler("getObject",
+                    java.util.List.of(Datum.of("Room_gui_program")));
+            Datum barObj = vm.callHandler("getObject",
+                    java.util.List.of(Datum.of("RoomBarProgram")));
+            Datum roomThread = vm.callHandler("getThread",
+                    java.util.List.of(Datum.symbol("room")));
+            // Check process list on room component
+            String processInfo = "";
+            if (roomThread instanceof Datum.ScriptInstance roomSI) {
+                Datum comp = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, roomSI, "getComponent", java.util.List.of());
+                if (comp instanceof Datum.ScriptInstance compSI) {
+                    // Direct property access on script instance
+                    Datum procList = compSI.properties().getOrDefault("pProcessList", Datum.VOID);
+                    Datum activeFlag = compSI.properties().getOrDefault("pActiveFlag", Datum.VOID);
+                    Datum roomId = compSI.properties().getOrDefault("pRoomId", Datum.VOID);
+                    Datum saveData = compSI.properties().getOrDefault("pSaveData", Datum.VOID);
+                    processInfo = " proc=" + procList + " active=" + activeFlag + " roomId=" + roomId + " saveData=" + saveData;
+                }
+            }
+            System.out.printf("[%s] Room_gui=%s RoomBar=%s thread=%s%s%n",
+                    label,
+                    guiObj.isVoid() ? "VOID" : guiObj,
+                    barObj.isVoid() ? "VOID" : barObj,
+                    roomThread.isVoid() ? "VOID" : "exists",
+                    processInfo);
+        } catch (Exception e) {
+            System.out.println("[" + label + "] diag error: " + e.getMessage());
+        } finally {
+            com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
+            com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.clearProvider();
+            com.libreshockwave.vm.builtin.movie.MoviePropertyProvider.clearProvider();
+        }
+    }
+
+    private static void diagnosticRoomBar(Player player) {
+        System.out.println("=== Room Bar Diagnostics ===");
+        var vm = player.getVM();
+        // Set up providers so VM handlers work outside tick loop
+        try {
+            var f = Player.class.getDeclaredField("castLibManager");
+            f.setAccessible(true);
+            var clm = (com.libreshockwave.player.cast.CastLibManager) f.get(player);
+            com.libreshockwave.vm.builtin.cast.CastLibProvider.setProvider(clm);
+
+            var f2 = Player.class.getDeclaredField("spriteProperties");
+            f2.setAccessible(true);
+            com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.setProvider(
+                    (com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider) f2.get(player));
+
+            var f3 = Player.class.getDeclaredField("movieProperties");
+            f3.setAccessible(true);
+            com.libreshockwave.vm.builtin.movie.MoviePropertyProvider.setProvider(
+                    (com.libreshockwave.vm.builtin.movie.MoviePropertyProvider) f3.get(player));
+        } catch (Exception e) {
+            System.out.println("Provider setup failed: " + e.getMessage());
+        }
+        try {
+            // Check if windowExists("RoomBarID") works
+            Datum windowExists = vm.callHandler("windowExists",
+                    java.util.List.of(Datum.of("RoomBarID")));
+            System.out.println("windowExists('RoomBarID') = " + windowExists);
+
+            // Check if the room thread exists
+            Datum roomThread = vm.callHandler("getThread",
+                    java.util.List.of(Datum.symbol("room")));
+            System.out.println("getThread(#room) = " + (roomThread.isVoid() ? "VOID" : roomThread.getClass().getSimpleName()));
+
+            if (roomThread instanceof Datum.ScriptInstance roomSI) {
+                // Get the interface
+                Datum intf = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, roomSI, "getInterface", java.util.List.of());
+                System.out.println("room.getInterface() = " + (intf.isVoid() ? "VOID" : intf.getClass().getSimpleName()));
+            }
+
+            // Check if the object "Room_gui_program" exists
+            Datum guiObj = vm.callHandler("getObject",
+                    java.util.List.of(Datum.of("Room_gui_program")));
+            System.out.println("getObject('Room_gui_program') = " + (guiObj.isVoid() ? "VOID" : guiObj));
+
+            // Check sprite manager free count
+            Datum sprMgr = vm.callHandler("getSpriteManager", java.util.List.of());
+            if (sprMgr instanceof Datum.ScriptInstance sprSI) {
+                Datum freeSpr = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, sprSI, "getProperty",
+                                java.util.List.of(Datum.symbol("freeSprCount")));
+                Datum totalSpr = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, sprSI, "getProperty",
+                                java.util.List.of(Datum.symbol("totalSprCount")));
+                System.out.println("Sprite manager: total=" + totalSpr + " free=" + freeSpr);
+            }
+
+            // Check memberExists for key members
+            for (String memName : new String[]{"room_bar.window", "newbie_lobby.room",
+                    "alapalkki_bg", "newbie_lobby.room.txt", "background"}) {
+                Datum me2 = vm.callHandler("memberExists",
+                        java.util.List.of(Datum.of(memName)));
+                System.out.println("memberExists('" + memName + "') = " + me2);
+            }
+
+            // Check resource manager getmemnum
+            Datum resMgr = vm.callHandler("getResourceManager", java.util.List.of());
+            if (resMgr instanceof Datum.ScriptInstance resSI) {
+                Datum memNum = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, resSI, "getmemnum",
+                                java.util.List.of(Datum.of("room_bar.window")));
+                System.out.println("getResourceManager().getmemnum('room_bar.window') = " + memNum);
+
+                // Check if "Room GUI Class" script can be found
+                Datum guiClassNum = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, resSI, "getmemnum",
+                                java.util.List.of(Datum.of("Room GUI Class")));
+                System.out.println("getmemnum('Room GUI Class') = " + guiClassNum);
+
+                // Check other critical classes
+                for (String cls : new String[]{"Room Bar Class", "Room Interface Class",
+                        "Room Component Class", "Window Manager Class", "Layout Parser Class",
+                        "Info Stand Class", "Object Mover Class"}) {
+                    Datum cn = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                            .callHandlerOnInstance(vm, resSI, "getmemnum",
+                                    java.util.List.of(Datum.of(cls)));
+                    System.out.println("getmemnum('" + cls + "') = " + cn);
+                }
+            }
+
+            // Try calling roomConnected directly
+            if (roomThread instanceof Datum.ScriptInstance roomSI2) {
+                Datum comp = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(vm, roomSI2, "getComponent", java.util.List.of());
+                if (comp instanceof Datum.ScriptInstance compSI2) {
+                    System.out.println("Calling roomConnected directly...");
+                    Datum result = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                            .callHandlerOnInstance(vm, compSI2, "roomConnected",
+                                    java.util.List.of(Datum.of("newbie_lobby"), Datum.of("ROOM_READY")));
+                    System.out.println("roomConnected result = " + result);
+                    Datum procAfter = compSI2.properties().getOrDefault("pProcessList", Datum.VOID);
+                    System.out.println("pProcessList after roomConnected = " + procAfter);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Diagnostic error: " + e.getMessage());
+            e.printStackTrace();
+        }
+        System.out.println("=== End Room Bar Diagnostics ===");
+        com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
+        com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.clearProvider();
+        com.libreshockwave.vm.builtin.movie.MoviePropertyProvider.clearProvider();
     }
 
     private static void tickAndSleep(Player player, int steps) throws InterruptedException {
