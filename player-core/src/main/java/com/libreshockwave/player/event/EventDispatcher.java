@@ -174,7 +174,11 @@ public class EventDispatcher {
                     for (Datum target : snapshot) {
                         if (target instanceof Datum.ScriptInstance si) {
                             try {
-                                dispatchScriptInstanceEvent(si, handlerName, args);
+                                // Dispatch directly to the script instance's handler
+                                // (e.g. Event_Broker_Behavior's on mouseDown/mouseUp).
+                                // The handler itself routes the event through the
+                                // Habbo event system via redirectEvent → call.
+                                vm.resetErrorState();
                                 if (AncestorChainWalker.hasHandler(si, handlerName)) {
                                     ControlFlowBuiltins.callHandlerOnInstance(vm, si, handlerName, args);
                                 }

@@ -5,6 +5,7 @@ import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntPredicate;
 
@@ -57,6 +58,39 @@ public final class HitTester {
                                                       IntPredicate forceBoundingBox) {
         RenderSprite sprite = findHitSprite(renderer, frame, stageX, stageY, forceBoundingBox);
         return sprite != null ? sprite.getType() : null;
+    }
+
+    /**
+     * Find ALL visible sprites containing the given point (front-to-back order).
+     * Used to dispatch mouse events to every sprite at the click location,
+     * not just the topmost one.
+     */
+    public static List<Integer> hitTestAll(StageRenderer renderer, int frame, int stageX, int stageY,
+                                           IntPredicate filter) {
+        List<RenderSprite> sprites = renderer.getLastBakedSprites();
+        if (sprites == null || sprites.isEmpty()) {
+            sprites = renderer.getSpritesForFrame(frame);
+        }
+        List<Integer> result = new ArrayList<>();
+        for (int i = sprites.size() - 1; i >= 0; i--) {
+            RenderSprite sprite = sprites.get(i);
+            if (!sprite.isVisible()) continue;
+            if (sprite.getChannel() <= 0) continue;
+
+            int left = sprite.getX();
+            int top = sprite.getY();
+            int right = left + sprite.getWidth();
+            int bottom = top + sprite.getHeight();
+
+            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom) {
+                if (isPixelTransparent(sprite, stageX - left, stageY - top,
+                        filter.test(sprite.getChannel()))) {
+                    continue;
+                }
+                result.add(sprite.getChannel());
+            }
+        }
+        return result;
     }
 
     /**
