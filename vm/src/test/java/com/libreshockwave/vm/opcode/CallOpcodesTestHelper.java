@@ -134,9 +134,9 @@ public final class CallOpcodesTestHelper {
                 if (args.isEmpty()) yield Datum.VOID;
                 Datum keyOrIndex = args.get(0);
                 if (keyOrIndex instanceof Datum.Str s) {
-                    yield propList.getOrDefault(s.value(), Datum.VOID);
+                    yield propList.getOrDefault(s.value(), false, Datum.VOID);
                 } else if (keyOrIndex instanceof Datum.Symbol sym) {
-                    yield propList.getOrDefault(sym.name(), Datum.VOID);
+                    yield propList.getOrDefault(sym.name(), true, Datum.VOID);
                 } else {
                     int index = keyOrIndex.toInt() - 1;
                     if (index >= 0 && index < propList.size()) {
@@ -152,14 +152,17 @@ public final class CallOpcodesTestHelper {
             }
             case "setprop", "setaprop" -> {
                 if (args.size() < 2) yield Datum.VOID;
-                String key = args.get(0).toKeyName();
-                propList.put(key, args.get(1));
+                Datum keyDatum = args.get(0);
+                String key = keyDatum.toKeyName();
+                boolean isSym = keyDatum instanceof Datum.Symbol;
+                propList.put(key, isSym, args.get(1));
                 yield Datum.VOID;
             }
             case "addprop" -> {
                 if (args.size() < 2) yield Datum.VOID;
                 String key = args.get(0).toKeyName();
-                propList.add(key, args.get(1));
+                boolean addSym = args.get(0) instanceof Datum.Symbol;
+                propList.add(key, args.get(1), addSym);
                 yield Datum.VOID;
             }
             case "deleteprop" -> {
@@ -178,8 +181,10 @@ public final class CallOpcodesTestHelper {
             }
             case "setat" -> {
                 if (args.size() < 2) yield Datum.VOID;
-                String key = args.get(0).toKeyName();
-                propList.put(key, args.get(1));
+                Datum setAtKey = args.get(0);
+                String key = setAtKey.toKeyName();
+                boolean setAtSym = setAtKey instanceof Datum.Symbol;
+                propList.put(key, setAtSym, args.get(1));
                 yield Datum.VOID;
             }
             case "findpos" -> {
@@ -219,7 +224,8 @@ public final class CallOpcodesTestHelper {
                     // Also update pObjectList if it exists (for Object Manager pattern)
                     Datum pObjectList = instance.properties().get("pObjectList");
                     if (pObjectList instanceof Datum.PropList objList) {
-                        objList.put(propName, value);
+                        boolean objSym = args.get(0) instanceof Datum.Symbol;
+                        objList.put(propName, objSym, value);
                     }
                 }
                 return Datum.VOID;

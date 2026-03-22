@@ -100,12 +100,7 @@ public sealed interface Datum {
      * {@link PropList#get(String, boolean)} so that symbol-keyed entries don't
      * collide with string-keyed entries.
      */
-    record PropEntry(String key, Datum value, boolean isSymbolKey) {
-        /** Convenience constructor — defaults to string key (non-symbol). */
-        public PropEntry(String key, Datum value) {
-            this(key, value, false);
-        }
-    }
+    record PropEntry(String key, Datum value, boolean isSymbolKey) {}
 
     /**
      * Property list [#a: 1, #b: 2].
@@ -164,20 +159,6 @@ public sealed interface Datum {
             return v != null ? v : defaultVal;
         }
 
-        /**
-         * Set first matching key's value, or append if not found (case-insensitive).
-         * Type-unaware — used by setaProp.
-         */
-        public void put(String key, Datum value) {
-            for (int i = 0; i < entries.size(); i++) {
-                if (entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.set(i, new PropEntry(entries.get(i).key(), value, entries.get(i).isSymbolKey()));
-                    return;
-                }
-            }
-            entries.add(new PropEntry(key, value));
-        }
-
         /** Type-aware put (strict — only matches same key type). */
         public void put(String key, boolean isSymbolKey, Datum value) {
             for (int i = 0; i < entries.size(); i++) {
@@ -217,11 +198,6 @@ public sealed interface Datum {
         }
 
         /** Always append — allows duplicate keys (Director's addProp behavior). */
-        public void add(String key, Datum value) {
-            entries.add(new PropEntry(key, value));
-        }
-
-        /** Always append with explicit key type. */
         public void add(String key, Datum value, boolean isSymbolKey) {
             entries.add(new PropEntry(key, value, isSymbolKey));
         }
@@ -267,7 +243,8 @@ public sealed interface Datum {
 
         /** Set value at position (0-based), preserving the key. */
         public void setValue(int index, Datum value) {
-            entries.set(index, new PropEntry(entries.get(index).key(), value));
+            PropEntry old = entries.get(index);
+            entries.set(index, new PropEntry(old.key(), value, old.isSymbolKey()));
         }
 
         /** Remove entry at position (0-based). */
@@ -570,7 +547,7 @@ public sealed interface Datum {
     static Datum propList(Map<String, Datum> props) {
         PropList pl = new PropList();
         for (Map.Entry<String, Datum> e : props.entrySet()) {
-            pl.add(e.getKey(), e.getValue());
+            pl.add(e.getKey(), e.getValue(), true);
         }
         return pl;
     }
@@ -789,7 +766,7 @@ public sealed interface Datum {
             case PropList pl -> {
                 java.util.List<PropEntry> copiedEntries = new ArrayList<>(pl.entries().size());
                 for (PropEntry entry : pl.entries()) {
-                    copiedEntries.add(new PropEntry(entry.key(), entry.value().deepCopy()));
+                    copiedEntries.add(new PropEntry(entry.key(), entry.value().deepCopy(), entry.isSymbolKey()));
                 }
                 yield new PropList(copiedEntries);
             }

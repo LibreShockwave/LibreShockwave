@@ -395,7 +395,7 @@ class ScriptInstanceTest {
     @Test
     void testPropListGetaProp() {
         Datum.PropList propList = new Datum.PropList();
-        propList.put("key", Datum.of("value"));
+        propList.put("key", true, Datum.of("value"));
 
         Datum result = CallOpcodesTestHelper.callPropListMethod(propList, "getaprop",
             List.of(Datum.symbol("key")));
@@ -406,8 +406,8 @@ class ScriptInstanceTest {
     @Test
     void testPropListCount() {
         Datum.PropList propList = new Datum.PropList();
-        propList.put("a", Datum.of(1));
-        propList.put("b", Datum.of(2));
+        propList.put("a", true, Datum.of(1));
+        propList.put("b", true, Datum.of(2));
 
         Datum count = CallOpcodesTestHelper.callPropListMethod(propList, "count", List.of());
         assertEquals(2, count.toInt());
@@ -416,9 +416,9 @@ class ScriptInstanceTest {
     @Test
     void testPropListFindPos() {
         Datum.PropList propList = new Datum.PropList();
-        propList.put("first", Datum.of(1));
-        propList.put("second", Datum.of(2));
-        propList.put("third", Datum.of(3));
+        propList.put("first", true, Datum.of(1));
+        propList.put("second", true, Datum.of(2));
+        propList.put("third", true, Datum.of(3));
 
         Datum pos1 = CallOpcodesTestHelper.callPropListMethod(propList, "findpos",
             List.of(Datum.symbol("first")));
@@ -440,10 +440,10 @@ class ScriptInstanceTest {
     @Test
     void testPropListGetAt() {
         Datum.PropList propList = new Datum.PropList();
-        propList.put("a", Datum.of(10));
-        propList.put("b", Datum.of(20));
+        propList.put("a", true, Datum.of(10));
+        propList.put("b", true, Datum.of(20));
 
-        // Get by key
+        // Get by symbol key
         Datum byKey = CallOpcodesTestHelper.callPropListMethod(propList, "getat",
             List.of(Datum.symbol("a")));
         assertEquals(10, byKey.toInt());
@@ -457,7 +457,7 @@ class ScriptInstanceTest {
     @Test
     void testPropListDuplicate() {
         Datum.PropList original = new Datum.PropList();
-        original.put("x", Datum.of(1));
+        original.put("x", true, Datum.of(1));
 
         Datum result = CallOpcodesTestHelper.callPropListMethod(original, "duplicate", List.of());
 

@@ -177,8 +177,8 @@ public class ScriptModifiedBitmapTest {
         Datum.Rect rect = new Datum.Rect(2, 2, 5, 5);
 
         Datum.PropList props = new Datum.PropList();
-        props.add("ink", Datum.of(36));
-        props.add("bgColor", new Datum.Color(221, 221, 221));
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(221, 221, 221), true);
 
         ImageMethodDispatcher.dispatch(destRef, "copyPixels",
                 List.of(srcRef, rect, new Datum.Rect(0, 0, 3, 3), props));

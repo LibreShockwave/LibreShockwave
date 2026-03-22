@@ -213,7 +213,7 @@ public final class PropertyOpcodes {
             }
             case Datum.XtraInstance xi -> XtraBuiltins.setProperty(xi, propName, value);
             case Datum.TimeoutRef tr -> TimeoutBuiltins.setProperty(tr, propName, value);
-            case Datum.PropList pl -> pl.put(propName, value);
+            case Datum.PropList pl -> pl.put(propName, true, value);
             case Datum.MovieRef m -> {
                 MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
                 if (provider != null) {
