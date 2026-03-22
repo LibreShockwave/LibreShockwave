@@ -134,17 +134,24 @@ public sealed interface Datum {
         }
 
         /**
-         * Type-aware get: matches key text (case-insensitive) AND key type.
-         * In Director, [#foo: 1, "foo": 2] has two entries — symbol and string
-         * keys are separate namespaces.
+         * Type-aware get with cross-type fallback: prefers same-type match,
+         * falls back to any-type match.  This ensures [#foo: 1, "foo": 2]
+         * returns the right entry when the caller specifies a type, while
+         * still finding entries when Lingo mixes symbol/string access.
          */
         public Datum get(String key, boolean isSymbolKey) {
+            Datum fallback = null;
             for (PropEntry e : entries) {
-                if (e.isSymbolKey() == isSymbolKey && e.key().equalsIgnoreCase(key)) {
-                    return e.value();
+                if (e.key().equalsIgnoreCase(key)) {
+                    if (e.isSymbolKey() == isSymbolKey) {
+                        return e.value(); // same-type match — best, return immediately
+                    }
+                    if (fallback == null) {
+                        fallback = e.value(); // cross-type — keep as fallback
+                    }
                 }
             }
-            return null;
+            return fallback;
         }
 
         /** Get first value matching key, or default if not found. */
