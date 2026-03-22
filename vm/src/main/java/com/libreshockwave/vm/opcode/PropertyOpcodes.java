@@ -145,6 +145,13 @@ public final class PropertyOpcodes {
             case Datum.ImageRef ir -> ImageMethodDispatcher.getProperty(ir, propName);
             case Datum.Point point -> getPointProp(point, propName);
             case Datum.Rect rect -> getRectProp(rect, propName);
+            case Datum.Color color -> {
+                if ("red".equalsIgnoreCase(propName)) yield Datum.of(color.r());
+                if ("green".equalsIgnoreCase(propName)) yield Datum.of(color.g());
+                if ("blue".equalsIgnoreCase(propName)) yield Datum.of(color.b());
+                if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("color");
+                yield Datum.VOID;
+            }
             default -> {
                 if ("ilk".equalsIgnoreCase(propName)) {
                     yield Datum.symbol(TypeBuiltins.getIlkType(obj));
@@ -253,6 +260,7 @@ public final class PropertyOpcodes {
                 if ("loch".equalsIgnoreCase(propName) || "x".equalsIgnoreCase(propName)) point.setX(v);
                 else if ("locv".equalsIgnoreCase(propName) || "y".equalsIgnoreCase(propName)) point.setY(v);
             }
+            case Datum.ImageRef ir -> ImageMethodDispatcher.setProperty(ir, propName, value);
             default -> System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
         }
 
