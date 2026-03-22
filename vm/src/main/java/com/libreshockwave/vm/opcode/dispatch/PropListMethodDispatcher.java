@@ -59,19 +59,28 @@ public final class PropListMethodDispatcher {
             if (args.isEmpty()) return Datum.VOID;
             Datum keyOrIndex = args.get(0);
             if (keyOrIndex instanceof Datum.Str s) {
-                // String key: skip entries that are explicitly symbol-keyed AND have
-                // different case. This prevents "Room_interface" from matching
-                // #room_interface while still allowing same-case lookups and lookups
-                // on entries stored via type-unaware paths (isSymbolKey=false).
+                // String key:
+                // - Prefer exact-case match.
+                // - Keep a case-insensitive symbol fallback for general compatibility.
+                // - Preserve the Room_interface guard to avoid the known deconstruct cascade.
                 String key = s.value();
+                Datum fallback = null;
                 for (Datum.PropEntry e : propList.entries()) {
                     if (e.key().equalsIgnoreCase(key)) {
-                        // Skip symbol entries where the case doesn't match exactly
-                        if (e.isSymbolKey() && !e.key().equals(key)) continue;
-                        return e.value();
+                        if (e.key().equals(key)) {
+                            return e.value();
+                        }
+                        if (e.isSymbolKey()
+                                && "Room_interface".equalsIgnoreCase(key)
+                                && !e.key().equals(key)) {
+                            continue;
+                        }
+                        if (fallback == null) {
+                            fallback = e.value();
+                        }
                     }
                 }
-                return Datum.VOID;
+                return fallback != null ? fallback : Datum.VOID;
             } else if (keyOrIndex instanceof Datum.Symbol sym) {
                 return propList.getOrDefault(sym.name(), Datum.VOID);
             } else {

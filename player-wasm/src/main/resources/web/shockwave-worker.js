@@ -844,6 +844,20 @@ self.onmessage = async function(e) {
                     console.error('[WORKER] debugHitTest error:', ie);
                 }
                 break;
+            case 'debugSpriteInfo':
+                if (_e && !_e._wasmDead) try {
+                    var infoLen2 = _e.exports.debugSpriteInfo(msg.channel);
+                    var infoStr2 = '';
+                    if (infoLen2 > 0) {
+                        var sbuf3 = _e.exports.getStringBufferAddress();
+                        var mem3 = new Uint8Array(_e._mem(), sbuf3, infoLen2);
+                        infoStr2 = new TextDecoder().decode(mem3);
+                    }
+                    self.postMessage({ type: 'debugSpriteInfoResult', channel: msg.channel, info: infoStr2 });
+                } catch(ie) {
+                    console.error('[WORKER] debugSpriteInfo error:', ie);
+                }
+                break;
             case 'mouseUp':
                 if (_e && !_e._wasmDead) try { _e.mouseUp(msg.x, msg.y, msg.button); } catch(ie) {
                     console.error('[WORKER] mouseUp error:', ie);

@@ -358,6 +358,37 @@ tasks.register('runWasmWelcomeLobbyErrorTest', Exec) {
     errorOutput    = System.err
 }
 
+// ---------------------------------------------------------------------------
+// Chat input text rendering regression test.
+// Repro flow:
+// after welcome lobby entry, click on 117, 510 then type hello, then press ENTER.
+// Fails when only a tiny white bubble appears and no readable text is rendered.
+//
+// Usage:
+//   ./gradlew :player-wasm:runWasmChatInputTest
+//   ./gradlew :player-wasm:runWasmChatInputTest -PoutputDir=C:/tmp/chat-test
+// ---------------------------------------------------------------------------
+tasks.register('runWasmChatInputTest', Exec) {
+    group       = 'verification'
+    description = 'Test chat message text rendering after sending in headless Chromium'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def dcrFile   = project.findProperty('dcrFile')  ?: 'C:/xampp/htdocs/dcr/14.1_b8/habbo.dcr'
+    def castDir   = project.findProperty('castDir')  ?: 'C:/xampp/htdocs/dcr/14.1_b8'
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-chat-input-test.js').absolutePath,
+        distPath,
+        dcrFile,
+        castDir,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
 tasks.register('runWasmMobilesDiscoTest', Exec) {
     group       = 'verification'
     description = 'Test Mobiles Disco DCR in headless Chromium (WASM pipeline)'
