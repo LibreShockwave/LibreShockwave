@@ -75,6 +75,10 @@ public class PublicSpacesWalkTest {
             hitTestReport(player, WELCOME_LOUNGE_GO_X, WELCOME_LOUNGE_GO_Y, "welcome_lounge_go");
             performClick(player, WELCOME_LOUNGE_GO_X, WELCOME_LOUNGE_GO_Y, "03_welcome_lounge_go", 30);
 
+            // Trace registerProcedure calls during room load
+            player.getVM().addTraceHandler("eventprocinterface");
+            player.getVM().addTraceHandler("eventprocroom");
+
             // Also try the bottom panel "Go" button in case the row click just selected
             FrameSnapshot afterRowGo = player.getFrameSnapshot();
             saveSnapshot(afterRowGo, "03b_after_row_go");
@@ -99,6 +103,31 @@ public class PublicSpacesWalkTest {
 
             // Diagnostics before interaction
             quickDiag(player, "ROOM_LOADED");
+            // Trace registerProcedure calls
+            player.getVM().addTraceHandler("eventprocinterface");
+            player.getVM().addTraceHandler("eventprocroom");
+
+            // Dump pProcList for wave button to verify registerProcedure worked
+            {
+                var sr = player.getStageRenderer().getSpriteRegistry();
+                var spr = sr.get(259);
+                if (spr != null) {
+                    var scripts = spr.getScriptInstanceList();
+                    if (scripts != null && !scripts.isEmpty()) {
+                        for (var s : scripts) {
+                            if (s instanceof Datum.ScriptInstance si) {
+                                var f = Player.class.getDeclaredField("castLibManager");
+                                f.setAccessible(true);
+                                var clm = (com.libreshockwave.player.cast.CastLibManager) f.get(player);
+                                com.libreshockwave.vm.builtin.cast.CastLibProvider.setProvider(clm);
+                                Datum pl = com.libreshockwave.vm.util.AncestorChainWalker.getProperty(si, "pProcList");
+                                System.out.println("[DIAG] ch=259 pProcList=" + pl);
+                                com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
+                            }
+                        }
+                    }
+                }
+            }
 
             // --- Step 3: Click wave button ---
             System.out.println("\n--- Clicking wave button at (" + WAVE_X + "," + WAVE_Y + ") ---");
@@ -327,6 +356,67 @@ public class PublicSpacesWalkTest {
             com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
             com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.clearProvider();
             com.libreshockwave.vm.builtin.movie.MoviePropertyProvider.clearProvider();
+        }
+    }
+
+    /**
+     * Dump the Event_Broker_Behavior's pProcList for a sprite channel
+     * to verify that mouse event procedures are registered.
+     */
+    private static void dumpSpriteBroker(Player player, int channel, String label) {
+        try {
+            var regField = Player.class.getDeclaredField("spriteProperties");
+            regField.setAccessible(true);
+            var f = Player.class.getDeclaredField("castLibManager");
+            f.setAccessible(true);
+            var clm = (com.libreshockwave.player.cast.CastLibManager) f.get(player);
+            com.libreshockwave.vm.builtin.cast.CastLibProvider.setProvider(clm);
+            com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.setProvider(
+                    (com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider) regField.get(player));
+
+            var sr = player.getStageRenderer().getSpriteRegistry();
+            var sprite = sr.get(channel);
+            if (sprite == null) {
+                System.out.printf("  [%s] ch=%d: sprite is null%n", label, channel);
+                return;
+            }
+            var scriptInstances = sprite.getScriptInstanceList();
+            System.out.printf("  [%s] ch=%d: scriptInstanceList size=%d%n",
+                    label, channel, scriptInstances == null ? 0 : scriptInstances.size());
+            if (scriptInstances != null) {
+                for (int i = 0; i < scriptInstances.size(); i++) {
+                    Datum si = scriptInstances.get(i);
+                    if (si instanceof Datum.ScriptInstance inst) {
+                        Datum procList = com.libreshockwave.vm.util.AncestorChainWalker
+                                .getProperty(inst, "pProcList");
+                        Datum id = com.libreshockwave.vm.util.AncestorChainWalker
+                                .getProperty(inst, "id");
+                        System.out.printf("  [%s]   instance[%d]: id=%s pProcList=%s%n",
+                                label, i, id, procList);
+                        // Check for mouseDown/mouseUp specifically
+                        boolean hasDown = com.libreshockwave.vm.util.AncestorChainWalker
+                                .hasHandler(inst, "mouseDown");
+                        boolean hasUp = com.libreshockwave.vm.util.AncestorChainWalker
+                                .hasHandler(inst, "mouseUp");
+                        System.out.printf("  [%s]   instance[%d]: hasMouseDown=%s hasMouseUp=%s%n",
+                                label, i, hasDown, hasUp);
+                    }
+                }
+            }
+            // Also check session client_lastclick
+            Datum lastClick = player.getVM().callHandler("getObject",
+                    java.util.List.of(Datum.symbol("session")));
+            if (lastClick instanceof Datum.ScriptInstance sess) {
+                Datum clk = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                        .callHandlerOnInstance(player.getVM(), sess, "GET",
+                                java.util.List.of(Datum.of("client_lastclick")));
+                System.out.printf("  [%s] session.client_lastclick = %s%n", label, clk);
+            }
+        } catch (Exception e) {
+            System.out.printf("  [%s] broker dump error: %s%n", label, e.getMessage());
+        } finally {
+            com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
+            com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.clearProvider();
         }
     }
 

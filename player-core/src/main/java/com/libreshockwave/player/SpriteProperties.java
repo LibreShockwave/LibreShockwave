@@ -32,6 +32,14 @@ public class SpriteProperties implements SpritePropertyProvider {
     }
 
     @Override
+    public java.util.List<Datum> getScriptInstanceList(int spriteNum) {
+        SpriteState sprite = registry.get(spriteNum);
+        if (sprite == null) return null;
+        java.util.List<Datum> list = sprite.getScriptInstanceList();
+        return (list != null && !list.isEmpty()) ? list : null;
+    }
+
+    @Override
     public Datum getSpriteProp(int spriteNum, String propName) {
         SpriteState sprite = registry.get(spriteNum);
         if (sprite == null) {

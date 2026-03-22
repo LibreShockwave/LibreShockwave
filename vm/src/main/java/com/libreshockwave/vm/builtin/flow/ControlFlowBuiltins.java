@@ -161,21 +161,51 @@ public final class ControlFlowBuiltins {
             // Snapshot the list to avoid ConcurrentModificationException if handlers modify it
             List<Datum> snapshot = new ArrayList<>(list.items());
             for (Datum target : snapshot) {
-                if (target instanceof Datum.ScriptInstance instance) {
-                    lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
-                }
+                lastResult = callOnTarget(vm, target, handlerName, extraArgs);
             }
         } else if (targetList instanceof Datum.PropList propList) {
             // Director also supports call(#handler, propList) — iterates through values
             List<Datum> snapshot = new ArrayList<>(propList.size());
             for (Datum.PropEntry entry : propList.entries()) snapshot.add(entry.value());
             for (Datum target : snapshot) {
-                if (target instanceof Datum.ScriptInstance instance) {
-                    lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+                lastResult = callOnTarget(vm, target, handlerName, extraArgs);
+            }
+        } else {
+            // Single non-list target (e.g. sprite channel number)
+            lastResult = callOnTarget(vm, targetList, handlerName, extraArgs);
+        }
+        return lastResult;
+    }
+
+    /**
+     * Call a handler on a single target, which may be a ScriptInstance or a
+     * sprite channel number (integer).  Director's {@code call} dispatches to
+     * behaviors on sprite channels — we resolve those via SpritePropertyProvider.
+     */
+    private static Datum callOnTarget(LingoVM vm, Datum target, String handlerName, List<Datum> extraArgs) {
+        if (target instanceof Datum.ScriptInstance instance) {
+            return callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+        }
+        // Integer target → sprite channel number.  Dispatch to each script
+        // instance in the sprite's scriptInstanceList (the behaviors attached
+        // to that sprite channel).
+        int channel = target.toInt();
+        if (channel > 0) {
+            var provider = com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.getProvider();
+            if (provider != null) {
+                java.util.List<Datum> scripts = provider.getScriptInstanceList(channel);
+                if (scripts != null) {
+                    Datum lastResult = Datum.VOID;
+                    for (Datum si : scripts) {
+                        if (si instanceof Datum.ScriptInstance instance) {
+                            lastResult = callHandlerOnInstance(vm, instance, handlerName, extraArgs);
+                        }
+                    }
+                    return lastResult;
                 }
             }
         }
-        return lastResult;
+        return Datum.VOID;
     }
 
     /**

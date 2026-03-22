@@ -204,24 +204,24 @@ public class InputHandler {
                 // automatically sets keyboardFocusSprite to that sprite's channel.
                 // Clicking elsewhere clears the keyboard focus.
                 autoFocusEditableField(hitSprite, event.stageX(), event.stageY());
-                if (hitSprite > 0) {
-                    dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_DOWN, List.of());
+                // Dispatch mouseDown to ALL sprites at the click coordinates.
+                // The Habbo client's Event_Broker_Behavior registers procedures
+                // on sprites that may overlap — each one must receive the event.
+                for (int ch : hitTestAll(event.stageX(), event.stageY())) {
+                    dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_DOWN, List.of());
                 }
                 dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_DOWN, List.of());
             }
             case MOUSE_UP -> {
-                // Director dispatches mouseUp to the sprite currently under the mouse,
-                // NOT the sprite that received mouseDown (confirmed via ScummVM).
+                // Dispatch mouseUp to ALL sprites at the release coordinates.
                 int pressedSprite = inputState.getClickOnSprite();
-                int hitSprite = hitTest(event.stageX(), event.stageY());
-                if (hitSprite > 0) {
-                    dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_UP, List.of());
+                List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
+                for (int ch : hitChannels) {
+                    dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_UP, List.of());
                 }
-                // Navigator/Event Broker style UI can register mouseUp dynamically on the
-                // sprite that received mouseDown. If release-time hit testing no longer
-                // resolves to that sprite, still deliver mouseUp to the pressed sprite.
-                if (pressedSprite > 0
-                        && pressedSprite != hitSprite
+                // If the originally-pressed sprite isn't in the hit list,
+                // still deliver mouseUp to it (Event Broker / Navigator pattern).
+                if (pressedSprite > 0 && !hitChannels.contains(pressedSprite)
                         && dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP.getHandlerName())) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
                 }
@@ -296,6 +296,12 @@ public class InputHandler {
     private int hitTest(int stageX, int stageY) {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
         return HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
+                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
+    }
+
+    private List<Integer> hitTestAll(int stageX, int stageY) {
+        EventDispatcher dispatcher = eventDispatcherSupplier.get();
+        return HitTester.hitTestAll(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
                 channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
     }
 
