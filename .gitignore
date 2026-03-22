@@ -36,3 +36,4 @@ package-lock.json
 /frames_figure
 BUGS.md
 *.png
+player-wasm/package.json

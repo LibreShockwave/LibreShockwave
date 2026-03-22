@@ -370,6 +370,17 @@ public class NetManager implements NetBuiltins.NetProvider {
                 return;
             }
 
+            // Root-relative URL (e.g. "/gamedata/external_variables.txt") —
+            // resolve against the server origin, not the movie's directory.
+            if (url.startsWith("/") && basePath != null
+                    && (basePath.startsWith("http://") || basePath.startsWith("https://"))) {
+                String origin = extractOrigin(basePath);
+                if (origin != null) {
+                    url = origin + url;
+                    cacheKey = FileUtil.getFileName(url);
+                }
+            }
+
             boolean isHttpUrl = url.startsWith("http://") || url.startsWith("https://");
 
             // HTTP URLs: fetch via HTTP directly (don't resolve against basePath)
@@ -681,6 +692,15 @@ public class NetManager implements NetBuiltins.NetProvider {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Extract the origin (scheme + host + port) from an absolute URL. */
+    private static String extractOrigin(String url) {
+        if (url == null) return null;
+        int schemeEnd = url.indexOf("://");
+        if (schemeEnd < 0) return null;
+        int pathStart = url.indexOf('/', schemeEnd + 3);
+        return pathStart >= 0 ? url.substring(0, pathStart) : url;
     }
 
     private void notifyCompletion(String fileName, byte[] data) {

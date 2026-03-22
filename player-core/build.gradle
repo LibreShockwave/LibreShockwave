@@ -416,6 +416,17 @@ tasks.register('runNavigatorWelcomeLobbyErrorTest', JavaExec) {
     }
 }
 
+tasks.register('runPublicSpacesWalkTest', JavaExec) {
+    group = 'verification'
+    description = 'Public spaces walk test: navigate to Welcome Lounge, try wave and walk clicks'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.PublicSpacesWalkTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 tasks.register('runPurseTest', JavaExec) {
     group = 'verification'
     description = 'Purse test: open purse, render, pixel diff vs reference'

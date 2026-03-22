@@ -216,6 +216,15 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
             return url;
         }
 
+        // Root-relative URL (e.g. "/gamedata/external_variables.txt") —
+        // resolve against the server origin, not the movie's directory.
+        if (url.startsWith("/") && basePath != null) {
+            String origin = extractOrigin(basePath);
+            if (origin != null) {
+                return origin + url;
+            }
+        }
+
         // Extract just the filename (strip any path from the author's machine)
         // Handles /, \, and : (Mac-style Director paths like "Sulake:...:file.cct")
         String fileName = FileUtil.getFileName(url);
@@ -234,6 +243,16 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         }
 
         return fileName;
+    }
+
+    /** Extract the origin (scheme + host + port) from an absolute URL. */
+    private static String extractOrigin(String url) {
+        if (url == null) return null;
+        // Find the third slash: https://host[:port]/...
+        int schemeEnd = url.indexOf("://");
+        if (schemeEnd < 0) return null;
+        int pathStart = url.indexOf('/', schemeEnd + 3);
+        return pathStart >= 0 ? url.substring(0, pathStart) : url;
     }
 
     /**

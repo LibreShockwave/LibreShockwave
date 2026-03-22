@@ -106,7 +106,6 @@ public class FrameContext {
         int max = getFrameCount();
         if (frame >= 1 && frame <= max) {
             pendingFrame = frame;
-            logEvent("goToFrame(" + frame + ")");
         }
     }
 
@@ -168,8 +167,6 @@ public class FrameContext {
      * Returns true if frame was executed successfully.
      */
     public boolean executeFrame() {
-        logEvent("executeFrame(" + currentFrame + ")");
-
         // Director broadcasts ALL frame events to actorList members, not just stepFrame.
         // Object Manager (in actorList) uses prepareFrame to poll download callbacks.
         List<Datum.ScriptInstance> actorSnapshot = getActorSnapshot();
