@@ -72,7 +72,16 @@ public final class ListBuiltins {
                 return pl.getOrDefault(sym.name(), Datum.VOID);
             }
             if (keyOrIndex instanceof Datum.Str s) {
-                return pl.getOrDefault(s.value(), Datum.VOID);
+                // String key: skip symbol entries with different case
+                // (see PropListMethodDispatcher.getat for rationale)
+                String key = s.value();
+                for (Datum.PropEntry e : pl.entries()) {
+                    if (e.key().equalsIgnoreCase(key)) {
+                        if (e.isSymbolKey() && !e.key().equals(key)) continue;
+                        return e.value();
+                    }
+                }
+                return Datum.VOID;
             }
             // Integer positional access (1-based)
             int index = keyOrIndex.toInt() - 1;
