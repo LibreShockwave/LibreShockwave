@@ -327,6 +327,37 @@ tasks.register('runWasmNavigatorTest', Exec) {
 //   ./gradlew :player-wasm:runWasmMobilesDiscoTest
 //   ./gradlew :player-wasm:runWasmMobilesDiscoTest -PoutputDir=C:/tmp/mobiles-test
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Welcome Lobby room-entry error test.
+// WASM equivalent of NavigatorWelcomeLobbyErrorTest.java.
+// SSO login -> Navigator -> click room selector -> click Enter -> wait for
+// room-entry error ("User object not found" / "No good object:" / etc).
+//
+// Usage:
+//   ./gradlew :player-wasm:runWasmWelcomeLobbyErrorTest
+//   ./gradlew :player-wasm:runWasmWelcomeLobbyErrorTest -PoutputDir=C:/tmp/lobby-test
+// ---------------------------------------------------------------------------
+tasks.register('runWasmWelcomeLobbyErrorTest', Exec) {
+    group       = 'verification'
+    description = 'Test Navigator welcome lobby room-entry error in headless Chromium'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def dcrFile   = project.findProperty('dcrFile')  ?: 'C:/xampp/htdocs/dcr/14.1_b8/habbo.dcr'
+    def castDir   = project.findProperty('castDir')  ?: 'C:/xampp/htdocs/dcr/14.1_b8'
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-welcome-lobby-error-test.js').absolutePath,
+        distPath,
+        dcrFile,
+        castDir,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
 tasks.register('runWasmMobilesDiscoTest', Exec) {
     group       = 'verification'
     description = 'Test Mobiles Disco DCR in headless Chromium (WASM pipeline)'
