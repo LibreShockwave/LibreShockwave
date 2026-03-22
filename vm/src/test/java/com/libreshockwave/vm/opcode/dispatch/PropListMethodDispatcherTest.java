@@ -33,20 +33,20 @@ class PropListMethodDispatcherTest {
     }
 
     @Test
-    void getAtStringKeyFallsBackToSymbolEntry() {
-        // Cross-type fallback: string key finds symbol entry when no string entry exists
+    void getAtStringKeyNoFallbackWhenCaseDiffers() {
+        // Cross-type fallback requires exact case: "Room_interface" != "room_interface"
         Datum.PropList propList = new Datum.PropList();
         propList.add("room_interface", Datum.of(1), true);
 
         Datum result = PropListMethodDispatcher.dispatch(
                 propList, "getAt", List.of(Datum.of("Room_interface")));
 
-        assertEquals(1, result.toInt());
+        assertTrue(result.isVoid());
     }
 
     @Test
-    void getAtSymbolKeyFallsBackToStringEntry() {
-        // Cross-type fallback: symbol key finds string entry when no symbol entry exists
+    void getAtCrossTypeFallbackOnExactCase() {
+        // Cross-type fallback works when case matches exactly
         Datum.PropList propList = new Datum.PropList();
         propList.add("color", Datum.of(255), false);
 
