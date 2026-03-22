@@ -280,8 +280,15 @@ public final class CallOpcodesTestHelper {
     private static Datum getPropertyFromAncestorChain(Datum.ScriptInstance instance, String propName) {
         Datum.ScriptInstance current = instance;
         for (int i = 0; i < 100; i++) { // Safety limit
+            // Exact match first
             if (current.properties().containsKey(propName)) {
                 return current.properties().get(propName);
+            }
+            // Case-insensitive fallback (Director is case-insensitive)
+            for (var entry : current.properties().entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(propName)) {
+                    return entry.getValue();
+                }
             }
 
             // Try ancestor

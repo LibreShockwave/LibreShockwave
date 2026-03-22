@@ -552,7 +552,8 @@ public sealed interface Datum {
     }
 
     static Datum symbol(String name) {
-        return new Symbol(name);
+        // Director symbols are always lowercase
+        return new Symbol(name.toLowerCase(java.util.Locale.ROOT));
     }
 
     static Datum list(Datum... items) {
