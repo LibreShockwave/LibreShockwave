@@ -10,6 +10,7 @@ import com.libreshockwave.vm.datum.Datum;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Represents a loaded cast library.
@@ -35,10 +36,10 @@ public class CastLib {
     private Datum selection = Datum.list(); // Selected members as [[start, end], ...]
 
     // Raw member chunks indexed by member number
-    private final Map<Integer, CastMemberChunk> memberChunks = new HashMap<>();
+    private final Map<Integer, CastMemberChunk> memberChunks = new ConcurrentHashMap<>();
 
     // Loaded CastMember objects indexed by member number (lazy)
-    private final Map<Integer, CastMember> members = new HashMap<>();
+    private final Map<Integer, CastMember> members = new ConcurrentHashMap<>();
 
     // Scripts indexed by member number
     private final Map<Integer, ScriptChunk> scripts = new HashMap<>();

@@ -134,10 +134,11 @@ public sealed interface Datum {
         }
 
         /**
-         * Type-aware get with cross-type fallback: prefers same-type match,
-         * falls back to any-type match.  This ensures [#foo: 1, "foo": 2]
-         * returns the right entry when the caller specifies a type, while
-         * still finding entries when Lingo mixes symbol/string access.
+         * Type-aware get with cross-type fallback: prefers same-type match
+         * (case-insensitive), falls back to cross-type match only on exact
+         * case.  Symbols in Director are always lowercase, so a mixed-case
+         * string like "Room_interface" should NOT match symbol "room_interface"
+         * — the case difference signals a different namespace.
          */
         public Datum get(String key, boolean isSymbolKey) {
             Datum fallback = null;
@@ -146,8 +147,9 @@ public sealed interface Datum {
                     if (e.isSymbolKey() == isSymbolKey) {
                         return e.value(); // same-type match — best, return immediately
                     }
-                    if (fallback == null) {
-                        fallback = e.value(); // cross-type — keep as fallback
+                    // Cross-type fallback only on exact case
+                    if (fallback == null && e.key().equals(key)) {
+                        fallback = e.value();
                     }
                 }
             }
@@ -166,14 +168,32 @@ public sealed interface Datum {
             return v != null ? v : defaultVal;
         }
 
-        /** Type-aware put (strict — only matches same key type). */
+        /**
+         * Type-aware put with cross-type fallback: prefers same-type match
+         * (case-insensitive), falls back to cross-type match only on exact
+         * case, then creates new entry.
+         * Mirrors the fallback behaviour of {@link #get(String, boolean)}.
+         */
         public void put(String key, boolean isSymbolKey, Datum value) {
+            int crossTypeIdx = -1;
             for (int i = 0; i < entries.size(); i++) {
-                if (entries.get(i).isSymbolKey() == isSymbolKey
-                        && entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
-                    return;
+                if (entries.get(i).key().equalsIgnoreCase(key)) {
+                    if (entries.get(i).isSymbolKey() == isSymbolKey) {
+                        // Same-type match — best, update immediately
+                        entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                        return;
+                    }
+                    // Cross-type fallback only on exact case
+                    if (crossTypeIdx < 0 && entries.get(i).key().equals(key)) {
+                        crossTypeIdx = i;
+                    }
                 }
+            }
+            if (crossTypeIdx >= 0) {
+                // Cross-type fallback — update existing entry, preserve its type
+                PropEntry old = entries.get(crossTypeIdx);
+                entries.set(crossTypeIdx, new PropEntry(old.key(), value, old.isSymbolKey()));
+                return;
             }
             entries.add(new PropEntry(key, value, isSymbolKey));
         }
