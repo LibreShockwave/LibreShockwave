@@ -3,6 +3,7 @@ package com.libreshockwave.vm.opcode.dispatch;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 
 import java.util.List;
@@ -97,6 +98,27 @@ public final class ImageMethodDispatcher {
     /**
      * Get a property from an ImageRef.
      */
+    public static void setProperty(Datum.ImageRef imageRef, String propName, Datum value) {
+        Bitmap bmp = imageRef.bitmap();
+        switch (propName.toLowerCase()) {
+            case "paletteref" -> {
+                if (value instanceof Datum.CastMemberRef ref) {
+                    CastLibProvider provider = CastLibProvider.getProvider();
+                    if (provider != null) {
+                        Palette pal = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+                        if (pal != null) bmp.setImagePalette(pal);
+                    }
+                } else if (value instanceof Datum.Symbol sym) {
+                    String name = sym.name().toLowerCase();
+                    if ("systemmac".equals(name)) bmp.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+                    else if ("systemwin".equals(name) || "systemwindows".equals(name))
+                        bmp.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                }
+            }
+            default -> System.err.println("[LingoVM] Unhandled ImageRef set: " + propName);
+        }
+    }
+
     public static Datum getProperty(Datum.ImageRef imageRef, String propName) {
         Bitmap bmp = imageRef.bitmap();
         return switch (propName.toLowerCase()) {

@@ -52,23 +52,18 @@ The click hits the `background` sprite — a single large bitmap covering the en
 Likely causes:
 - The isometric screen-to-tile coordinate conversion may not be implemented (the click is on the `background` bitmap, but the tile coordinate calculation happens in Lingo script, not via sprite hit testing)
 - Even if tile coordinates are calculated, the walk command requires a server roundtrip — the client sends `MOVE` and the server responds with pathfinding updates
-- The `eventProcUserObj: User object not found: 47667` error during room load suggests the user object wasn't properly registered, which would prevent movement commands
-
 ### Errors during room interaction
 
 ```
 Listener not found: 370 / info      — room message handler missing
 Listener not found: 361 / info      — room message handler missing
-User object not found: 47667        — avatar object not registered
 ```
-
-The `User object not found: 47667` error is significant — it means the room's user management system doesn't have an object for the logged-in user (ID 47667). This would prevent any user actions (wave, walk, dance) from being processed since the client can't find its own avatar object to apply actions to.
 
 ## Root Cause Summary
 
 Both interactions fail because:
 
-1. **Missing user object** — `eventProcUserObj` can't find user 47667, so any action targeting the avatar (wave gesture, walking) has no object to apply to
+1. **Error state poisoning in EventDispatcher** — `dispatchScriptInstanceEvent` reads the Event_Broker_Behavior's `pProcList` and attempts to call `executeMessage` even when no procedure is registered (default entry `[#null, 0]`). This causes an error that sets `inErrorState = true`, which prevents `executeHandler` from calling the Event_Broker_Behavior's actual `on mouseDown`/`on mouseUp` handler. Fixed by skipping `executeMessage` when the proc entry has a null method or zero client ID, and resetting error state between the shortcut and real dispatch paths.
 2. **Server dependency** — Both wave and walk require server roundtrips. The client sends the action, the server validates and responds with the visual update. Without server responses, no animations play.
 3. **Floor tile detection** — Walking also requires isometric screen-to-tile coordinate conversion in the Lingo scripts, which may or may not be functioning. The `background` sprite hit is expected (it's the room bitmap), but the Lingo `mouseUp` handler on it needs to calculate which tile was clicked.
 
