@@ -72,14 +72,29 @@ public final class ListBuiltins {
                 return pl.getOrDefault(sym.name(), Datum.VOID);
             }
             if (keyOrIndex instanceof Datum.Str s) {
-                // String key: skip symbol entries with different case
-                // (see PropListMethodDispatcher.getat for rationale)
+                // String key:
+                // - Prefer exact-case match.
+                // - Keep a case-insensitive symbol fallback for general compatibility.
+                // - Preserve the Room_interface guard to avoid the known deconstruct cascade.
                 String key = s.value();
+                Datum fallback = null;
                 for (Datum.PropEntry e : pl.entries()) {
                     if (e.key().equalsIgnoreCase(key)) {
-                        if (e.isSymbolKey() && !e.key().equals(key)) continue;
-                        return e.value();
+                        if (e.key().equals(key)) {
+                            return e.value();
+                        }
+                        if (e.isSymbolKey()
+                                && "Room_interface".equalsIgnoreCase(key)
+                                && !e.key().equals(key)) {
+                            continue;
+                        }
+                        if (fallback == null) {
+                            fallback = e.value();
+                        }
                     }
+                }
+                if (fallback != null) {
+                    return fallback;
                 }
                 return Datum.VOID;
             }

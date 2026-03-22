@@ -534,8 +534,7 @@ class ScriptInstanceTest {
         CallOpcodesTestHelper.callScriptInstanceMethod(null, instance, "addprop",
             List.of(Datum.symbol("newProp"), Datum.of("newValue")));
 
-        // Symbol names are lowercased (Director behavior)
-        assertEquals("newValue", instance.properties().get("newprop").toStr());
+        assertEquals("newValue", instance.properties().get("newProp").toStr());
     }
 
     @Test
@@ -707,11 +706,10 @@ class ScriptInstanceTest {
         CallOpcodesTestHelper.callScriptInstanceMethod(null, instance, "setaprop",
             List.of(Datum.symbol("myManager"), subInstance));
 
-        // Should be set on instance (symbol names are lowercased)
-        assertEquals(subInstance, instance.properties().get("mymanager"));
+        assertEquals(subInstance, instance.properties().get("myManager"));
 
         // Should also be set on pObjectList
-        assertEquals(subInstance, pObjectList.get("mymanager"));
+        assertEquals(subInstance, pObjectList.get("myManager"));
     }
 
     @Test

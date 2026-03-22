@@ -460,6 +460,12 @@ var LibreShockwave = (function() {
                     this._debugHitTestResolve = null;
                 }
                 break;
+            case 'debugSpriteInfoResult':
+                if (this._debugSpriteInfoResolve) {
+                    this._debugSpriteInfoResolve({ channel: msg.channel, info: msg.info || '' });
+                    this._debugSpriteInfoResolve = null;
+                }
+                break;
 
             case 'fetchRelay': {
                 // Worker needs a cross-origin fetch; do it from main thread and relay back
@@ -782,6 +788,20 @@ var LibreShockwave = (function() {
                 if (self._debugHitTestResolve) {
                     self._debugHitTestResolve(-999);
                     self._debugHitTestResolve = null;
+                }
+            }, 2000);
+        });
+    };
+
+    ShockwavePlayer.prototype.debugSpriteInfo = function(channel) {
+        var self = this;
+        return new Promise(function(resolve) {
+            self._debugSpriteInfoResolve = resolve;
+            self._worker.postMessage({ type: 'debugSpriteInfo', channel: channel });
+            setTimeout(function() {
+                if (self._debugSpriteInfoResolve) {
+                    self._debugSpriteInfoResolve({ channel: channel, info: '' });
+                    self._debugSpriteInfoResolve = null;
                 }
             }, 2000);
         });

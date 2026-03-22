@@ -5,6 +5,7 @@ import org.teavm.interop.Export;
 
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.DebugConfig;
+import com.libreshockwave.vm.datum.Datum;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -755,6 +756,7 @@ public class WasmEntry {
     }
 
     private static String lastDebugHitInfo = "";
+    private static String lastDebugSpriteInfo = "";
 
     /**
      * Debug: dump star sprite state (channels 33-49).
@@ -879,6 +881,70 @@ public class WasmEntry {
         sb.append("|hit=").append(hitChannel);
         lastDebugHitInfo = sb.toString();
         return hitChannel;
+    }
+
+    /**
+     * Debug: dump sprite + member edit info for a specific channel.
+     * Returns number of bytes written to stringBuffer.
+     */
+    @Export(name = "debugSpriteInfo")
+    public static int debugSpriteInfo(int channel) {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) {
+            return writeToStringBuffer("debugSpriteInfo: no player");
+        }
+
+        var player = wasmPlayer.getPlayer();
+        var sprite = player.getStageRenderer().getSpriteRegistry().get(channel);
+        if (sprite == null) {
+            return writeToStringBuffer("debugSpriteInfo: no sprite at channel " + channel);
+        }
+
+        int castLib = sprite.getEffectiveCastLib();
+        int memberNum = sprite.getEffectiveCastMember();
+        var member = player.getCastLibManager().getDynamicMember(castLib, memberNum);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("ch=").append(channel)
+          .append(" castLib=").append(castLib)
+          .append(" member=").append(memberNum)
+          .append(" visible=").append(sprite.isVisible())
+          .append(" ink=").append(sprite.getInk())
+          .append(" blend=").append(sprite.getBlend());
+
+        if (member == null) {
+            sb.append(" member=null");
+            lastDebugSpriteInfo = sb.toString();
+            return writeToStringBuffer(lastDebugSpriteInfo);
+        }
+
+        sb.append(" type=").append(member.getMemberType())
+          .append(" editable=").append(member.isEditable())
+          .append(" name=").append(member.getName());
+
+        String text = member.getTextContent();
+        if (text != null) {
+            String sample = text.length() > 64 ? text.substring(0, 64) + "..." : text;
+            sb.append(" text=\"").append(sample.replace('\n', ' ')).append("\"");
+        }
+
+        Datum color = member.getProp("color");
+        sb.append(" color=").append(color);
+
+        var bmp = member.renderTextToImage();
+        if (bmp != null && bmp.getPixels() != null) {
+            int nonTransparent = 0;
+            int[] pixels = bmp.getPixels();
+            for (int p : pixels) {
+                if (((p >>> 24) & 0xFF) != 0) nonTransparent++;
+            }
+            sb.append(" bmp=").append(bmp.getWidth()).append("x").append(bmp.getHeight())
+              .append(" nonTransparent=").append(nonTransparent).append("/").append(pixels.length);
+        } else {
+            sb.append(" bmp=null");
+        }
+
+        lastDebugSpriteInfo = sb.toString();
+        return writeToStringBuffer(lastDebugSpriteInfo);
     }
 
     /**
