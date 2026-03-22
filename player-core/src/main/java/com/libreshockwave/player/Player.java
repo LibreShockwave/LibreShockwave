@@ -109,7 +109,7 @@ public class Player {
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
-    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -1155,8 +1155,10 @@ public class Player {
 
     private void queueResourceReindex(int castNum) {
         if (castNum <= 0) return;
-        if (pendingResourceReindexSet.add(castNum)) {
-            pendingResourceReindexQueue.offer(castNum);
+        synchronized (pendingResourceReindexQueue) {
+            if (pendingResourceReindexSet.add(castNum)) {
+                pendingResourceReindexQueue.offer(castNum);
+            }
         }
     }
 
@@ -1165,8 +1167,10 @@ public class Player {
      * Runs on the VM thread with providers installed.
      */
     private void processPendingResourceReindexes() {
-        if (pendingResourceReindexQueue.isEmpty()) {
-            return;
+        synchronized (pendingResourceReindexQueue) {
+            if (pendingResourceReindexQueue.isEmpty()) {
+                return;
+            }
         }
 
         Datum objectManager = vm.callHandler("getObjectManager", List.of());
@@ -1186,11 +1190,13 @@ public class Player {
             return;  // Resource manager not ready yet — leave queue intact for next tick
         }
 
-        Integer castNum;
-        while ((castNum = pendingResourceReindexQueue.poll()) != null) {
-            pendingResourceReindexSet.remove(castNum);
-            ControlFlowBuiltins.callHandlerOnInstance(
-                    vm, manager, "preIndexMembers", List.of(Datum.of(castNum)));
+        synchronized (pendingResourceReindexQueue) {
+            Integer castNum;
+            while ((castNum = pendingResourceReindexQueue.poll()) != null) {
+                pendingResourceReindexSet.remove(castNum);
+                ControlFlowBuiltins.callHandlerOnInstance(
+                        vm, manager, "preIndexMembers", List.of(Datum.of(castNum)));
+            }
         }
     }
 
