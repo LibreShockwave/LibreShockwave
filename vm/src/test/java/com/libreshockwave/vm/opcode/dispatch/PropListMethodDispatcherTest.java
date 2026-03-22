@@ -33,25 +33,27 @@ class PropListMethodDispatcherTest {
     }
 
     @Test
-    void getAtStringKeyDoesNotMatchSymbolEntry() {
+    void getAtStringKeyFallsBackToSymbolEntry() {
+        // Cross-type fallback: string key finds symbol entry when no string entry exists
         Datum.PropList propList = new Datum.PropList();
         propList.add("room_interface", Datum.of(1), true);
 
         Datum result = PropListMethodDispatcher.dispatch(
                 propList, "getAt", List.of(Datum.of("Room_interface")));
 
-        assertTrue(result.isVoid());
+        assertEquals(1, result.toInt());
     }
 
     @Test
-    void getAtSymbolKeyDoesNotMatchStringEntry() {
+    void getAtSymbolKeyFallsBackToStringEntry() {
+        // Cross-type fallback: symbol key finds string entry when no symbol entry exists
         Datum.PropList propList = new Datum.PropList();
         propList.add("color", Datum.of(255), false);
 
         Datum result = PropListMethodDispatcher.dispatch(
                 propList, "getAt", List.of(new Datum.Symbol("color")));
 
-        assertTrue(result.isVoid());
+        assertEquals(255, result.toInt());
     }
 
     @Test
