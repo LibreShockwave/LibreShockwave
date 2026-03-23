@@ -425,4 +425,19 @@ public class EventDispatcher {
         return stopPropagation;
     }
 
+    /**
+     * Check if Lingo's stopEvent() was called during the current event dispatch.
+     * Used by InputHandler to stop dispatching to further sprites.
+     */
+    public boolean isEventStopped() {
+        return vm.isEventStopped();
+    }
+
+    /**
+     * Reset the stopEvent flag at the start of each input event dispatch.
+     */
+    public void resetEventStopped() {
+        vm.resetEventStopped();
+    }
+
 }
