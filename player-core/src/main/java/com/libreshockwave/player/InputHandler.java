@@ -204,21 +204,25 @@ public class InputHandler {
                 // automatically sets keyboardFocusSprite to that sprite's channel.
                 // Clicking elsewhere clears the keyboard focus.
                 autoFocusEditableField(hitSprite, event.stageX(), event.stageY());
-                // Dispatch mouseDown to ALL sprites at the click coordinates.
-                // The Habbo client's Event_Broker_Behavior registers procedures
-                // on sprites that may overlap — each one must receive the event.
+                // Dispatch mouseDown to sprites at the click coordinates.
+                // Stop if a handler calls stopEvent() (e.g. avatar click should not
+                // also trigger floor walk).
+                dispatcher.resetEventStopped();
                 List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
                 for (int ch : hitChannels) {
                     dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_DOWN, List.of());
+                    if (dispatcher.isEventStopped()) break;
                 }
                 dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_DOWN, List.of());
             }
             case MOUSE_UP -> {
-                // Dispatch mouseUp to ALL sprites at the release coordinates.
+                // Dispatch mouseUp to sprites at the release coordinates.
+                dispatcher.resetEventStopped();
                 int pressedSprite = inputState.getClickOnSprite();
                 List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
                 for (int ch : hitChannels) {
                     dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_UP, List.of());
+                    if (dispatcher.isEventStopped()) break;
                 }
                 // If the originally-pressed sprite isn't in the hit list,
                 // still deliver mouseUp to it (Event Broker / Navigator pattern).

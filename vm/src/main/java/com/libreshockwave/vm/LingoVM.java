@@ -49,6 +49,9 @@ public class LingoVM {
     // Error state - when true, no more handlers will execute (like dirplayer-rs stop())
     private boolean inErrorState = false;
 
+    // stopEvent flag - set by Lingo stopEvent() to prevent further sprite event dispatch
+    private boolean eventStopped = false;
+
     // Static GC callback: invoked during GC safepoints to clear caches.
     // Set by player layer (e.g. WasmEntry) to release file caches and audio chunks
     // DURING long-running handlers like the dump, not just after they complete.
@@ -101,8 +104,11 @@ public class LingoVM {
             }
             return Datum.VOID;
         });
-        // stopEvent() prevents further event propagation (opposite of pass())
-        builtins.register("stopEvent", (vm, args) -> Datum.VOID);
+        // stopEvent() prevents further event propagation to other sprites
+        builtins.register("stopEvent", (vm, args) -> {
+            vm.eventStopped = true;
+            return Datum.VOID;
+        });
     }
 
     // Configuration
@@ -517,6 +523,16 @@ public class LingoVM {
      */
     public void resetErrorState() {
         this.inErrorState = false;
+    }
+
+    /** Check if stopEvent() was called during the current event dispatch. */
+    public boolean isEventStopped() {
+        return eventStopped;
+    }
+
+    /** Reset the stopEvent flag at the start of each input event dispatch. */
+    public void resetEventStopped() {
+        this.eventStopped = false;
     }
 
     /**
