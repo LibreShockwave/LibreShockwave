@@ -116,6 +116,7 @@ public final class CallOpcodes {
                     result = PropertyOpcodes.getBuiltinConstant(handlerName);
                 } else {
                     System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                    System.err.println(ctx.formatCallStack());
                     result = Datum.VOID;
                 }
             }
