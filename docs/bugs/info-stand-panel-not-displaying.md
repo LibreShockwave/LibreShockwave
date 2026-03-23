@@ -1,124 +1,93 @@
-# Info Stand Panel Not Displaying on Room Entry
+# Info Stand Panel Grey Background Not Displaying
+
+**Status: FIXED**
 
 ## Summary
 
-After entering the welcome lobby, the grey info panel (RGB 187, 187, 187 / #BBBBBB) in the bottom-right corner does not display. In the original client, this panel shows immediately on room entry with the user's name and motto (e.g. "Alex" / "I'm a new user!"), along with "Home Page", "Wave", and "Dance" buttons.
+After entering the welcome lobby, the grey info panel (RGB 187, 187, 187) in the bottom-right corner did not display. The info stand window was created and text elements rendered, but the grey background panel behind the username was invisible.
 
-Reference: `docs/chat-message-reference.png`
+## Root Cause
 
-## Expected Behavior
+**`Drawing.applyInk()` MATTE ink ignored the `blend` parameter and used inverted blend convention.**
 
-When the own user enters a room, the info stand panel auto-shows at position [550, 287] with:
-- Grey background panel (info_name_bg bitmap, ink 8/matte, blend 70 over the dark room background produces the ~187,187,187 grey)
-- Diamond-shaped info plate (info_plate bitmap)
-- Dark text background (info_stand_txt_bg bitmap, ink 36/bgTransparent, blend 20)
-- Username in white (#EEEEEE) text
-- Motto in white (#EEEEEE) text
-- Avatar portrait image
-- Badge / group badge slots
+The `info_name_bg` bitmap is an 8-bit black-filled rounded rectangle (paletteId=2, custom 2-color palette: index 0=white, all others=black). White pixels are removed by matte. The remaining black pixels should composite at `#blend: 70` over the white buffer, producing grey ~187.
+
+Two issues:
+1. **MATTE ignored `blend`** — used only `srcA` (255), so black overwrote white at 100% → pure black instead of grey.
+2. **Blend direction inverted** — Director's internal `blendAmount` convention: 0=fully visible, 255=invisible. ScummVM confirms at `graphics.cpp:342`: `lerpByte(src, dst, blendAmount, 255)` where `blendAmount = 255 - opacity`. The formula `alphaBlend(src, dst, 255 - blend)` produces: black over white with blendAmount=77 → `255*178/255 = 178` ≈ 187.
+
+## Fix
+
+`sdk/src/main/java/com/libreshockwave/bitmap/Drawing.java` — `applyInk()` MATTE case:
+- When `blend < 255` (partial): use `alphaBlend(src, dest, 255 - blend)` (Director's inverted convention)
+- When `blend == 255` (full opacity): use `alphaBlend(src, dest, srcA)` (normal matte behavior)
+
+The `info_name_bg` element (a white rounded rectangle) is composited into the grouped element buffer via `Grouped_Element_Class.render()`:
+
+```
+buffer.image.copyPixels(sourceImage, destRect, srcRect, [#ink: 8, #blend: 70])
+```
+
+`Drawing.copyPixels()` (line 55-58) treats `#ink: 8` (MATTE) by calling `applyMatteToRegion()` which flood-fills white from edges making ALL edge-connected white pixels transparent. Since `info_name_bg` is a white rounded rectangle, the flood-fill enters through gaps at corners and removes the entire white interior, leaving only the black outline.
+
+In Director's original `copyPixels`, MATTE ink with `#blend: 70` should composite the white fill at 70% opacity over the destination buffer, producing grey (~187,187,187). The matte should only remove the background outside the shape, not the white fill inside.
+
+### Code Path
+
+1. `Grouped_Element_Class.render()` → `buffer.image.copyPixels(pimage, destRect, srcRect, [#ink: 8, #blend: 70])`
+2. `ImageMethodDispatcher.copyPixels()` → `ink = InkMode.MATTE`, `blend = 178` (70% of 255)
+3. `Drawing.copyPixels()` line 55: `applyMatteToRegion(src, ...)` → flood-fills white from edges → ALL white pixels become alpha=0
+4. `applyInk()` with MATTE: only non-transparent pixels survive → just the thin black outline
+5. Result: grey panel invisible
+
+### Fix Location
+
+| File | Line | Issue |
+|------|------|-------|
+| `sdk/.../bitmap/Drawing.java` | 55-58 | `applyMatteToRegion` flood-fills through corners, destroying interior white fill |
+
+## Confirmed Working Systems
+
+From test output (`NavigatorWelcomeLobbyErrorTest`):
+
+- Window system: `windowExists('RoomBarID') = 1`
+- Sprite manager: 832 free of 1000 total
+- Info Stand Class loaded: `getmemnum('Info Stand Class') = 1769493`
+- Info stand window created (sprites Ch228-Ch231 visible)
+- Text elements render correctly
+
+## Info Stand Sprite Layout (from test)
+
+| Channel | Size | Ink | Blend | Role |
+|---------|------|-----|-------|------|
+| Ch228 | 160x36 @ (553,430) | 36 (BG_TRANSPARENT) | 20 | `bg_darken` |
+| Ch229 | 162x55 @ (552,374) | 8 (MATTE) | 100 | `info_stand` grouped (info_plate + info_name_bg) |
+| Ch230 | 147x18 @ (559,414) | 36 (BG_TRANSPARENT) | 100 | `info_name` text |
+| Ch231 | 157x33 @ (553,431) | 36 (BG_TRANSPARENT) | 100 | `info_text` text |
+
+Ch229 is the grouped wrapper containing both `info_plate` and `info_name_bg`. Individual element blend values (70 for info_name_bg) are applied during copyPixels into the buffer, not at sprite level.
 
 ## Trigger Flow
 
-The info stand display is triggered by the server USERS message:
-
-1. `Room_Handler_Class.handle_users()` (hh_room, line 673) processes the incoming USERS message
-2. For each user, checks if the user's name matches the session's own username
-3. If so, calls `Room_Interface_Class.eventProcUserObj(#selection, spriteID, #userEnters)` (line 1186)
-4. `eventProcUserObj` detects `tParam == #userEnters` (line 4919), sets `pSelectedObj` and `pSelectedType`
-5. Calls `Info_Stand_Class.showObjectInfo("user")` (line 4905) via the info stand object
-
-## Window System Chain
-
-The info stand is built on the fuse_client Window system. The creation chain is:
-
+Auto-shows on room entry via `Room_Component_Class.updateProcess()` (line 3896):
 ```
-Info_Stand_Class.showInfostand()
-  -> extCall [createWindow]("info_stand.window", 552, 300)  -- Window_API movie script
-    -> getWindowManager().create(...)                        -- Window_Manager_Class
-      -> Layout_Parser_Class.parse("info_stand.window")     -- reads text cast member
-        -> parse_window() parses the .window.txt content
-          -> Sprite_Manager.reserveSprite() for each element
-          -> Creates Element_Wrapper_Class instances
-          -> Sets sprite member, ink, blend, position, visibility
+me.getInterface().getInfoStandObject().showInfostand()
 ```
-
-Then `showObjectInfo()` populates the elements:
-```
-Info_Stand_Class.showObjectInfo(tObjType)
-  -> getWindow("info_stand").getElement("bg_darken").show()    -- sets sprite.visible = 1
-  -> getElement("info_name").show() + setText(name)
-  -> getElement("info_text").show() + setText(motto)
-  -> getElement("info_image").resizeTo(w, h) + set member image
-```
-
-## Key Files
-
-### Lingo Scripts (director_assets/14.1_b8)
-
-| File | Role |
-|------|------|
-| `hh_room_utils/Info_Stand_Class.ls` | Info stand controller (showInfostand, showObjectInfo, hideObjectInfo) |
-| `hh_room_utils/info_stand.window.txt` | Window layout definition (element positions, members, ink, blend) |
-| `hh_room/Room_Interface_Class.ls` | Room event dispatcher (eventProcUserObj triggers info stand) |
-| `hh_room/Room_Handler_Class.ls` | Server message handler (handle_users triggers eventProcUserObj) |
-| `fuse_client/Window_API.ls` | Movie script providing createWindow, getWindow, windowExists, removeWindow |
-| `fuse_client/Window_Manager_Class.ls` | Manages window instances, delegates to Layout_Parser_Class |
-| `fuse_client/Window_Instance_Class.ls` | Individual window (getElement, registerClient, lock) |
-| `fuse_client/Element_Wrapper_Class.ls` | Window element (show/hide sets sprite.visible, define sets sprite props) |
-| `fuse_client/Layout_Parser_Class.ls` | Parses .window.txt text members into element definitions |
-| `fuse_client/Sprite_API.ls` / `Sprite_Manager_Class.ls` | Allocates sprites for window elements |
-
-### Bitmap Assets (hh_interface cast)
-
-| Member | Role | Ink | Blend |
-|--------|------|-----|-------|
-| `info_stand_txt_bg` | Dark bg overlay (black rounded rect) | 36 (bgTransparent) | 20 |
-| `info_plate` | Diamond plate shape | 36 (bgTransparent) | 100 |
-| `info_name_bg` | Name background (white rounded rect) - produces the grey #BBBBBB | 8 (matte) | 70 |
-
-### Java Implementation
-
-| File | Role |
-|------|------|
-| `player-core/.../render/pipeline/RenderSprite.java` | Sprite rendering data (visible, ink, blend) |
-| `player-core/.../render/output/SoftwareFrameRenderer.java` | Composites sprites with ink/blend |
-| `player-core/.../render/pipeline/InkProcessor.java` | Ink mode processing (bgTransparent, matte) |
-| `player-core/.../render/pipeline/SpriteBaker.java` | Converts sprites to renderable bitmaps |
-| `player-core/.../cast/CastMember.java` | Cast member loading and property access |
 
 ## Window Layout Definition
 
-From `info_stand.window.txt`, positioned at rect [550, 287, 719, 453]:
+From `hh_room_utils/info_stand.window.txt`:
 
 ```
-bg_darken:    member "info_stand_txt_bg", locH 1, locV 130,   ink 36, blend 20,  160x36,  type "piece"
-info_stand:   member "info_plate",        locH 65, locV 74,   ink 36, blend 100, 94x50,   type "piece"
-info_stand:   member "info_name_bg",      locH 0, locV 110,   ink 8,  blend 70,  162x19,  type "piece"
-info_name:    member "info_name",         locH 7, locV 114,   ink 36, blend 100, 147x18,  type "text", txtColor #EEEEEE
-info_text:    member "info_text",         locH 1, locV 131,   ink 36, blend 100, 157x33,  type "text", txtColor #EEEEEE
-info_image:   member "shadow.pixel",      locH 111, locV 104, ink 8,  blend 100, 1x1,     type "image" (avatar portrait)
-info_badge:   member "shadow.pixel",      locH 129, locV 0,   ink 36, blend 100, 40x40,   type "image"
-info_group_badge: member "shadow.pixel",  locH 127, locV 42,  ink 36, blend 100, 40x40,   type "image"
+bg_darken:         "info_stand_txt_bg", ink 36, blend 20,  160x36, id "bg_darken"
+info_stand (plate): "info_plate",       ink 36, blend 100, 94x50,  id "info_stand"
+info_stand (bg):    "info_name_bg",     ink 8,  blend 70,  162x19, id "info_stand"
+info_name:         text,                ink 36, blend 100, 147x18, txtColor #EEEEEE
+info_text:         text,                ink 36, blend 100, 157x33, txtColor #EEEEEE
 ```
 
-## Likely Root Causes
-
-The info stand display depends on the entire fuse_client Window system functioning end-to-end. Potential failure points:
-
-1. **Layout_Parser_Class.parse()** calls `memberExists("info_stand.window")` - if the text member containing the window definition isn't registered with the Resource Manager, parsing silently returns 0 and no window elements are created
-
-2. **Sprite_Manager.reserveSprite()** - window elements need dynamically allocated sprites; if the sprite manager has no free sprites or the allocation fails, elements have no sprite to render on
-
-3. **Element_Wrapper_Class.define()** sets `pSprite` from the allocated sprite and `pBuffer` from the member image - if either is void, `show()` would set visible on a null sprite reference
-
-4. **Member resolution** - the layout parser resolves member names like "info_stand_txt_bg" via the Resource Manager's `getmemnum()`, not the raw cast - if these members aren't in `pAllMemNumList`, they won't resolve
-
-5. **Window_Instance_Class.create()** calls the layout parser, then iterates elements to create Element_Wrapper instances using the configured `pElemClsList` classes (wrapper, unique, grouped) - if any class instantiation fails, the element list stays empty and `getElement("bg_darken")` returns void
+Elements sharing `#id: "info_stand"` are grouped into `Grouped_Element_Class`, composited into a single buffer via copyPixels with per-element ink/blend.
 
 ## Grey Color Derivation
 
-The grey #BBBBBB (187, 187, 187) comes from the `info_name_bg` bitmap:
-- The bitmap is a white rounded rectangle
-- Rendered with ink 8 (matte) at blend 70
-- White (255) at 70% blend over a black/dark background: `255 * 0.70 + 0 * 0.30 = ~179` to `255 * 0.70 + 30 * 0.30 = ~187`
-- This produces the characteristic grey panel behind the username
+Grey #BBBBBB (187, 187, 187) = white (255) at 70% blend over black (0) buffer: `255 * 0.70 = ~179-187`
