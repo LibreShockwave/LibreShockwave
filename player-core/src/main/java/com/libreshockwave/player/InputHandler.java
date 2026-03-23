@@ -207,7 +207,8 @@ public class InputHandler {
                 // Dispatch mouseDown to ALL sprites at the click coordinates.
                 // The Habbo client's Event_Broker_Behavior registers procedures
                 // on sprites that may overlap — each one must receive the event.
-                for (int ch : hitTestAll(event.stageX(), event.stageY())) {
+                List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
+                for (int ch : hitChannels) {
                     dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_DOWN, List.of());
                 }
                 dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_DOWN, List.of());

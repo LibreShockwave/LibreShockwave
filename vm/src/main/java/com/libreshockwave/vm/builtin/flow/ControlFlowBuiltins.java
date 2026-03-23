@@ -186,10 +186,15 @@ public final class ControlFlowBuiltins {
         if (target instanceof Datum.ScriptInstance instance) {
             return callHandlerOnInstance(vm, instance, handlerName, extraArgs);
         }
-        // Integer target → sprite channel number.  Dispatch to each script
-        // instance in the sprite's scriptInstanceList (the behaviors attached
-        // to that sprite channel).
-        int channel = target.toInt();
+        // Sprite reference → extract channel number directly
+        // (SpriteRef.toInt() returns 0 via default, so we must use channelNum())
+        int channel;
+        if (target instanceof Datum.SpriteRef sr) {
+            channel = sr.channelNum();
+        } else {
+            // Integer target → sprite channel number
+            channel = target.toInt();
+        }
         if (channel > 0) {
             var provider = com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.getProvider();
             if (provider != null) {
