@@ -188,9 +188,19 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case MATTE:
-                // Use alpha channel for transparency
+                // Use alpha channel for transparency, combined with blend.
+                // Director's copyPixels #blend uses inverted convention:
+                // _blendAmount=0 means fully visible, _blendAmount=255 means invisible.
+                // Our blend param is 0-255 opacity (255=full). Convert to Director's
+                // blendAmount for compositing: result = src*blendAmt/255 + dst*(255-blendAmt)/255.
+                // For blend=255 (100%): normal matte (source overwrites per srcA).
+                // For blend=178 (70%): blendAmt=77, giving grey from black over white.
                 if (srcA == 0) {
                     return dest;
+                }
+                if (blend < 255) {
+                    int blendAmt = 255 - blend;
+                    return alphaBlend(src, dest, blendAmt);
                 }
                 return alphaBlend(src, dest, srcA);
 
