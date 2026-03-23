@@ -157,6 +157,7 @@ public final class PropertyOpcodes {
                     yield Datum.symbol(TypeBuiltins.getIlkType(obj));
                 }
                 System.err.println("[LingoVM] Missing get accessor: " + propName + " on " + obj.getClass().getSimpleName());
+                System.err.println(ctx.formatCallStack());
                 yield Datum.VOID;
             }
         };
@@ -261,7 +262,10 @@ public final class PropertyOpcodes {
                 else if ("locv".equalsIgnoreCase(propName) || "y".equalsIgnoreCase(propName)) point.setY(v);
             }
             case Datum.ImageRef ir -> ImageMethodDispatcher.setProperty(ir, propName, value);
-            default -> System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
+            default -> {
+                System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
+                System.err.println(ctx.formatCallStack());
+            }
         }
 
         return true;
