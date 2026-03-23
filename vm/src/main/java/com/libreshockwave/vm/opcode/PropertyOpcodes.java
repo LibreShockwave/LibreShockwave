@@ -152,6 +152,7 @@ public final class PropertyOpcodes {
                 if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("color");
                 yield Datum.VOID;
             }
+            case Datum d when d.isVoid() -> Datum.VOID;
             default -> {
                 if ("ilk".equalsIgnoreCase(propName)) {
                     yield Datum.symbol(TypeBuiltins.getIlkType(obj));

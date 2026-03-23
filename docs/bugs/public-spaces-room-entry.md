@@ -38,20 +38,16 @@ The click correctly reaches `Room_interface_wave.button` — the hit test confir
 
 Likely cause: The wave button's mouseUp handler sends a network message to the game server (e.g., an `WAVE` action packet). The server must echo back the action to trigger the avatar animation via `eventProcUserObj`. Without a server-side response, the client-side handler executes but produces no visible change.
 
-### Bug 2: Floor tile click does not trigger walking
+### Bug 2: Floor tile click does not trigger MOVE to server
 
 | Detail | Value |
 |---|---|
-| Click point | (341, 272) |
+| Click point | (341, 272) — WASM equivalent: (356, 265) |
 | Hit channel | 109 (interactive) |
 | Sprite hit | `background` (single 714x415 bitmap at (3,41)) |
-| Screen change | 2.59% (minor rendering variation, avatar does not move) |
+| Expected | `MOVE` message sent to server at localhost:30087 |
+| Actual | `eventProcRoom` runs but exits early — `me.getComponent()` returns VOID |
 
-The click hits the `background` sprite — a single large bitmap covering the entire room floor area. This is the room's pre-rendered background, not an individual floor tile. The Habbo client uses **isometric coordinate mapping** to convert screen pixel coordinates to tile grid positions, then sends a `MOVE` packet to the server with the target tile.
-
-Likely causes:
-- The isometric screen-to-tile coordinate conversion may not be implemented (the click is on the `background` bitmap, but the tile coordinate calculation happens in Lingo script, not via sprite hit testing)
-- Even if tile coordinates are calculated, the walk command requires a server roundtrip — the client sends `MOVE` and the server responds with pathfinding updates
 ### Errors during room interaction
 
 ```
@@ -59,13 +55,73 @@ Listener not found: 370 / info      — room message handler missing
 Listener not found: 361 / info      — room message handler missing
 ```
 
-## Root Cause Summary
+## Root Cause Analysis (traced in detail)
 
-Both interactions fail because:
+### Full event chain from mouseDown to MOVE
 
-1. **Error state poisoning in EventDispatcher** — `dispatchScriptInstanceEvent` reads the Event_Broker_Behavior's `pProcList` and attempts to call `executeMessage` even when no procedure is registered (default entry `[#null, 0]`). This causes an error that sets `inErrorState = true`, which prevents `executeHandler` from calling the Event_Broker_Behavior's actual `on mouseDown`/`on mouseUp` handler. Fixed by skipping `executeMessage` when the proc entry has a null method or zero client ID, and resetting error state between the shortcut and real dispatch paths.
-2. **Server dependency** — Both wave and walk require server roundtrips. The client sends the action, the server validates and responds with the visual update. Without server responses, no animations play.
-3. **Floor tile detection** — Walking also requires isometric screen-to-tile coordinate conversion in the Lingo scripts, which may or may not be functioning. The `background` sprite hit is expected (it's the room bitmap), but the Lingo `mouseUp` handler on it needs to calculate which tile was clicked.
+1. **InputHandler** → queues MOUSE_DOWN → `hitTestAll(341,272)` returns `[109]` → `dispatchSpriteEvent(109, "mouseDown")`
+2. **EventDispatcher** → finds Event_Broker_Behavior in ch=109's scriptInstanceList → `AncestorChainWalker.hasHandler` finds `on mouseDown` → calls it
+3. **Event_Broker_Behavior.mouseDown** → checks `not voidp(pProcList)` → calls `me.redirectEvent(#mouseDown)`
+4. **redirectEvent** → gets `pProcList[#mouseDown]` → `[#eventProcRoom, #room_interface]` → calls `objectExists(#room_interface)` → if true, calls `call(#eventProcRoom, getObject(#room_interface), #mouseDown, me.id)`
+5. **Room_Interface_Class.eventProcRoom** → calls `me.getComponent().getSpectatorMode()` and `me.getComponent().getOwnUser()` → if ownUser == 0, **early return** (no MOVE sent)
+6. **(if getComponent worked)** → checks `pClickAction == "moveHuman"` → calls `me.getGeometry().getWorldCoordinate(the mouseH, the mouseV)` → calls `me.getComponent().getRoomConnection().send("MOVE", [#short: tileX, #short: tileY])`
+
+### Fixed: Bug A — `call()` doesn't dispatch to `SpriteRef` targets
+
+**File:** `vm/.../builtin/flow/ControlFlowBuiltins.java` — `callOnTarget()`
+
+The Room_Interface_Class registers its `eventProcRoom` handler on floor sprites via:
+```
+call(#registerProcedure, [sprite(109), sprite(110), ...], #eventProcRoom, me.getID(), #mouseDown)
+```
+
+The `call()` builtin iterates the sprite list and calls `callOnTarget()` for each `sprite(N)`. But `callOnTarget()` only handled `ScriptInstance` and integer targets. `Datum.SpriteRef.toInt()` returns 0 (via default `toDouble() → 0.0`), so `channel > 0` was false and the call silently did nothing. **`registerProcedure` never reached the Event_Broker_Behavior on floor sprites**, leaving pProcList at template values `[#null, 0]`.
+
+**Fix:** Added explicit `Datum.SpriteRef` handling to extract `channelNum()` directly:
+```java
+if (target instanceof Datum.SpriteRef sr) {
+    channel = sr.channelNum();
+} else {
+    channel = target.toInt();
+}
+```
+
+### Fixed: Bug B — PropList cross-type key matching creates duplicate entries
+
+**File:** `vm/.../datum/Datum.java` — `PropList.get(key, isSymbolKey)` and `PropList.put(key, isSymbolKey, value)`
+
+The FUSE framework's `buildThreadObj` registers objects with **symbol** keys (`#room_interface`), but the Window_Manager later re-registers with **string** keys (`"Room_interface"`). The cross-type fallback in both `get()` and `put()` required **exact-case** matching for cross-type lookups. Since `"room_interface"` (symbol name, lowercase) ≠ `"Room_interface"` (string, mixed case), the PropList created **duplicate entries** instead of updating the existing one. This caused `getObject(#room_interface)` to find stale/finalized entries while the valid instance was stored under a different key type.
+
+**Fix:** Made cross-type fallback **case-insensitive** in both `get()` and `put()`, matching Director's case-insensitive PropList behavior.
+
+### Remaining: Bug C — `getComponent()` returns VOID on recreated room interface
+
+**Status:** Not yet fixed. This is the remaining blocker for MOVE.
+
+**Symptom:** `eventProcRoom` is called on the correct instance, but `me.getComponent()` returns VOID. The handler then checks `me.getComponent().getOwnUser() == 0` → `VOID == 0` → true (via `lingoEquals`) → **early return**, no MOVE sent.
+
+**Root cause chain:**
+
+1. During startup, `Thread_Manager.create` calls `buildThreadObj(#room_interface, ["Room Interface Class"], threadObj)`. This creates an ancestor chain: **Room_Interface_Class → Object_Base_Class → Thread_Instance_Class**. The Thread_Instance_Class ancestor has the `component` property. The `getComponent()` handler (on Thread_Instance_Class) does `return me.component`, which walks the ancestor chain and finds it.
+
+2. The room_interface object gets **prematurely finalized** — `pObjectList.setAt(#room_interface, #objectFinalized)` is called during `Buffer_Component_Class.construct()` (a completely different thread). This happens via the FUSE message system: `registerMessage(#objectFinalized, ...)` triggers message delivery that cascades into the room object's finalization.
+
+3. Later, the Window_Manager creates a **new** room interface window via `Object_Manager.create("Room_interface", pInstanceClass)`. Since the finalized entry has `objectp(#objectFinalized) == false`, the "already exists" check passes and a new chain is created: **Room_Interface_Class → Object_Base_Class** — **without Thread_Instance_Class as ancestor**.
+
+4. `getComponent()` on this new instance walks its ancestor chain but never finds Thread_Instance_Class, so `me.component` is VOID.
+
+**Key observations from tracing:**
+- `getThread(#room)` returns instance 216 which **does** have `component` set correctly (instance 252)
+- `getObject(#room_interface)` returns instance 1841 which does **not** have `component`
+- These are **different** instances — the Thread knows about the component, but the Interface doesn't
+- The finalization (`#objectFinalized`) is set during the `buildThreadObj` loop for `#buffer_component`, NOT during room destruction
+- The PropList ends up with: `setAt(#room_interface, id=217)` → `setAt(id=218)` → `setAt(#objectFinalized)` → `setAt("Room_interface", id=1840)` → `setAt(id=1841)`
+- The symbol key `#room_interface` (lowercase) and string key `"Room_interface"` (mixed case) were being stored as separate entries before Bug B fix
+
+**Possible fix directions:**
+- Investigate why `Buffer_Component_Class.construct()` triggers finalization of `room_interface` — this may be a message system timing issue where `#objectFinalized` messages are delivered during registration
+- Make `Object_Manager.create` preserve the Thread_Instance_Class ancestor when recreating a finalized object
+- Alternatively, prevent the premature finalization entirely
 
 ## Coordinate Notes
 

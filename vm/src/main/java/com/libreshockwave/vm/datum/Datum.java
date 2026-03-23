@@ -204,7 +204,7 @@ public sealed interface Datum {
          * when the existing entry was stored without a type flag.
          */
         public void putTyped(String key, boolean isSymbolKey, Datum value) {
-            // Pass 1: look for same-type match
+            // Same-type match only: #foo and "foo" are different keys in Director
             for (int i = 0; i < entries.size(); i++) {
                 if (entries.get(i).isSymbolKey() == isSymbolKey
                         && entries.get(i).key().equalsIgnoreCase(key)) {
@@ -212,15 +212,7 @@ public sealed interface Datum {
                     return;
                 }
             }
-            // Pass 2: fallback to any-type match (backward compat for untyped entries)
-            // Upgrades the type flag to match the caller's key type
-            for (int i = 0; i < entries.size(); i++) {
-                if (entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
-                    return;
-                }
-            }
-            // Pass 3: no match at all — create new entry with type
+            // No same-type match — create new entry (allows both #foo and "foo" to coexist)
             entries.add(new PropEntry(key, value, isSymbolKey));
         }
 
