@@ -1,6 +1,6 @@
 # Info Stand Panel Grey Background Not Displaying
 
-**Status: FIXED**
+**Status: PARTIALLY FIXED** — name bar grey (85,85,85) now renders correctly. The 187,187,187 grey panel behind the info stand is still missing — see "Remaining Issue" below.
 
 ## Summary
 
@@ -90,4 +90,24 @@ Elements sharing `#id: "info_stand"` are grouped into `Grouped_Element_Class`, c
 
 ## Grey Color Derivation
 
-Grey #BBBBBB (187, 187, 187) = white (255) at 70% blend over black (0) buffer: `255 * 0.70 = ~179-187`
+- Name bar grey (85,85,85): black at blend 70% over white buffer via MATTE copyPixels → `0*178/255 + 255*77/255 = 77` ≈ 85. **FIXED.**
+- Panel grey (187,187,187): appears in the reference at the info_plate area (y=397-400). The bitmaps only contain palette index 0 (white) and 255 (black). The 187 grey must come from ink-level foreColor remapping.
+
+## Remaining Issue: 187 Grey Panel
+
+The reference shows (187,187,187) pixels in the info_plate area. The `info_plate` bitmap is 8-bit with a custom palette where index 0=white and index 255=black. The bitmap data only uses these 2 indices. No Lingo code sets an explicit grey foreColor.
+
+**Analysis:** The 187 grey fills the entire wrapper buffer area in the reference (confirmed by horizontal pixel scans: `187x66` at y=403). This is NOT from any specific bitmap element — it's the buffer background color that survives MATTE processing.
+
+The buffer starts white (0xFFFFFFFF). The InkProcessor MATTE flood-fills from edges and removes edge-connected white. White pixels ENCLOSED by the diamond shape (not edge-connected) should survive. But the diamond doesn't actually enclose white in the current buffer — all non-element pixels are edge-connected.
+
+The 187 must be produced by the `backColor` remap in InkProcessor.applyInk MATTE (line 84-93): if `backColor = rgb(187,187,187)`, white gets remapped to grey(187) before flood-fill. Then matte looks for white(0xFFFFFF) but only finds grey(187), so nothing is removed. The entire buffer background renders as grey.
+
+**Investigation results:**
+- The `interface palette` (.pal file) and custom palette (paletteId=2) are both 2-color: index 0=white, all else=black. Grey(187) is NOT in any palette.
+- The buffer is created as `image(162, 55, 8, #systemMac)` and filled with white(0xFFFFFFFF).
+- 187 pixels appear EXCLUSIVELY within the info stand area (1374 pixels, 0 outside).
+- The 187 fills ALL surviving positions (diamond, name bar outline areas) — it's not selective.
+- In the reference, the diamond (which is black in the buffer) renders as grey(187). This requires foreColor→grey remapping via ScummVM's `applyColor` mechanism.
+- Our sprite stores `fg=0x000000` (packed RGB black). Director may store `foreColor=0` (palette index 0 = white in systemMac), and the rendering resolves this through a runtime palette where index 0 = grey(187). The exact palette context at render time has not been identified.
+- The `allowsColorize` check in SpriteBaker blocks ALL colorization for MATTE ink sprites, preventing any foreColor/backColor remap from taking effect.

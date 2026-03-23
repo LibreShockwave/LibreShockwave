@@ -197,7 +197,21 @@ public final class PaletteResolver {
             if (fourcc.equals("CLUT") || fourcc.equals("TULC")) {
                 Chunk chunk = chunkLookup.apply(entry.sectionId());
                 if (chunk instanceof PaletteChunk pc) {
-                    return new Palette(pc.colors(), "Custom Palette");
+                    int[] colors = pc.colors();
+                    // Custom palettes from Director CCT files often have all-black entries
+                    // at indices 246-255 where the systemMac greyscale ramp should be.
+                    // Bitmaps authored for systemMac use these indices for greys (e.g.,
+                    // index 248 = 0xBBBBBB = rgb(187,187,187) for the info stand panel).
+                    // Inherit the systemMac ramp for any all-black trailing entries.
+                    if (colors.length == 256) {
+                        for (int i = 246; i < 256; i++) {
+                            int macColor = Palette.SYSTEM_MAC_PALETTE.getColor(i);
+                            if ((colors[i] & 0xFFFFFF) == 0x000000 && (macColor & 0xFFFFFF) != 0x000000) {
+                                colors[i] = macColor;
+                            }
+                        }
+                    }
+                    return new Palette(colors, "Custom Palette");
                 }
             }
         }

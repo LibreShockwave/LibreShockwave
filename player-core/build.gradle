@@ -448,3 +448,8 @@ tasks.register('runExternalCastDump', JavaExec) {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
+
+tasks.register('runQuickBmpCheck', JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.QuickBmpCheck'
+}
