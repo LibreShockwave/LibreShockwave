@@ -60,8 +60,8 @@ public final class MathBuiltins {
 
     /**
      * integer(value)
-     * Converts a value to an integer.
-     * - For floats: truncates to integer
+     * Converts a value to an integer by rounding to nearest (Director behavior).
+     * - For floats: rounds to nearest integer (not truncation!)
      * - For numeric strings: converts to integer
      * - For empty strings: returns 0 (Director-compatible coercion used by protocol parsers)
      * - For non-numeric strings: returns VOID
@@ -81,15 +81,15 @@ public final class MathBuiltins {
                 return Datum.of(Integer.parseInt(trimmed));
             } catch (NumberFormatException e) {
                 try {
-                    return Datum.of((int) Double.parseDouble(trimmed));
+                    return Datum.of((int) Math.round(Double.parseDouble(trimmed)));
                 } catch (NumberFormatException e2) {
                     return Datum.VOID;
                 }
             }
         }
 
-        // For other types, use standard conversion
-        return Datum.of(arg.toInt());
+        // For other types, round to nearest (Director's integer() rounds, not truncates)
+        return Datum.of((int) Math.round(arg.toDouble()));
     }
 
     private static Datum bitAnd(LingoVM vm, List<Datum> args) {
