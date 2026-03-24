@@ -1,5 +1,6 @@
 package com.libreshockwave.vm.builtin.sprite;
 
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
@@ -25,6 +26,7 @@ public final class SpriteBuiltins {
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
         builtins.put("puppettempo", SpriteBuiltins::puppetTempo);
         builtins.put("puppetsprite", SpriteBuiltins::puppetSprite);
+        builtins.put("puppetpalette", SpriteBuiltins::puppetPalette);
         builtins.put("cursor", SpriteBuiltins::cursor);
         builtins.put("pauseupdate", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("updatestage", (vm, args) -> Datum.VOID);  // No-op stub
@@ -70,6 +72,41 @@ public final class SpriteBuiltins {
         MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
         if (provider != null) {
             provider.setMovieProp("puppetTempo", Datum.of(tempo));
+        }
+
+        return Datum.VOID;
+    }
+
+    /**
+     * puppetPalette(paletteRef [, speed])
+     * Sets the active palette for color resolution.
+     * paletteRef can be a member name (string), member number, or 0 to reset.
+     * In Director, this changes the palette used by paletteIndex() resolution.
+     */
+    private static Datum puppetPalette(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+
+        Datum palRef = args.get(0);
+
+        // puppetPalette(0) or puppetPalette(FALSE) resets to default
+        if ((palRef instanceof Datum.Int i && i.value() == 0)
+                || (palRef instanceof Datum.Int i2 && i2.value() == -1)) {
+            Datum.setActivePalette(null);
+            return Datum.VOID;
+        }
+
+        // Resolve palette from cast member
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (provider != null) {
+            com.libreshockwave.bitmap.Palette pal = null;
+            if (palRef.isString()) {
+                pal = provider.resolvePaletteByName(palRef.toStr());
+            } else if (palRef instanceof Datum.CastMemberRef cmr) {
+                pal = provider.resolvePaletteByMember(cmr.castLibNum(), cmr.memberNum());
+            }
+            if (pal != null) {
+                Datum.setActivePalette(pal);
+            }
         }
 
         return Datum.VOID;
