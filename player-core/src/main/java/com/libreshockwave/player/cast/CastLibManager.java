@@ -617,6 +617,31 @@ public class CastLibManager implements CastLibProvider {
     }
 
     @Override
+    public com.libreshockwave.bitmap.Palette resolvePaletteByName(String name) {
+        ensureInitialized();
+        // Search all cast libraries for a palette member with this name
+        for (CastLib castLib : castLibs.values()) {
+            com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByName(name);
+            if (chunk != null && chunk.file() != null) {
+                com.libreshockwave.bitmap.Palette pal = chunk.file().resolvePalette(chunk.id().value());
+                if (pal != null) return pal;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public com.libreshockwave.bitmap.Palette resolvePaletteByMember(int castLibNum, int memberNum) {
+        ensureInitialized();
+        // Use the CastMemberChunk from the cast library manager lookup
+        com.libreshockwave.chunks.CastMemberChunk chunk = getCastMember(castLibNum, memberNum);
+        if (chunk != null && chunk.file() != null) {
+            return chunk.file().resolvePalette(chunk.id().value());
+        }
+        return null;
+    }
+
+    @Override
     public String getFieldValue(Object memberNameOrNum, int castId) {
         ensureInitialized();
 
