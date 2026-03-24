@@ -115,6 +115,144 @@ public class TheatredromeTest {
             // Diagnostic: check white box sprites
             dumpRoomBarDiag(player, settledSnap);
 
+            // Save avatar canvas bitmap for inspection
+            for (var sprite : settledSnap.sprites()) {
+                String name = sprite.getMemberName();
+                if (name != null && name.contains("Canvas") && sprite.isVisible()) {
+                    System.out.printf("=== Avatar canvas: ch=%d '%s' ink=%d blend=%d type=%s ===%n",
+                            sprite.getChannel(), name, sprite.getInk(), sprite.getBlend(), sprite.getType());
+                    var dynMem = sprite.getDynamicMember();
+                    if (dynMem != null) {
+                        Bitmap dynBmp = dynMem.getBitmap();
+                        if (dynBmp != null) {
+                            System.out.printf("  dynBmp: %dx%d %dbpp scriptMod=%s%n",
+                                    dynBmp.getWidth(), dynBmp.getHeight(), dynBmp.getBitDepth(), dynBmp.isScriptModified());
+                            NavigatorSSOTest.savePng(dynBmp, OUTPUT_DIR.resolve("avatar_canvas_raw.png"));
+                            // Check bottom-left/right corners (shoe area)
+                            int w = dynBmp.getWidth(), h = dynBmp.getHeight();
+                            // Dump exact hex values for shoe-area pixels to find near-white artifacts
+                            System.out.println("  Shoe area exact pixels:");
+                            for (int y = Math.max(0, h - 18); y < h; y++) {
+                                for (int x = 0; x < w; x++) {
+                                    int p = dynBmp.getPixel(x, y);
+                                    int rgb = p & 0xFFFFFF;
+                                    int a = (p >>> 24);
+                                    // Report near-white pixels (not exactly white, but close)
+                                    int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+                                    if (rgb != 0xFFFFFF && r > 200 && g > 200 && b > 200 && a > 0) {
+                                        System.out.printf("    NEAR-WHITE at (%d,%d): 0x%06X  R=%d G=%d B=%d%n",
+                                                x, y, rgb, r, g, b);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Bitmap baked = sprite.getBakedBitmap();
+                    if (baked != null) {
+                        NavigatorSSOTest.savePng(baked, OUTPUT_DIR.resolve("avatar_canvas_baked.png"));
+                        int w = baked.getWidth(), h = baked.getHeight();
+                        System.out.println("  Baked bottom pixels (y=45 to end):");
+                        for (int y = Math.max(0, h - 18); y < h; y++) {
+                            StringBuilder row = new StringBuilder();
+                            row.append(String.format("    y=%d: ", y));
+                            for (int x = 0; x < w; x++) {
+                                int p = baked.getPixel(x, y);
+                                int a = (p >>> 24);
+                                if (a == 0) row.append(".");
+                                else if ((p & 0xFFFFFF) == 0xFFFFFF && a == 0xFF) row.append("W");
+                                else if (a < 0xFF) row.append("t");
+                                else row.append("#");
+                            }
+                            System.out.println(row);
+                        }
+                    }
+                }
+            }
+
+            // Crop avatar areas from room render for close inspection
+            Bitmap roomRender = settledSnap.renderFrame();
+            // In-room avatar at (341,377) size 32x62 - crop wider area around it
+            {
+                int cx = 341, cy = 377, cw = 52, ch2 = 82;
+                Bitmap crop = new Bitmap(cw, ch2, 32);
+                for (int y = 0; y < ch2; y++) {
+                    for (int x = 0; x < cw; x++) {
+                        int sx = cx - 10 + x, sy = cy - 10 + y;
+                        if (sx >= 0 && sx < roomRender.getWidth() && sy >= 0 && sy < roomRender.getHeight()) {
+                            crop.setPixel(x, y, roomRender.getPixel(sx, sy));
+                        }
+                    }
+                }
+                NavigatorSSOTest.savePng(crop, OUTPUT_DIR.resolve("crop_avatar_inroom.png"));
+            }
+            // Info stand at (631,302)
+            {
+                int cx = 621, cy = 292, cw = 94, ch2 = 122;
+                Bitmap crop = new Bitmap(cw, ch2, 32);
+                for (int y = 0; y < ch2; y++) {
+                    for (int x = 0; x < cw; x++) {
+                        int sx = cx + x, sy = cy + y;
+                        if (sx >= 0 && sx < roomRender.getWidth() && sy >= 0 && sy < roomRender.getHeight()) {
+                            crop.setPixel(x, y, roomRender.getPixel(sx, sy));
+                        }
+                    }
+                }
+                NavigatorSSOTest.savePng(crop, OUTPUT_DIR.resolve("crop_infostand.png"));
+            }
+
+            // Save info stand avatar for inspection
+            for (var sprite : settledSnap.sprites()) {
+                String name = sprite.getMemberName();
+                if (name != null && name.contains("info_image") && sprite.isVisible()) {
+                    System.out.printf("=== Info stand image: ch=%d '%s' ink=%d blend=%d ===%n",
+                            sprite.getChannel(), name, sprite.getInk(), sprite.getBlend());
+                    var dynMem = sprite.getDynamicMember();
+                    if (dynMem != null && dynMem.getBitmap() != null) {
+                        Bitmap dynBmp = dynMem.getBitmap();
+                        System.out.printf("  dynBmp: %dx%d %dbpp scriptMod=%s%n",
+                                dynBmp.getWidth(), dynBmp.getHeight(), dynBmp.getBitDepth(), dynBmp.isScriptModified());
+                        NavigatorSSOTest.savePng(dynBmp, OUTPUT_DIR.resolve("infostand_image_raw.png"));
+                        // Check shoe area for trapped white pixels
+                        int w = dynBmp.getWidth(), h = dynBmp.getHeight();
+                        System.out.println("  Raw shoe area (bottom 20 rows):");
+                        for (int y = Math.max(0, h - 20); y < h; y++) {
+                            StringBuilder row = new StringBuilder();
+                            row.append(String.format("    y=%2d: ", y));
+                            for (int x = 0; x < w; x++) {
+                                int p = dynBmp.getPixel(x, y);
+                                int rgb = p & 0xFFFFFF;
+                                if (rgb == 0xFFFFFF) row.append("W");
+                                else if (rgb == 0xEEEEEE) row.append("e");
+                                else if (rgb == 0x000000) row.append(".");
+                                else row.append("#");
+                            }
+                            System.out.println(row);
+                        }
+                    }
+                    Bitmap baked = sprite.getBakedBitmap();
+                    if (baked != null) {
+                        NavigatorSSOTest.savePng(baked, OUTPUT_DIR.resolve("infostand_image_baked.png"));
+                        int w = baked.getWidth(), h = baked.getHeight();
+                        System.out.println("  Baked shoe area (bottom 20 rows):");
+                        for (int y = Math.max(0, h - 20); y < h; y++) {
+                            StringBuilder row = new StringBuilder();
+                            row.append(String.format("    y=%2d: ", y));
+                            for (int x = 0; x < w; x++) {
+                                int p = baked.getPixel(x, y);
+                                int a = (p >>> 24);
+                                int rgb = p & 0xFFFFFF;
+                                if (a == 0) row.append(".");
+                                else if (rgb == 0xFFFFFF) row.append("W");
+                                else if (rgb == 0xEEEEEE) row.append("e");
+                                else if (a < 0xFF) row.append("t");
+                                else row.append("#");
+                            }
+                            System.out.println(row);
+                        }
+                    }
+                }
+            }
+
             // Specific dooredmask diagnostic
             for (var sprite : settledSnap.sprites()) {
                 if ("dooredmask".equals(sprite.getMemberName())) {

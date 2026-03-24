@@ -230,8 +230,11 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case BACKGROUND_TRANSPARENT:
-                // Background color (index 0, usually white) is transparent
-                if (srcR >= 250 && srcG >= 250 && srcB >= 250) {
+                // Background color (palette index 0, typically white) is transparent.
+                // Director uses exact color matching, not a threshold.
+                // Skip pixels with alpha=0 (already transparent from prior processing).
+                if (srcA == 0) return dest;
+                if (srcR == 255 && srcG == 255 && srcB == 255) {
                     return dest;
                 }
                 return src;
