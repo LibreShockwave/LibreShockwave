@@ -91,7 +91,7 @@ public final class SpriteBuiltins {
         // puppetPalette(0) or puppetPalette(FALSE) resets to default
         if ((palRef instanceof Datum.Int i && i.value() == 0)
                 || (palRef instanceof Datum.Int i2 && i2.value() == -1)) {
-            Datum.setActivePalette(null);
+            Datum.setPuppetPalette(null);
             return Datum.VOID;
         }
 
@@ -105,7 +105,7 @@ public final class SpriteBuiltins {
                 pal = provider.resolvePaletteByMember(cmr.castLibNum(), cmr.memberNum());
             }
             if (pal != null) {
-                Datum.setActivePalette(pal);
+                Datum.setPuppetPalette(pal);
             }
         }
 

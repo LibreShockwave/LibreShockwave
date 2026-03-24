@@ -474,8 +474,35 @@ public class CastMember {
             case TEXT, BUTTON -> getTextProp(prop);
             case SCRIPT -> getScriptProp(prop);
             case SHAPE -> getShapeProp(prop);
+            case PALETTE -> getPaletteProp(prop);
             default -> Datum.VOID;
         };
+    }
+
+    /**
+     * Get a property of a PALETTE member.
+     * Director palette members expose a "color" property that returns
+     * a list of color values that can be indexed: member("pal").color[42]
+     */
+    private Datum getPaletteProp(String prop) {
+        if ("color".equals(prop)) {
+            // Resolve the palette data from the source file
+            com.libreshockwave.bitmap.Palette pal = null;
+            if (sourceFile != null && chunk != null) {
+                pal = sourceFile.resolvePalette(chunk.id().value());
+            }
+            if (pal != null) {
+                // Build a list of Color datums for each palette entry
+                java.util.List<Datum> colors = new java.util.ArrayList<>(pal.size());
+                for (int i = 0; i < pal.size(); i++) {
+                    int rgb = pal.getColor(i);
+                    colors.add(new Datum.Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
+                }
+                return new Datum.List(colors);
+            }
+            return Datum.VOID;
+        }
+        return Datum.VOID;
     }
 
     private Datum getBitmapProp(String prop) {
