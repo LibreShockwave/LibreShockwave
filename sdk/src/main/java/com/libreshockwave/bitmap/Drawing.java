@@ -519,6 +519,20 @@ public class Drawing {
             }
         }
         if (hasWhite && topLeftRgb != 0xFFFFFF) {
+            // The top-left pixel is a non-white color in a bitmap that also contains white.
+            // Usually this means the border IS this color and white is interior content
+            // (e.g., a teal UI panel with white text).  Use topLeft as the matte color.
+            //
+            // Exception: if the top-left is very dark (near black), it's likely an outline
+            // that touches the corner, not the background. Greyscale body-part sprites have
+            // white backgrounds with black outlines — using black as the matte color would
+            // flood-fill through the entire outline and destroy it.
+            int r = (topLeftRgb >> 16) & 0xFF;
+            int g = (topLeftRgb >> 8) & 0xFF;
+            int b = topLeftRgb & 0xFF;
+            if (r + g + b < 48) {
+                return 0xFFFFFF;
+            }
             return topLeftRgb;
         }
         return 0xFFFFFF;
