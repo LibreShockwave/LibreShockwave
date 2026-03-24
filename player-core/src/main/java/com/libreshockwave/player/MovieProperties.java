@@ -337,6 +337,9 @@ public class MovieProperties implements MoviePropertyProvider {
                 if (value instanceof Datum.Color c) {
                     player.getStageRenderer().setBackgroundColor(
                         (c.r() << 16) | (c.g() << 8) | c.b());
+                } else if (!value.isVoid()) {
+                    int rgb = Datum.datumToArgb(value) & 0xFFFFFF;
+                    player.getStageRenderer().setBackgroundColor(rgb);
                 }
                 yield true;
             }

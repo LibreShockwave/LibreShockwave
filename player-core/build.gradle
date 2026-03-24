@@ -427,6 +427,17 @@ tasks.register('runPublicSpacesWalkTest', JavaExec) {
     }
 }
 
+tasks.register('runPrivateRoomEntryTest', JavaExec) {
+    group = 'verification'
+    description = 'Private room entry test: navigate to own room, capture rendering, pixel diff vs reference'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.PrivateRoomEntryTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 tasks.register('runPurseTest', JavaExec) {
     group = 'verification'
     description = 'Purse test: open purse, render, pixel diff vs reference'

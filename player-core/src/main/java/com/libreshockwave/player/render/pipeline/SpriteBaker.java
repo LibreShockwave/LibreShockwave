@@ -198,12 +198,6 @@ public class SpriteBaker {
                     liveBmp = InkProcessor.applyForeColorRemap(liveBmp,
                             sprite.getForeColor(), sprite.getBackColor());
                 }
-                boolean skipBgTransparent = sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT
-                        && liveBmp.getBitDepth() == 32
-                        && !hasBorderColor(liveBmp, sprite.getBackColor() & 0xFFFFFF);
-                if (skipBgTransparent) {
-                    return liveBmp;
-                }
                 if (InkProcessor.shouldProcessInk(sprite.getInk())) {
                     // Script-modified bitmaps (avatar canvases, window buffers) use
                     // simple exact-match color-key transparency. The graduated alpha
