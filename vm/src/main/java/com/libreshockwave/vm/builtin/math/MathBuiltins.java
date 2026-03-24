@@ -27,6 +27,8 @@ public final class MathBuiltins {
         builtins.put("bitxor", MathBuiltins::bitXor);
         builtins.put("bitnot", MathBuiltins::bitNot);
         builtins.put("power", MathBuiltins::power);
+        builtins.put("min", MathBuiltins::min);
+        builtins.put("max", MathBuiltins::max);
     }
 
     private static Datum abs(LingoVM vm, List<Datum> args) {
@@ -110,6 +112,24 @@ public final class MathBuiltins {
     private static Datum bitNot(LingoVM vm, List<Datum> args) {
         if (args.isEmpty()) return Datum.ZERO;
         return Datum.of(~args.get(0).toInt());
+    }
+
+    private static Datum min(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) return args.isEmpty() ? Datum.ZERO : args.get(0);
+        Datum a = args.get(0), b = args.get(1);
+        if (a.isFloat() || b.isFloat()) {
+            return Datum.of(Math.min(a.toDouble(), b.toDouble()));
+        }
+        return Datum.of(Math.min(a.toInt(), b.toInt()));
+    }
+
+    private static Datum max(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) return args.isEmpty() ? Datum.ZERO : args.get(0);
+        Datum a = args.get(0), b = args.get(1);
+        if (a.isFloat() || b.isFloat()) {
+            return Datum.of(Math.max(a.toDouble(), b.toDouble()));
+        }
+        return Datum.of(Math.max(a.toInt(), b.toInt()));
     }
 
     private static Datum power(LingoVM vm, List<Datum> args) {
