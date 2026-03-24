@@ -75,14 +75,12 @@ public class SpriteBaker {
                 if (sprite.hasBackColor() && bgColor != 0xFFFFFF) {
                     baked = InkProcessor.remapExactColor(baked, 0xFFFFFF, bgColor);
                 }
-            } else if (baked.getBitDepth() <= 1) {
-                // File-loaded 1-bit bitmaps (icons, masks, etc.): apply full grayscale remap
-                // where white→backColor, black→foreColor, gray→interpolated.
-                // Director only applies foreColor/backColor colorization to 1-bit bitmaps.
-                // For 8-bit+ color bitmaps, colors come from the palette — colorization
-                // would incorrectly convert the entire image to greyscale.
-                baked = InkProcessor.applyForeColorRemap(baked, sprite.getForeColor(), sprite.getBackColor());
             }
+            // Note: foreColor/backColor colorization for 1-bit file-loaded bitmaps
+            // is now handled inside BitmapCache.getProcessed(), BEFORE ink processing.
+            // This ordering is critical for masks: a mask with foreColor=white becomes
+            // all-white, then BLEND/MATTE ink removes the white background, making
+            // the mask fully transparent (as Director intends).
         }
 
         // For text sprites, the baked bitmap may have different dimensions than the
@@ -193,6 +191,13 @@ public class SpriteBaker {
         if (sprite.getDynamicMember() != null) {
             Bitmap liveBmp = sprite.getDynamicMember().getBitmap();
             if (liveBmp != null && liveBmp.isScriptModified()) {
+                // Director applies foreColor/backColor colorization BEFORE ink for 1-bit bitmaps.
+                // This ensures masks with foreColor=white become all-white before ink removes
+                // the white background, making them fully transparent.
+                if (liveBmp.getBitDepth() <= 1 && sprite.hasForeColor()) {
+                    liveBmp = InkProcessor.applyForeColorRemap(liveBmp,
+                            sprite.getForeColor(), sprite.getBackColor());
+                }
                 boolean skipBgTransparent = sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT
                         && liveBmp.getBitDepth() == 32
                         && !hasBorderColor(liveBmp, sprite.getBackColor() & 0xFFFFFF);
@@ -200,11 +205,6 @@ public class SpriteBaker {
                     return liveBmp;
                 }
                 if (InkProcessor.shouldProcessInk(sprite.getInk())) {
-                    // Script-modified bitmaps (avatar canvases, window buffers) use
-                    // simple exact-match color-key transparency. The graduated alpha
-                    // unblending in applyBackgroundTransparent is designed for text
-                    // anti-aliasing, but destroys intentionally grayscale body parts
-                    // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
                     // Script-modified bitmaps (avatar canvases, window buffers) use
                     // simple exact-match color-key transparency. The graduated alpha
                     // unblending in applyBackgroundTransparent is designed for text
@@ -228,7 +228,9 @@ public class SpriteBaker {
                 paletteOverride = palInfo.palette;
             }
             b = bitmapCache.getProcessed(sprite.getCastMember(), sprite.getInk(),
-                    sprite.getBackColor(), player, paletteOverride);
+                    sprite.getBackColor(),
+                    sprite.getForeColor(), sprite.hasForeColor(),
+                    player, paletteOverride);
         }
         if (b == null && sprite.getDynamicMember() != null) {
             b = bitmapCache.getProcessedDynamic(sprite.getDynamicMember(),
@@ -646,6 +648,14 @@ public class SpriteBaker {
         int[] pixels = shape.getPixels();
         for (int i = 0; i < pixels.length; i++) {
             pixels[i] = argb;
+        }
+
+        // Apply ink processing — shapes respect ink modes just like bitmaps.
+        // E.g., a shape with foreColor=white and BACKGROUND_TRANSPARENT ink
+        // should be fully transparent (white pixels removed).
+        if (InkProcessor.shouldProcessInk(sprite.getInk())) {
+            shape = InkProcessor.applyInk(shape, sprite.getInk(),
+                    sprite.getBackColor(), false, null);
         }
 
         return shape;

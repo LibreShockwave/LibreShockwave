@@ -112,8 +112,37 @@ public class TheatredromeTest {
             dumpRoomSprites(settledSnap);
             dumpPaletteInfo(player, settledSnap);
 
-            // Diagnostic: check alapalkki_bg member
+            // Diagnostic: check white box sprites
             dumpRoomBarDiag(player, settledSnap);
+
+            // Specific dooredmask diagnostic
+            for (var sprite : settledSnap.sprites()) {
+                if ("dooredmask".equals(sprite.getMemberName())) {
+                    System.out.println("=== dooredmask sprite diagnostic ===");
+                    System.out.printf("  type: %s ink: %d inkMode: %s%n",
+                            sprite.getType(), sprite.getInk(), sprite.getInkMode());
+                    System.out.printf("  castMember: %s%n", sprite.getCastMember() != null ? "present (id=" + sprite.getCastMember().id().value() + ")" : "null");
+                    System.out.printf("  dynamicMember: %s%n", sprite.getDynamicMember() != null ? "present" : "null");
+                    if (sprite.getDynamicMember() != null) {
+                        Bitmap dynBmp = sprite.getDynamicMember().getBitmap();
+                        System.out.printf("  dynBmp: %s scriptMod=%s%n",
+                                dynBmp != null ? dynBmp.getWidth() + "x" + dynBmp.getHeight() + " " + dynBmp.getBitDepth() + "bpp" : "null",
+                                dynBmp != null ? dynBmp.isScriptModified() : "N/A");
+                        if (dynBmp != null) {
+                            System.out.printf("  dynBmp pixels: center=0x%08X (0,0)=0x%08X%n",
+                                    dynBmp.getPixel(dynBmp.getWidth()/2, dynBmp.getHeight()/2),
+                                    dynBmp.getPixel(0, 0));
+                        }
+                    }
+                    Bitmap baked = sprite.getBakedBitmap();
+                    if (baked != null) {
+                        System.out.printf("  baked: %dx%d %dbpp center=0x%08X alpha=%d%n",
+                                baked.getWidth(), baked.getHeight(), baked.getBitDepth(),
+                                baked.getPixel(baked.getWidth()/2, baked.getHeight()/2),
+                                (baked.getPixel(baked.getWidth()/2, baked.getHeight()/2) >>> 24));
+                    }
+                }
+            }
 
             // Save error log
             Files.writeString(OUTPUT_DIR.resolve("errors.txt"), String.join(System.lineSeparator(), allErrors));
@@ -283,11 +312,12 @@ public class TheatredromeTest {
         for (var sprite : snap.sprites()) {
             String vis = sprite.isVisible() ? "VIS" : "HID";
             sb.append(String.format("[%s] ch=%d loc=(%d,%d) size=(%dx%d) ink=%d blend=%d " +
-                            "foreColor=%d backColor=%d member='%s'",
+                            "foreColor=%d backColor=%d hasFore=%s hasBack=%s member='%s'",
                     vis, sprite.getChannel(), sprite.getX(), sprite.getY(),
                     sprite.getWidth(), sprite.getHeight(),
                     sprite.getInk(), sprite.getBlend(),
                     sprite.getForeColor(), sprite.getBackColor(),
+                    sprite.hasForeColor(), sprite.hasBackColor(),
                     sprite.getMemberName()));
             // Check if this sprite has a baked bitmap and sample some pixel colors
             Bitmap baked = sprite.getBakedBitmap();
