@@ -21,32 +21,52 @@ public class BytecodeCellRenderer extends DefaultListCellRenderer {
             // Build display text with markers using HTML for rich formatting
             StringBuilder sb = new StringBuilder("<html><pre style='margin:0;font-family:monospaced;'>");
 
-            // Breakpoint marker - different symbols/colors based on type
-            sb.append(getBreakpointMarker(item));
-
-            // Current instruction marker (gold)
-            if (item.isCurrent()) {
-                sb.append("<font color='#DAA520'>\u25B6</font> ");
-            } else {
-                sb.append("  ");
-            }
-
-            // Instruction text
-            sb.append(String.format("[%3d] %-14s", item.getOffset(), item.getOpcode()));
-            if (item.getArgument() != 0) {
-                sb.append(String.format(" %-4d", item.getArgument()));
-            } else {
-                sb.append("     ");
-            }
-
-            // Annotation - make navigable call targets blue and underlined
-            String annotation = item.getAnnotation();
-            if (annotation != null && !annotation.isEmpty()) {
-                sb.append(" ");
-                if (item.isNavigableCall()) {
-                    sb.append("<font color='blue'><u>").append(StringUtils.escapeHtml(annotation)).append("</u></font>");
+            if (item.isLingoLine()) {
+                // Lingo line rendering
+                // Breakpoint marker (only for lines with a bytecode offset)
+                if (item.getOffset() >= 0) {
+                    sb.append(getBreakpointMarker(item));
                 } else {
-                    sb.append(StringUtils.escapeHtml(annotation));
+                    sb.append("  ");
+                }
+
+                // Current instruction marker
+                if (item.isCurrent()) {
+                    sb.append("<font color='#DAA520'>\u25B6</font> ");
+                } else {
+                    sb.append("  ");
+                }
+
+                // Lingo source text (stored in annotation field)
+                String text = item.getAnnotation();
+                if (text != null) {
+                    sb.append(StringUtils.escapeHtml(text));
+                }
+            } else {
+                // Bytecode line rendering (original)
+                sb.append(getBreakpointMarker(item));
+
+                if (item.isCurrent()) {
+                    sb.append("<font color='#DAA520'>\u25B6</font> ");
+                } else {
+                    sb.append("  ");
+                }
+
+                sb.append(String.format("[%3d] %-14s", item.getOffset(), item.getOpcode()));
+                if (item.getArgument() != 0) {
+                    sb.append(String.format(" %-4d", item.getArgument()));
+                } else {
+                    sb.append("     ");
+                }
+
+                String annotation = item.getAnnotation();
+                if (annotation != null && !annotation.isEmpty()) {
+                    sb.append(" ");
+                    if (item.isNavigableCall()) {
+                        sb.append("<font color='blue'><u>").append(StringUtils.escapeHtml(annotation)).append("</u></font>");
+                    } else {
+                        sb.append(StringUtils.escapeHtml(annotation));
+                    }
                 }
             }
 

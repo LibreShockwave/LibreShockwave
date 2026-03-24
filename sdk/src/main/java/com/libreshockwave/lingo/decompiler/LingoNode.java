@@ -25,6 +25,8 @@ public abstract class LingoNode {
     boolean isExpression;
     boolean isStatement;
     boolean isLoop;
+    /** Bytecode offset that produced this node (-1 if not tracked). */
+    int bytecodeOffset = -1;
 
     protected LingoNode() {}
 

@@ -1,6 +1,8 @@
 package com.libreshockwave.editor.debug.ui;
 
 import com.libreshockwave.chunks.ScriptChunk;
+import com.libreshockwave.chunks.ScriptNamesChunk;
+import com.libreshockwave.lingo.decompiler.LingoDecompiler;
 import com.libreshockwave.player.debug.Breakpoint;
 import com.libreshockwave.player.debug.DebugController;
 import com.libreshockwave.vm.trace.InstructionAnnotator;
@@ -15,7 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Panel containing the bytecode JList with mouse handling and highlighting.
+ * Panel containing the bytecode/Lingo JList with mouse handling and highlighting.
+ * Supports toggling between bytecode and decompiled Lingo view.
  */
 public class BytecodeListPanel extends JPanel {
 
@@ -32,6 +35,8 @@ public class BytecodeListPanel extends JPanel {
     private final JList<InstructionDisplayItem> bytecodeList;
     private final BytecodeContextMenu contextMenu;
     private final List<InstructionDisplayItem> currentInstructions = new ArrayList<>();
+    private final JToggleButton lingoToggle;
+    private final TitledBorder titledBorder;
 
     private DebugController controller;
     private HandlerNavigator navigator;
@@ -40,9 +45,15 @@ public class BytecodeListPanel extends JPanel {
     private int currentInstructionIndex = -1;
     private BytecodeListListener listener;
 
+    // Lingo view state
+    private boolean showLingoView = false;
+    private ScriptChunk currentScript;
+    private ScriptChunk.Handler currentHandler;
+
     public BytecodeListPanel() {
         setLayout(new BorderLayout());
-        setBorder(new TitledBorder("Bytecode"));
+        titledBorder = new TitledBorder("Bytecode");
+        setBorder(titledBorder);
 
         bytecodeModel = new DefaultListModel<>();
         bytecodeList = new JList<>(bytecodeModel);
@@ -58,14 +69,30 @@ public class BytecodeListPanel extends JPanel {
         bytecodeScroll.setPreferredSize(new Dimension(480, 200));
         add(bytecodeScroll, BorderLayout.CENTER);
 
-        // Legend
+        // Bottom bar: legend + toggle
+        JPanel bottomBar = new JPanel(new BorderLayout());
         JLabel legend = new JLabel("<html>" +
             "<font color='red'>\u25CF</font>=breakpoint &nbsp; " +
             "<font color='gray'>\u25CB</font>=disabled &nbsp; " +
             "<font color='#DAA520'>\u25B6</font>=current &nbsp; " +
             "<font color='blue'><u>blue</u></font>=navigate</html>");
         legend.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
-        add(legend, BorderLayout.SOUTH);
+        bottomBar.add(legend, BorderLayout.CENTER);
+
+        lingoToggle = new JToggleButton("Lingo");
+        lingoToggle.setToolTipText("Toggle between bytecode and decompiled Lingo view");
+        lingoToggle.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        lingoToggle.setMargin(new Insets(1, 6, 1, 6));
+        lingoToggle.addActionListener(e -> {
+            showLingoView = lingoToggle.isSelected();
+            lingoToggle.setText(showLingoView ? "Bytecode" : "Lingo");
+            titledBorder.setTitle(showLingoView ? "Lingo" : "Bytecode");
+            repaint();
+            reloadCurrentView();
+        });
+        bottomBar.add(lingoToggle, BorderLayout.EAST);
+
+        add(bottomBar, BorderLayout.SOUTH);
     }
 
     private void initMouseListeners() {
@@ -82,10 +109,10 @@ public class BytecodeListPanel extends JPanel {
 
                 // Double-click or click on left margin (gutter) -> toggle breakpoint
                 if (e.getClickCount() == 2 || e.getX() < 20) {
+                    if (item.getOffset() < 0) return; // structural line, no breakpoint
                     if (controller != null && currentScriptId >= 0 && currentHandlerName != null) {
                         controller.toggleBreakpoint(currentScriptId, currentHandlerName, item.getOffset());
-                        item.setHasBreakpoint(controller.hasBreakpoint(currentScriptId, currentHandlerName, item.getOffset()));
-                        bytecodeList.repaint();
+                        refreshBreakpointMarkers();
                     }
                     return;
                 }
@@ -118,7 +145,20 @@ public class BytecodeListPanel extends JPanel {
     }
 
     /**
-     * Load bytecode for a handler.
+     * Reload current handler in the active view mode (bytecode or Lingo).
+     */
+    private void reloadCurrentView() {
+        if (currentScript != null && currentHandler != null) {
+            loadHandlerBytecode(currentScript, currentHandler);
+            // Re-highlight current instruction if we had one
+            if (currentInstructionIndex >= 0) {
+                highlightCurrentInstruction(currentInstructionIndex);
+            }
+        }
+    }
+
+    /**
+     * Load bytecode (or Lingo) for a handler.
      */
     public void loadHandlerBytecode(ScriptChunk script, ScriptChunk.Handler handler) {
         bytecodeModel.clear();
@@ -126,7 +166,20 @@ public class BytecodeListPanel extends JPanel {
         currentInstructionIndex = -1;
         currentScriptId = script.id().value();
         currentHandlerName = script.getHandlerName(handler);
+        currentScript = script;
+        currentHandler = handler;
 
+        if (showLingoView) {
+            loadLingoView(script, handler);
+        } else {
+            loadBytecodeView(script, handler);
+        }
+
+        contextMenu.setCurrentScriptId(script.id().value());
+        contextMenu.setCurrentHandlerName(currentHandlerName);
+    }
+
+    private void loadBytecodeView(ScriptChunk script, ScriptChunk.Handler handler) {
         for (ScriptChunk.Handler.Instruction instr : handler.instructions()) {
             String annotation = InstructionAnnotator.annotate(script, handler, instr, true);
             Breakpoint bp = controller != null ? controller.getBreakpoint(script.id().value(), currentHandlerName, instr.offset()) : null;
@@ -153,23 +206,75 @@ public class BytecodeListPanel extends JPanel {
             bytecodeModel.addElement(item);
             currentInstructions.add(item);
         }
+    }
 
-        contextMenu.setCurrentScriptId(script.id().value());
-        contextMenu.setCurrentHandlerName(currentHandlerName);
+    private void loadLingoView(ScriptChunk script, ScriptChunk.Handler handler) {
+        ScriptNamesChunk names = null;
+        if (script.file() != null) {
+            names = script.file().getScriptNamesForScript(script);
+            if (names == null) names = script.file().getScriptNames();
+        }
+
+        LingoDecompiler decompiler = new LingoDecompiler();
+        LingoDecompiler.DecompiledHandler result =
+            decompiler.decompileHandlerWithMapping(handler, script, names);
+
+        for (int i = 0; i < result.lines().size(); i++) {
+            LingoDecompiler.DecompiledLine line = result.lines().get(i);
+            int offset = line.bytecodeOffset();
+
+            Breakpoint bp = (controller != null && offset >= 0)
+                ? controller.getBreakpoint(script.id().value(), currentHandlerName, offset)
+                : null;
+
+            // Create display item: use offset for breakpoint mapping, index for line number
+            InstructionDisplayItem item = new InstructionDisplayItem(
+                offset,       // bytecode offset (or -1 for structural lines)
+                i,            // line index
+                "",           // no opcode in Lingo mode
+                0,            // no argument in Lingo mode
+                line.text(),  // Lingo source line as annotation
+                bp != null
+            );
+            item.setBreakpoint(bp);
+            item.setLingoLine(true);
+
+            bytecodeModel.addElement(item);
+            currentInstructions.add(item);
+        }
     }
 
     /**
      * Highlight the current instruction by bytecode index.
      */
     public void highlightCurrentInstruction(int bytecodeIndex) {
-        for (int i = 0; i < bytecodeModel.size(); i++) {
-            InstructionDisplayItem item = bytecodeModel.get(i);
-            boolean wasCurrent = item.isCurrent();
-            item.setCurrent(item.getIndex() == bytecodeIndex);
-            if (item.isCurrent() && !wasCurrent) {
-                currentInstructionIndex = i;
-                bytecodeList.setSelectedIndex(i);
-                bytecodeList.ensureIndexIsVisible(i);
+        if (showLingoView) {
+            // In Lingo mode, find the line matching the bytecode offset
+            int targetOffset = -1;
+            if (currentHandler != null && bytecodeIndex >= 0
+                && bytecodeIndex < currentHandler.instructions().size()) {
+                targetOffset = currentHandler.instructions().get(bytecodeIndex).offset();
+            }
+            for (int i = 0; i < bytecodeModel.size(); i++) {
+                InstructionDisplayItem item = bytecodeModel.get(i);
+                boolean wasCurrent = item.isCurrent();
+                item.setCurrent(item.getOffset() >= 0 && item.getOffset() == targetOffset);
+                if (item.isCurrent() && !wasCurrent) {
+                    currentInstructionIndex = bytecodeIndex;
+                    bytecodeList.setSelectedIndex(i);
+                    bytecodeList.ensureIndexIsVisible(i);
+                }
+            }
+        } else {
+            for (int i = 0; i < bytecodeModel.size(); i++) {
+                InstructionDisplayItem item = bytecodeModel.get(i);
+                boolean wasCurrent = item.isCurrent();
+                item.setCurrent(item.getIndex() == bytecodeIndex);
+                if (item.isCurrent() && !wasCurrent) {
+                    currentInstructionIndex = bytecodeIndex;
+                    bytecodeList.setSelectedIndex(i);
+                    bytecodeList.ensureIndexIsVisible(i);
+                }
             }
         }
         bytecodeList.repaint();
@@ -182,6 +287,7 @@ public class BytecodeListPanel extends JPanel {
         if (controller != null && currentScriptId >= 0 && currentHandlerName != null) {
             for (int i = 0; i < bytecodeModel.size(); i++) {
                 InstructionDisplayItem item = bytecodeModel.get(i);
+                if (item.getOffset() < 0) continue; // structural line
                 Breakpoint bp = controller.getBreakpoint(currentScriptId, currentHandlerName, item.getOffset());
                 item.setBreakpoint(bp);
                 item.setHasBreakpoint(bp != null);
@@ -199,6 +305,8 @@ public class BytecodeListPanel extends JPanel {
         currentInstructionIndex = -1;
         currentScriptId = -1;
         currentHandlerName = null;
+        currentScript = null;
+        currentHandler = null;
         bytecodeList.clearSelection();
     }
 
