@@ -101,6 +101,101 @@ public class PrivateRoomEntryTest {
             // Diagnostic: dump ink/color info for visible sprites
             dumpInkDiagnostics(roomSnap);
 
+            // Diagnostic: check SpriteManager state
+            try {
+                var vm = player.getVM();
+                var f = Player.class.getDeclaredField("castLibManager");
+                f.setAccessible(true);
+                var clm = (com.libreshockwave.player.cast.CastLibManager) f.get(player);
+                com.libreshockwave.vm.builtin.cast.CastLibProvider.setProvider(clm);
+                var f2 = Player.class.getDeclaredField("spriteProperties");
+                f2.setAccessible(true);
+                com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.setProvider(
+                        (com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider) f2.get(player));
+
+                com.libreshockwave.vm.datum.Datum sprMgr = vm.callHandler("getSpriteManager", java.util.List.of());
+                if (sprMgr instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance sprSI) {
+                    com.libreshockwave.vm.datum.Datum freeSpr = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                            .callHandlerOnInstance(vm, sprSI, "getProperty",
+                                    java.util.List.of(com.libreshockwave.vm.datum.Datum.symbol("freeSprCount")));
+                    com.libreshockwave.vm.datum.Datum totalSpr = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                            .callHandlerOnInstance(vm, sprSI, "getProperty",
+                                    java.util.List.of(com.libreshockwave.vm.datum.Datum.symbol("totalSprCount")));
+                    com.libreshockwave.vm.datum.Datum freeSprList = sprSI.properties().getOrDefault("pFreeSprList", com.libreshockwave.vm.datum.Datum.VOID);
+                    com.libreshockwave.vm.datum.Datum usedSprList = sprSI.properties().getOrDefault("pUsedSprList", com.libreshockwave.vm.datum.Datum.VOID);
+                    System.out.printf("SpriteManager: total=%s free=%s%n", totalSpr, freeSpr);
+                } else {
+                    System.out.println("SpriteManager not found: " + sprMgr);
+                }
+
+                // Check room component process list and visualizer state
+                com.libreshockwave.vm.datum.Datum roomThread = vm.callHandler("getThread",
+                        java.util.List.of(com.libreshockwave.vm.datum.Datum.symbol("room")));
+                if (roomThread instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance roomSI) {
+                    com.libreshockwave.vm.datum.Datum comp = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                            .callHandlerOnInstance(vm, roomSI, "getComponent", java.util.List.of());
+                    if (comp instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance compSI) {
+                        com.libreshockwave.vm.datum.Datum procList = compSI.properties().getOrDefault("pProcessList", com.libreshockwave.vm.datum.Datum.VOID);
+                        com.libreshockwave.vm.datum.Datum activeFlag = compSI.properties().getOrDefault("pActiveFlag", com.libreshockwave.vm.datum.Datum.VOID);
+                        com.libreshockwave.vm.datum.Datum visual = compSI.properties().getOrDefault("pVisualizerObj", com.libreshockwave.vm.datum.Datum.VOID);
+                        com.libreshockwave.vm.datum.Datum roomId = compSI.properties().getOrDefault("pRoomId", com.libreshockwave.vm.datum.Datum.VOID);
+                        System.out.printf("Room component: active=%s roomId=%s procList=%s%n",
+                                activeFlag, roomId, procList);
+                        // Check wall sprite channels 110-117
+                        var registry = player.getStageRenderer().getSpriteRegistry();
+                        for (int ch = 108; ch <= 120; ch++) {
+                            var ss = registry.get(ch);
+                            if (ss != null) {
+                                System.out.printf("  SpriteState ch%d: member=(%d,%d) vis=%s loc=(%d,%d) %dx%d ink=%d puppet=%s hasDyn=%s%n",
+                                        ch, ss.getEffectiveCastLib(), ss.getEffectiveCastMember(),
+                                        ss.isVisible(), ss.getLocH(), ss.getLocV(),
+                                        ss.getWidth(), ss.getHeight(), ss.getInk(),
+                                        ss.isPuppet(), ss.hasDynamicMember());
+                            }
+                        }
+                        // Check Room Interface for visualizer
+                        com.libreshockwave.vm.datum.Datum intf = com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                                .callHandlerOnInstance(vm, roomSI, "getInterface", java.util.List.of());
+                        if (intf instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance intfSI) {
+                            System.out.printf("Room Interface ALL props: %s%n", intfSI.properties().keySet());
+                            // Check ancestor chain for visualizer
+                            var ancestorDatum = intfSI.properties().get("ancestor");
+                            if (ancestorDatum instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance ancSI) {
+                                System.out.printf("Room Interface ancestor props: %s%n", ancSI.properties().keySet());
+                            }
+                        }
+                        // Check pRoomSpaceId and find the Visualizer Manager
+                        if (intf instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance intfSI2) {
+                            System.out.printf("pRoomSpaceId=%s pInterfaceId=%s%n",
+                                    intfSI2.properties().get("pRoomSpaceId"),
+                                    intfSI2.properties().get("pInterfaceId"));
+                        }
+                        // Check Room_visualizer object
+                        com.libreshockwave.vm.datum.Datum visObj = vm.callHandler("getObject",
+                                java.util.List.of(com.libreshockwave.vm.datum.Datum.of("Room_visualizer")));
+                        if (visObj instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance visSI) {
+                            System.out.printf("Room_visualizer exists! Props: %s%n", visSI.properties().keySet());
+                            for (var e : visSI.properties().entrySet()) {
+                                System.out.printf("  vis.%s = %s%n", e.getKey(), e.getValue());
+                            }
+                            // Check layout and position
+                            System.out.printf("Visualizer layout: loc=(%s,%s) size=%sx%s visible=%s%n",
+                                    visSI.properties().get("pLocX"), visSI.properties().get("pLocY"),
+                                    visSI.properties().get("pwidth"), visSI.properties().get("pheight"),
+                                    visSI.properties().get("pVisible"));
+                            System.out.printf("Visualizer boundary: %s%n", visSI.properties().get("pBoundary"));
+                            System.out.printf("Visualizer layout: %s%n", visSI.properties().get("pLayout"));
+                        } else {
+                            System.out.printf("Room_visualizer: %s%n", visObj);
+                        }
+                    }
+                }
+                com.libreshockwave.vm.builtin.cast.CastLibProvider.clearProvider();
+                com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.clearProvider();
+            } catch (Exception e) {
+                System.out.println("SpriteManager diagnostic error: " + e.getMessage());
+            }
+
             // Diagnostic: save stageImage and raw room bitmap (Ch0) before ink processing
             if (stageImage != null) {
                 NavigatorSSOTest.savePng(stageImage, OUTPUT_DIR.resolve("diag_stageImage.png"));
