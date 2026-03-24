@@ -204,8 +204,14 @@ public class SpriteBaker {
                     // unblending in applyBackgroundTransparent is designed for text
                     // anti-aliasing, but destroys intentionally grayscale body parts
                     // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
+                    //
+                    // 32-bit bitmaps that already contain transparent pixels (alpha=0)
+                    // use native alpha for transparency — skip matte processing so
+                    // DARKEN ink preserves white wall/panel content and multiplies
+                    // by bgColor instead of removing it as the matte color.
+                    boolean hasNativeAlpha = liveBmp.getBitDepth() == 32 && liveBmp.hasTransparentPixels();
                     return InkProcessor.applyInk(liveBmp, sprite.getInk(),
-                            sprite.getBackColor(), false, null, true);
+                            sprite.getBackColor(), hasNativeAlpha, null, true);
                 }
                 return liveBmp;
             }

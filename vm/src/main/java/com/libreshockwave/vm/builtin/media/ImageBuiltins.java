@@ -42,7 +42,15 @@ public final class ImageBuiltins {
         }
 
         Bitmap bmp = new Bitmap(width, height, bitDepth);
-        bmp.fill(0xFFFFFFFF); // White background
+        // Director's image() creates bitmaps with white fill for <=16 bit and
+        // transparent white for 32-bit. The alpha=0 background is critical for
+        // ink processing: DARKEN ink's matte removes opaque white pixels,
+        // which would destroy wall/panel content if the canvas were opaque white.
+        if (bitDepth == 32) {
+            bmp.fill(0x00FFFFFF); // Transparent white (alpha=0) for 32-bit
+        } else {
+            bmp.fill(0xFFFFFFFF); // Opaque white for lower bit depths
+        }
 
         // 4th argument: palette member reference (e.g., member("nav_ui_palette"))
         // Store the palette on the bitmap so paletteIndex() colors can be resolved correctly.
