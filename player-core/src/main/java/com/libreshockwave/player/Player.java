@@ -986,6 +986,7 @@ public class Player {
             // completions and member indexing) finishes before
             // Multiuser Xtra messages trigger room object creation.
             xtraManager.tickAll();
+            repairVisualizerSprites();
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             frameContext.advanceFrame();
         } finally {
@@ -1073,6 +1074,64 @@ public class Player {
         TimeoutProvider.clearProvider();
         ExternalParamProvider.clearProvider();
         SoundProvider.clearProvider();
+    }
+
+    /**
+     * Repair Visualizer wrapped part sprite assignments.
+     * The Habbo Visualizer Part Wrapper initializes pSprite=sprite(0) as default,
+     * but the correct sprite from the Visualizer's pSpriteList never gets assigned.
+     * This post-tick fixup detects the mismatch and assigns the correct sprites,
+     * then triggers the part wrapper's updateWrap to render wall content.
+     */
+    private boolean visualizerRepairDone = false;
+
+    private void repairVisualizerSprites() {
+        if (visualizerRepairDone) return;
+
+        try {
+            Datum visObj = vm.callHandler("getObject",
+                    java.util.List.of(Datum.of("Room_visualizer")));
+            if (!(visObj instanceof Datum.ScriptInstance visSI)) return;
+
+            Datum spriteListDatum = visSI.properties().get("pSpriteList");
+            Datum wrappedPartsDatum = visSI.properties().get("pWrappedParts");
+            if (!(spriteListDatum instanceof Datum.List sl) ||
+                    !(wrappedPartsDatum instanceof Datum.PropList wpl)) return;
+
+            boolean anyFixed = false;
+            int wi = 0;
+            for (var entry : wpl.entries()) {
+                if (wi >= sl.items().size()) break;
+                Datum partDatum = entry.value();
+                if (!(partDatum instanceof Datum.ScriptInstance partSI)) { wi++; continue; }
+
+                Datum currentSprite = com.libreshockwave.vm.util.AncestorChainWalker
+                        .getProperty(partSI, "pSprite");
+                if (currentSprite instanceof Datum.SpriteRef sr && sr.channelNum() == 0) {
+                    Datum correctSprite = sl.items().get(wi);
+                    if (correctSprite instanceof Datum.SpriteRef csr && csr.channelNum() != 0) {
+                        // Fix the pSprite
+                        com.libreshockwave.vm.util.AncestorChainWalker
+                                .setProperty(partSI, "pSprite", correctSprite);
+
+                        // Trigger updateWrap to render the part to its sprite
+                        try {
+                            com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins
+                                    .callHandlerOnInstance(vm, partSI, "updateWrap",
+                                            java.util.List.of());
+                        } catch (Exception ignored) {}
+                        anyFixed = true;
+                    }
+                }
+                wi++;
+            }
+
+            if (anyFixed) {
+                visualizerRepairDone = true;
+            }
+        } catch (Exception ignored) {
+            // Not in a room or Visualizer not created yet
+        }
     }
 
     // Movie lifecycle - follows dirplayer-rs flow exactly
