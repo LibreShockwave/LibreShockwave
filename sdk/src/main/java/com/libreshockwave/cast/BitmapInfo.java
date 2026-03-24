@@ -17,6 +17,7 @@ public record BitmapInfo(
     int initialTop,
     int bitDepth,
     int paletteId,
+    int paletteCastLib,
     int pitch,
     boolean useAlpha
 ) implements Dimensioned {
@@ -41,7 +42,7 @@ public record BitmapInfo(
      */
     public static BitmapInfo parse(byte[] data, int directorVersion) {
         if (data == null || data.length < 10) {
-            return new BitmapInfo(0, 0, 0, 0, 0, 0, 1, 0, 0, false);
+            return new BitmapInfo(0, 0, 0, 0, 0, 0, 1, 0, 0, 0, false);
         }
 
         BinaryReader reader = new BinaryReader(data, ByteOrder.BIG_ENDIAN);
@@ -61,6 +62,7 @@ public record BitmapInfo(
         int regY = 0;
         int bitDepth = 1;
         int paletteId = 0;
+        int paletteCastLib = 0;
         int pitch = 0;
         boolean useAlpha = false;
 
@@ -78,9 +80,9 @@ public record BitmapInfo(
             if (reader.bytesLeft() >= 1) {
                 bitDepth = reader.readU8();
 
-                // D5 (>= 1100): clutCastLib (skip)
+                // D5 (>= 1100): clutCastLib
                 if (directorVersion >= 1100 && reader.bytesLeft() >= 2) {
-                    reader.skip(2);
+                    paletteCastLib = reader.readI16();
                 }
 
                 // clutId
@@ -118,8 +120,10 @@ public record BitmapInfo(
                     bitDepth = reader.readU8();
                 }
 
-                // clutCastLib (skip)
-                if (reader.bytesLeft() >= 2) reader.skip(2);
+                // clutCastLib
+                if (reader.bytesLeft() >= 2) {
+                    paletteCastLib = reader.readI16();
+                }
 
                 // clutId
                 if (reader.bytesLeft() >= 2) {
@@ -136,7 +140,7 @@ public record BitmapInfo(
         // Store raw canvas-space regPoint values.
         // Director's member.regPoint returns canvas-space coordinates.
         // Only rendering code should convert to bitmap-local (regX - left, regY - top).
-        return new BitmapInfo(width, height, regX, regY, left, top, bitDepth, paletteId, pitch, useAlpha);
+        return new BitmapInfo(width, height, regX, regY, left, top, bitDepth, paletteId, paletteCastLib, pitch, useAlpha);
     }
 
     public int bytesPerPixel() {
