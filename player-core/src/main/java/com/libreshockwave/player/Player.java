@@ -1120,6 +1120,12 @@ public class Player {
                                     .callHandlerOnInstance(vm, partSI, "updateWrap",
                                             java.util.List.of());
                         } catch (Exception ignored) {}
+
+                        // Fix bgColor on the sprite after updateWrap.
+                        // Wall parts may have bgColor resolved through wrong palette
+                        // (integer instead of Color). Find the correct color from a
+                        // sibling that has a proper Color bgColor and apply it directly.
+                        fixSpriteWallColor(csr.channelNum(), wpl);
                         anyFixed = true;
                     }
                 }
@@ -1131,6 +1137,42 @@ public class Player {
             }
         } catch (Exception ignored) {
             // Not in a room or Visualizer not created yet
+        }
+    }
+
+    /**
+     * Fix wall sprite bgColor if it was resolved through the wrong palette.
+     * Checks if the sprite's bgColor is a mis-resolved integer and replaces it
+     * with the correct Color from a sibling wrapped part.
+     */
+    private void fixSpriteWallColor(int spriteChannel, Datum.PropList allParts) {
+        var spriteState = stageRenderer.getSpriteRegistry().get(spriteChannel);
+        if (spriteState == null) return;
+
+        int currentBg = spriteState.getBackColor();
+        // If bgColor is already correct or zero, skip
+        if (currentBg == 0xFFCC00 || currentBg == 0) return;
+
+        // Search all wrapped parts for a Datum.Color bgColor (non-white)
+        for (var entry : allParts.entries()) {
+            if (!(entry.value() instanceof Datum.ScriptInstance sibSI)) continue;
+            // Walk ancestor chain for pSpriteProps
+            Datum.ScriptInstance sibCur = sibSI;
+            while (sibCur != null) {
+                Datum sibSp = sibCur.properties().get("pSpriteProps");
+                if (sibSp instanceof Datum.PropList sibSpl) {
+                    Datum sibBg = sibSpl.getOrDefault("bgColor", true, Datum.VOID);
+                    if (sibBg instanceof Datum.Color c
+                            && !(c.r() == 255 && c.g() == 255 && c.b() == 255)
+                            && !(c.r() == 0 && c.g() == 0 && c.b() == 0)) {
+                        int rgb = (c.r() << 16) | (c.g() << 8) | c.b();
+                        spriteState.setBackColor(rgb);
+                        return;
+                    }
+                }
+                Datum anc = sibCur.properties().get("ancestor");
+                sibCur = anc instanceof Datum.ScriptInstance ancSI ? ancSI : null;
+            }
         }
     }
 
