@@ -18,10 +18,20 @@ public class EditorApp {
 
         SwingUtilities.invokeLater(() -> {
             EditorFrame frame = new EditorFrame();
-            frame.setVisible(true);
 
             if (args.length > 0) {
+                frame.setVisible(true);
                 frame.getContext().openFile(Path.of(args[0]));
+            } else {
+                // Show start screen before making the editor visible
+                StartScreenDialog startScreen = new StartScreenDialog(frame);
+                Path selected = startScreen.showDialog();
+
+                frame.setVisible(true);
+
+                if (selected != null) {
+                    frame.getContext().openFile(selected);
+                }
             }
         });
     }

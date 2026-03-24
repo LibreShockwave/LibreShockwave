@@ -131,6 +131,10 @@ public class EditorContext {
 
             pcs.firePropertyChange(PROP_FILE, oldFile, newFile);
 
+            // Track in recent projects
+            com.libreshockwave.editor.Preferences.get()
+                .addRecentProject(path.toAbsolutePath().toString());
+
             // Load saved breakpoints for this movie
             loadBreakpoints(currentMovieKey);
 

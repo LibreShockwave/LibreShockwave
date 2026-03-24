@@ -172,6 +172,7 @@ public class EditorFrame extends JFrame {
             java.io.File selected = chooser.getSelectedFile();
             Preferences.get().setLastOpenDirectory(selected.getParent());
             context.openFile(selected.toPath());
+            Preferences.get().addRecentProject(selected.toPath().toAbsolutePath().toString());
         }
     }
 
