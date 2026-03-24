@@ -7,6 +7,7 @@ import com.libreshockwave.player.debug.DebugController;
 import javax.swing.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.util.Map;
 
 /**
  * Director MX 2004 menu bar recreation.
@@ -260,8 +261,12 @@ public class EditorMenuBar extends JMenuBar {
         extParams.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
         extParams.addActionListener(e -> {
             JFrame parentFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
-            ExternalParamsDialog dialog = new ExternalParamsDialog(parentFrame, new java.util.LinkedHashMap<>());
-            dialog.setVisible(true);
+            Map<String, String> current = new java.util.LinkedHashMap<>(context.getExternalParams());
+            ExternalParamsDialog dialog = new ExternalParamsDialog(parentFrame, current);
+            Map<String, String> result = dialog.showDialog();
+            if (result != null) {
+                context.setExternalParams(result);
+            }
         });
         movieMenu.add(extParams);
 
