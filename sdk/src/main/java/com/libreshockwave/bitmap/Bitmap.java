@@ -46,6 +46,15 @@ public class Bitmap {
         return scriptModified;
     }
 
+    /** Returns true if this bitmap contains any fully transparent pixels (alpha=0). */
+    public boolean hasTransparentPixels() {
+        if (pixels == null || bitDepth < 32) return false;
+        for (int pixel : pixels) {
+            if ((pixel >>> 24) == 0) return true;
+        }
+        return false;
+    }
+
     /** Mark this bitmap as modified by Lingo script operations. */
     public void markScriptModified() {
         this.scriptModified = true;

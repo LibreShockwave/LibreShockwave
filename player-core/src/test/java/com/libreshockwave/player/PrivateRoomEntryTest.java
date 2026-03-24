@@ -178,13 +178,89 @@ public class PrivateRoomEntryTest {
                             for (var e : visSI.properties().entrySet()) {
                                 System.out.printf("  vis.%s = %s%n", e.getKey(), e.getValue());
                             }
-                            // Check layout and position
-                            System.out.printf("Visualizer layout: loc=(%s,%s) size=%sx%s visible=%s%n",
-                                    visSI.properties().get("pLocX"), visSI.properties().get("pLocY"),
-                                    visSI.properties().get("pwidth"), visSI.properties().get("pheight"),
-                                    visSI.properties().get("pVisible"));
-                            System.out.printf("Visualizer boundary: %s%n", visSI.properties().get("pBoundary"));
-                            System.out.printf("Visualizer layout: %s%n", visSI.properties().get("pLayout"));
+                                // Fix: manually assign correct sprites to wall part wrappers
+                            var spriteList = visSI.properties().get("pSpriteList");
+                            var wrappedParts = visSI.properties().get("pWrappedParts");
+                            if (spriteList instanceof com.libreshockwave.vm.datum.Datum.List sl
+                                    && wrappedParts instanceof com.libreshockwave.vm.datum.Datum.PropList wpl) {
+                                // Map wrapped parts to sprite list in order
+                                int wi = 0;
+                                for (var entry : wpl.entries()) {
+                                    if (wi < sl.items().size()
+                                            && entry.value() instanceof com.libreshockwave.vm.datum.Datum.ScriptInstance partSI) {
+                                        var correctSprite = sl.items().get(wi);
+                                        var currentSprite = partSI.properties().get("pSprite");
+                                        if (currentSprite instanceof com.libreshockwave.vm.datum.Datum.SpriteRef sr
+                                                && sr.channelNum() == 0 && correctSprite instanceof com.libreshockwave.vm.datum.Datum.SpriteRef csr) {
+                                            int targetCh = csr.channelNum();
+                                            System.out.printf("Fixing %s -> sprite(%d)%n", entry.key(), targetCh);
+                                            partSI.properties().put("pSprite", correctSprite);
+
+                                            // Find the member by pImgMemberID and assign directly
+                                            var imgMemId = partSI.properties().get("pImgMemberID");
+                                            if (imgMemId != null && imgMemId.isString()) {
+                                                var memberRef = clm.getMemberByName(0, imgMemId.toStr());
+                                                System.out.printf("  member '%s' -> %s%n", imgMemId.toStr(), memberRef);
+                                                if (memberRef instanceof com.libreshockwave.vm.datum.Datum.CastMemberRef cmr) {
+                                                    var ss = registry.getOrCreate(targetCh, null);
+                                                    ss.setPuppet(true);
+                                                    ss.setVisible(true);
+                                                    ss.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                                                    // Set sprite props from pSpriteProps
+                                                    var sprProps = partSI.properties().get("pSpriteProps");
+                                                    if (sprProps instanceof com.libreshockwave.vm.datum.Datum.PropList spl) {
+                                                        var inkD = spl.getOrDefault("ink", true, com.libreshockwave.vm.datum.Datum.VOID);
+                                                        if (!inkD.isVoid()) ss.setInk(inkD.toInt());
+                                                        var blendD = spl.getOrDefault("blend", true, com.libreshockwave.vm.datum.Datum.VOID);
+                                                        if (!blendD.isVoid()) ss.setBlend(blendD.toInt());
+                                                        var bgD = spl.getOrDefault("bgColor", true, com.libreshockwave.vm.datum.Datum.VOID);
+                                                        if (!bgD.isVoid()) {
+                                                            int bg = com.libreshockwave.vm.datum.Datum.datumToArgb(bgD) & 0xFFFFFF;
+                                                            ss.setBackColor(bg);
+                                                        }
+                                                    }
+                                                    // Get the member's bitmap dimensions for sprite size
+                                                    var dynMem = clm.getDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                                                    if (dynMem != null && dynMem.getBitmap() != null) {
+                                                        ss.setWidth(dynMem.getBitmap().getWidth());
+                                                        ss.setHeight(dynMem.getBitmap().getHeight());
+                                                        System.out.printf("  Assigned %dx%d bitmap to ch%d, scriptModified=%s%n",
+                                                                dynMem.getBitmap().getWidth(), dynMem.getBitmap().getHeight(), targetCh,
+                                                                dynMem.getBitmap().isScriptModified());
+                                                        // Check alpha of wall bitmap
+                                                        if (entry.key().toString().contains("wall01")) {
+                                                            NavigatorSSOTest.savePng(dynMem.getBitmap(),
+                                                                    OUTPUT_DIR.resolve("diag_wall01_member.png"));
+                                                            int[] px = dynMem.getBitmap().getPixels();
+                                                            int transparent = 0, opaque = 0, semiTrans = 0;
+                                                            for (int p : px) {
+                                                                int a = (p >>> 24) & 0xFF;
+                                                                if (a == 0) transparent++;
+                                                                else if (a == 255) opaque++;
+                                                                else semiTrans++;
+                                                            }
+                                                            System.out.printf("  wall01 alpha: transparent=%d opaque=%d semi=%d total=%d%n",
+                                                                    transparent, opaque, semiTrans, px.length);
+                                                        }
+                                                    }
+                                                    // Set loc from pPartList screenrect
+                                                    var offsets = partSI.properties().get("pOffsets");
+                                                    if (offsets instanceof com.libreshockwave.vm.datum.Datum.List ol && ol.items().size() >= 2) {
+                                                        ss.setLocH(ol.items().get(0).toInt());
+                                                        ss.setLocV(ol.items().get(1).toInt());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    wi++;
+                                }
+                                tickAndSleep(player, 5);
+                                // Capture snapshot AFTER manual sprite fix
+                                FrameSnapshot fixedSnap = player.getFrameSnapshot();
+                                saveSnapshot(fixedSnap, "04b_after_wall_fix");
+                                System.out.println("Saved post-fix snapshot");
+                            }
                         } else {
                             System.out.printf("Room_visualizer: %s%n", visObj);
                         }

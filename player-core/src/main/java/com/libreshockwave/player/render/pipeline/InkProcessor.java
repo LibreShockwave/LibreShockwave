@@ -108,21 +108,30 @@ public final class InkProcessor {
             // LIGHTEN (40): matte background, MAX compositing (handled in renderer).
             // >=16-bit: color-key instead of matte (matte leaks through 1px gaps in composite images).
             Bitmap masked;
+            int matteColor;
             if (src.getBitDepth() >= 16) {
-                int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
-                if (matteColor < 0) return src;
-                masked = applyBackgroundTransparent(src, matteColor, skipGraduatedAlpha);
+                matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
+                if (matteColor >= 0) {
+                    masked = applyBackgroundTransparent(src, matteColor, skipGraduatedAlpha);
+                } else {
+                    // useAlpha=true: alpha channel handles transparency, skip matte
+                    masked = src;
+                }
             } else {
-                int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
-                if (matteColor < 0) return src;
-                masked = applyMatte(src, matteColor);
+                matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
+                if (matteColor >= 0) {
+                    masked = applyMatte(src, matteColor);
+                } else {
+                    masked = src;
+                }
             }
 
             // DARKEN: multiply opaque pixels by resolved bgColor (tint/colorize).
             // Director's Darken ink tints the sprite via multiplication with bgColor,
             // then composites with standard alpha blend — NOT per-channel MIN like Darkest (39).
+            // Always resolve tint with useAlpha=false so the bgColor is never skipped.
             if (ink == InkMode.DARKEN) {
-                int tintRgb = resolveBackColor(src, ink, backColor, useAlpha, palette);
+                int tintRgb = resolveBackColor(src, ink, backColor, false, palette);
                 if (tintRgb >= 0 && tintRgb != 0xFFFFFF) {
                     masked = multiplyColor(masked, tintRgb);
                 }
