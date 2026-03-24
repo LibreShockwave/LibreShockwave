@@ -11,6 +11,7 @@ import com.libreshockwave.editor.model.CastMemberInfo;
 import com.libreshockwave.editor.scanning.MemberResolver;
 import com.libreshockwave.format.ScriptFormatUtils;
 import com.libreshockwave.lingo.Opcode;
+import com.libreshockwave.lingo.decompiler.LingoDecompiler;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
@@ -33,11 +34,14 @@ public class ScriptEditorWindow extends EditorPanel {
     private final JComboBox<HandlerEntry> handlerSelector;
     private final JTextArea editor;
 
+    private final JToggleButton lingoToggle;
+
     // Current state
     private ScriptChunk currentScript;
     private ScriptNamesChunk currentNames;
     private boolean suppressSelectionEvents = false;
     private boolean showStackComments = false;
+    private boolean showLingoView = false;
 
     public ScriptEditorWindow(EditorContext context) {
         super("script", "Script", context, true, true, true, true);
@@ -67,6 +71,18 @@ public class ScriptEditorWindow extends EditorPanel {
         handlerSelector.setMaximumSize(new Dimension(200, 25));
         handlerSelector.addActionListener(e -> { if (!suppressSelectionEvents) onHandlerSelected(); });
         selectorBar.add(handlerSelector);
+
+        selectorBar.add(Box.createHorizontalStrut(12));
+
+        lingoToggle = new JToggleButton("Lingo");
+        lingoToggle.setToolTipText("Toggle between bytecode and decompiled Lingo view");
+        lingoToggle.setMaximumSize(new Dimension(80, 25));
+        lingoToggle.addActionListener(e -> {
+            showLingoView = lingoToggle.isSelected();
+            lingoToggle.setText(showLingoView ? "Bytecode" : "Lingo");
+            refreshDisplay();
+        });
+        selectorBar.add(lingoToggle);
 
         selectorBar.add(Box.createHorizontalGlue());
 
@@ -284,15 +300,50 @@ public class ScriptEditorWindow extends EditorPanel {
 
     private void onHandlerSelected() {
         if (currentScript == null) return;
+        refreshDisplay();
+    }
+
+    /** Re-render the display area based on current selection and view mode. */
+    private void refreshDisplay() {
+        if (currentScript == null) return;
 
         HandlerEntry entry = (HandlerEntry) handlerSelector.getSelectedItem();
         if (entry == null) return;
 
+        if (showLingoView) {
+            displayLingoView(entry);
+        } else {
+            displayBytecodeView(entry);
+        }
+    }
+
+    private void displayLingoView(HandlerEntry entry) {
+        try {
+            LingoDecompiler decompiler = new LingoDecompiler();
+            if (entry.handlerIndex < 0) {
+                // Show all handlers decompiled
+                String result = decompiler.decompile(currentScript, currentNames);
+                editor.setText(result);
+            } else if (entry.handlerIndex < currentScript.handlers().size()) {
+                // Show single handler decompiled
+                ScriptChunk.Handler handler = currentScript.handlers().get(entry.handlerIndex);
+                String result = decompiler.decompileHandler(handler, currentScript, currentNames);
+                editor.setText(result);
+            }
+        } catch (Exception e) {
+            editor.setText("-- Decompilation error: " + e.getMessage()
+                + "\n\n-- Falling back to bytecode view:\n\n");
+            // Fallback to bytecode
+            displayBytecodeView(entry);
+            return;
+        }
+        editor.setCaretPosition(0);
+    }
+
+    private void displayBytecodeView(HandlerEntry entry) {
         if (entry.handlerIndex < 0) {
-            // Show all handlers
             displayScript(currentScript, currentNames);
         } else if (entry.handlerIndex < currentScript.handlers().size()) {
-            // Show single handler
             ScriptChunk.Handler handler = currentScript.handlers().get(entry.handlerIndex);
             StringBuilder sb = new StringBuilder();
             formatHandler(sb, handler, currentScript, currentNames);

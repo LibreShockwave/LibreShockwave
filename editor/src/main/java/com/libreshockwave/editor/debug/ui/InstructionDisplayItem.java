@@ -20,6 +20,7 @@ public class InstructionDisplayItem {
     private Breakpoint breakpoint;  // Full breakpoint info for rendering
     private boolean isCurrent;
     private boolean navigable;  // True if call target exists in the CCT (not a builtin)
+    private boolean lingoLine;  // True if this item represents a decompiled Lingo line
 
     public InstructionDisplayItem(int offset, int index, String opcode, int argument,
                                    String annotation, boolean hasBreakpoint) {
@@ -83,6 +84,14 @@ public class InstructionDisplayItem {
 
     public void setNavigable(boolean navigable) {
         this.navigable = navigable;
+    }
+
+    public boolean isLingoLine() {
+        return lingoLine;
+    }
+
+    public void setLingoLine(boolean lingoLine) {
+        this.lingoLine = lingoLine;
     }
 
     /**
