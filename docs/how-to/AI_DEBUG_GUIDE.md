@@ -171,6 +171,25 @@ Before finishing:
 
 ## Common Root Causes
 
+### Color arithmetic on packed integers
+
+Director's `Color` type supports per-channel ADD/SUB. If the VM's arithmetic opcodes fall through to integer math on packed RGB, byte underflow/overflow corrupts adjacent channels. Always handle `Color +/- Color` with per-channel clamping.
+
+### SpriteRef type conversion
+
+`SpriteRef.toInt()` must return the channel number. The `default -> 0` case in `Datum.toInt()` silently returns 0 for unhandled types. Any new Datum type that can be used in integer context needs an explicit `toInt()` case.
+
+### 32-bit image initialization
+
+`image(w, h, 32)` must create transparent (alpha=0) canvases. Opaque white init breaks DARKEN/LIGHTEN ink processing — matte removes the white content along with the white background.
+
+### DARKEN ink pipeline
+
+DARKEN ink has three steps: (1) matte/background-transparent, (2) multiply by bgColor, (3) alpha composite. Common bugs:
+- Skipping `skipGraduatedAlpha` for script-modified bitmaps
+- `resolveBackColor` returning -1 for useAlpha=true bitmaps, preventing the multiply
+- The matte step removing wall/panel content that should survive (use native alpha detection)
+
 ### Text height and auto-size
 
 Director text with `boxType = 0` is auto-sized. If code uses the stored rect height instead of actual content height, later layout can place content far below the visible area.
@@ -318,12 +337,75 @@ If a label appears to have a colored box behind it, verify whether:
 
 Do not assume the visible artifact belongs to the text bitmap itself.
 
+## Worked Example 3: Private Room Renders Black (Floor + Walls)
+
+### Symptom
+
+Entering a private room produces an almost fully black screen (97.4% black pixels) instead of showing yellow walls, brown floor, door, window, and avatar.
+
+### Investigation (multi-layered — each fix revealed the next issue)
+
+#### Layer 1: Floor was black
+
+`sprite_info.txt` showed Ch0 (720x540, DARKEN ink, bg=0x996600) as the room bitmap. The raw bitmap had floor tile outlines on white. DARKEN ink's matte removed white, then should multiply remaining by bgColor. But the graduated alpha unblending in `applyBackgroundTransparent` was incorrectly making floor pixels semi-transparent.
+
+**Root cause:** `InkProcessor.applyInk` DARKEN branch called `applyBackgroundTransparent(src, matteColor)` without passing `skipGraduatedAlpha`. Script-modified room bitmaps need exact color-key only.
+
+**Fix:** Pass `skipGraduatedAlpha` to the DARKEN/LIGHTEN branch's `applyBackgroundTransparent` call.
+
+#### Layer 2: Walls missing entirely
+
+After fixing the floor, walls were still absent. Tracing showed:
+1. Wall panel bitmaps WERE created (100+ `copyPixels` calls on 311x162 etc. sized bitmaps)
+2. The Visualizer allocated sprites 110-117 for walls
+3. But all wall Part Wrappers had `pSprite = sprite(0)` instead of their allocated channels
+4. Wall rendering went to sprite(0) (the floor) instead of the wall sprites
+
+**Root cause:** `SpriteRef.toInt()` returned 0 for ALL SpriteRef types (the `default -> 0` case in Datum.toInt). When Lingo did `sprite(spriteRef)`, it called `toInt()` on the SpriteRef argument, producing sprite(0).
+
+**Fix:** Add `case SpriteRef sr -> sr.channelNum()` to `Datum.toInt()`. This is a generic VM fix — any Director movie that passes sprite references through integer conversion was broken.
+
+#### Layer 3: Wall bitmaps were transparent (not colored)
+
+Walls appeared but were white/uncolored. The `image(w, h, 32)` builtin created canvases with opaque white (0xFFFFFFFF). Wall content drawn via copyPixels was also white. DARKEN's matte removed all white.
+
+**Root cause:** Director's `image(w, h, 32)` creates transparent canvases (alpha=0), not opaque white. The transparent background lets DARKEN skip matte (via native alpha detection) and multiply wall content by bgColor to produce the wall color.
+
+**Fix:** Initialize 32-bit `image()` bitmaps with `0x00FFFFFF` (transparent white). Detect native alpha in SpriteBaker and pass `useAlpha=true` so DARKEN skips matte. Ensure DARKEN always resolves the bgColor tint regardless of useAlpha.
+
+#### Layer 4: Left wall was pink instead of yellow
+
+Left wall rendered as pink (0xEFBBF0), right wall correct yellow (0xFFCC00). Bytecode analysis of `Private_Room_Engine_Class.ls` (found in extracted Director assets at `C:\Users\alexm\Documents\director_assets\14.1_b8\hh_room_private\`) revealed the Lingo computes: `leftColor = baseColor - rgb(16,16,16)`.
+
+**Root cause:** The SUB opcode had no Color type handling. `Color(255,204,0) - Color(16,16,16)` fell through to integer subtraction on packed RGB: `0xFFCC00 - 0x101010 = 0xEFBBF0`. The blue channel `0x00 - 0x10` underflowed to `0xF0`, corrupting the green channel via borrow.
+
+**Fix:** Add per-channel Color arithmetic with clamping to ADD and SUB opcodes: `Color(max(0, r1-r2), max(0, g1-g2), max(0, b1-b2))`. Generic fix for all Director movies using Color math.
+
+### Key Lessons
+
+1. **Multi-layered bugs**: fixing one rendering issue often reveals the next. Each layer had a DIFFERENT generic root cause. Don't stop after the first fix.
+
+2. **Always check extracted Director assets** (`C:\Users\alexm\Documents\director_assets\14.1_b8\`). The `.ls` Lingo bytecode files show exactly what the scripts do. This is how we found the `Color - Color` subtraction that produced the pink wall.
+
+3. **NEVER make movie-specific fixes.** Every fix must be a generic Director engine improvement. Referencing specific property names like "pSprite", "updateWrap", "Room_visualizer" is NOT allowed. Find the VM/rendering engine bug that causes the symptom.
+
+4. **`SpriteRef.toInt()` returning 0 was the root cause of sprite assignment failures.** Any time sprite references pass through integer conversion (constructors, arithmetic, property access), the channel number must be preserved.
+
+5. **Color arithmetic must be per-channel.** Director's Color type is NOT a packed integer for arithmetic purposes. ADD/SUB/MUL on Colors must operate channel-by-channel with clamping.
+
+6. **32-bit `image()` canvases must be transparent.** Director initializes 32-bit images with transparent white (alpha=0). Opaque white breaks ink processing (DARKEN matte removes the content instead of the background).
+
+7. **Trace the Lingo call stack** when a sprite property has a wrong value. The value may come from score data, from `applyScoreDefaults`, from Lingo's `SET` opcode (property by ID), or from `SET_OBJ_PROP` (property by name). These are DIFFERENT code paths.
+
 ## Useful Commands
 
-Run the navigator visual test:
+Run visual tests:
 
 ```bash
 ./gradlew :player-core:runNavigatorSSOTest
+./gradlew :player-core:runNavigatorClickTest
+./gradlew :player-core:runPrivateRoomEntryTest
+./gradlew :player-core:runPurseTest
 ```
 
 Run focused tests:
@@ -333,6 +415,22 @@ Run focused tests:
 ./gradlew :player-core:test --tests "com.libreshockwave.player.render.pipeline.InkProcessorTest"
 ./gradlew :sdk:test --tests "com.libreshockwave.bitmap.DrawingMatteTest"
 ```
+
+## Extracted Director Assets
+
+Decompiled/extracted assets from the Habbo DCR and external casts are at:
+
+```
+C:\Users\alexm\Documents\director_assets\14.1_b8\
+```
+
+Each subfolder (e.g. `hh_room_private/`, `fuse_client/`) contains:
+- `.ls` files: Lingo bytecode disassembly (shows exact opcodes and handler logic)
+- `.png` files: extracted bitmap members
+- `.pal` files: palette data (JASC-PAL text format)
+- `.txt` files: text member content
+
+**When debugging Lingo behavior, always check the `.ls` bytecode first.** It shows the exact opcode sequence, handler names, and string constants. This is far more reliable than guessing what the Lingo code does.
 
 Search for important rendering code:
 
