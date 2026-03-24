@@ -73,8 +73,29 @@ Movie palette first 16 (System Mac):
 0xA0A0A4 0xFFFBF0 0x333333 0x996600 0x336633 0x003399 0xCC00FF 0x880000
 ```
 
-## Next Steps
-1. Parse clutCastLib in BitmapInfo instead of skipping
-2. Use clutCastLib for cross-cast palette resolution
-3. Investigate if room palette switching via Lingo (`puppetPalette`) is needed
-4. Check if the palette itself is being read correctly (CLUT chunk parsing)
+## Fixes Applied
+
+### Fix 1: foreColor/backColor colorization destroying 8-bit bitmap colors
+**Root cause**: `applyForeColorRemap` in SpriteBaker was applied to ALL bitmaps regardless of
+bit depth. For 8-bit+ bitmaps, this converted the entire image to greyscale.
+**Fix**: Only apply foreColorRemap for 1-bit bitmaps (`bitDepth <= 1`).
+**Files**: `SpriteBaker.java`, `BitmapCache.java`
+
+### Fix 2: White box from dooredmask (foreColor/backColor ordering)
+**Root cause**: foreColor/backColor colorization ran AFTER ink processing. For masks with
+foreColor=white/backColor=white, ink removed the white background first, then colorization
+converted remaining opaque pixels to white — creating visible white boxes.
+**Fix**: Moved foreColor remap into BitmapCache to run BEFORE ink processing. Also applied
+to the live bitmap path in SpriteBaker.
+**Files**: `BitmapCache.java`, `SpriteBaker.java`
+
+### Fix 3: Shape sprites ignoring ink modes
+**Root cause**: `bakeShape` created a filled rectangle but never applied ink processing.
+The dooredmask was treated as SHAPE type with BACKGROUND_TRANSPARENT ink, but the white
+rectangle was never made transparent.
+**Fix**: Apply ink processing in bakeShape after creating the filled rectangle.
+**Files**: `SpriteBaker.java`
+
+### Also: Parse clutCastLib in BitmapInfo
+Previously skipped, now parsed and stored for future cross-cast palette resolution.
+**Files**: `BitmapInfo.java`

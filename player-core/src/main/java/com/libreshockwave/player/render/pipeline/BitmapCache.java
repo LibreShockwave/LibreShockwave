@@ -18,25 +18,19 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class BitmapCache {
 
-    private final Map<Long, Bitmap> cache = new ConcurrentHashMap<>();
+    private final Map<CacheKey, Bitmap> cache = new ConcurrentHashMap<>();
     private final Set<Integer> decodeFailed = Collections.newSetFromMap(new ConcurrentHashMap<>());
     /** Tracks the last known palette version per member ID to detect palette changes. */
     private final Map<Integer, Integer> paletteVersions = new ConcurrentHashMap<>();
 
-    /**
-     * Build a cache key from member ID, ink, and backColor.
-     * Same bitmap can be cached differently per ink/backColor combo.
-     */
-    private static long cacheKey(int memberId, int ink, int backColor) {
-        return ((long) memberId << 32) | (((long) ink & 0xFF) << 24) | (backColor & 0xFFFFFFL);
-    }
+    private record CacheKey(int memberId, int ink, int foreColor, int backColor, boolean hasForeColor) {}
 
     /**
      * Get an ink-processed bitmap for a file-loaded cast member.
      * Decodes synchronously on first call; returns cached bitmap on subsequent calls.
      */
     public Bitmap getProcessed(CastMemberChunk member, int ink, int backColor, Player player) {
-        return getProcessed(member, ink, backColor, player, null);
+        return getProcessed(member, ink, backColor, 0, false, player, null);
     }
 
     /**
@@ -44,8 +38,20 @@ public class BitmapCache {
      * Used for palette swap animation where the runtime palette differs from the embedded one.
      */
     public Bitmap getProcessed(CastMemberChunk member, int ink, int backColor, Player player, Palette paletteOverride) {
+        return getProcessed(member, ink, backColor, 0, false, player, paletteOverride);
+    }
+
+    /**
+     * Get an ink-processed bitmap with foreColor/backColor colorization.
+     * For 1-bit bitmaps, Director applies foreColor/backColor colorization BEFORE ink
+     * processing. This ensures that masks with foreColor=white become fully white before
+     * BLEND/MATTE ink removes the white background, making them transparent.
+     */
+    public Bitmap getProcessed(CastMemberChunk member, int ink, int backColor,
+                                int foreColor, boolean hasForeColor,
+                                Player player, Palette paletteOverride) {
         int id = member.id().value();
-        long key = cacheKey(id, ink, backColor);
+        CacheKey key = new CacheKey(id, ink, hasForeColor ? foreColor : 0, backColor, hasForeColor);
 
         Bitmap cached = cache.get(key);
         if (cached != null) {
@@ -92,6 +98,14 @@ public class BitmapCache {
 
             Bitmap raw = bitmap.get();
 
+            // Director applies foreColor/backColor colorization BEFORE ink processing
+            // for 1-bit bitmaps. This is critical for masks: a mask with foreColor=white
+            // should become all-white, then BLEND/MATTE ink removes the white background
+            // making the mask fully transparent.
+            if (raw.getBitDepth() <= 1 && hasForeColor) {
+                raw = InkProcessor.applyForeColorRemap(raw, foreColor, backColor);
+            }
+
             Bitmap processed = InkProcessor.applyInk(raw, ink, backColor, useAlpha, palette);
             cache.put(key, processed);
             return processed;
@@ -112,7 +126,7 @@ public class BitmapCache {
         }
         paletteVersions.put(memberId, paletteVersion);
         // Remove from caches - scan for any key containing this member ID
-        cache.keySet().removeIf(key -> (key >> 32) == memberId);
+        cache.keySet().removeIf(key -> key.memberId() == memberId);
         decodeFailed.remove(memberId);
         return true;
     }
