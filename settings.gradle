@@ -5,10 +5,7 @@ plugins {
 rootProject.name = 'libreshockwave'
 
 include 'sdk'
-include 'cast-extractor'
 include 'vm'
 include 'player-core'
-include 'player-swing'
 include 'player-wasm'
-include 'player-simulator'
 include 'editor'
