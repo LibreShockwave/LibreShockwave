@@ -79,6 +79,15 @@ public final class ArithmeticOpcodes {
             return true;
         }
 
+        // Color + Color: per-channel addition with clamping (Director behavior)
+        if (a instanceof Datum.Color ca && b instanceof Datum.Color cb) {
+            ctx.push(new Datum.Color(
+                    Math.min(255, ca.r() + cb.r()),
+                    Math.min(255, ca.g() + cb.g()),
+                    Math.min(255, ca.b() + cb.b())));
+            return true;
+        }
+
         if (a.isFloat() || b.isFloat()) {
             ctx.push(Datum.of(a.toDouble() + b.toDouble()));
         } else {
@@ -137,6 +146,15 @@ public final class ArithmeticOpcodes {
                 }
             }
             ctx.push(new Datum.List(result));
+            return true;
+        }
+
+        // Color - Color: per-channel subtraction with clamping (Director behavior)
+        if (a instanceof Datum.Color ca && b instanceof Datum.Color cb) {
+            ctx.push(new Datum.Color(
+                    Math.max(0, ca.r() - cb.r()),
+                    Math.max(0, ca.g() - cb.g()),
+                    Math.max(0, ca.b() - cb.b())));
             return true;
         }
 
