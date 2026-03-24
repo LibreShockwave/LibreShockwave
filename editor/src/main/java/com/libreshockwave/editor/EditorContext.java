@@ -114,8 +114,13 @@ public class EditorContext {
                 newPlayer.getNetManager().setLocalHttpRoot(httpRoot);
             }
 
-            // Default Habbo external params — auto-detected when gamedata files are present
-            if (httpRoot != null) {
+            // Load saved external params, or fall back to auto-detected Habbo defaults
+            String absPathKey = path.toAbsolutePath().toString();
+            Map<String, String> savedParams = com.libreshockwave.editor.Preferences.get()
+                .getMovieParams(absPathKey);
+            if (savedParams != null) {
+                newPlayer.setExternalParams(savedParams);
+            } else if (httpRoot != null) {
                 Map<String, String> habboParams = buildDefaultHabboParams(httpRoot);
                 if (!habboParams.isEmpty()) {
                     newPlayer.setExternalParams(habboParams);
@@ -291,6 +296,25 @@ public class EditorContext {
         if (playbackTimer != null) {
             playbackTimer.stop();
             playbackTimer = null;
+        }
+    }
+
+    // External params
+
+    public Map<String, String> getExternalParams() {
+        if (player != null) {
+            return player.getExternalParams();
+        }
+        return Map.of();
+    }
+
+    public void setExternalParams(Map<String, String> params) {
+        if (player != null) {
+            player.setExternalParams(params);
+        }
+        if (currentPath != null) {
+            com.libreshockwave.editor.Preferences.get()
+                .setMovieParams(currentPath.toAbsolutePath().toString(), params);
         }
     }
 
