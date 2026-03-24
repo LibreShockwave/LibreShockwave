@@ -75,9 +75,12 @@ public class SpriteBaker {
                 if (sprite.hasBackColor() && bgColor != 0xFFFFFF) {
                     baked = InkProcessor.remapExactColor(baked, 0xFFFFFF, bgColor);
                 }
-            } else {
-                // File-loaded member bitmaps (1-bit icons, etc.): apply full grayscale remap
-                // where white→backColor, black→foreColor, gray→interpolated
+            } else if (baked.getBitDepth() <= 1) {
+                // File-loaded 1-bit bitmaps (icons, masks, etc.): apply full grayscale remap
+                // where white→backColor, black→foreColor, gray→interpolated.
+                // Director only applies foreColor/backColor colorization to 1-bit bitmaps.
+                // For 8-bit+ color bitmaps, colors come from the palette — colorization
+                // would incorrectly convert the entire image to greyscale.
                 baked = InkProcessor.applyForeColorRemap(baked, sprite.getForeColor(), sprite.getBackColor());
             }
         }

@@ -453,3 +453,14 @@ tasks.register('runQuickBmpCheck', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.libreshockwave.player.QuickBmpCheck'
 }
+
+tasks.register('runTheatredromeTest', JavaExec) {
+    group = 'verification'
+    description = 'Theatredrome test: navigate to Theatredrome public space, debug rendering'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.TheatredromeTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
