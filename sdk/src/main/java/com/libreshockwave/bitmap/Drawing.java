@@ -188,9 +188,17 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case MATTE:
-                // Use alpha channel for transparency
+                // Use alpha channel for transparency, combined with blend.
+                // copyPixels #blend controls source opacity (0=transparent, 255=opaque).
+                // For #blend:70 → blend=178: black over white gives ~77 grey (matching
+                // the reference info stand panel at ~85,85,85).
                 if (srcA == 0) {
                     return dest;
+                }
+                if (blend < 255) {
+                    int matteAlpha = (srcA * blend) / 255;
+                    if (matteAlpha == 0) return dest;
+                    return alphaBlend(src, dest, matteAlpha);
                 }
                 return alphaBlend(src, dest, srcA);
 
@@ -222,8 +230,11 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case BACKGROUND_TRANSPARENT:
-                // Background color (index 0, usually white) is transparent
-                if (srcR >= 250 && srcG >= 250 && srcB >= 250) {
+                // Background color (palette index 0, typically white) is transparent.
+                // Director uses exact color matching, not a threshold.
+                // Skip pixels with alpha=0 (already transparent from prior processing).
+                if (srcA == 0) return dest;
+                if (srcR == 255 && srcG == 255 && srcB == 255) {
                     return dest;
                 }
                 return src;
