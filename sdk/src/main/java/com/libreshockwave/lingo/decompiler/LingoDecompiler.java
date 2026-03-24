@@ -101,6 +101,158 @@ public class LingoDecompiler {
         }
     }
 
+    /**
+     * Result of decompiling a handler with line-to-offset mapping.
+     * Each line in the output maps to a bytecode offset (or -1 for structural lines).
+     */
+    public record DecompiledHandler(
+        List<DecompiledLine> lines
+    ) {
+        public String toText() {
+            StringBuilder sb = new StringBuilder();
+            for (DecompiledLine line : lines) {
+                sb.append(line.text).append("\n");
+            }
+            return sb.toString();
+        }
+    }
+
+    public record DecompiledLine(String text, int bytecodeOffset) {}
+
+    /**
+     * Decompile a handler returning structured lines with bytecode offset mapping.
+     * Used by the debugger for breakpoint support on decompiled Lingo.
+     */
+    public DecompiledHandler decompileHandlerWithMapping(ScriptChunk.Handler handler,
+                                                          ScriptChunk script, ScriptNamesChunk names) {
+        this.script = script;
+        this.names = names;
+        initFileInfo();
+        try {
+            decompileHandler(handler);
+            return buildLineMapping(astRoot);
+        } catch (Exception e) {
+            // Fallback: return error + raw bytecode
+            List<DecompiledLine> lines = new ArrayList<>();
+            lines.add(new DecompiledLine("-- ERROR decompiling: " + e.getMessage(), -1));
+            String handlerName = resolveName(handler.nameId());
+            lines.add(new DecompiledLine("on " + handlerName, -1));
+            for (var instr : handler.instructions()) {
+                lines.add(new DecompiledLine("  " + instr.toString(), instr.offset()));
+            }
+            lines.add(new DecompiledLine("end", -1));
+            return new DecompiledHandler(lines);
+        }
+    }
+
+    /**
+     * Convert a HandlerNode AST into lines with bytecode offset mapping.
+     * Renders each statement separately, assigning the statement's bytecodeOffset
+     * to its first output line (the "breakable" line).
+     */
+    private DecompiledHandler buildLineMapping(HandlerNode handler) {
+        List<DecompiledLine> lines = new ArrayList<>();
+
+        // Handler signature
+        StringBuilder sig = new StringBuilder("on " + handler.handlerName);
+        if (!handler.argumentNames.isEmpty()) {
+            sig.append(" ").append(String.join(", ", handler.argumentNames));
+        }
+        lines.add(new DecompiledLine(sig.toString(), -1));
+
+        // Globals
+        if (!handler.globalNames.isEmpty()) {
+            lines.add(new DecompiledLine("  global " + String.join(", ", handler.globalNames), -1));
+        }
+
+        // Block contents - recursively emit with offset tracking
+        emitBlock(handler.block, lines, 1);
+
+        lines.add(new DecompiledLine("end", -1));
+        return new DecompiledHandler(lines);
+    }
+
+    /**
+     * Emit a block's children as lines, tracking bytecode offsets.
+     * @param indentLevel indentation depth (1 = inside handler)
+     */
+    private void emitBlock(BlockNode block, List<DecompiledLine> lines, int indentLevel) {
+        String indent = "  ".repeat(indentLevel);
+        for (LingoNode child : block.children) {
+            emitNode(child, lines, indent, indentLevel);
+        }
+    }
+
+    private void emitNode(LingoNode node, List<DecompiledLine> lines, String indent, int indentLevel) {
+        int offset = node.bytecodeOffset;
+
+        if (node instanceof IfStmtNode ifStmt) {
+            lines.add(new DecompiledLine(indent + "if " + ifStmt.condition.toLingo(dotSyntax) + " then", offset));
+            emitBlock(ifStmt.block1, lines, indentLevel + 1);
+            if (ifStmt.hasElse) {
+                lines.add(new DecompiledLine(indent + "else", -1));
+                emitBlock(ifStmt.block2, lines, indentLevel + 1);
+            }
+            lines.add(new DecompiledLine(indent + "end if", -1));
+        } else if (node instanceof RepeatWhileStmtNode r) {
+            lines.add(new DecompiledLine(indent + "repeat while " + r.condition.toLingo(dotSyntax), offset));
+            emitBlock(r.block, lines, indentLevel + 1);
+            lines.add(new DecompiledLine(indent + "end repeat", -1));
+        } else if (node instanceof RepeatWithInStmtNode r) {
+            lines.add(new DecompiledLine(indent + "repeat with " + r.varName + " in " + r.list.toLingo(dotSyntax), offset));
+            emitBlock(r.block, lines, indentLevel + 1);
+            lines.add(new DecompiledLine(indent + "end repeat", -1));
+        } else if (node instanceof RepeatWithToStmtNode r) {
+            String dir = r.up ? " to " : " down to ";
+            lines.add(new DecompiledLine(indent + "repeat with " + r.varName + " = "
+                + r.start.toLingo(dotSyntax) + dir + r.end.toLingo(dotSyntax), offset));
+            emitBlock(r.block, lines, indentLevel + 1);
+            lines.add(new DecompiledLine(indent + "end repeat", -1));
+        } else if (node instanceof TellStmtNode t) {
+            lines.add(new DecompiledLine(indent + "tell " + t.window.toLingo(dotSyntax), offset));
+            emitBlock(t.block, lines, indentLevel + 1);
+            lines.add(new DecompiledLine(indent + "end tell", -1));
+        } else if (node instanceof CasesStmtNode cs) {
+            lines.add(new DecompiledLine(indent + "case " + cs.value.toLingo(dotSyntax) + " of", offset));
+            if (cs.firstCase != null) {
+                emitCaseNode(cs.firstCase, lines, indentLevel + 1);
+            }
+            lines.add(new DecompiledLine(indent + "end case", -1));
+        } else {
+            // Simple statement - single line
+            String text = node.toLingo(dotSyntax);
+            // Handle multi-line output (e.g., comments with newlines)
+            for (String line : text.split("\n")) {
+                lines.add(new DecompiledLine(indent + line, offset));
+                offset = -1; // Only first line gets the offset
+            }
+        }
+    }
+
+    private void emitCaseNode(CaseNode caseNode, List<DecompiledLine> lines, int indentLevel) {
+        String indent = "  ".repeat(indentLevel);
+        // Build the case value line (may have comma-separated "or" cases)
+        StringBuilder caseLine = new StringBuilder(caseNode.value.toLingo(dotSyntax));
+        CaseNode orCase = caseNode.nextOr;
+        while (orCase != null) {
+            caseLine.append(", ").append(orCase.value.toLingo(dotSyntax));
+            orCase = orCase.nextOr;
+        }
+        caseLine.append(":");
+        lines.add(new DecompiledLine(indent + caseLine, caseNode.bytecodeOffset));
+
+        if (caseNode.block != null) {
+            emitBlock(caseNode.block, lines, indentLevel + 1);
+        }
+        if (caseNode.nextCase != null) {
+            emitCaseNode(caseNode.nextCase, lines, indentLevel);
+        }
+        if (caseNode.otherwise != null) {
+            lines.add(new DecompiledLine(indent + "otherwise:", -1));
+            emitBlock(caseNode.otherwise, lines, indentLevel + 1);
+        }
+    }
+
     private void initFileInfo() {
         DirectorFile file = script.file();
         if (file != null) {
@@ -733,6 +885,8 @@ public class LingoDecompiler {
 
         if (translation == null)
             translation = new ErrorNode();
+
+        translation.bytecodeOffset = bc.offset();
 
         if (translation.isExpression) {
             stack.add(translation);
