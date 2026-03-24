@@ -111,7 +111,7 @@ public final class InkProcessor {
             if (src.getBitDepth() >= 16) {
                 int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
                 if (matteColor < 0) return src;
-                masked = applyBackgroundTransparent(src, matteColor);
+                masked = applyBackgroundTransparent(src, matteColor, skipGraduatedAlpha);
             } else {
                 int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
                 if (matteColor < 0) return src;
