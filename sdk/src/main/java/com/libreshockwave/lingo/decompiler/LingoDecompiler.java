@@ -859,7 +859,7 @@ public class LingoDecompiler {
         }
 
         case OBJ_CALL:
-            return translateObjCall(arg);
+            return translateObjCall(bc.offset(), arg);
 
         case PUSH_CHUNK_VAR_REF:
             translation = readVar(arg);
@@ -901,7 +901,7 @@ public class LingoDecompiler {
 
     // ==================== ObjCall Translation ====================
 
-    private int translateObjCall(int arg) {
+    private int translateObjCall(int bcOffset, int arg) {
         String method = resolveName(arg);
         var argList = pop();
         var rawArgs = argList.getArgNodes();
@@ -942,6 +942,8 @@ public class LingoDecompiler {
         } else {
             translation = new ObjCallNode(method, argList);
         }
+
+        translation.bytecodeOffset = bcOffset;
 
         if (translation.isExpression)
             stack.add(translation);
@@ -1001,10 +1003,12 @@ public class LingoDecompiler {
             expect = CaseNode.EXPECT_OTHERWISE;
 
         var currCase = new CaseNode(caseValue, expect);
+        currCase.bytecodeOffset = bc.offset();
         currentBlock.currentCase = currCase;
 
         if (prevCase == null) {
             var casesStmt = new CasesStmtNode(peekedValue);
+            casesStmt.bytecodeOffset = bc.offset();
             casesStmt.firstCase = currCase;
             currCase.parent = casesStmt;
             addStatement(casesStmt);
