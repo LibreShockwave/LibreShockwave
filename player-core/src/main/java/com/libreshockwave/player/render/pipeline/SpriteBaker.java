@@ -205,12 +205,19 @@ public class SpriteBaker {
                     // anti-aliasing, but destroys intentionally grayscale body parts
                     // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
                     //
-                    // 32-bit bitmaps that already contain transparent pixels (alpha=0)
-                    // use native alpha for transparency — skip matte processing so
-                    // DARKEN ink preserves white wall/panel content and multiplies
-                    // by bgColor instead of removing it as the matte color.
-                    boolean hasNativeAlpha = liveBmp.getBitDepth() == 32 && liveBmp.hasTransparentPixels();
-                    return InkProcessor.applyInk(liveBmp, sprite.getInk(),
+                    // DARKEN/LIGHTEN ink on 32-bit script-built canvases: Director's
+                    // image(w,h,32) creates opaque white, but DARKEN needs to distinguish
+                    // white background from white content. Convert opaque white to
+                    // transparent white so the matte step skips background pixels while
+                    // preserving white wall/panel content for the bgColor multiply.
+                    Bitmap inkSrc = liveBmp;
+                    if (liveBmp.getBitDepth() == 32
+                            && (sprite.getInkMode() == com.libreshockwave.id.InkMode.DARKEN
+                             || sprite.getInkMode() == com.libreshockwave.id.InkMode.LIGHTEN)) {
+                        inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(liveBmp);
+                    }
+                    boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.hasTransparentPixels();
+                    return InkProcessor.applyInk(inkSrc, sprite.getInk(),
                             sprite.getBackColor(), hasNativeAlpha, null, true);
                 }
                 return liveBmp;

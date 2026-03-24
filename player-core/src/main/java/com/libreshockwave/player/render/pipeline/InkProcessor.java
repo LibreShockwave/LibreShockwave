@@ -382,6 +382,28 @@ public final class InkProcessor {
     }
 
     /**
+     * Convert opaque white (0xFFFFFFFF) pixels to transparent white (0x00FFFFFF).
+     * Used for DARKEN/LIGHTEN ink on script-modified 32-bit canvases: Director's
+     * image(w,h,32) creates opaque white, but DARKEN needs to skip the white
+     * background during matte while preserving non-white content for bgColor multiply.
+     */
+    public static Bitmap convertOpaqueWhiteToTransparent(Bitmap src) {
+        int[] srcPixels = src.getPixels();
+        int[] result = new int[srcPixels.length];
+        boolean changed = false;
+        for (int i = 0; i < srcPixels.length; i++) {
+            if (srcPixels[i] == 0xFFFFFFFF) {
+                result[i] = 0x00FFFFFF;
+                changed = true;
+            } else {
+                result[i] = srcPixels[i];
+            }
+        }
+        if (!changed) return src;
+        return new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth(), result);
+    }
+
+    /**
      * Multiply each opaque pixel's RGB by a tint color (normalized multiply blend).
      * Used by DARKEN ink (41) to colorize the sprite with bgColor before compositing.
      */

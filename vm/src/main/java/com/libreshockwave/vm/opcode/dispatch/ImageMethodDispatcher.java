@@ -170,11 +170,6 @@ public final class ImageMethodDispatcher {
         // Use bitmap-aware color resolution so paletteIndex() colors resolve
         // through the target bitmap's custom palette (e.g., nav_ui_palette).
         int colorArgb = colorDatum.isVoid() ? 0xFFFFFFFF : Datum.datumToArgb(colorDatum, bmp);
-        if ((bmp.getWidth() == 342 && bmp.getHeight() == 104)
-                || (bmp.getWidth() == 342 && bmp.getHeight() == 140)) {
-            System.err.printf("[DEBUG-FILL-PANEL] bmp=%dx%d rect=(%d,%d,%d,%d) color=0x%08X raw=%s%n",
-                    bmp.getWidth(), bmp.getHeight(), left, top, right, bottom, colorArgb, colorDatum);
-        }
 
         int w = right - left;
         int h = bottom - top;
@@ -272,7 +267,6 @@ public final class ImageMethodDispatcher {
 
         Datum destRectDatum = args.get(1);
         Datum srcRectDatum = args.get(2);
-
 
         // Handle quad destRect: list of 4 points for perspective/flip transforms
         if (destRectDatum instanceof Datum.List quadList && quadList.items().size() == 4
