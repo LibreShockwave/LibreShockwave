@@ -26,6 +26,7 @@ public sealed interface Datum {
      *  No volatile — WASM is single-threaded. */
     final class PaletteHolder {
         static Palette palette;
+        static boolean puppetActive;  // True when puppetPalette() set a palette
     }
 
     /**
@@ -34,6 +35,20 @@ public sealed interface Datum {
      */
     static void setActivePalette(Palette palette) {
         PaletteHolder.palette = palette;
+    }
+
+    /**
+     * Set the active palette via puppetPalette(). This takes priority over the
+     * score's palette channel and persists until puppetPalette(0) resets it.
+     */
+    static void setPuppetPalette(Palette palette) {
+        PaletteHolder.palette = palette;
+        PaletteHolder.puppetActive = palette != null;
+    }
+
+    /** Returns true if puppetPalette has set an active palette. */
+    static boolean isPuppetPaletteActive() {
+        return PaletteHolder.puppetActive;
     }
 
     /**

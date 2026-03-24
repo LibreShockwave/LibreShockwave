@@ -306,14 +306,19 @@ public final class ImageMethodDispatcher {
                 blend = (int) (blendDatum.toDouble() * 255.0 / 100.0);
             }
             // Check for #color property (foreground color remap)
+            // Resolve PaletteIndexColor through source bitmap's palette first, then
+            // destination's. The source typically has the content-specific palette
+            // (e.g., wall pattern palette) while the destination is a generic canvas.
             Datum colorDatum = getPropIgnoreCase(pl, "color", "Color");
             if (!colorDatum.isVoid()) {
-                colorRemap = Datum.datumToArgb(colorDatum, dest) & 0xFFFFFF;
+                Bitmap resolveTarget = (colorDatum instanceof Datum.PaletteIndexColor && src.getImagePalette() != null) ? src : dest;
+                colorRemap = Datum.datumToArgb(colorDatum, resolveTarget) & 0xFFFFFF;
             }
             // Check for #bgColor property (background color remap)
             Datum bgColorDatum = getPropIgnoreCase(pl, "bgColor", "bgcolor", "BgColor");
             if (!bgColorDatum.isVoid()) {
-                bgColorRemap = Datum.datumToArgb(bgColorDatum, dest) & 0xFFFFFF;
+                Bitmap resolveTarget = (bgColorDatum instanceof Datum.PaletteIndexColor && src.getImagePalette() != null) ? src : dest;
+                bgColorRemap = Datum.datumToArgb(bgColorDatum, resolveTarget) & 0xFFFFFF;
             }
             // Check for #maskImage property (matte mask for transparency)
             Datum maskDatum = getPropIgnoreCase(pl, "maskImage", "maskimage", "MaskImage");

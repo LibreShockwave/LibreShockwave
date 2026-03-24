@@ -1058,8 +1058,12 @@ public class Player {
         ExternalParamProvider.setProvider(externalParamProvider);
         SoundProvider.setProvider(soundManager);
         // Refresh palette each tick so Datum colour resolution uses the current frame's palette.
-        // Stored as a direct reference (not a Supplier lambda) to avoid TeaVM monitorEnterSync.
-        com.libreshockwave.vm.datum.Datum.setActivePalette(bitmapResolver.getMoviePalette());
+        // Only override if no puppetPalette is active — puppetPalette takes priority over
+        // the score's palette channel, matching Director's behavior.
+        if (!com.libreshockwave.vm.datum.Datum.isPuppetPaletteActive()) {
+            var moviePal = bitmapResolver.getMoviePalette();
+            com.libreshockwave.vm.datum.Datum.setActivePalette(moviePal);
+        }
     }
 
     /**
