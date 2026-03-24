@@ -25,8 +25,6 @@ public final class ImageMethodDispatcher {
             case "draw" -> { bmp.markScriptModified(); yield draw(bmp, args); }
             case "copypixels" -> {
                 bmp.markScriptModified();
-                // Debug: log copyPixels calls on avatar-sized canvases
-                // Debug removed
                 yield copyPixels(bmp, args);
             }
             case "duplicate" -> new Datum.ImageRef(bmp.copy());
