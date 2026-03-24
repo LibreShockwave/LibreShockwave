@@ -1,6 +1,8 @@
 package com.libreshockwave.player;
 
+import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.cast.BitmapInfo;
+import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.player.cast.CastLibManager;
@@ -215,6 +217,23 @@ public class SpriteProperties implements SpritePropertyProvider {
                     CastMember member = castLibManager.getDynamicMember(cl, cm);
                     if (member != null) {
                         return member.setProp("image", value);
+                    }
+                    // Sprite has no member — auto-create a bitmap member and assign it.
+                    // Director allows sprite.image = img even when no member is set;
+                    // it implicitly creates a bitmap member to hold the image.
+                    if (value instanceof Datum.ImageRef imgRef && imgRef.bitmap() != null) {
+                        Bitmap bmp = imgRef.bitmap();
+                        int targetCastLib = cl > 0 ? cl : 1;
+                        CastLib castLib = castLibManager.getCastLib(targetCastLib);
+                        if (castLib != null) {
+                            CastMember newMember = castLib.createDynamicMember("bitmap");
+                            if (newMember != null) {
+                                newMember.setProp("image", value);
+                                sprite.setDynamicMember(targetCastLib, newMember.getMemberNumber());
+                                sprite.setWidth(bmp.getWidth());
+                                sprite.setHeight(bmp.getHeight());
+                            }
+                        }
                     }
                 }
                 return true;
