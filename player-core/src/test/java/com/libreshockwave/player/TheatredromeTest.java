@@ -200,6 +200,33 @@ public class TheatredromeTest {
                 NavigatorSSOTest.savePng(crop, OUTPUT_DIR.resolve("crop_infostand.png"));
             }
 
+            // Check paletteRef on avatar body part members
+            var clm = getCastLibManager(player);
+            if (clm != null) {
+                String[] bodyParts = {"bd_std_hr_001_0_0", "lg_std_hr_001_0_0", "sh_std_hr_001_0_0",
+                        "hd_std_hr_001_0_0", "bd_std_sd_001_0_0", "sh_std_sd_001_0_0"};
+                System.out.println("=== Body part paletteRef check ===");
+                for (String partName : bodyParts) {
+                    var member = clm.findCastMemberByName(partName);
+                    if (member != null) {
+                        System.out.printf("  '%s': hasPaletteOverride=%s palCastLib=%d palMemberNum=%d palVersion=%d%n",
+                                partName, member.hasPaletteOverride(),
+                                member.getPaletteRefCastLib(), member.getPaletteRefMemberNum(),
+                                member.getPaletteVersion());
+                    }
+                }
+                // Check some common avatar part names
+                for (String p : new String[]{"hd_std_hr_001_1_0", "bd_std_hr_001_1_0",
+                        "lg_std_hr_001_1_0", "sh_std_hr_001_1_0",
+                        "hd_std_hr_001_0_0", "sh_std_sd_001_0_0"}) {
+                    var m = clm.findCastMemberByName(p);
+                    if (m != null) {
+                        System.out.printf("  '%s': paletteOverride=%s ver=%d%n",
+                                p, m.hasPaletteOverride(), m.getPaletteVersion());
+                    }
+                }
+            }
+
             // Save info stand avatar for inspection
             for (var sprite : settledSnap.sprites()) {
                 String name = sprite.getMemberName();

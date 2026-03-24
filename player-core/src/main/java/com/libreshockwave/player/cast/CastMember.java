@@ -75,6 +75,7 @@ public class CastMember {
     private int paletteRefCastLib = -1;
     private int paletteRefMemberNum = -1;
     private int paletteVersion = 0; // Incremented on each paletteRef change
+    private int lastDecodedPaletteVersion = 0; // Tracks which paletteVersion the bitmap was decoded with
 
     // Text rendering properties (set by Lingo scripts via member.font, member.fontSize, etc.)
     private String textFont = "Arial";
@@ -176,6 +177,29 @@ public class CastMember {
         }
 
         state = State.LOADED;
+    }
+
+    /**
+     * Re-decode the bitmap using the paletteRef palette override.
+     * Called when Lingo sets member.paletteRef and then accesses member.image.
+     * This is how Director's avatar system remaps greyscale body parts to clothing colors.
+     */
+    private void redecodeBitmapWithPaletteRef() {
+        if (sourceFile == null || chunk == null) return;
+
+        try {
+            // Resolve the palette from the paletteRef member number.
+            // First try the member's own source file (common case: palette is in the same CCT).
+            com.libreshockwave.bitmap.Palette palette =
+                    sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
+
+            if (palette != null) {
+                sourceFile.decodeBitmap(chunk, palette).ifPresent(b -> bitmap = b);
+                lastDecodedPaletteVersion = paletteVersion;
+            }
+        } catch (Exception e) {
+            // Fall back to the existing bitmap on error
+        }
     }
 
     private void loadBitmap() {
@@ -374,6 +398,12 @@ public class CastMember {
     public Bitmap getBitmap() {
         if (!isLoaded()) {
             load();
+        }
+        // If paletteRef has been set and the bitmap hasn't been re-decoded yet,
+        // re-decode with the override palette.
+        if (hasPaletteOverride() && bitmap != null && !bitmap.isScriptModified()
+                && paletteVersion > lastDecodedPaletteVersion) {
+            redecodeBitmapWithPaletteRef();
         }
         return bitmap;
     }
