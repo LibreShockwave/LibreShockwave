@@ -471,6 +471,10 @@ public class DirectorFile {
                 info.width(), info.height(), info.bitDepth(),
                 palette, bigEndian, directorVersion, info.pitch()
             );
+            bitmap.setNativeAlpha(info.useAlpha());
+            if (palette != null) {
+                bitmap.setImagePalette(palette);
+            }
 
             return Optional.of(bitmap);
         } catch (Exception e) {
@@ -538,6 +542,8 @@ public class DirectorFile {
                     }
                 }
             }
+
+            bitmap.setNativeAlpha(info.useAlpha() || (alfaData != null && alfaData.length > 0));
 
             return Optional.of(bitmap);
         } catch (Exception e) {

@@ -104,13 +104,20 @@ public final class ImageMethodDispatcher {
                     CastLibProvider provider = CastLibProvider.getProvider();
                     if (provider != null) {
                         Palette pal = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
-                        if (pal != null) bmp.setImagePalette(pal);
+                        if (pal != null) {
+                            bmp.remapImagePalette(pal);
+                            bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
+                        }
                     }
                 } else if (value instanceof Datum.Symbol sym) {
                     String name = sym.name().toLowerCase();
-                    if ("systemmac".equals(name)) bmp.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
-                    else if ("systemwin".equals(name) || "systemwindows".equals(name))
-                        bmp.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                    if ("systemmac".equals(name)) {
+                        bmp.remapImagePalette(Palette.SYSTEM_MAC_PALETTE);
+                        bmp.setPaletteRefSystemName("systemMac");
+                    } else if ("systemwin".equals(name) || "systemwindows".equals(name)) {
+                        bmp.remapImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                        bmp.setPaletteRefSystemName("systemWin");
+                    }
                 }
             }
             default -> System.err.println("[LingoVM] Unhandled ImageRef set: " + propName);
@@ -126,7 +133,15 @@ public final class ImageMethodDispatcher {
             case "depth" -> Datum.of(bmp.getBitDepth());
             case "ilk" -> Datum.symbol("image");
             case "image" -> imageRef; // Self-reference for .image on an image
-            case "paletteref" -> Datum.VOID; // No palette tracking in our implementation
+            case "paletteref" -> {
+                if (bmp.getPaletteRefCastLib() >= 1 && bmp.getPaletteRefMemberNum() >= 1) {
+                    yield Datum.CastMemberRef.of(bmp.getPaletteRefCastLib(), bmp.getPaletteRefMemberNum());
+                }
+                if (bmp.getPaletteRefSystemName() != null) {
+                    yield Datum.symbol(bmp.getPaletteRefSystemName());
+                }
+                yield Datum.VOID;
+            }
             default -> Datum.VOID;
         };
     }
@@ -419,6 +434,7 @@ public final class ImageMethodDispatcher {
         } else {
             // Scaling needed - create scaled intermediate, applying mask at source coordinates
             Bitmap scaled = new Bitmap(destW, destH, effectiveSrc.getBitDepth());
+            scaled.copyPaletteMetadataFrom(effectiveSrc);
             for (int y = 0; y < destH; y++) {
                 int sy = effectiveSrcY + (y * srcH / destH);
                 for (int x = 0; x < destW; x++) {
@@ -447,8 +463,8 @@ public final class ImageMethodDispatcher {
 
     /**
      * copyPixels with quad destination (list of 4 points).
-     * Used by Director for flipH/flipV operations.
-     * Detects horizontal and vertical flips from the quad corners.
+     * Director uses this for image-space transforms such as flipH/flipV and
+     * 90-degree rotations (used heavily by the Habbo window/dropdown system).
      */
     private static Datum copyPixelsQuad(Bitmap dest, Bitmap src, Datum.List quad,
                                          Datum.Rect srcRect, List<Datum> args) {
@@ -481,12 +497,6 @@ public final class ImageMethodDispatcher {
         int destH = maxY - minY;
         if (destW <= 0 || destH <= 0) return Datum.VOID;
 
-        // Detect flip from quad corners: [topLeft=0, topRight=1, bottomRight=2, bottomLeft=3]
-        // flipH: topLeft.x > topRight.x (x-coords swapped horizontally)
-        boolean flipH = px[0] > px[1];
-        // flipV: topLeft.y > bottomLeft.y (y-coords swapped vertically)
-        boolean flipV = py[0] > py[3];
-
         // Parse optional ink/blend from propList (4th argument)
         Palette.InkMode ink = Palette.InkMode.COPY;
         int blend = 255;
@@ -501,22 +511,65 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        // Build flipped intermediate bitmap, then use Drawing.copyPixels for ink support
-        Bitmap flipped = new Bitmap(destW, destH, src.getBitDepth());
-        for (int y = 0; y < destH; y++) {
-            for (int x = 0; x < destW; x++) {
-                int srcX = flipH ? (srcW - 1 - (x * srcW / destW)) : (x * srcW / destW);
-                int srcY = flipV ? (srcH - 1 - (y * srcH / destH)) : (y * srcH / destH);
-                srcX += srcRect.left();
-                srcY += srcRect.top();
-                if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
-                    flipped.setPixel(x, y, src.getPixel(srcX, srcY));
+        // Map Director's quad orientation back into source-space coordinates.
+        // This covers identity, flips, and 90-degree rotations.
+        Bitmap transformed = new Bitmap(destW, destH, src.getBitDepth());
+        transformed.copyPaletteMetadataFrom(src);
+        boolean axisAligned =
+                (px[0] == minX || px[0] == maxX) && (py[0] == minY || py[0] == maxY)
+                        && (px[1] == minX || px[1] == maxX) && (py[1] == minY || py[1] == maxY)
+                        && (px[2] == minX || px[2] == maxX) && (py[2] == minY || py[2] == maxY)
+                        && (px[3] == minX || px[3] == maxX) && (py[3] == minY || py[3] == maxY);
+
+        if (axisAligned) {
+            double c0x = px[0] == minX ? 0.0 : 1.0;
+            double c0y = py[0] == minY ? 0.0 : 1.0;
+            double axisXX = (px[1] == minX ? 0.0 : 1.0) - c0x;
+            double axisXY = (py[1] == minY ? 0.0 : 1.0) - c0y;
+            double axisYX = (px[3] == minX ? 0.0 : 1.0) - c0x;
+            double axisYY = (py[3] == minY ? 0.0 : 1.0) - c0y;
+
+            for (int y = 0; y < destH; y++) {
+                double dv = ((double) y + 0.5) / destH;
+                for (int x = 0; x < destW; x++) {
+                    double du = ((double) x + 0.5) / destW;
+                    double relX = du - c0x;
+                    double relY = dv - c0y;
+
+                    double srcU = relX * axisXX + relY * axisXY;
+                    double srcV = relX * axisYX + relY * axisYY;
+
+                    int srcX = srcRect.left() + clamp((int) Math.floor(srcU * srcW), 0, srcW - 1);
+                    int srcY = srcRect.top() + clamp((int) Math.floor(srcV * srcH), 0, srcH - 1);
+                    if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
+                        transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                    }
+                }
+            }
+        } else {
+            // Fallback to the previous behaviour for quads that are not simple
+            // axis-aligned rectangle transforms.
+            boolean flipH = px[0] > px[1];
+            boolean flipV = py[0] > py[3];
+            for (int y = 0; y < destH; y++) {
+                for (int x = 0; x < destW; x++) {
+                    int srcX = flipH ? (srcW - 1 - (x * srcW / destW)) : (x * srcW / destW);
+                    int srcY = flipV ? (srcH - 1 - (y * srcH / destH)) : (y * srcH / destH);
+                    srcX += srcRect.left();
+                    srcY += srcRect.top();
+                    if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
+                        transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                    }
                 }
             }
         }
-        Drawing.copyPixels(dest, flipped, minX, minY, 0, 0, destW, destH, ink, blend);
+        Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, ink, blend);
 
         return Datum.VOID;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     /**

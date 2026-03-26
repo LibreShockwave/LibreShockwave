@@ -13,7 +13,11 @@ public class Bitmap {
     private final int[] pixels; // ARGB format (0xAARRGGBB)
     private final int bitDepth;
     private boolean scriptModified; // Set when Lingo modifies this bitmap via image API
+    private boolean nativeAlpha; // True for Director-decoded 32-bit bitmaps with real alpha
     private Palette imagePalette; // Palette for 8-bit images created via image(w,h,8,paletteMember)
+    private int paletteRefCastLib = -1;
+    private int paletteRefMemberNum = -1;
+    private String paletteRefSystemName;
 
     public Bitmap(int width, int height, int bitDepth) {
         this.width = width;
@@ -60,6 +64,14 @@ public class Bitmap {
         this.scriptModified = true;
     }
 
+    public boolean isNativeAlpha() {
+        return nativeAlpha;
+    }
+
+    public void setNativeAlpha(boolean nativeAlpha) {
+        this.nativeAlpha = nativeAlpha;
+    }
+
     /** Set the palette for this bitmap (for 8-bit images created with a palette member). */
     public void setImagePalette(Palette palette) {
         this.imagePalette = palette;
@@ -68,6 +80,88 @@ public class Bitmap {
     /** Get the palette for this bitmap, or null if none. */
     public Palette getImagePalette() {
         return imagePalette;
+    }
+
+    /**
+     * Director can recolor an existing 8-bit image by assigning image.paletteRef
+     * after pixels have already been copied into it. Our runtime stores decoded
+     * ARGB pixels, so emulate that by remapping exact old-palette colors to the
+     * corresponding entries in the new palette.
+     *
+     * @return number of pixels changed
+     */
+    public int remapImagePalette(Palette newPalette) {
+        Palette oldPalette = this.imagePalette;
+        this.imagePalette = newPalette;
+
+        if (bitDepth > 8 || oldPalette == null || newPalette == null || oldPalette == newPalette) {
+            return 0;
+        }
+
+        int changed = 0;
+        int max = Math.min(oldPalette.size(), newPalette.size());
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            int alpha = (pixel >>> 24) & 0xFF;
+            if (alpha == 0) {
+                continue;
+            }
+            int rgb = pixel & 0xFFFFFF;
+            for (int idx = 0; idx < max; idx++) {
+                if ((oldPalette.getColor(idx) & 0xFFFFFF) == rgb) {
+                    int newRgb = newPalette.getColor(idx) & 0xFFFFFF;
+                    if (newRgb != rgb) {
+                        pixels[i] = (alpha << 24) | newRgb;
+                        changed++;
+                    }
+                    break;
+                }
+            }
+        }
+        return changed;
+    }
+
+    public void setPaletteRefCastMember(int castLibNumber, int memberNumber) {
+        this.paletteRefCastLib = castLibNumber;
+        this.paletteRefMemberNum = memberNumber;
+        this.paletteRefSystemName = null;
+    }
+
+    public int getPaletteRefCastLib() {
+        return paletteRefCastLib;
+    }
+
+    public int getPaletteRefMemberNum() {
+        return paletteRefMemberNum;
+    }
+
+    public void setPaletteRefSystemName(String systemName) {
+        this.paletteRefSystemName = systemName;
+        this.paletteRefCastLib = -1;
+        this.paletteRefMemberNum = -1;
+    }
+
+    public String getPaletteRefSystemName() {
+        return paletteRefSystemName;
+    }
+
+    public void clearPaletteRefMetadata() {
+        this.paletteRefCastLib = -1;
+        this.paletteRefMemberNum = -1;
+        this.paletteRefSystemName = null;
+    }
+
+    public void copyPaletteMetadataFrom(Bitmap other) {
+        if (other == null) {
+            this.imagePalette = null;
+            clearPaletteRefMetadata();
+            return;
+        }
+        this.imagePalette = other.imagePalette;
+        this.nativeAlpha = other.nativeAlpha;
+        this.paletteRefCastLib = other.paletteRefCastLib;
+        this.paletteRefMemberNum = other.paletteRefMemberNum;
+        this.paletteRefSystemName = other.paletteRefSystemName;
     }
 
     /**
@@ -159,7 +253,9 @@ public class Bitmap {
     public Bitmap copy() {
         int[] pixelsCopy = new int[pixels.length];
         System.arraycopy(pixels, 0, pixelsCopy, 0, pixels.length);
-        return new Bitmap(width, height, bitDepth, pixelsCopy);
+        Bitmap copy = new Bitmap(width, height, bitDepth, pixelsCopy);
+        copy.copyPaletteMetadataFrom(this);
+        return copy;
     }
 
     /**
@@ -167,6 +263,7 @@ public class Bitmap {
      */
     public Bitmap getRegion(int x, int y, int w, int h) {
         Bitmap result = new Bitmap(w, h, bitDepth);
+        result.copyPaletteMetadataFrom(this);
         for (int dy = 0; dy < h; dy++) {
             int srcY = y + dy;
             if (srcY < 0 || srcY >= height) continue;

@@ -12,6 +12,7 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -164,6 +165,92 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void copyPixelsQuadRotatesClockwiseLikeDirectorDropdown() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.setPixel(0, 0, 0xFFFF0000);
+        src.setPixel(1, 0, 0xFF00FF00);
+        src.setPixel(0, 1, 0xFF0000FF);
+        src.setPixel(1, 1, 0xFFFFFF00);
+        src.setPixel(0, 2, 0xFFFF00FF);
+        src.setPixel(1, 2, 0xFF00FFFF);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        Datum.ImageRef destRef = new Datum.ImageRef(dest);
+        Datum.ImageRef srcRef = new Datum.ImageRef(src);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2),
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0)
+        )));
+
+        ImageMethodDispatcher.dispatch(destRef, "copyPixels",
+                List.of(srcRef, quad, new Datum.Rect(0, 0, 2, 3)));
+
+        assertEquals(0xFFFF00FF, dest.getPixel(0, 0));
+        assertEquals(0xFF0000FF, dest.getPixel(1, 0));
+        assertEquals(0xFFFF0000, dest.getPixel(2, 0));
+        assertEquals(0xFF00FFFF, dest.getPixel(0, 1));
+        assertEquals(0xFFFFFF00, dest.getPixel(1, 1));
+        assertEquals(0xFF00FF00, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void copyPixelsQuadRotatesCounterClockwiseLikeDirectorDropdown() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.setPixel(0, 0, 0xFFFF0000);
+        src.setPixel(1, 0, 0xFF00FF00);
+        src.setPixel(0, 1, 0xFF0000FF);
+        src.setPixel(1, 1, 0xFFFFFF00);
+        src.setPixel(0, 2, 0xFFFF00FF);
+        src.setPixel(1, 2, 0xFF00FFFF);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        Datum.ImageRef destRef = new Datum.ImageRef(dest);
+        Datum.ImageRef srcRef = new Datum.ImageRef(src);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0),
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2)
+        )));
+
+        ImageMethodDispatcher.dispatch(destRef, "copyPixels",
+                List.of(srcRef, quad, new Datum.Rect(0, 0, 2, 3)));
+
+        assertEquals(0xFF00FF00, dest.getPixel(0, 0));
+        assertEquals(0xFFFFFF00, dest.getPixel(1, 0));
+        assertEquals(0xFF00FFFF, dest.getPixel(2, 0));
+        assertEquals(0xFFFF0000, dest.getPixel(0, 1));
+        assertEquals(0xFF0000FF, dest.getPixel(1, 1));
+        assertEquals(0xFFFF00FF, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsUsesSourcePaletteIndexZero() {
+        Bitmap dest = new Bitmap(2, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(2, 1, 8);
+        src.setImagePalette(new Palette(new int[] {0xFF00FF, 0xC89C32}, "test-purse"));
+        src.setPixel(0, 0, 0xFFFF00FF);
+        src.setPixel(1, 0, 0xFFC89C32);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1), props));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "Palette index 0 color should be treated as transparent for ink 36");
+        assertEquals(0xFFC89C32, dest.getPixel(1, 0));
+    }
+
+    @Test
     void backgroundTransparentCopyPixelsPreservesTransparentTextBackground() {
         Bitmap dest = new Bitmap(10, 10, 32);
         dest.fill(0xFFC0C0C0);
@@ -240,8 +327,39 @@ public class ScriptModifiedBitmapTest {
         assertNotNull(baked.getBakedBitmap());
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
-        assertNotEquals(0xFF6794A7, baked.getBakedBitmap().getPixel(1, 0),
-                "Border-touching key color should still trigger BACKGROUND_TRANSPARENT processing");
+        assertEquals(0xFF6794A7, baked.getBakedBitmap().getPixel(1, 0),
+                "Only the key color should be removed when BACKGROUND_TRANSPARENT processing triggers");
+    }
+
+    @Test
+    void scriptBuiltBitmapWithTransparentPixelsStillProcessesBackgroundTransparent() {
+        CastMember member = new CastMember(1, 44, MemberType.BITMAP);
+        Bitmap bmp = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF,
+                0x00000000,
+                0xFF111111
+        });
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                43, 0, 0, 3, 1, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0x00FFFFFF, false, true,
+                36, 255, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0),
+                "White key color should still be removed even when the script bitmap already contains transparency");
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(1, 0),
+                "Existing transparent pixels must be preserved");
+        assertEquals(0xFF111111, baked.getBakedBitmap().getPixel(2, 0),
+                "Non-key pixels must survive BACKGROUND_TRANSPARENT processing");
     }
 
     /**
@@ -287,5 +405,53 @@ public class ScriptModifiedBitmapTest {
                 "member.getBitmap() should reflect the fill done through pImg");
         assertTrue(member.getBitmap().isScriptModified(),
                 "member's bitmap should be marked script-modified");
+    }
+
+    @Test
+    void duplicatePreservesPaletteRefMetadata() {
+        Bitmap src = new Bitmap(4, 4, 8);
+        src.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        src.setPaletteRefCastMember(2, 77);
+
+        Datum.ImageRef duplicate = (Datum.ImageRef) ImageMethodDispatcher.dispatch(
+                new Datum.ImageRef(src), "duplicate", List.of());
+
+        assertSame(Palette.SYSTEM_MAC_PALETTE, duplicate.bitmap().getImagePalette());
+        Datum paletteRef = ImageMethodDispatcher.getProperty(duplicate, "paletteRef");
+        assertInstanceOf(Datum.CastMemberRef.class, paletteRef);
+        assertEquals(2, ((Datum.CastMemberRef) paletteRef).castLibNum());
+        assertEquals(77, ((Datum.CastMemberRef) paletteRef).memberNum());
+    }
+
+    @Test
+    void cropPreservesPaletteRefMetadata() {
+        Bitmap src = new Bitmap(4, 4, 8);
+        src.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+        src.setPaletteRefSystemName("systemWin");
+
+        Datum.ImageRef cropped = (Datum.ImageRef) ImageMethodDispatcher.dispatch(
+                new Datum.ImageRef(src), "crop", List.of(new Datum.Rect(1, 1, 3, 3)));
+
+        assertSame(Palette.SYSTEM_WIN_PALETTE, cropped.bitmap().getImagePalette());
+        Datum paletteRef = ImageMethodDispatcher.getProperty(cropped, "paletteRef");
+        assertInstanceOf(Datum.Symbol.class, paletteRef);
+        assertEquals("systemWin", ((Datum.Symbol) paletteRef).name());
+    }
+
+    @Test
+    void remapImagePaletteRecolorsExisting8BitPixels() {
+        Palette oldPalette = new Palette(new int[]{0xFFFFFF, 0x111111, 0x224466}, "old");
+        Palette newPalette = new Palette(new int[]{0xFFFFFF, 0xAA5500, 0x66CC22}, "new");
+        Bitmap bmp = new Bitmap(2, 1, 8);
+        bmp.setImagePalette(oldPalette);
+        bmp.setPixel(0, 0, 0xFF111111);
+        bmp.setPixel(1, 0, 0xFF224466);
+
+        int changed = bmp.remapImagePalette(newPalette);
+
+        assertEquals(2, changed);
+        assertSame(newPalette, bmp.getImagePalette());
+        assertEquals(0xFFAA5500, bmp.getPixel(0, 0));
+        assertEquals(0xFF66CC22, bmp.getPixel(1, 0));
     }
 }
