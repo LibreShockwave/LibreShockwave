@@ -1,5 +1,6 @@
 package com.libreshockwave.vm;
 
+import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -10,6 +11,21 @@ import java.util.List;
  * Unit tests for the Lingo VM.
  */
 class LingoVMTest {
+
+    @Test
+    void testBuiltinSetCursorAliasesCursor() {
+        LingoVM vm = new LingoVM(null);
+        RecordingMovieProvider provider = new RecordingMovieProvider();
+        MoviePropertyProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("setcursor", List.of(Datum.symbol("timer")));
+            assertTrue(result.isVoid());
+            assertEquals("cursor", provider.lastPropName);
+            assertEquals("timer", provider.lastValue.toStr());
+        } finally {
+            MoviePropertyProvider.clearProvider();
+        }
+    }
 
     @Test
     void testGlobalVariables() {
@@ -29,6 +45,23 @@ class LingoVMTest {
         // Clear
         vm.clearGlobals();
         assertTrue(vm.getGlobals().isEmpty());
+    }
+
+    private static final class RecordingMovieProvider implements MoviePropertyProvider {
+        private String lastPropName;
+        private Datum lastValue = Datum.VOID;
+
+        @Override
+        public Datum getMovieProp(String propName) {
+            return Datum.VOID;
+        }
+
+        @Override
+        public boolean setMovieProp(String propName, Datum value) {
+            lastPropName = propName;
+            lastValue = value;
+            return true;
+        }
     }
 
     @Test
