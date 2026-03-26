@@ -19,12 +19,12 @@ import java.util.*;
 
 /**
  * Navigator SSO test: downloads habbo.dcr from sandbox.h4bbo.net,
- * connects to the real Habbo proxy at localhost:30001, ticks frames until the
+ * connects to the real Habbo proxy at au.h4bbo.net:30001, ticks frames until the
  * navigator window appears, renders to PNG, and creates pixel diff against reference.
  *
  * Everything loads over HTTP — no local disk paths for DCR or casts.
  *
- * Requires: Habbo proxy running on localhost:30001 (TCP) and localhost:38101 (MUS).
+ * Requires: Habbo proxy running on au.h4bbo.net:30001 (TCP) and au.h4bbo.net:38101 (MUS).
  *
  * Usage:
  *   ./gradlew :player-core:runNavigatorSSOTest
@@ -47,7 +47,7 @@ public class NavigatorSSOTest {
         Files.createDirectories(OUTPUT_DIR);
         System.out.println("=== Navigator SSO Test ===");
         System.out.println("Loading DCR from " + DCR_URL);
-        System.out.println("Proxy: localhost:30001 (TCP) / localhost:38101 (MUS)");
+        System.out.println("Proxy: au.h4bbo.net:30001 (TCP) / au.h4bbo.net:38101 (MUS)");
 
         // 1. Download DCR over HTTP
         byte[] dcrBytes = httpGet(DCR_URL);
@@ -61,9 +61,9 @@ public class NavigatorSSOTest {
         // 2. External params — real proxy ports, SSO ticket, all URLs from h4bbo.net
         Map<String, String> params = new LinkedHashMap<>();
         params.put("sw1", "site.url=http://www.habbo.co.uk;url.prefix=http://www.habbo.co.uk");
-        params.put("sw2", "connection.info.host=localhost;connection.info.port=30087");
+        params.put("sw2", "connection.info.host=au.h4bbo.net;connection.info.port=30087");
         params.put("sw3", "client.reload.url=https://sandbox.h4bbo.net/");
-        params.put("sw4", "connection.mus.host=localhost;connection.mus.port=38101");
+        params.put("sw4", "connection.mus.host=au.h4bbo.net;connection.mus.port=38101");
         params.put("sw5", "external.variables.txt=https://sandbox.h4bbo.net/gamedata/external_variables.txt;"
                 + "external.texts.txt=https://sandbox.h4bbo.net/gamedata/external_texts.txt");
         params.put("sw6", "use.sso.ticket=1;sso.ticket=123");
@@ -160,7 +160,7 @@ public class NavigatorSSOTest {
             System.out.println("Navigator saved from tick " + navigatorTick);
         } else {
             System.out.println("Navigator did NOT appear within " + MAX_WAIT_MS / 1000 + "s");
-            System.out.println("Is the Habbo proxy running on localhost:30001?");
+            System.out.println("Is the Habbo proxy running on au.h4bbo.net:30001?");
         }
 
         // 7. Sprite info + ink analysis

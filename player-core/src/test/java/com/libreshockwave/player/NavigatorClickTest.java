@@ -29,7 +29,7 @@ import java.util.*;
  *   docs/navigator-before-click.png        — navigator with category list
  *   docs/navigator-before-after-restaurant-category.png — after clicking first category
  *
- * Requires: Habbo game server on localhost:30087 and MUS on localhost:12322.
+ * Requires: Habbo game server on au.h4bbo.net:30101 and MUS on au.h4bbo.net:38101.
  *
  * Usage:
  *   ./gradlew :player-core:runNavigatorClickTest
@@ -54,7 +54,7 @@ public class NavigatorClickTest {
         Files.createDirectories(OUTPUT_DIR);
         System.out.println("=== Navigator Click Test ===");
         System.out.println("Loading DCR from " + DCR_URL);
-        System.out.println("Server: localhost:30087 (game) / localhost:12322 (MUS)");
+        System.out.println("Server: au.h4bbo.net:30101 (game) / au.h4bbo.net:38101 (MUS)");
 
         // 1. Download DCR over HTTP
         byte[] dcrBytes = httpGet(DCR_URL);
@@ -67,9 +67,9 @@ public class NavigatorClickTest {
         // 2. External params
         Map<String, String> params = new LinkedHashMap<>();
         params.put("sw1", "site.url=http://www.habbo.co.uk;url.prefix=http://www.habbo.co.uk");
-        params.put("sw2", "connection.info.host=localhost;connection.info.port=30087");
+        params.put("sw2", "connection.info.host=au.h4bbo.net;connection.info.port=30101");
         params.put("sw3", "client.reload.url=https://sandbox.h4bbo.net/");
-        params.put("sw4", "connection.mus.host=localhost;connection.mus.port=12322");
+        params.put("sw4", "connection.mus.host=au.h4bbo.net;connection.mus.port=38101");
         params.put("sw5", "external.variables.txt=https://sandbox.h4bbo.net/gamedata/external_variables.txt;"
                 + "external.texts.txt=https://sandbox.h4bbo.net/gamedata/external_texts.txt");
         params.put("sw6", "use.sso.ticket=1;sso.ticket=123");
@@ -142,7 +142,7 @@ public class NavigatorClickTest {
 
         if (navigatorBitmap == null) {
             System.out.println("FAIL: Navigator did NOT appear within " + MAX_WAIT_MS / 1000 + "s");
-            System.out.println("Is the Habbo server running on localhost:30087 and localhost:12322?");
+            System.out.println("Is the Habbo server running on au.h4bbo.net:30101 and au.h4bbo.net:38101?");
             player.shutdown();
             return;
         }
