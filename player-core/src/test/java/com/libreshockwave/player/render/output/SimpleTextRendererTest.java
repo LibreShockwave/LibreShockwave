@@ -3,6 +3,7 @@ package com.libreshockwave.player.render.output;
 import com.libreshockwave.bitmap.Bitmap;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -48,6 +49,42 @@ class SimpleTextRendererTest {
                 "expected underline on the bottom row of the auto-sized line box");
         assertEquals(underlineRow - 2, glyphBottom,
                 "expected one clear row between glyph ink and underline");
+    }
+
+    @Test
+    void preservesBlankLinesWhenAutosizingText() {
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        Bitmap singleBreak = renderer.renderText("A\r\nB", 20, 0,
+                "Verdana", 9, "plain",
+                "left", 0xFF000000, 0x00FFFFFF,
+                false, false, 9, 0);
+        Bitmap blankLine = renderer.renderText("A\r\n\r\nB", 20, 0,
+                "Verdana", 9, "plain",
+                "left", 0xFF000000, 0x00FFFFFF,
+                false, false, 9, 0);
+
+        assertEquals(singleBreak.getHeight() + 9, blankLine.getHeight(),
+                "expected preserved empty line to add one full line advance");
+    }
+
+    @Test
+    void locToCharPosTreatsLfAsLineBreak() {
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        int charPos = renderer.locToCharPos("A\nB", 0, 9,
+                "Verdana", 9, "plain",
+                9, "left", 20);
+
+        assertEquals(2, charPos,
+                "expected click on second line to map after the LF break");
+    }
+
+    @Test
+    void findCharLineTreatsCrLfAsSingleLineBreak() {
+        assertArrayEquals(new int[]{1, 0}, TextRenderer.findCharLine("A\r\nB", 2));
+        assertArrayEquals(new int[]{1, 1}, TextRenderer.findCharLine("A\r\nB", 4));
+        assertEquals(3, TextRenderer.lineStartIndex("A\r\nB", 1));
     }
 
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {
