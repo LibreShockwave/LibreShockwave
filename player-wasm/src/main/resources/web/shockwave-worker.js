@@ -45,6 +45,7 @@ console.warn = function() {};
 
 var _e = null;          // WasmEngine instance
 var _isTicking = false; // guard against overlapping ticks
+var _pageProtocol = ''; // page protocol from main thread (e.g. 'https:')
 
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
@@ -433,7 +434,7 @@ WasmEngine.prototype.pumpMusRequests = function() {
             var host = this._readString(strAddr, hostLen);
             var port = this.exports.getMusPendingPort(i); this._clearEx();
 
-            var protocol = (self.location && self.location.protocol === 'https:') ? 'wss' : 'ws';
+            var protocol = (_pageProtocol === 'https:') ? 'wss' : 'ws';
             var wsUrl = protocol + '://' + host + ':' + port;
             this._musConnect(instId, wsUrl);
 
@@ -703,6 +704,7 @@ self.onmessage = async function(e) {
         switch (msg.type) {
 
             case 'init': {
+                _pageProtocol = msg.pageProtocol || '';
                 // importScripts is synchronous; TeaVM.wasm.load is async
                 importScripts(msg.basePath + 'player-wasm.wasm-runtime.js');
                 var instance = await TeaVM.wasm.load(msg.basePath + 'player-wasm.wasm');
