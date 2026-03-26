@@ -405,7 +405,7 @@ var LibreShockwave = (function() {
                 if (self._opts.onError) self._opts.onError(e.message);
             };
             // Send init with absolute base path so importScripts/fetch work from the worker
-            worker.postMessage({ type: 'init', basePath: absBase });
+            worker.postMessage({ type: 'init', basePath: absBase, pageProtocol: location.protocol });
         }
 
         // Create worker from file URL (most reliable, works on all mobile browsers).
