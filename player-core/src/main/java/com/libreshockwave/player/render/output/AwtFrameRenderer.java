@@ -94,7 +94,21 @@ public final class AwtFrameRenderer {
         BufferedImage img = baked.toBufferedImage();
         int w = sprite.getWidth() > 0 ? sprite.getWidth() : img.getWidth();
         int h = sprite.getHeight() > 0 ? sprite.getHeight() : img.getHeight();
-        g.drawImage(img, sprite.getX(), sprite.getY(), w, h, null);
+        boolean flipH = sprite.isFlipH();
+        boolean flipV = sprite.isFlipV();
+        if (flipH || flipV) {
+            int dx1 = sprite.getX();
+            int dy1 = sprite.getY();
+            int dx2 = sprite.getX() + w;
+            int dy2 = sprite.getY() + h;
+            int sx1 = flipH ? img.getWidth() : 0;
+            int sy1 = flipV ? img.getHeight() : 0;
+            int sx2 = flipH ? 0 : img.getWidth();
+            int sy2 = flipV ? 0 : img.getHeight();
+            g.drawImage(img, dx1, dy1, dx2, dy2, sx1, sy1, sx2, sy2, null);
+        } else {
+            g.drawImage(img, sprite.getX(), sprite.getY(), w, h, null);
+        }
 
         if (oldComposite != null) {
             g.setComposite(oldComposite);

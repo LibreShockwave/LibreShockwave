@@ -202,7 +202,7 @@ public class StageRenderer {
 
         // Apply registration point offset (scaled for stretched sprites per ScummVM behavior)
         if (member != null) {
-            RegPoint reg = scaledRegPoint(member, width, height, x, y);
+            RegPoint reg = scaledRegPoint(member, width, height, x, y, state.isFlipH(), state.isFlipV());
             x -= reg.x();
             y -= reg.y();
         }
@@ -296,7 +296,7 @@ public class StageRenderer {
         if (member != null) {
             type = determineSpriteTypeFromMember(member);
             // Apply registration point offset (scaled for stretched sprites)
-            RegPoint reg = scaledRegPoint(member, width, height, x, y);
+            RegPoint reg = scaledRegPoint(member, width, height, x, y, state.isFlipH(), state.isFlipV());
             x -= reg.x();
             y -= reg.y();
             // Fallback auto-size: if sprite still has 0x0 dimensions, derive from member
@@ -309,8 +309,10 @@ public class StageRenderer {
         } else if (dynamicMember != null) {
             type = determineSpriteTypeFromDynamic(dynamicMember);
             // Apply registration point offset from dynamic member
-            x -= dynamicMember.getRegPointX();
-            y -= dynamicMember.getRegPointY();
+            RegPoint reg = mirroredDynamicRegPoint(dynamicMember, width, height,
+                    state.isFlipH(), state.isFlipV());
+            x -= reg.x();
+            y -= reg.y();
             // Fallback auto-size for dynamic members
             if (width == 0 && height == 0) {
                 int dw = dynamicMember.getProp("width").toInt();
@@ -387,7 +389,7 @@ public class StageRenderer {
      * Director (confirmed via ScummVM) scales regPoint by spriteSize/bitmapSize for stretched sprites.
      */
     private RegPoint scaledRegPoint(CastMemberChunk member, int spriteWidth, int spriteHeight,
-                                     int posX, int posY) {
+                                     int posX, int posY, boolean flipH, boolean flipV) {
         if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
             var bi = com.libreshockwave.cast.BitmapInfo.parse(member.specificData());
             // ScummVM's getRegistrationOffset() uses bitmap-local coordinates
@@ -402,6 +404,8 @@ public class StageRenderer {
             if (spriteHeight > 0 && bmpH > 0 && bmpH != spriteHeight) {
                 regY = regY * spriteHeight / bmpH;
             }
+            regX = mirrorOffset(regX, spriteWidth > 0 ? spriteWidth : bmpW, flipH);
+            regY = mirrorOffset(regY, spriteHeight > 0 ? spriteHeight : bmpH, flipV);
             return new RegPoint(regX, regY);
         }
         // Film loop: the specificData stores a bounding rect in stage coordinates.
@@ -412,7 +416,28 @@ public class StageRenderer {
             var fi = com.libreshockwave.cast.FilmLoopInfo.parse(member.specificData());
             return new RegPoint(posX - fi.rectLeft(), posY - fi.rectTop());
         }
-        return new RegPoint(member.regPointX(), member.regPointY());
+        int regX = mirrorOffset(member.regPointX(), spriteWidth, flipH);
+        int regY = mirrorOffset(member.regPointY(), spriteHeight, flipV);
+        return new RegPoint(regX, regY);
+    }
+
+    private RegPoint mirroredDynamicRegPoint(CastMember dynamicMember, int spriteWidth, int spriteHeight,
+                                             boolean flipH, boolean flipV) {
+        Bitmap bmp = dynamicMember.getBitmap();
+        int width = spriteWidth > 0 ? spriteWidth : (bmp != null ? bmp.getWidth() : 0);
+        int height = spriteHeight > 0 ? spriteHeight : (bmp != null ? bmp.getHeight() : 0);
+        int regX = dynamicMember.getRegPointX();
+        int regY = dynamicMember.getRegPointY();
+        regX = mirrorOffset(regX, width, flipH);
+        regY = mirrorOffset(regY, height, flipV);
+        return new RegPoint(regX, regY);
+    }
+
+    private int mirrorOffset(int reg, int span, boolean flipped) {
+        if (!flipped || span <= 0) {
+            return reg;
+        }
+        return span - reg;
     }
 
     /**
