@@ -113,9 +113,9 @@ public class NavigatorWelcomeLobbyErrorTest {
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("sw1", "site.url=http://www.habbo.co.uk;url.prefix=http://www.habbo.co.uk");
-        params.put("sw2", "connection.info.host=localhost;connection.info.port=30087");
+        params.put("sw2", "connection.info.host=au.h4bbo.net;connection.info.port=30101");
         params.put("sw3", "client.reload.url=https://sandbox.h4bbo.net/");
-        params.put("sw4", "connection.mus.host=localhost;connection.mus.port=38101");
+        params.put("sw4", "connection.mus.host=au.h4bbo.net;connection.mus.port=38101");
         params.put("sw5", "external.variables.txt=https://sandbox.h4bbo.net/gamedata/external_variables.txt;"
                 + "external.texts.txt=https://sandbox.h4bbo.net/gamedata/external_texts.txt");
         params.put("sw6", "use.sso.ticket=1;sso.ticket=123");

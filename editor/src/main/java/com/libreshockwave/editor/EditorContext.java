@@ -121,7 +121,7 @@ public class EditorContext {
             if (savedParams != null) {
                 newPlayer.setExternalParams(savedParams);
             } else if (httpRoot != null) {
-                Map<String, String> habboParams = buildDefaultHabboParams(httpRoot);
+                Map<String, String> habboParams = buildDefaultHabboParams();
                 if (!habboParams.isEmpty()) {
                     newPlayer.setExternalParams(habboParams);
                 }
@@ -320,27 +320,14 @@ public class EditorContext {
 
     // Default Habbo params
 
-    private Map<String, String> buildDefaultHabboParams(String httpRoot) {
+    private Map<String, String> buildDefaultHabboParams() {
         Map<String, String> params = new LinkedHashMap<>();
 
-        StringBuilder sw5 = new StringBuilder();
-        Path varsFile = Path.of(httpRoot, "gamedata", "external_variables.txt");
-        Path textsFile = Path.of(httpRoot, "gamedata", "external_texts.txt");
-        if (Files.exists(varsFile)) {
-            sw5.append("external.variables.txt=http://localhost/gamedata/external_variables.txt");
-        }
-        if (Files.exists(textsFile)) {
-            if (!sw5.isEmpty()) sw5.append(";");
-            sw5.append("external.texts.txt=http://localhost/gamedata/external_texts.txt");
-        }
-
-        if (!sw5.isEmpty()) {
             params.put("sw1", "site.url=http://www.habbo.co.uk;url.prefix=http://www.habbo.co.uk");
-            params.put("sw2", "connection.info.host=localhost;connection.info.port=30001");
+            params.put("sw2", "connection.info.host=au.h4bbo.net;connection.info.port=30101");
             params.put("sw3", "client.reload.url=https://sandbox.h4bbo.net/");
-            params.put("sw4", "connection.mus.host=localhost;connection.mus.port=38101");
-            params.put("sw5", sw5.toString());
-        }
+            params.put("sw4", "connection.mus.host=au.h4bbo.net;connection.mus.port=38101");
+            params.put("sw5", "external.variables.txt=https://sandbox.h4bbo.net/gamedata/external_variables.txt;external.texts.txt=https://sandbox.h4bbo.net/gamedata/external_texts.txt");
 
         return params;
     }
