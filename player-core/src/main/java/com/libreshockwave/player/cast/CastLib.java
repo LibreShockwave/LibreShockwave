@@ -652,6 +652,7 @@ public class CastLib {
         MemberType type = switch (typeName.toLowerCase()) {
             case "field", "text" -> MemberType.TEXT;
             case "bitmap" -> MemberType.BITMAP;
+            case "palette" -> MemberType.PALETTE;
             case "script" -> MemberType.SCRIPT;
             case "button" -> MemberType.BUTTON;
             case "shape" -> MemberType.SHAPE;

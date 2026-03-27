@@ -223,6 +223,8 @@ public class Player {
 
         // Set software text renderer (no AWT dependency)
         com.libreshockwave.player.cast.CastMember.setTextRenderer(new com.libreshockwave.player.render.output.SimpleTextRenderer());
+        com.libreshockwave.player.cast.CastMember.setPaletteResolver(castLibManager::resolvePaletteByMember);
+        com.libreshockwave.player.cast.CastMember.setMemberResolver(castLibManager::resolveMember);
         // Wire up member visual change callback to bump sprite revision
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
@@ -299,6 +301,8 @@ public class Player {
         this.movieProperties.setInputState(inputState);
         // Set simple text renderer for TeaVM/WASM (no AWT)
         com.libreshockwave.player.cast.CastMember.setTextRenderer(new com.libreshockwave.player.render.output.SimpleTextRenderer());
+        com.libreshockwave.player.cast.CastMember.setPaletteResolver(castLibManager::resolvePaletteByMember);
+        com.libreshockwave.player.cast.CastMember.setMemberResolver(castLibManager::resolveMember);
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
         this.frameContext.setTimeoutManager(timeoutManager);

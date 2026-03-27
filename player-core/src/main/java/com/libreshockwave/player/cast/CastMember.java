@@ -15,6 +15,9 @@ import com.libreshockwave.player.render.RenderConfig;
 import com.libreshockwave.player.render.output.TextRenderer;
 import com.libreshockwave.vm.datum.Datum;
 
+import java.util.Arrays;
+import java.util.function.BiFunction;
+
 /**
  * Represents a loaded cast member with lazy loading of media data.
  * Similar to dirplayer-rs player/cast_member.rs.
@@ -29,6 +32,10 @@ public class CastMember {
 
     /** Callback to signal that a member's visual state changed (e.g. paletteRef). */
     private static Runnable memberVisualChangedCallback;
+    /** Callback to resolve palette cast member refs across cast libraries. */
+    private static BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> paletteResolver;
+    /** Callback to resolve cast members across cast libraries (used by member.media copies). */
+    private static BiFunction<Integer, Integer, CastMember> memberResolver;
 
     public static void setTextRenderer(TextRenderer renderer) {
         textRenderer = renderer;
@@ -41,6 +48,14 @@ public class CastMember {
 
     public static void setMemberVisualChangedCallback(Runnable callback) {
         memberVisualChangedCallback = callback;
+    }
+
+    public static void setPaletteResolver(BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> resolver) {
+        paletteResolver = resolver;
+    }
+
+    public static void setMemberResolver(BiFunction<Integer, Integer, CastMember> resolver) {
+        memberResolver = resolver;
     }
 
     public enum State {
@@ -60,6 +75,7 @@ public class CastMember {
     private Bitmap bitmap;
     private ScriptChunk script;
     private String textContent;
+    private com.libreshockwave.bitmap.Palette dynamicPalette;
 
     // Cached properties
     private String name;
@@ -188,10 +204,16 @@ public class CastMember {
         if (sourceFile == null || chunk == null) return;
 
         try {
-            // Resolve the palette from the paletteRef member number.
-            // First try the member's own source file (common case: palette is in the same CCT).
-            com.libreshockwave.bitmap.Palette palette =
-                    sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
+            com.libreshockwave.bitmap.Palette palette = null;
+
+            if (paletteResolver != null && paletteRefCastLib >= 1 && paletteRefMemberNum >= 1) {
+                palette = paletteResolver.apply(paletteRefCastLib, paletteRefMemberNum);
+            }
+
+            // Fallback for same-file palettes when no cross-cast resolver is installed.
+            if (palette == null) {
+                palette = sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
+            }
 
             if (palette != null) {
                 sourceFile.decodeBitmap(chunk, palette).ifPresent(b -> bitmap = b);
@@ -456,6 +478,7 @@ public class CastMember {
             case "type" -> Datum.of(memberType.getName());
             case "castlibnum" -> Datum.of(castLibId.value());
             case "castlib" -> Datum.CastLibRef.of(castLibId.value());
+            case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
             case "mediaready" -> Datum.of(1); // Always ready for now
             default -> getTypeProp(prop);
         };
@@ -486,11 +509,7 @@ public class CastMember {
      */
     private Datum getPaletteProp(String prop) {
         if ("color".equals(prop)) {
-            // Resolve the palette data from the source file
-            com.libreshockwave.bitmap.Palette pal = null;
-            if (sourceFile != null && chunk != null) {
-                pal = sourceFile.resolvePalette(chunk.id().value());
-            }
+            com.libreshockwave.bitmap.Palette pal = getPaletteData();
             if (pal != null) {
                 // Build a list of Color datums for each palette entry
                 java.util.List<Datum> colors = new java.util.ArrayList<>(pal.size());
@@ -503,6 +522,20 @@ public class CastMember {
             return Datum.VOID;
         }
         return Datum.VOID;
+    }
+
+    public com.libreshockwave.bitmap.Palette getPaletteData() {
+        if (dynamicPalette != null) {
+            return dynamicPalette;
+        }
+        if (sourceFile != null && memberType == MemberType.PALETTE) {
+            return sourceFile.resolvePaletteByMemberNumber(memberId.value());
+        }
+        return null;
+    }
+
+    public void setPaletteData(com.libreshockwave.bitmap.Palette palette) {
+        this.dynamicPalette = palette;
     }
 
     private Datum getBitmapProp(String prop) {
@@ -695,6 +728,9 @@ public class CastMember {
                 this.name = value.toStr();
                 return true;
             }
+            case "media" -> {
+                return setMediaProp(value);
+            }
             case "regpoint" -> {
                 if (value instanceof Datum.Point p) {
                     this.regPointX = p.x();
@@ -705,6 +741,104 @@ public class CastMember {
             }
             default -> {
                 return setTypeProp(prop, value);
+            }
+        }
+    }
+
+    private boolean setMediaProp(Datum value) {
+        if (value instanceof Datum.CastMemberRef ref) {
+            if (memberResolver == null) {
+                return false;
+            }
+            CastMember source = memberResolver.apply(ref.castLibNum(), ref.memberNum());
+            if (source == null) {
+                return false;
+            }
+            return copyMediaFrom(source);
+        }
+        if (memberType == MemberType.BITMAP && value instanceof Datum.ImageRef ir) {
+            Bitmap newBmp = ir.bitmap().copy();
+            newBmp.markScriptModified();
+            this.bitmap = newBmp;
+            this.state = State.LOADED;
+            return true;
+        }
+        if ((memberType == MemberType.TEXT || memberType == MemberType.BUTTON)
+                && (value instanceof Datum.Str || value instanceof Datum.Symbol)) {
+            this.dynamicText = value.toStr();
+            this.textImageDirty = true;
+            this.state = State.LOADED;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean copyMediaFrom(CastMember source) {
+        if (source == null) {
+            return false;
+        }
+        switch (source.getMemberType()) {
+            case BITMAP -> {
+                Bitmap srcBitmap = source.getBitmap();
+                if (srcBitmap == null) {
+                    return false;
+                }
+                Bitmap copy = srcBitmap.copy();
+                copy.markScriptModified();
+                this.bitmap = copy;
+                this.regPointX = source.getRegPointX();
+                this.regPointY = source.getRegPointY();
+                this.paletteRefCastLib = source.paletteRefCastLib;
+                this.paletteRefMemberNum = source.paletteRefMemberNum;
+                this.paletteVersion = source.paletteVersion;
+                this.lastDecodedPaletteVersion = source.lastDecodedPaletteVersion;
+                this.state = State.LOADED;
+                return true;
+            }
+            case PALETTE -> {
+                com.libreshockwave.bitmap.Palette palette = source.getPaletteData();
+                if (palette == null) {
+                    return false;
+                }
+                int[] colors = new int[palette.size()];
+                for (int i = 0; i < colors.length; i++) {
+                    colors[i] = palette.getColor(i);
+                }
+                this.dynamicPalette = new com.libreshockwave.bitmap.Palette(
+                        Arrays.copyOf(colors, colors.length), palette.getName());
+                this.state = State.LOADED;
+                return true;
+            }
+            case TEXT, BUTTON -> {
+                this.dynamicText = source.getTextContent();
+                this.textContent = source.getTextContent();
+                this.textFont = source.textFont;
+                this.textFontSize = source.textFontSize;
+                this.textFontStyle = source.textFontStyle;
+                this.textAlignment = source.textAlignment;
+                this.textColor = source.textColor;
+                this.textBgColor = source.textBgColor;
+                this.textWordWrap = source.textWordWrap;
+                this.textAntialias = source.textAntialias;
+                this.textBoxType = source.textBoxType;
+                this.textRectLeft = source.textRectLeft;
+                this.textRectTop = source.textRectTop;
+                this.textRectRight = source.textRectRight;
+                this.textRectBottom = source.textRectBottom;
+                this.textFixedLineSpace = source.textFixedLineSpace;
+                this.textTopSpacing = source.textTopSpacing;
+                this.editable = source.editable;
+                this.textImageDirty = true;
+                this.state = State.LOADED;
+                return true;
+            }
+            case SCRIPT -> {
+                this.script = source.getScript();
+                this.state = State.LOADED;
+                return this.script != null;
+            }
+            default -> {
+                return false;
             }
         }
     }
