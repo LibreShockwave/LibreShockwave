@@ -362,6 +362,37 @@ public class ScriptModifiedBitmapTest {
                 "Non-key pixels must survive BACKGROUND_TRANSPARENT processing");
     }
 
+    @Test
+    void scriptModifiedDarkenTreatsOpaqueWhiteCanvasAsNeutral() {
+        CastMember member = new CastMember(1, 45, MemberType.BITMAP);
+        member.setName("dynamic_tint_canvas");
+        Bitmap bmp = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF,
+                0xFF808080,
+                0xFFFFFFFF
+        });
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                44, 0, 0, 3, 1, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0xA07020, false, true,
+                41, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0),
+                "Untouched opaque white on a script canvas should stay non-contributing under DARKEN");
+        assertEquals(0xFF503810, baked.getBakedBitmap().getPixel(1, 0),
+                "Actual drawn content should still be tinted by the sprite bgColor");
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
+    }
+
     /**
      * Tests the cloud pattern: pImg = member.image is obtained early,
      * then member.image = image(w,h,8) replaces the member's bitmap,
