@@ -338,6 +338,39 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void copyPixelsBlendOnCopyInkUsesBlendPercentage() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("blend", Datum.of(50), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF808080, dest.getPixel(0, 0),
+                "Default copyPixels should honor #blend as source opacity over the destination");
+    }
+
+    @Test
+    void copyPixelsBlendCombinesSourceAlphaWithBlend() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0x80000000 });
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("blend", Datum.of(50), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "copyPixels blend should scale, not replace, the source alpha");
+    }
+
+    @Test
     void coloredScriptModifiedBitmapSkipsBackgroundTransparentReprocessing() {
         CastMember member = new CastMember(1, 42, MemberType.BITMAP);
         Bitmap bmp = new Bitmap(2, 1, 32, new int[] {

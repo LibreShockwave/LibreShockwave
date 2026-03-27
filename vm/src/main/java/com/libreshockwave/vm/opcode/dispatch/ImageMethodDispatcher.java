@@ -419,6 +419,12 @@ public final class ImageMethodDispatcher {
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
         }
+        // Director's copyPixels applies a global blend factor to the copied pixels.
+        // With the default COPY ink, blend<100 behaves like a blend operation over
+        // the current destination instead of a straight overwrite.
+        if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
+            effectiveInk = Palette.InkMode.BLEND;
+        }
 
         if (srcW == destW && srcH == destH) {
             // No scaling needed - direct copy

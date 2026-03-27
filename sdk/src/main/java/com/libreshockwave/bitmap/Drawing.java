@@ -221,8 +221,12 @@ public class Drawing {
                 return alphaBlend(dest, src, a);
 
             case BLEND:
-                // Blend based on blend parameter
-                return alphaBlend(src, dest, blend);
+                // Director's image.copyPixels blend factor applies on top of any
+                // per-pixel source alpha. Effective opacity is the product.
+                if (srcA == 0 || blend <= 0) {
+                    return dest;
+                }
+                return alphaBlend(src, dest, combineAlpha(srcA, blend));
 
             case ADD_PIN:
                 r = Math.min(255, srcR + destR);
@@ -250,6 +254,9 @@ public class Drawing {
                 int keyRgb = backgroundKeyRgb != null ? (backgroundKeyRgb & 0xFFFFFF) : 0xFFFFFF;
                 if (((srcR << 16) | (srcG << 8) | srcB) == keyRgb) {
                     return dest;
+                }
+                if (blend < 255 || srcA < 255) {
+                    return alphaBlend(src, dest, combineAlpha(srcA, blend));
                 }
                 return src;
 
@@ -314,6 +321,19 @@ public class Drawing {
         int b = (fgB * alpha + bgB * invAlpha) / 255;
 
         return packOpaqueRgb(r, g, b);
+    }
+
+    private static int combineAlpha(int srcAlpha, int blendAlpha) {
+        if (srcAlpha <= 0 || blendAlpha <= 0) {
+            return 0;
+        }
+        if (srcAlpha >= 255) {
+            return blendAlpha;
+        }
+        if (blendAlpha >= 255) {
+            return srcAlpha;
+        }
+        return (srcAlpha * blendAlpha) / 255;
     }
 
     /**
