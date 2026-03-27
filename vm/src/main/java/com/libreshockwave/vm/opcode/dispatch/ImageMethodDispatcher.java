@@ -71,9 +71,11 @@ public final class ImageMethodDispatcher {
                         bounds[2] - bounds[0], bounds[3] - bounds[1]));
             }
             case "creatematte" -> {
-                // Director's image.createMatte() creates a matte mask via flood-fill from edges.
-                // Returns a mask image where edge-connected white pixels are transparent.
-                yield new Datum.ImageRef(Drawing.createMatte(bmp));
+                int alphaThreshold = 0;
+                if (!args.isEmpty() && !args.get(0).isVoid()) {
+                    alphaThreshold = args.get(0).toInt();
+                }
+                yield new Datum.ImageRef(Drawing.createMatte(bmp, alphaThreshold));
             }
             case "getat" -> {
                 // getAt(index) on image - some scripts use this
@@ -336,6 +338,11 @@ public final class ImageMethodDispatcher {
             }
         }
 
+        // Director ignores #maskImage when the source image already has native alpha in use.
+        if (src.getBitDepth() == 32 && src.isNativeAlpha()) {
+            mask = null;
+        }
+
         int srcW = srcRect.right() - srcRect.left();
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
@@ -408,13 +415,7 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        // DARKEN/LIGHTEN ink in copyPixels with bgColor: the grayscale remap above already
-        // colorizes the source (white→bgColor). Using DARKEN min(src,dst) would cause black
-        // outline contamination at body part overlaps. Switch to COPY so later parts overwrite.
         Palette.InkMode effectiveInk = ink;
-        if ((ink == Palette.InkMode.DARKEN || ink == Palette.InkMode.LIGHTEN) && bgColorRemap >= 0) {
-            effectiveInk = Palette.InkMode.COPY;
-        }
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
         }
