@@ -334,7 +334,9 @@ public class StageRenderer {
             state.getForeColor(), state.getBackColor(),
             state.hasForeColor(), state.hasBackColor(),
             state.getInk(), state.getBlend(),
-            state.isFlipH(), state.isFlipV(), null,
+            state.isFlipH(), state.isFlipV(),
+            state.getRotation(), state.getSkew(),
+            null,
             state.hasScriptBehaviors()
         );
     }

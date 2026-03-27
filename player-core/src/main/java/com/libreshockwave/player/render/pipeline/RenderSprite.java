@@ -30,6 +30,8 @@ public final class RenderSprite {
     private final int blend;
     private final boolean flipH;
     private final boolean flipV;
+    private final double rotation;
+    private final double skew;
     private final Bitmap bakedBitmap;
     private final boolean hasBehaviors;
 
@@ -60,6 +62,27 @@ public final class RenderSprite {
             boolean flipH, boolean flipV,
             Bitmap bakedBitmap,
             boolean hasBehaviors) {
+        this(channel, x, y, width, height, locZ, visible, type, castMember, dynamicMember,
+                foreColor, backColor, hasForeColor, hasBackColor, ink, blend,
+                flipH, flipV, 0.0, 0.0, bakedBitmap, hasBehaviors);
+    }
+
+    public RenderSprite(
+            int channel,
+            int x, int y,
+            int width, int height,
+            int locZ,
+            boolean visible,
+            SpriteType type,
+            CastMemberChunk castMember,
+            CastMember dynamicMember,
+            int foreColor, int backColor,
+            boolean hasForeColor, boolean hasBackColor,
+            int ink, int blend,
+            boolean flipH, boolean flipV,
+            double rotation, double skew,
+            Bitmap bakedBitmap,
+            boolean hasBehaviors) {
         this.channelId = new ChannelId(channel);
         this.x = x;
         this.y = y;
@@ -78,6 +101,8 @@ public final class RenderSprite {
         this.blend = blend;
         this.flipH = flipH;
         this.flipV = flipV;
+        this.rotation = rotation;
+        this.skew = skew;
         this.bakedBitmap = bakedBitmap;
         this.hasBehaviors = hasBehaviors;
     }
@@ -102,8 +127,20 @@ public final class RenderSprite {
     public int getBlend() { return blend; }
     public boolean isFlipH() { return flipH; }
     public boolean isFlipV() { return flipV; }
+    public double getRotation() { return rotation; }
+    public double getSkew() { return skew; }
     public Bitmap getBakedBitmap() { return bakedBitmap; }
     public boolean hasBehaviors() { return hasBehaviors; }
+
+    /**
+     * Director's "Mirror Horizontal" keeps the registration point fixed and
+     * inverts the sprite's skew/rotation angles. Habbo room scripts use the
+     * common mirrored state rotation=180, skew=180 for furniture members that
+     * should render as horizontally mirrored variants without using sprite.flipH.
+     */
+    public boolean hasDirectorHorizontalMirror() {
+        return normalizeTransformAngle(rotation) == 180 && normalizeTransformAngle(skew) == 180;
+    }
 
     /**
      * Return a new RenderSprite with all fields copied but with the given baked bitmap.
@@ -111,7 +148,7 @@ public final class RenderSprite {
     public RenderSprite withBakedBitmap(Bitmap baked) {
         return new RenderSprite(channelId.value(), x, y, width, height, locZ, visible, type,
             castMember, dynamicMember, foreColor, backColor, hasForeColor, hasBackColor,
-            inkMode.code(), blend, flipH, flipV, baked, hasBehaviors);
+            inkMode.code(), blend, flipH, flipV, rotation, skew, baked, hasBehaviors);
     }
 
     /**
@@ -122,7 +159,15 @@ public final class RenderSprite {
     public RenderSprite withBakedBitmapAndSize(Bitmap baked, int newWidth, int newHeight) {
         return new RenderSprite(channelId.value(), x, y, newWidth, newHeight, locZ, visible, type,
             castMember, dynamicMember, foreColor, backColor, hasForeColor, hasBackColor,
-            inkMode.code(), blend, flipH, flipV, baked, hasBehaviors);
+            inkMode.code(), blend, flipH, flipV, rotation, skew, baked, hasBehaviors);
+    }
+
+    private static int normalizeTransformAngle(double angle) {
+        int normalized = (int) Math.round(angle) % 360;
+        if (normalized < 0) {
+            normalized += 360;
+        }
+        return normalized;
     }
 
     /**
