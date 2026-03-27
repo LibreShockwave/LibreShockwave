@@ -57,7 +57,11 @@ public final class StringOpcodes {
     private static boolean joinPadStr(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
-        ctx.push(Datum.of(a.toStr() + " " + b.toStr()));
+        String aStr = a.toStr();
+        String bStr = b.toStr();
+        if (aStr.isEmpty()) { ctx.push(b instanceof Datum.Str ? b : Datum.of(bStr)); return true; }
+        if (bStr.isEmpty()) { ctx.push(a instanceof Datum.Str ? a : Datum.of(aStr)); return true; }
+        ctx.push(Datum.of(aStr + " " + bStr));
         return true;
     }
 
