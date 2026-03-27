@@ -1048,7 +1048,6 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype._startNormalLoop = function() {
         var self = this;
         var ticking = false;
-        var lastTickTime = performance.now();
         function loop() {
             if (!self._playing) return;
             var tempo = self._lastTempo || 15;
@@ -1059,17 +1058,15 @@ var LibreShockwave = (function() {
                 self._doTick().then(function() {
                     ticking = false;
                     if (self._playing) {
-                        // Compensate for tick processing time to hit target FPS
-                        var elapsed = performance.now() - lastTickTime;
+                        // Compensate only for the work done in this tick.
+                        var elapsed = performance.now() - tickStart;
                         var delay = Math.max(0, ms - elapsed);
-                        lastTickTime = performance.now();
                         self._normalTimerId = setTimeout(loop, delay);
                     }
                 }).catch(function(err) {
                     ticking = false;
                     console.error('[LS] tick error:', err);
                     if (self._playing) {
-                        lastTickTime = performance.now();
                         self._normalTimerId = setTimeout(loop, ms);
                     }
                 });
