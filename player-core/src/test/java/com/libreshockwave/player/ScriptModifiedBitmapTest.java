@@ -321,7 +321,7 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
-    void darkenCopyPixelsKeepsDarkenInkWhenBgColorIsPresent() {
+    void darkenCopyPixelsUsesBgColorAsTintInsteadOfMinAgainstDestination() {
         Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF202020 });
         Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC0C0C0 });
 
@@ -333,8 +333,64 @@ public class ScriptModifiedBitmapTest {
                 List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
                         new Datum.Rect(0, 0, 1, 1), props));
 
-        assertEquals(0xFF202018, dest.getPixel(0, 0),
-                "DARKEN should still composite against the destination instead of degrading to COPY");
+        assertEquals(0xFF785418, dest.getPixel(0, 0),
+                "DARKEN should tint the source with #bgColor, not preserve prior darker destination pixels");
+    }
+
+    @Test
+    void repeatedDarkenCopyPixelsDoesNotKeepGhostOfPreviousPattern() {
+        Bitmap persistentDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap freshDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap firstPattern = new Bitmap(1, 1, 32, new int[] { 0xFF303030 });
+        Bitmap secondPattern = new Bitmap(1, 1, 32, new int[] { 0xFFE0E0E0 });
+
+        Datum.PropList firstProps = new Datum.PropList();
+        firstProps.add("ink", Datum.of(41), true);
+        firstProps.add("bgColor", new Datum.Color(40, 80, 180), true);
+
+        Datum.PropList secondProps = new Datum.PropList();
+        secondProps.add("ink", Datum.of(41), true);
+        secondProps.add("bgColor", new Datum.Color(200, 140, 60), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(persistentDest), "copyPixels",
+                List.of(new Datum.ImageRef(firstPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), firstProps));
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(persistentDest), "copyPixels",
+                List.of(new Datum.ImageRef(secondPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), secondProps));
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(freshDest), "copyPixels",
+                List.of(new Datum.ImageRef(secondPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), secondProps));
+
+        assertEquals(freshDest.getPixel(0, 0), persistentDest.getPixel(0, 0),
+                "Changing a DARKEN-tinted preview should replace the prior pattern instead of leaving a ghost");
+    }
+
+    @Test
+    void createMatteOnOpaqueFigurePartStillCutsWhiteBoundingBoxForDarken() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap mask = Drawing.createMatte(src);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(240, 200, 120), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "Opaque non-alpha figure assets still rely on createMatte() to skip white border pixels");
+        assertEquals(0xFF000000, dest.getPixel(1, 1));
     }
 
     @Test

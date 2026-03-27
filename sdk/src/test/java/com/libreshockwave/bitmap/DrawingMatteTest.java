@@ -14,6 +14,7 @@ class DrawingMatteTest {
             0xFF000000,
             0x80AA0000
         });
+        src.setNativeAlpha(true);
 
         Bitmap matte = Drawing.createMatte(src);
 
@@ -30,12 +31,43 @@ class DrawingMatteTest {
             0x80FFFFFF,
             0xFFFFFFFF
         });
+        src.setNativeAlpha(true);
 
         Bitmap matte = Drawing.createMatte(src, 0x80);
 
         assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
         assertEquals(0x80FFFFFF, matte.getPixel(1, 0));
         assertEquals(0xFFFFFFFF, matte.getPixel(2, 0));
+    }
+
+    @Test
+    void createMatteFallsBackToWhiteBorderFloodFillForOpaqueImages() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
+        assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
+    void createMatteKeepsNearWhiteBorderPixelsOpaque() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+            0xFFFEFEFE, 0xFFFCFCFC, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0xFFFFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
     }
 
     @Test
@@ -74,5 +106,25 @@ class DrawingMatteTest {
 
         assertEquals(0xFF88ADBD, dest.getPixel(0, 0));
         assertEquals(0xFF000000, dest.getPixel(4, 0));
+    }
+
+    @Test
+    void darkenCopyPixelsOverwritesOldDestinationGhosts() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF204080 });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC08020 });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 1, 1, Palette.InkMode.DARKEN, 255);
+
+        assertEquals(0xFFC08020, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void lightenCopyPixelsOverwritesOldDestinationGhosts() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF103050 });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFE0C060 });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 1, 1, Palette.InkMode.LIGHTEN, 255);
+
+        assertEquals(0xFFE0C060, dest.getPixel(0, 0));
     }
 }
