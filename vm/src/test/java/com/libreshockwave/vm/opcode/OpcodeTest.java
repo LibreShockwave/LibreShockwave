@@ -494,6 +494,30 @@ class OpcodeTest {
         }
 
         @Test
+        void joinPaddedStringsSkipsLeadingSpaceWhenLeftIsEmpty() {
+            scope.push(Datum.EMPTY_STRING);
+            scope.push(Datum.of("World"));
+
+            OpcodeHandler handler = registry.get(Opcode.JOIN_PAD_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals("World", scope.pop().toStr());
+        }
+
+        @Test
+        void joinPaddedStringsSkipsTrailingSpaceWhenRightIsEmpty() {
+            scope.push(Datum.of("Hello"));
+            scope.push(Datum.VOID);
+
+            OpcodeHandler handler = registry.get(Opcode.JOIN_PAD_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals("Hello", scope.pop().toStr());
+        }
+
+        @Test
         void containsString() {
             scope.push(Datum.of("Hello World"));
             scope.push(Datum.of("World"));
