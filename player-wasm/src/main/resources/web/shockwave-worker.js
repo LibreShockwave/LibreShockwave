@@ -73,6 +73,16 @@ function _fetchWithTimeout(url, opts, timeoutMs) {
     return fetch(url, opts).finally(function() { clearTimeout(timer); });
 }
 
+function _refreshTempoCache() {
+    if (!_e || !_e.exports) return;
+    try {
+        _e._lastTempo = _e.exports.getTempo();
+        _e._clearEx();
+    } catch (tempoErr) {
+        console.error('[WORKER] tempo refresh error:', tempoErr);
+    }
+}
+
 function _drainGotoNetPages() {
     if (!_e || !_e.exports) return;
     try {
@@ -804,7 +814,7 @@ self.onmessage = async function(e) {
 
             case 'play':
                 console.log('[WORKER] play() — starting animation');
-                _e.exports.play(); _e._clearEx(); _e.playing = true; _drainGotoNetPages();
+                _e.exports.play(); _e._clearEx(); _e.playing = true; _refreshTempoCache(); _drainGotoNetPages();
                 break;
             case 'pause':
                 _e.exports.pause(); _e._clearEx(); _e.playing = false;
@@ -814,13 +824,16 @@ self.onmessage = async function(e) {
                 break;
 
             case 'goToFrame':
-                _e.exports.goToFrame(msg.frame); _e._clearEx(); _drainGotoNetPages();
+                _e.exports.goToFrame(msg.frame); _e._clearEx(); _refreshTempoCache(); _drainGotoNetPages();
                 break;
             case 'stepForward':
-                _e.exports.stepForward(); _e._clearEx(); _drainGotoNetPages();
+                _e.exports.stepForward(); _e._clearEx(); _refreshTempoCache(); _drainGotoNetPages();
                 break;
             case 'stepBackward':
-                _e.exports.stepBackward(); _e._clearEx(); _drainGotoNetPages();
+                _e.exports.stepBackward(); _e._clearEx(); _refreshTempoCache(); _drainGotoNetPages();
+                break;
+            case 'setTempo':
+                _e.exports.setPuppetTempo(msg.tempo | 0); _e._clearEx(); _refreshTempoCache();
                 break;
 
             // --- Input events ---

@@ -258,7 +258,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 return true;
             }
             case "puppettempo" -> {
-                puppetTempo = value.toInt();
+                setPuppetTempo(value.toInt());
                 return true;
             }
             case "tracescript" -> {
@@ -426,6 +426,13 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public int getPuppetTempo() {
         return puppetTempo;
+    }
+
+    public void setPuppetTempo(int puppetTempo) {
+        this.puppetTempo = Math.max(0, puppetTempo);
+        if (inputState != null) {
+            inputState.setCaretBlinkRate(player.getTempo());
+        }
     }
 
     public Datum getActorList() {

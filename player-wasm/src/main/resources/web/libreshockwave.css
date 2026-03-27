@@ -277,6 +277,23 @@ canvas {
     font-size: 11px;
 }
 
+.transport-tempo-label {
+    margin-left: 8px;
+    color: #333333;
+    font-size: 11px;
+}
+
+.tempo-input {
+    width: 58px;
+    padding: 3px 5px;
+    background: #ffffff;
+    color: #333333;
+    border: 1px solid #aaaaaa;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+}
+
 .frame-info {
     font-size: 10px;
     color: #666666;
