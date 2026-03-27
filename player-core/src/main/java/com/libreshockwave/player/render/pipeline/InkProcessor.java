@@ -99,7 +99,12 @@ public final class InkProcessor {
             // >=16-bit: color-key instead of matte (matte leaks through 1px gaps in composite images).
             Bitmap masked;
             int matteColor;
-            if (src.getBitDepth() >= 16) {
+            if (src.getBitDepth() == 32 && !useAlpha) {
+                // Director preserves opaque white pixels in 32-bit non-alpha buffers for
+                // DARKEN/LIGHTEN. The sprite bgColor acts as the tint/filter color; it does
+                // not first key out white background content.
+                masked = src;
+            } else if (src.getBitDepth() >= 16) {
                 matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
                 if (matteColor >= 0) {
                     masked = applyBackgroundTransparent(src, matteColor, skipGraduatedAlpha);

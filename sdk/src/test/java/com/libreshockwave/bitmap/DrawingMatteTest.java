@@ -7,20 +7,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class DrawingMatteTest {
 
     @Test
-    void createMatteRecoversAntialiasedFringeAlpha() {
+    void createMatteUsesSourceAlphaLayer() {
         Bitmap src = new Bitmap(4, 1, 32, new int[] {
             0xFFFFFFFF,
             0x00DDDDDD,
             0xFF000000,
-            0xFFFFFFFF
+            0x80AA0000
         });
 
         Bitmap matte = Drawing.createMatte(src);
 
-        assertEquals(0x00000000, matte.getPixel(0, 0));
-        assertEquals(0x00000000, matte.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(0, 0));
+        assertEquals(0x00FFFFFF, matte.getPixel(1, 0));
         assertEquals(0xFFFFFFFF, matte.getPixel(2, 0));
-        assertEquals(0x00000000, matte.getPixel(3, 0));
+        assertEquals(0x80FFFFFF, matte.getPixel(3, 0));
+    }
+
+    @Test
+    void createMatteHonorsAlphaThreshold() {
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+            0x7FFFFFFF,
+            0x80FFFFFF,
+            0xFFFFFFFF
+        });
+
+        Bitmap matte = Drawing.createMatte(src, 0x80);
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0x80FFFFFF, matte.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(2, 0));
     }
 
     @Test

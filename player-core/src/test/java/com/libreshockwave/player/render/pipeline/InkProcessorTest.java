@@ -68,6 +68,21 @@ class InkProcessorTest {
     }
 
     @Test
+    void darkenKeepsOpaqueWhitePixelsFor32BitBitmapWithoutNativeAlpha() {
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+            0xFFFFFFFF,
+            0xFF808080,
+            0xFF000000
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.DARKEN, 0x80C040, false, null);
+
+        assertEquals(0xFF80C040, result.getPixel(0, 0));
+        assertEquals(0xFF406020, result.getPixel(1, 0));
+        assertEquals(0xFF000000, result.getPixel(2, 0));
+    }
+
+    @Test
     void matteRecoversAlphaFromAntialiased32BitEdges() {
         Bitmap src = new Bitmap(4, 1, 32, new int[] {
             0xFFFFFFFF,

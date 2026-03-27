@@ -300,6 +300,44 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void copyPixelsIgnoresMaskImageWhenSourceUsesNativeAlpha() {
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0x80000000 });
+        src.setNativeAlpha(true);
+
+        Bitmap mask = new Bitmap(1, 1, 32, new int[] { 0x00000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF7F7F7F, dest.getPixel(0, 0),
+                "Native alpha should take precedence over #maskImage");
+    }
+
+    @Test
+    void darkenCopyPixelsKeepsDarkenInkWhenBgColorIsPresent() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF202020 });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC0C0C0 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(160, 112, 32), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF202018, dest.getPixel(0, 0),
+                "DARKEN should still composite against the destination instead of degrading to COPY");
+    }
+
+    @Test
     void coloredScriptModifiedBitmapSkipsBackgroundTransparentReprocessing() {
         CastMember member = new CastMember(1, 42, MemberType.BITMAP);
         Bitmap bmp = new Bitmap(2, 1, 32, new int[] {
