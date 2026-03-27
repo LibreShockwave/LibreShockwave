@@ -81,16 +81,6 @@ public final class InkProcessor {
             if (matteColor < 0) {
                 return src; // 32-bit with useAlpha — skip processing
             }
-            // Director: sprite bgColor replaces matte color (typically white) before
-            // transparency processing. A white bitmap with bgColor=someColor appears
-            // as a solid colored rectangle — all white becomes bgColor, matte finds
-            // nothing to remove. When bgColor is default white, this is a no-op.
-            if (backColor > 255) {
-                int bgRgb = backColor & 0xFFFFFF;
-                if (bgRgb != matteColor) {
-                    src = remapExactColor(src, matteColor, bgRgb);
-                }
-            }
             return applyMatte(src, matteColor);
         } else if (ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE
                 || ink == InkMode.GHOST || ink == InkMode.NOT_COPY
@@ -164,44 +154,11 @@ public final class InkProcessor {
             return -1;
         }
 
-        // Paletted (bitDepth <= 8): use palette index 0
-        if (bitDepth <= 8 && palette != null) {
-            return palette.getColor(0) & 0xFFFFFF;
-        }
-
-        // Director-authored 32-bit MATTE assets fall into two buckets:
-        // text/icons on a matte-colored backing, and solid-color swatches used
-        // to build panels. Mixed-color assets should matte out their edge color
-        // (typically the top-left background), while solid swatches must not be
-        // erased entirely just because their top-left pixel matches the fill.
-        if (bitDepth == 32) {
-            return resolve32BitMatteColor(src);
-        }
-
-        // 16-bit or other: white
-        return 0xFFFFFF;
-    }
-
-    private static int resolve32BitMatteColor(Bitmap src) {
-        int[] pixels = src.getPixels();
-        int firstOpaque = -1;
-        boolean hasWhite = false;
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            int rgb = pixel & 0xFFFFFF;
-            if (rgb == 0xFFFFFF) {
-                hasWhite = true;
-            }
-            if (firstOpaque < 0) {
-                firstOpaque = rgb;
-            }
-        }
-        int topLeft = src.getPixel(0, 0) & 0xFFFFFF;
-        if (hasWhite && topLeft != 0xFFFFFF) {
-            return topLeft;
-        }
+        // Director matte removes the white bounding rectangle around the sprite.
+        // Even for paletted content, matching against palette slot 0 is too loose once
+        // the effective palette has been recolored, because the decoded bitmap pixels are
+        // already concrete RGB values at this point. Use white consistently here so stage
+        // MATTE matches copyPixels/createMatte behavior.
         return 0xFFFFFF;
     }
 
@@ -223,7 +180,9 @@ public final class InkProcessor {
             return backColor & 0xFFFFFF;
         }
 
-        // 32-bit without alpha and ink is not Copy: force white
+        // 32-bit without alpha and non-Copy inks historically key against white.
+        // Using authored-content heuristics here can erase real black outlines and
+        // other UI pixels that Director preserves.
         if (bitDepth == 32 && !useAlpha && ink != InkMode.COPY) {
             return 0xFFFFFF;
         }
@@ -243,10 +202,6 @@ public final class InkProcessor {
 
     /**
      * Apply Background Transparent ink: pixels matching bgColorRGB become fully transparent.
-     * <p>
-     * For 32-bit bitmaps, uses graduated alpha for pixels near the background color.
-     * This converts AWT's RGB-domain anti-aliasing into proper alpha-domain anti-aliasing,
-     * avoiding white halo artifacts around anti-aliased text glyphs.
      */
     static Bitmap applyBackgroundTransparent(Bitmap src, int bgColorRGB) {
         return applyBackgroundTransparent(src, bgColorRGB, false);
@@ -257,9 +212,6 @@ public final class InkProcessor {
         int h = src.getHeight();
         int[] srcPixels = src.getPixels();
         int[] result = new int[w * h];
-        int bgR = (bgColorRGB >> 16) & 0xFF;
-        int bgG = (bgColorRGB >> 8) & 0xFF;
-        int bgB = bgColorRGB & 0xFF;
 
         for (int i = 0; i < srcPixels.length; i++) {
             int pixel = srcPixels[i];
@@ -275,53 +227,12 @@ public final class InkProcessor {
                 continue;
             }
 
-            // 32-bit text buffers often arrive as fully opaque grayscale RGB that was
-            // anti-aliased against the background color. Recover proper alpha by
-            // unblending those near-gray pixels from that background so faint halos
-            // don't stay as opaque pixels behind glyphs.
-            //
-            // Already-colored UI pixels are typically authored as real opaque colors,
-            // not grayscale anti-aliased blends. Preserving them as opaque avoids
-            // washing solid row strips and panel parts into translucent bars.
-            if (src.getBitDepth() == 32) {
-                if (!skipGraduatedAlpha) {
-                    int r = (pixel >> 16) & 0xFF;
-                    int g = (pixel >> 8) & 0xFF;
-                    int b = pixel & 0xFF;
-                    if (isApproximatelyGray(r, g, b)) {
-                        int recoveredAlpha = Math.max(Math.abs(r - bgR),
-                                Math.max(Math.abs(g - bgG), Math.abs(b - bgB)));
-
-                        if (recoveredAlpha > 0 && recoveredAlpha < 255) {
-                            int fgR = unblendChannel(r, bgR, recoveredAlpha);
-                            int fgG = unblendChannel(g, bgG, recoveredAlpha);
-                            int fgB = unblendChannel(b, bgB, recoveredAlpha);
-                            result[i] = (recoveredAlpha << 24) | (fgR << 16) | (fgG << 8) | fgB;
-                            continue;
-                        }
-                    }
-                }
-
-                result[i] = 0xFF000000 | rgb;
-            } else {
-                // Director uses palette-index matching for non-32-bit background
-                // transparent ink, which reduces to exact color-key transparency here.
-                result[i] = pixel | 0xFF000000;
-            }
+            // Director uses exact-match keying here. Anti-aliased near-colors remain
+            // opaque and can create halos unless the source uses real alpha.
+            result[i] = pixel | 0xFF000000;
         }
 
         return new Bitmap(w, h, src.getBitDepth(), result);
-    }
-
-    private static int unblendChannel(int observed, int background, int alpha) {
-        int value = (observed * 255 - background * (255 - alpha)) / alpha;
-        if (value < 0) return 0;
-        if (value > 255) return 255;
-        return value;
-    }
-
-    private static boolean isApproximatelyGray(int r, int g, int b) {
-        return Math.abs(r - g) <= 2 && Math.abs(g - b) <= 2 && Math.abs(r - b) <= 2;
     }
 
     /**

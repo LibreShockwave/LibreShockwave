@@ -340,6 +340,9 @@ public final class ImageMethodDispatcher {
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
         int destH = destRect.bottom() - destRect.top();
+        Integer backgroundKeyRgb = ink == Palette.InkMode.BACKGROUND_TRANSPARENT
+                ? Integer.valueOf(bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF)
+                : null;
         // Apply #color/#bgColor remapping only for grayscale source bitmaps.
         // Director's copyPixels remap is designed for default black/white text bitmaps
         // (e.g., title text rendered as black-on-white, remapped to white-on-teal).
@@ -349,18 +352,14 @@ public final class ImageMethodDispatcher {
         int effectiveSrcX = srcRect.left();
         int effectiveSrcY = srcRect.top();
         boolean remapToAlphaMask = false;
-        if (colorRemap >= 0 || bgColorRemap >= 0) {
+        if ((colorRemap >= 0 || bgColorRemap >= 0) && ink != Palette.InkMode.BACKGROUND_TRANSPARENT) {
             // Sample source pixels to check if they're grayscale (safe to remap)
             boolean isGrayscale = true;
-            boolean hasTransparency = false;
-                int sampleStep = Math.max(1, (srcW * srcH) / 64);
-                for (int i = 0; i < srcW * srcH && isGrayscale; i += sampleStep) {
+            int sampleStep = Math.max(1, (srcW * srcH) / 64);
+            for (int i = 0; i < srcW * srcH && isGrayscale; i += sampleStep) {
                 int sx = srcRect.left() + (i % srcW);
                 int sy = srcRect.top() + (i / srcW);
                 int p = src.getPixel(sx, sy);
-                if (((p >>> 24) & 0xFF) < 255) {
-                    hasTransparency = true;
-                }
                 if ((p >>> 24) == 0) continue; // skip transparent
                 int r = (p >> 16) & 0xFF;
                 int g = (p >> 8) & 0xFF;
@@ -378,11 +377,6 @@ public final class ImageMethodDispatcher {
                 int bgG = bgColorRemap >= 0 ? (bgColorRemap >> 8) & 0xFF : 255;
                 int bgB = bgColorRemap >= 0 ? bgColorRemap & 0xFF : 255;
                 boolean transparentBackground = colorRemap >= 0 && bgColorRemap < 0;
-                boolean preserveTransparentTextBackground =
-                        ink == Palette.InkMode.BACKGROUND_TRANSPARENT
-                        && colorRemap < 0
-                        && bgColorRemap >= 0
-                        && hasTransparency;
 
                 effectiveSrc = new Bitmap(srcW, srcH, src.getBitDepth());
                 for (int y = 0; y < srcH; y++) {
@@ -393,7 +387,7 @@ public final class ImageMethodDispatcher {
                         int g = (pixel >> 8) & 0xFF;
                         int b = pixel & 0xFF;
                         int gray = (r + g + b) / 3;
-                        if (transparentBackground || preserveTransparentTextBackground) {
+                        if (transparentBackground) {
                             int maskAlpha = (255 - gray) * alpha / 255;
                             int outR = colorRemap >= 0 ? fgR : 0;
                             int outG = colorRemap >= 0 ? fgG : 0;
@@ -410,7 +404,7 @@ public final class ImageMethodDispatcher {
                 }
                 effectiveSrcX = 0;
                 effectiveSrcY = 0;
-                remapToAlphaMask = transparentBackground || preserveTransparentTextBackground;
+                remapToAlphaMask = transparentBackground;
             }
         }
 
@@ -430,7 +424,7 @@ public final class ImageMethodDispatcher {
             Drawing.copyPixels(dest, effectiveSrc,
                     destRect.left(), destRect.top(),
                     effectiveSrcX, effectiveSrcY,
-                    srcW, srcH, effectiveInk, blend, mask);
+                    srcW, srcH, effectiveInk, blend, mask, backgroundKeyRgb);
         } else {
             // Scaling needed - create scaled intermediate, applying mask at source coordinates
             Bitmap scaled = new Bitmap(destW, destH, effectiveSrc.getBitDepth());
@@ -455,7 +449,7 @@ public final class ImageMethodDispatcher {
             // Mask already applied during scaling, so pass null to Drawing
             Drawing.copyPixels(dest, scaled,
                     destRect.left(), destRect.top(),
-                    0, 0, destW, destH, effectiveInk, blend);
+                    0, 0, destW, destH, effectiveInk, blend, null, backgroundKeyRgb);
         }
 
         return Datum.VOID;
