@@ -2,6 +2,7 @@ package com.libreshockwave.vm.builtin.net;
 
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,7 @@ public final class NetBuiltins {
         builtins.put("nettextresult", NetBuiltins::netTextResult);
         builtins.put("neterror", NetBuiltins::netError);
         builtins.put("getstreamstatus", NetBuiltins::getStreamStatus);
+        builtins.put("gotonetpage", NetBuiltins::gotoNetPage);
     }
 
     /**
@@ -115,6 +117,22 @@ public final class NetBuiltins {
         String postData = args.size() > 1 ? args.get(1).toStr() : "";
         int taskId = provider.postNetText(url, postData);
         return Datum.of(taskId);
+    }
+
+    private static Datum gotoNetPage(LingoVM vm, List<Datum> args) {
+        MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
+        if (provider == null) {
+            return Datum.FALSE;
+        }
+
+        if (args.isEmpty()) {
+            return Datum.FALSE;
+        }
+
+        String url = args.get(0).toStr();
+        String target = args.size() > 1 ? args.get(1).toStr() : "";
+        provider.gotoNetPage(url, target);
+        return Datum.TRUE;
     }
 
     /**

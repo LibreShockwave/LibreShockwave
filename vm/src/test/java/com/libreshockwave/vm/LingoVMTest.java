@@ -75,9 +75,27 @@ class LingoVMTest {
         assertEquals("123", fetched.toStr());
     }
 
+    @Test
+    void testGotoNetPageBuiltinDelegatesToMovieProvider() {
+        LingoVM vm = new LingoVM(null);
+        RecordingMovieProvider provider = new RecordingMovieProvider();
+        MoviePropertyProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("gotoNetPage",
+                    List.of(Datum.of("https://example.com"), Datum.of("_new")));
+            assertTrue(result.isTruthy());
+            assertEquals("https://example.com", provider.lastGotoUrl);
+            assertEquals("_new", provider.lastGotoTarget);
+        } finally {
+            MoviePropertyProvider.clearProvider();
+        }
+    }
+
     private static final class RecordingMovieProvider implements MoviePropertyProvider {
         private String lastPropName;
         private Datum lastValue = Datum.VOID;
+        private String lastGotoUrl;
+        private String lastGotoTarget;
 
         @Override
         public Datum getMovieProp(String propName) {
@@ -89,6 +107,12 @@ class LingoVMTest {
             lastPropName = propName;
             lastValue = value;
             return true;
+        }
+
+        @Override
+        public void gotoNetPage(String url, String target) {
+            lastGotoUrl = url;
+            lastGotoTarget = target;
         }
     }
 
