@@ -236,7 +236,7 @@ public class InputHandler {
             case MOUSE_UP -> {
                 dispatcher.resetEventStopped();
                 int pressedSprite = inputState.getClickOnSprite();
-                int releaseSprite = hitTestInteractive(event.stageX(), event.stageY(), true);
+                int releaseSprite = hitTestExact(event.stageX(), event.stageY());
                 if (pressedSprite > 0 && releaseSprite == pressedSprite) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
                 } else if (pressedSprite > 0
@@ -340,10 +340,8 @@ public class InputHandler {
         if (!allowBoundingBoxFallback) {
             return 0;
         }
-        // Habbo registers room movement on broad room sprites via mouseUp. Some of those
-        // bitmaps have transparent or semi-transparent baked pixels at the click location,
-        // so a strict pixel hit can miss the room entirely. Fall back to Director-style
-        // bounding-box hits only when no exact interactive hit exists.
+        // Bounding-box fallback is retained for callers that want the old helper
+        // semantics, but current stage hit testing is already bounds-based.
         List<Integer> boundingHits = getInteractiveHits(stageX, stageY, dispatcher, true);
         return boundingHits.isEmpty() ? 0 : boundingHits.getFirst();
     }
