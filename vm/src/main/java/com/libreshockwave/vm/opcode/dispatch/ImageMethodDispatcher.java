@@ -362,6 +362,7 @@ public final class ImageMethodDispatcher {
         int effectiveSrcX = srcRect.left();
         int effectiveSrcY = srcRect.top();
         boolean remapToAlphaMask = false;
+        boolean grayscaleColorized = false;
         if ((colorRemap >= 0 || bgColorRemap >= 0) && ink != Palette.InkMode.BACKGROUND_TRANSPARENT) {
             // Sample source pixels to check if they're grayscale (safe to remap)
             boolean isGrayscale = true;
@@ -415,12 +416,20 @@ public final class ImageMethodDispatcher {
                 effectiveSrcX = 0;
                 effectiveSrcY = 0;
                 remapToAlphaMask = transparentBackground;
+                grayscaleColorized = true;
             }
         }
 
         Palette.InkMode effectiveInk = ink;
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
+        }
+        if (effectiveInk == Palette.InkMode.DARKEN) {
+            if (!grayscaleColorized) {
+                effectiveSrc = multiplyBitmapColor(effectiveSrc, bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF);
+                effectiveSrcX = 0;
+                effectiveSrcY = 0;
+            }
         }
         // Director's copyPixels applies a global blend factor to the copied pixels.
         // With the default COPY ink, blend<100 behaves like a blend operation over
@@ -574,6 +583,34 @@ public final class ImageMethodDispatcher {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static Bitmap multiplyBitmapColor(Bitmap src, int tintRgb) {
+        if (tintRgb == 0xFFFFFF) {
+            return src;
+        }
+
+        int tintR = (tintRgb >> 16) & 0xFF;
+        int tintG = (tintRgb >> 8) & 0xFF;
+        int tintB = tintRgb & 0xFF;
+
+        Bitmap tinted = new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth());
+        tinted.copyPaletteMetadataFrom(src);
+
+        for (int y = 0; y < src.getHeight(); y++) {
+            for (int x = 0; x < src.getWidth(); x++) {
+                int pixel = src.getPixel(x, y);
+                int alpha = (pixel >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                int r = ((pixel >> 16) & 0xFF) * tintR / 255;
+                int g = ((pixel >> 8) & 0xFF) * tintG / 255;
+                int b = (pixel & 0xFF) * tintB / 255;
+                tinted.setPixel(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        return tinted;
     }
 
     /**

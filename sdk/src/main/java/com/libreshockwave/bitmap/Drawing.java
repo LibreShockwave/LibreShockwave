@@ -281,18 +281,9 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case LIGHTEN:
-                if (srcA == 0) return dest;
-                r = Math.max(srcR, destR);
-                g = Math.max(srcG, destG);
-                b = Math.max(srcB, destB);
-                return packOpaqueRgb(r, g, b);
-
             case DARKEN:
                 if (srcA == 0) return dest;
-                r = Math.min(srcR, destR);
-                g = Math.min(srcG, destG);
-                b = Math.min(srcB, destB);
-                return packOpaqueRgb(r, g, b);
+                return alphaBlend(src, dest, combineAlpha(srcA, blend));
 
             default:
                 return src;
@@ -406,14 +397,14 @@ public class Drawing {
     }
 
     /**
-     * Director's image.createMatte() derives a matte from the image object's alpha layer.
+     * Director's image.createMatte() prefers the image alpha layer when usable.
      */
     public static Bitmap createMatte(Bitmap src) {
         return createMatte(src, 0);
     }
 
     /**
-     * Director's optional alphaThreshold excludes pixels whose alpha is below the threshold.
+     * alphaThreshold excludes pixels below the threshold.
      */
     public static Bitmap createMatte(Bitmap src, int alphaThreshold) {
         int w = src.getWidth();
@@ -422,6 +413,16 @@ public class Drawing {
             return new Bitmap(1, 1, 32);
         }
 
+        if (src.isNativeAlpha() || src.hasTransparentPixels()) {
+            return createAlphaMatte(src, alphaThreshold);
+        }
+
+        return createWhiteFloodFillMatte(src);
+    }
+
+    private static Bitmap createAlphaMatte(Bitmap src, int alphaThreshold) {
+        int w = src.getWidth();
+        int h = src.getHeight();
         int threshold = Math.max(0, Math.min(255, alphaThreshold));
         int[] mask = new int[w * h];
         for (int y = 0; y < h; y++) {
@@ -431,6 +432,58 @@ public class Drawing {
                     alpha = 0;
                 }
                 mask[y * w + x] = (alpha << 24) | 0x00FFFFFF;
+            }
+        }
+
+        Bitmap matte = new Bitmap(w, h, 32, mask);
+        matte.setNativeAlpha(true);
+        return matte;
+    }
+
+    private static Bitmap createWhiteFloodFillMatte(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] pixels = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                pixels[y * w + x] = src.getPixel(x, y);
+            }
+        }
+
+        int matteRgb = 0xFFFFFF;
+
+        boolean[] transparent = new boolean[w * h];
+        Queue<Integer> queue = new ArrayDeque<>();
+
+        for (int x = 0; x < w; x++) {
+            seedMatte(pixels, transparent, queue, x, 0, w, matteRgb);
+            seedMatte(pixels, transparent, queue, x, h - 1, w, matteRgb);
+        }
+        for (int y = 1; y < h - 1; y++) {
+            seedMatte(pixels, transparent, queue, 0, y, w, matteRgb);
+            seedMatte(pixels, transparent, queue, w - 1, y, w, matteRgb);
+        }
+
+        while (!queue.isEmpty()) {
+            int idx = queue.poll();
+            int px = idx % w;
+            int py = idx / w;
+            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
+            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
+            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
+            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
+        }
+
+        int[] mask = new int[w * h];
+        for (int i = 0; i < pixels.length; i++) {
+            if (transparent[i]) {
+                mask[i] = 0x00FFFFFF;
+            } else {
+                int alpha = (pixels[i] >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    alpha = 0xFF;
+                }
+                mask[i] = (alpha << 24) | 0x00FFFFFF;
             }
         }
 
@@ -508,7 +561,11 @@ public class Drawing {
     }
 
     private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
-        return ((pixel >>> 24) & 0xFF) == 0 || (pixel & 0xFFFFFF) == matteRgb;
+        if (((pixel >>> 24) & 0xFF) == 0) {
+            return true;
+        }
+        int rgb = pixel & 0xFFFFFF;
+        return rgb == matteRgb;
     }
 
     /**
