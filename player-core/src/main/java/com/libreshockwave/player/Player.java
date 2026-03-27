@@ -228,6 +228,8 @@ public class Player {
         // Wire up member visual change callback to bump sprite revision
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
+        com.libreshockwave.player.cast.CastMember.setMemberSlotRetiredCallback(
+                (castLib, memberNum) -> stageRenderer.getSpriteRegistry().clearDynamicMemberBindings(castLib, memberNum));
 
         // Set base path for network requests from the file location
         if (file != null && file.getBasePath() != null && !file.getBasePath().isEmpty()) {
@@ -305,6 +307,8 @@ public class Player {
         com.libreshockwave.player.cast.CastMember.setMemberResolver(castLibManager::resolveMember);
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
+        com.libreshockwave.player.cast.CastMember.setMemberSlotRetiredCallback(
+                (castLib, memberNum) -> stageRenderer.getSpriteRegistry().clearDynamicMemberBindings(castLib, memberNum));
         this.frameContext.setTimeoutManager(timeoutManager);
         this.frameContext.getEventDispatcher().setCastLibManager(castLibManager);
         this.frameContext.getEventDispatcher().setSpriteRegistry(stageRenderer.getSpriteRegistry());

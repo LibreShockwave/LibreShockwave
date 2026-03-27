@@ -75,6 +75,27 @@ public class SpriteRegistry {
     }
 
     /**
+     * Clear dynamic sprite bindings that still reference a retired member slot.
+     * This prevents recycled Habbo bitmap-bin members from leaking into stale sprites.
+     */
+    public boolean clearDynamicMemberBindings(int castLib, int memberNum) {
+        boolean changed = false;
+        for (SpriteState state : sprites.values()) {
+            if (!state.hasDynamicMember()) {
+                continue;
+            }
+            if (state.getEffectiveCastLib() == castLib && state.getEffectiveCastMember() == memberNum) {
+                state.clearDynamicMember();
+                changed = true;
+            }
+        }
+        if (changed) {
+            bumpRevision();
+        }
+        return changed;
+    }
+
+    /**
      * Check if a channel has a registered sprite.
      */
     public boolean contains(int channel) {

@@ -16,6 +16,7 @@ import com.libreshockwave.player.render.output.TextRenderer;
 import com.libreshockwave.vm.datum.Datum;
 
 import java.util.Arrays;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 
 /**
@@ -30,11 +31,9 @@ public class CastMember {
     /** Platform-specific text renderer. Set by Player on startup. */
     private static TextRenderer textRenderer;
 
-    /** Callback to signal that a member's visual state changed (e.g. paletteRef). */
     private static Runnable memberVisualChangedCallback;
-    /** Callback to resolve palette cast member refs across cast libraries. */
+    private static BiConsumer<Integer, Integer> memberSlotRetiredCallback;
     private static BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> paletteResolver;
-    /** Callback to resolve cast members across cast libraries (used by member.media copies). */
     private static BiFunction<Integer, Integer, CastMember> memberResolver;
 
     public static void setTextRenderer(TextRenderer renderer) {
@@ -48,6 +47,10 @@ public class CastMember {
 
     public static void setMemberVisualChangedCallback(Runnable callback) {
         memberVisualChangedCallback = callback;
+    }
+
+    public static void setMemberSlotRetiredCallback(BiConsumer<Integer, Integer> callback) {
+        memberSlotRetiredCallback = callback;
     }
 
     public static void setPaletteResolver(BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> resolver) {
@@ -224,6 +227,61 @@ public class CastMember {
         }
     }
 
+    private com.libreshockwave.bitmap.Palette resolvePaletteDatum(Datum value) {
+        if (value instanceof Datum.CastMemberRef cmr) {
+            if (paletteResolver != null) {
+                com.libreshockwave.bitmap.Palette resolved =
+                        paletteResolver.apply(cmr.castLibNum(), cmr.memberNum());
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
+            if (sourceFile != null) {
+                return sourceFile.resolvePaletteByMemberNumber(cmr.memberNum());
+            }
+        }
+        if (value instanceof Datum.Symbol sym) {
+            String name = sym.name().toLowerCase();
+            if ("systemmac".equals(name)) {
+                return com.libreshockwave.bitmap.Palette.SYSTEM_MAC_PALETTE;
+            }
+            if ("systemwin".equals(name) || "systemwindows".equals(name)) {
+                return com.libreshockwave.bitmap.Palette.SYSTEM_WIN_PALETTE;
+            }
+        }
+        return null;
+    }
+
+    private boolean applyRuntimePaletteOverride(Datum value) {
+        int newCastLib = -1;
+        int newMemberNum = -1;
+        if (value instanceof Datum.CastMemberRef cmr) {
+            newCastLib = cmr.castLibNum();
+            newMemberNum = cmr.memberNum();
+        } else if (!(value instanceof Datum.Symbol)) {
+            return false;
+        }
+
+        com.libreshockwave.bitmap.Palette palette = resolvePaletteDatum(value);
+        if (palette == null) {
+            return false;
+        }
+
+        boolean changed = newCastLib != paletteRefCastLib || newMemberNum != paletteRefMemberNum;
+        paletteRefCastLib = newCastLib;
+        paletteRefMemberNum = newMemberNum;
+
+        if (bitmap != null && (sourceFile == null || chunk == null || bitmap.isScriptModified())) {
+            bitmap.remapImagePalette(palette);
+        }
+
+        if (changed) {
+            paletteVersion++;
+            notifyMemberVisualChanged();
+        }
+        return true;
+    }
+
     private void loadBitmap() {
         if (sourceFile == null || chunk == null) {
             return;
@@ -368,7 +426,32 @@ public class CastMember {
     }
 
     public void setName(String name) {
-        this.name = name;
+        updateName(name);
+    }
+
+    private void updateName(String newName) {
+        String oldName = this.name != null ? this.name : "";
+        String nextName = newName != null ? newName : "";
+        this.name = nextName;
+        if (isRuntimeDynamicMember() && !oldName.isEmpty() && nextName.isEmpty()) {
+            notifyMemberSlotRetired();
+        }
+    }
+
+    private boolean isRuntimeDynamicMember() {
+        return chunk == null && sourceFile == null;
+    }
+
+    private void notifyMemberSlotRetired() {
+        if (memberSlotRetiredCallback != null) {
+            memberSlotRetiredCallback.accept(castLibId.value(), memberId.value());
+        }
+    }
+
+    private void notifyMemberVisualChanged() {
+        if (memberVisualChangedCallback != null) {
+            memberVisualChangedCallback.run();
+        }
     }
 
     public MemberType getMemberType() {
@@ -562,6 +645,7 @@ public class CastMember {
                 }
                 yield Datum.VOID;
             }
+            case "palette" -> getBitmapProp("paletteref");
             case "rect" -> {
                 int w = bmp != null ? bmp.getWidth() : 0;
                 int h = bmp != null ? bmp.getHeight() : 0;
@@ -725,7 +809,7 @@ public class CastMember {
 
         switch (prop) {
             case "name" -> {
-                this.name = value.toStr();
+                updateName(value.toStr());
                 return true;
             }
             case "media" -> {
@@ -998,22 +1082,7 @@ public class CastMember {
 
     private boolean setBitmapProp(String prop, Datum value) {
         return switch (prop) {
-            case "paletteref" -> {
-                if (value instanceof Datum.CastMemberRef cmr) {
-                    int newCastLib = cmr.castLibNum();
-                    int newMemberNum = cmr.memberNum();
-                    if (newCastLib != paletteRefCastLib || newMemberNum != paletteRefMemberNum) {
-                        paletteRefCastLib = newCastLib;
-                        paletteRefMemberNum = newMemberNum;
-                        paletteVersion++;
-                        if (memberVisualChangedCallback != null) {
-                            memberVisualChangedCallback.run();
-                        }
-                    }
-                    yield true;
-                }
-                yield false;
-            }
+            case "paletteref", "palette" -> applyRuntimePaletteOverride(value);
             case "image" -> {
                 if (value instanceof Datum.ImageRef ir) {
                     Bitmap newBmp = ir.bitmap().copy();
@@ -1061,6 +1130,7 @@ public class CastMember {
      * app-level registries but still occupy a cast slot.
      */
     public void erase() {
+        boolean retiredDynamicSlot = isRuntimeDynamicMember();
         name = "";
         bitmap = null;
         script = null;
@@ -1095,9 +1165,10 @@ public class CastMember {
         lastDecodedPaletteVersion = 0;
         state = State.LOADED;
 
-        if (memberVisualChangedCallback != null) {
-            memberVisualChangedCallback.run();
+        if (retiredDynamicSlot) {
+            notifyMemberSlotRetired();
         }
+        notifyMemberVisualChanged();
     }
 
     /**

@@ -255,6 +255,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                 if (value instanceof Datum.CastMemberRef cmr) {
                     if (cmr.memberNum() <= 0) {
                         sprite.clearDynamicMember();
+                        sprite.resetReleasedSpriteTransforms();
                     } else {
                         sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
                         autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
@@ -265,6 +266,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                     if (ref instanceof Datum.CastMemberRef cmr) {
                         if (cmr.memberNum() <= 0) {
                             sprite.clearDynamicMember();
+                            sprite.resetReleasedSpriteTransforms();
                         } else {
                             sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
                             autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
@@ -274,6 +276,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                     int memberNum = value.toInt();
                     if (memberNum <= 0) {
                         sprite.clearDynamicMember();
+                        sprite.resetReleasedSpriteTransforms();
                     } else {
                         sprite.setDynamicMember(0, memberNum);
                         autoSizeSprite(sprite, 0, memberNum);
@@ -285,6 +288,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                 int num = value.toInt();
                 if (num <= 0) {
                     sprite.clearDynamicMember();
+                    sprite.resetReleasedSpriteTransforms();
                     return true;
                 }
                 // Decode encoded slot numbers: (castLib << 16) | memberNum
