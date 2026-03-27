@@ -278,6 +278,14 @@ var LibreShockwave = (function() {
             self._worker.postMessage({ type: 'mouseUp', x: x, y: y, button: e.button });
         });
 
+        canvas.addEventListener('dblclick', function(e) {
+            if (e.button !== 0) return;
+            self._canvasFocused = true;
+            canvas.focus();
+            if (!self._worker || !self._workerReady) return;
+            self._worker.postMessage({ type: 'selectAll' });
+        });
+
         // --- Touch event support (mobile browsers) ---
         // Convert touch events to mouse events so the Director player works on
         // mobile Chrome/Safari without any changes to the engine.
