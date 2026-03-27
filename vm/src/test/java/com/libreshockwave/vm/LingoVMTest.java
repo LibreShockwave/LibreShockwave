@@ -47,6 +47,20 @@ class LingoVMTest {
         assertTrue(vm.getGlobals().isEmpty());
     }
 
+    @Test
+    void testPrefsAreCaseInsensitiveAndMissingReturnsVoid() {
+        LingoVM vm = new LingoVM(null);
+
+        assertTrue(vm.getPref("Blocktime").isVoid());
+
+        Datum stored = vm.setPref("blocktime", Datum.of("123"));
+        assertEquals("123", stored.toStr());
+
+        Datum fetched = vm.getPref("Blocktime");
+        assertTrue(fetched.isString());
+        assertEquals("123", fetched.toStr());
+    }
+
     private static final class RecordingMovieProvider implements MoviePropertyProvider {
         private String lastPropName;
         private Datum lastValue = Datum.VOID;

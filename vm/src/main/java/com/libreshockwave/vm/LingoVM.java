@@ -25,6 +25,7 @@ public class LingoVM {
 
     private final DirectorFile file;
     private final Map<String, Datum> globals;
+    private final Map<String, Datum> prefs;
     private final Deque<Scope> callStack;
     private final BuiltinRegistry builtins;
     private final OpcodeRegistry opcodeRegistry;
@@ -87,6 +88,7 @@ public class LingoVM {
     public LingoVM(DirectorFile file) {
         this.file = file;
         this.globals = new HashMap<>();
+        this.prefs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         this.callStack = new ArrayDeque<>();
         this.builtins = new BuiltinRegistry();
         this.opcodeRegistry = new OpcodeRegistry();
@@ -202,6 +204,26 @@ public class LingoVM {
 
     public void clearGlobals() {
         globals.clear();
+    }
+
+    public Datum getPref(String name) {
+        if (name == null) {
+            return Datum.VOID;
+        }
+        return prefs.getOrDefault(name, Datum.VOID);
+    }
+
+    public Datum setPref(String name, Datum value) {
+        if (name == null || name.isEmpty()) {
+            return Datum.VOID;
+        }
+        Datum stored = Datum.of(value != null ? value.toStr() : "");
+        prefs.put(name, stored);
+        return stored;
+    }
+
+    public Map<String, Datum> getPrefs() {
+        return Collections.unmodifiableMap(prefs);
     }
 
     // Call stack access
