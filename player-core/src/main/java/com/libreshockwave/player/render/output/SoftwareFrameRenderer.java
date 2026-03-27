@@ -57,7 +57,7 @@ public final class SoftwareFrameRenderer {
             int sh = sprite.getHeight() > 0 ? sprite.getHeight() : baked.getHeight();
             int blend = sprite.getBlend();
             InkMode ink = sprite.getInkMode();
-            boolean flipH = sprite.isFlipH();
+            boolean flipH = sprite.isFlipH() ^ sprite.hasDirectorHorizontalMirror();
             boolean flipV = sprite.isFlipV();
 
             if (sw == baked.getWidth() && sh == baked.getHeight()) {

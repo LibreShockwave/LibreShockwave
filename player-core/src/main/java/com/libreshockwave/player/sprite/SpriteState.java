@@ -40,6 +40,8 @@ public class SpriteState {
     private boolean scoreDefaultsApplied = false;
     private boolean flipH = false;
     private boolean flipV = false;
+    private double rotation = 0.0;
+    private double skew = 0.0;
     private int cursor = 0; // Director cursor: -1=arrow, 0=default, 1=ibeam, 2=crosshair, 3=crossbar, 4=wait
     private int cursorMemberNum = 0; // Encoded member number for bitmap cursor (castLib<<16 | memberNum)
     private int cursorMaskNum = 0;   // Encoded member number for cursor mask
@@ -117,6 +119,10 @@ public class SpriteState {
     public boolean isFlipV() { return flipV; }
     public void setFlipH(boolean flipH) { this.flipH = flipH; }
     public void setFlipV(boolean flipV) { this.flipV = flipV; }
+    public double getRotation() { return rotation; }
+    public double getSkew() { return skew; }
+    public void setRotation(double rotation) { this.rotation = rotation; }
+    public void setSkew(double skew) { this.skew = skew; }
     public int getCursor() { return cursor; }
     public void setCursor(int cursor) { this.cursor = cursor; this.cursorMemberNum = 0; this.cursorMaskNum = 0; }
     public int getCursorMemberNum() { return cursorMemberNum; }

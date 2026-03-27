@@ -113,7 +113,8 @@ public class SpriteProperties implements SpritePropertyProvider {
                 yield Datum.VOID;
             }
             case "ilk" -> Datum.symbol("sprite");
-            case "rotation" -> Datum.of(0.0);
+            case "rotation" -> Datum.of(sprite.getRotation());
+            case "skew" -> Datum.of(sprite.getSkew());
             case "fliph" -> Datum.of(sprite.isFlipH() ? 1 : 0);
             case "flipv" -> Datum.of(sprite.isFlipV() ? 1 : 0);
             case "moveable", "moveablesprite" -> Datum.of(0);
@@ -292,11 +293,11 @@ public class SpriteProperties implements SpritePropertyProvider {
                 return true;
             }
             case "rotation" -> {
-                // sprite.rotation - silently accept
+                sprite.setRotation(value.toDouble());
                 return true;
             }
             case "skew" -> {
-                // sprite.skew - silently accept
+                sprite.setSkew(value.toDouble());
                 return true;
             }
             case "fliph" -> {
