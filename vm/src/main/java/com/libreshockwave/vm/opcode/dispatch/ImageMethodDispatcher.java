@@ -347,6 +347,9 @@ public final class ImageMethodDispatcher {
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
         int destH = destRect.bottom() - destRect.top();
+        if (dest.getImagePalette() == null && src.getImagePalette() != null) {
+            dest.copyPaletteMetadataFrom(src);
+        }
         Integer backgroundKeyRgb = ink == Palette.InkMode.BACKGROUND_TRANSPARENT
                 ? Integer.valueOf(bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF)
                 : null;

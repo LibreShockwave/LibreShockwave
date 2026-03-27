@@ -122,6 +122,7 @@ public class BitmapDecoder {
      */
     public static Bitmap decode1Bit(byte[] data, int width, int height, int scanWidth, Palette palette) {
         Bitmap bitmap = new Bitmap(width, height, 1);
+        byte[] indices = new byte[width * height];
 
         // Expand 1-bit data to 8-bit values
         int expandedLen = data.length * 8;
@@ -146,8 +147,10 @@ public class BitmapDecoder {
                 int colorIndex = expanded[scanIndex] & 0xFF;
                 int[] rgb = macPalette.getRGB(colorIndex);
                 bitmap.setPixelRGB(x, y, rgb[0], rgb[1], rgb[2]);
+                indices[y * width + x] = (byte) colorIndex;
             }
         }
+        bitmap.setPaletteIndices(indices);
         return bitmap;
     }
 
@@ -156,6 +159,7 @@ public class BitmapDecoder {
      */
     public static Bitmap decode2Bit(byte[] data, int width, int height, int scanWidth, Palette palette) {
         Bitmap bitmap = new Bitmap(width, height, 2);
+        byte[] indices = new byte[width * height];
 
         // Expand 2-bit data: each byte → 4 pixel values (0-255 range)
         byte[] expanded = new byte[data.length * 4];
@@ -175,8 +179,10 @@ public class BitmapDecoder {
                 int[] rgb = palette != null ? palette.getRGB(colorIndex)
                     : new int[]{colorIndex, colorIndex, colorIndex};
                 bitmap.setPixelRGB(x, y, rgb[0], rgb[1], rgb[2]);
+                indices[y * width + x] = (byte) colorIndex;
             }
         }
+        bitmap.setPaletteIndices(indices);
         return bitmap;
     }
 
@@ -189,6 +195,7 @@ public class BitmapDecoder {
      */
     public static Bitmap decode4Bit(byte[] data, int width, int height, int scanWidth, Palette palette) {
         Bitmap bitmap = new Bitmap(width, height, 4);
+        byte[] indices = new byte[width * height];
 
         // Expand 4-bit data: each byte → 2 pixel values, scaled to 0-255 palette indices.
         // Director 4-bit bitmaps use 256-color palettes; nibble 0 → index 0, nibble 15 → index 255.
@@ -207,8 +214,10 @@ public class BitmapDecoder {
                 int[] rgb = palette != null ? palette.getRGB(colorIndex)
                     : new int[]{colorIndex, colorIndex, colorIndex};
                 bitmap.setPixelRGB(x, y, rgb[0], rgb[1], rgb[2]);
+                indices[y * width + x] = (byte) colorIndex;
             }
         }
+        bitmap.setPaletteIndices(indices);
         return bitmap;
     }
 
@@ -217,6 +226,7 @@ public class BitmapDecoder {
      */
     public static Bitmap decode8Bit(byte[] data, int width, int height, int scanWidth, Palette palette) {
         Bitmap bitmap = new Bitmap(width, height, 8);
+        byte[] indices = new byte[width * height];
 
         if (palette == null) {
             palette = Palette.SYSTEM_MAC_PALETTE;
@@ -229,8 +239,10 @@ public class BitmapDecoder {
                 int colorIndex = data[scanIndex] & 0xFF;
                 int[] rgb = palette.getRGB(colorIndex);
                 bitmap.setPixelRGB(x, y, rgb[0], rgb[1], rgb[2]);
+                indices[y * width + x] = (byte) colorIndex;
             }
         }
+        bitmap.setPaletteIndices(indices);
         return bitmap;
     }
 

@@ -579,4 +579,48 @@ public class ScriptModifiedBitmapTest {
         assertEquals(0xFFAA5500, bmp.getPixel(0, 0));
         assertEquals(0xFF66CC22, bmp.getPixel(1, 0));
     }
+
+    @Test
+    void remapImagePaletteUsesPreservedIndicesWhenSourceRgbCollides() {
+        Palette oldPalette = new Palette(new int[]{0xFFFFFF, 0x222222, 0x222222}, "old-colliding");
+        Palette newPalette = new Palette(new int[]{0xFFFFFF, 0xAA5500, 0x33AA77}, "new-diverged");
+
+        Bitmap bmp = new Bitmap(2, 1, 8);
+        bmp.setImagePalette(oldPalette);
+        bmp.setPixel(0, 0, 0xFF222222);
+        bmp.setPixel(1, 0, 0xFF222222);
+        bmp.setPaletteIndices(new byte[]{1, 2});
+
+        Bitmap duplicate = bmp.copy();
+        int changed = duplicate.remapImagePalette(newPalette);
+
+        assertEquals(2, changed);
+        assertSame(newPalette, duplicate.getImagePalette());
+        assertEquals(0xFFAA5500, duplicate.getPixel(0, 0),
+                "Index 1 should map to the first divergent target shade");
+        assertEquals(0xFF33AA77, duplicate.getPixel(1, 0),
+                "Index 2 must not collapse onto index 1 just because the old RGB matched");
+    }
+
+    @Test
+    void copyPixelsCarriesPaletteMetadataIntoBlankDynamicWrapperImages() {
+        Palette sourcePalette = new Palette(new int[]{0xFFFFFF, 0x6C5230}, "room-floor");
+        Bitmap src = new Bitmap(1, 1, 8);
+        src.setImagePalette(sourcePalette);
+        src.setPaletteRefCastMember(2, 77);
+        src.setPixel(0, 0, 0xFF6C5230);
+
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1)));
+
+        assertSame(sourcePalette, dest.getImagePalette(),
+                "Blank wrapper images should inherit the source palette provenance");
+        assertEquals(2, dest.getPaletteRefCastLib());
+        assertEquals(77, dest.getPaletteRefMemberNum());
+        assertEquals(0xFF6C5230, dest.getPixel(0, 0));
+    }
 }
