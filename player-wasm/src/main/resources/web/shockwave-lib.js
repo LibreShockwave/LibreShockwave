@@ -469,6 +469,10 @@ var LibreShockwave = (function() {
                 if (msg.text) navigator.clipboard.writeText(msg.text).catch(function(){});
                 break;
 
+            case 'gotoNetPage':
+                this._handleGotoNetPage(msg.url, msg.target);
+                break;
+
             case 'debugHitTestResult':
                 console.log('[HitTest] at (' + msg.x + ',' + msg.y + ') hit=' + msg.hit + ' info=' + (msg.info||''));
                 if (this._debugHitTestResolve) {
@@ -523,6 +527,30 @@ var LibreShockwave = (function() {
 
             default:
                 break;
+        }
+    };
+
+    ShockwavePlayer.prototype._handleGotoNetPage = function(url, target) {
+        if (!url) return;
+
+        if (typeof this._opts.onGotoNetPage === 'function') {
+            this._opts.onGotoNetPage(url, target || '');
+            return;
+        }
+
+        var resolvedTarget = (target || '').trim();
+        try {
+            if (resolvedTarget && resolvedTarget !== '_self' && resolvedTarget !== 'self') {
+                var opened = window.open(url, resolvedTarget, 'noopener');
+                if (!opened) {
+                    window.location.assign(url);
+                }
+                return;
+            }
+
+            window.location.assign(url);
+        } catch (e) {
+            console.error('[LS] gotoNetPage failed:', e);
         }
     };
 

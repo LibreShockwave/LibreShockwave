@@ -34,6 +34,7 @@ public class WasmPlayer {
 
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
+        player.getMovieProperties().setGotoNetPageHandler(WasmEntry::enqueueGotoNetPage);
 
         // When a fetch completes, cache cast files in CastLibManager so they're
         // available immediately when Lingo sets castLib.fileName.

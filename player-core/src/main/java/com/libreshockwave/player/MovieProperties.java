@@ -9,6 +9,7 @@ import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.function.BiConsumer;
 
 /**
  * Provides movie-level property access for Lingo scripts.
@@ -47,6 +48,7 @@ public class MovieProperties implements MoviePropertyProvider {
 
     // Timer start time (in millis)
     private final long startTime;
+    private BiConsumer<String, String> gotoNetPageHandler;
 
     public MovieProperties(Player player, DirectorFile file) {
         this.player = player;
@@ -56,6 +58,10 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public void setInputState(InputState inputState) {
         this.inputState = inputState;
+    }
+
+    public void setGotoNetPageHandler(BiConsumer<String, String> gotoNetPageHandler) {
+        this.gotoNetPageHandler = gotoNetPageHandler;
     }
 
     @Override
@@ -371,6 +377,9 @@ public class MovieProperties implements MoviePropertyProvider {
 
     @Override
     public void gotoNetPage(String url, String target) {
+        if (gotoNetPageHandler != null) {
+            gotoNetPageHandler.accept(url, target);
+        }
     }
 
     private String getMovieName() {
