@@ -1056,6 +1056,51 @@ public class CastMember {
     }
 
     /**
+     * Erase runtime data from this member while keeping the slot alive.
+     * Director uses this for dynamic non-bitmap members that are deleted from
+     * app-level registries but still occupy a cast slot.
+     */
+    public void erase() {
+        name = "";
+        bitmap = null;
+        script = null;
+        textContent = "";
+        dynamicText = null;
+        dynamicPalette = null;
+        regPointX = 0;
+        regPointY = 0;
+        editable = false;
+
+        textFont = "Arial";
+        textFontSize = 12;
+        textFontStyle = "plain";
+        textAlignment = "left";
+        textColor = 0xFF000000;
+        textBgColor = 0xFFFFFFFF;
+        textWordWrap = false;
+        textAntialias = false;
+        textBoxType = 0;
+        textRectLeft = 0;
+        textRectTop = 0;
+        textRectRight = 480;
+        textRectBottom = 480;
+        textFixedLineSpace = 0;
+        textTopSpacing = 0;
+        textImageDirty = true;
+        textRenderedImage = null;
+
+        paletteRefCastLib = -1;
+        paletteRefMemberNum = -1;
+        paletteVersion++;
+        lastDecodedPaletteVersion = 0;
+        state = State.LOADED;
+
+        if (memberVisualChangedCallback != null) {
+            memberVisualChangedCallback.run();
+        }
+    }
+
+    /**
      * Call a method on this cast member.
      * Handles Director member methods like charPosToLoc.
      */
@@ -1130,6 +1175,10 @@ public class CastMember {
                 } else {
                     yield Datum.ZERO;
                 }
+            }
+            case "erase" -> {
+                erase();
+                yield Datum.of(1);
             }
             default -> Datum.VOID;
         };

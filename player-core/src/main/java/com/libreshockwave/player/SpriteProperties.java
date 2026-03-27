@@ -253,23 +253,40 @@ public class SpriteProperties implements SpritePropertyProvider {
             }
             case "member" -> {
                 if (value instanceof Datum.CastMemberRef cmr) {
-                    sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
-                    autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
+                    if (cmr.memberNum() <= 0) {
+                        sprite.clearDynamicMember();
+                    } else {
+                        sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                        autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
+                    }
                 } else if (value.isString() && castLibManager != null) {
                     // Director resolves string member names: sprite.member = "name"
                     Datum ref = castLibManager.getMemberByName(0, value.toStr());
                     if (ref instanceof Datum.CastMemberRef cmr) {
-                        sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
-                        autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
+                        if (cmr.memberNum() <= 0) {
+                            sprite.clearDynamicMember();
+                        } else {
+                            sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                            autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
+                        }
                     }
                 } else {
-                    sprite.setDynamicMember(0, value.toInt());
-                    autoSizeSprite(sprite, 0, value.toInt());
+                    int memberNum = value.toInt();
+                    if (memberNum <= 0) {
+                        sprite.clearDynamicMember();
+                    } else {
+                        sprite.setDynamicMember(0, memberNum);
+                        autoSizeSprite(sprite, 0, memberNum);
+                    }
                 }
                 return true;
             }
             case "castnum", "membernum" -> {
                 int num = value.toInt();
+                if (num <= 0) {
+                    sprite.clearDynamicMember();
+                    return true;
+                }
                 // Decode encoded slot numbers: (castLib << 16) | memberNum
                 // These come from preIndexMembers → member.number in Director
                 int encodedCast = (num >> 16) & 0xFFFF;

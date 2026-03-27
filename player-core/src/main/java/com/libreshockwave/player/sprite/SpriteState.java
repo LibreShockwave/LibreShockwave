@@ -166,6 +166,15 @@ public class SpriteState {
     }
 
     /**
+     * Clear a dynamic cast member override and fall back to Score data.
+     */
+    public void clearDynamicMember() {
+        this.dynamicCastLib = -1;
+        this.dynamicCastMember = -1;
+        this.hasDynamicMember = false;
+    }
+
+    /**
      * Get the effective cast library number (dynamic or from Score).
      */
     public int getEffectiveCastLib() {
