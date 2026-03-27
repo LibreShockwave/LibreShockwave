@@ -162,8 +162,20 @@ public class MovieProperties implements MoviePropertyProvider {
             case "selstart" -> Datum.of(inputState != null ? inputState.getSelStart() : 0);
             case "selend" -> Datum.of(inputState != null ? inputState.getSelEnd() : 0);
 
-            // Color depth
-            case "colordepth" -> Datum.of(32);
+            // Color depth.
+            // Director window scripts allocate intermediate buffers with
+            // image(w, h, the colorDepth), so this must reflect the movie's
+            // authored stage depth rather than a hardcoded modern 32-bit value.
+            case "colordepth" -> {
+                if (file != null && file.getConfig() != null) {
+                    int depth = file.getConfig().bgColor();
+                    if (depth == 1 || depth == 2 || depth == 4
+                            || depth == 8 || depth == 16 || depth == 32) {
+                        yield Datum.of(depth);
+                    }
+                }
+                yield Datum.of(32);
+            }
 
             // Anim2 properties
             case "perframehook" -> Datum.VOID;
