@@ -230,8 +230,7 @@ public class SpriteBaker {
             Palette paletteOverride = null;
             if (palInfo != null) {
                 // Only invalidate cache when palette actually changed
-                bitmapCache.invalidateIfPaletteChanged(
-                        sprite.getCastMember().id().value(), palInfo.version);
+                bitmapCache.invalidateIfPaletteChanged(sprite.getCastMember(), palInfo.version);
                 paletteOverride = palInfo.palette;
             }
             b = bitmapCache.getProcessed(sprite.getCastMember(), sprite.getInk(),
@@ -271,13 +270,21 @@ public class SpriteBaker {
             return null;
         }
 
-        // Find the runtime CastMember for this sprite's bitmap by name
-        String name = sprite.getCastMember().name();
-        if (name == null || name.isEmpty()) {
-            return null;
+        CastMember member = null;
+        if (player != null) {
+            com.libreshockwave.player.sprite.SpriteState spriteState =
+                    player.getStageRenderer().getSpriteRegistry().get(sprite.getChannel());
+            if (spriteState != null) {
+                int castLibNum = spriteState.getEffectiveCastLib();
+                int memberNum = spriteState.getEffectiveCastMember();
+                if (castLibNum > 0 && memberNum > 0) {
+                    member = castLibManager.getDynamicMember(castLibNum, memberNum);
+                }
+            }
         }
-
-        CastMember member = castLibManager.findCastMemberByName(name);
+        if (member == null) {
+            member = castLibManager.findRuntimeMember(sprite.getCastMember());
+        }
         if (member == null || !member.hasPaletteOverride()) {
             return null;
         }
@@ -286,17 +293,7 @@ public class SpriteBaker {
         int palCastLib = member.getPaletteRefCastLib();
         int palMemberNum = member.getPaletteRefMemberNum();
 
-        CastLib paletteCastLib = castLibManager.getCastLib(palCastLib);
-        if (paletteCastLib == null) {
-            return null;
-        }
-
-        DirectorFile palFile = paletteCastLib.getSourceFile();
-        if (palFile == null) {
-            return null;
-        }
-
-        Palette palette = palFile.resolvePaletteByMemberNumber(palMemberNum);
+        Palette palette = castLibManager.resolvePaletteByMember(palCastLib, palMemberNum);
         return palette != null ? new PaletteOverrideInfo(palette, member.getPaletteVersion()) : null;
     }
 
