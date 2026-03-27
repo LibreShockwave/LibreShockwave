@@ -705,6 +705,11 @@ self.onmessage = async function(e) {
 
             case 'init': {
                 _pageProtocol = msg.pageProtocol || '';
+                // Fallback: detect protocol from worker's own location
+                // (e.g. blob:https://... when loaded as a blob URL worker)
+                if (!_pageProtocol && self.location && self.location.href) {
+                    _pageProtocol = (self.location.href.indexOf('https:') !== -1) ? 'https:' : '';
+                }
                 // importScripts is synchronous; TeaVM.wasm.load is async
                 importScripts(msg.basePath + 'player-wasm.wasm-runtime.js');
                 var instance = await TeaVM.wasm.load(msg.basePath + 'player-wasm.wasm');
