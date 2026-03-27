@@ -172,15 +172,49 @@ public final class ArithmeticOpcodes {
 
         // Point * scalar
         if (a instanceof Datum.Point pa) {
-            int s = b.toInt();
-            ctx.push(new Datum.Point(pa.x() * s, pa.y() * s));
+            double s = b.toDouble();
+            ctx.push(new Datum.Point((int) (pa.x() * s), (int) (pa.y() * s)));
+            return true;
+        }
+
+        // Scalar * Point
+        if (b instanceof Datum.Point pb) {
+            double s = a.toDouble();
+            ctx.push(new Datum.Point((int) (pb.x() * s), (int) (pb.y() * s)));
             return true;
         }
 
         // Rect * scalar (Director: rect(10,20,30,40) * 2 = rect(20,40,60,80))
         if (a instanceof Datum.Rect ra) {
-            int s = b.toInt();
-            ctx.push(new Datum.Rect(ra.left() * s, ra.top() * s, ra.right() * s, ra.bottom() * s));
+            double s = b.toDouble();
+            ctx.push(new Datum.Rect(
+                    (int) (ra.left() * s),
+                    (int) (ra.top() * s),
+                    (int) (ra.right() * s),
+                    (int) (ra.bottom() * s)));
+            return true;
+        }
+
+        // Scalar * Rect
+        if (b instanceof Datum.Rect rb) {
+            double s = a.toDouble();
+            ctx.push(new Datum.Rect(
+                    (int) (rb.left() * s),
+                    (int) (rb.top() * s),
+                    (int) (rb.right() * s),
+                    (int) (rb.bottom() * s)));
+            return true;
+        }
+
+        // List * scalar element-wise (used heavily by Habbo movement interpolation).
+        if (a instanceof Datum.List la && !(b instanceof Datum.List)) {
+            ctx.push(scaleList(la, b.toDouble(), b.isFloat()));
+            return true;
+        }
+
+        // Scalar * List element-wise
+        if (b instanceof Datum.List lb && !(a instanceof Datum.List)) {
+            ctx.push(scaleList(lb, a.toDouble(), a.isFloat()));
             return true;
         }
 
@@ -202,15 +236,25 @@ public final class ArithmeticOpcodes {
 
         // Point / scalar
         if (a instanceof Datum.Point pa) {
-            int s = b.toInt();
-            ctx.push(new Datum.Point(pa.x() / s, pa.y() / s));
+            double s = b.toDouble();
+            ctx.push(new Datum.Point((int) (pa.x() / s), (int) (pa.y() / s)));
             return true;
         }
 
         // Rect / scalar (Director: rect(60,40,120,200) / 3 = rect(20,13,40,66))
         if (a instanceof Datum.Rect ra) {
-            int s = b.toInt();
-            ctx.push(new Datum.Rect(ra.left() / s, ra.top() / s, ra.right() / s, ra.bottom() / s));
+            double s = b.toDouble();
+            ctx.push(new Datum.Rect(
+                    (int) (ra.left() / s),
+                    (int) (ra.top() / s),
+                    (int) (ra.right() / s),
+                    (int) (ra.bottom() / s)));
+            return true;
+        }
+
+        // List / scalar element-wise.
+        if (a instanceof Datum.List la) {
+            ctx.push(divideList(la, b));
             return true;
         }
 
@@ -246,5 +290,33 @@ public final class ArithmeticOpcodes {
             ctx.push(Datum.of(-a.toInt()));
         }
         return true;
+    }
+
+    private static Datum.List scaleList(Datum.List list, double scalar, boolean scalarIsFloat) {
+        var items = list.items();
+        var result = new java.util.ArrayList<Datum>(items.size());
+        for (Datum item : items) {
+            if (item.isFloat() || scalarIsFloat) {
+                result.add(Datum.of(item.toDouble() * scalar));
+            } else {
+                result.add(Datum.of((int) (item.toInt() * scalar)));
+            }
+        }
+        return new Datum.List(result);
+    }
+
+    private static Datum.List divideList(Datum.List list, Datum divisor) {
+        var items = list.items();
+        double scalar = divisor.toDouble();
+        boolean divisorIsFloat = divisor.isFloat();
+        var result = new java.util.ArrayList<Datum>(items.size());
+        for (Datum item : items) {
+            if (item.isFloat() || divisorIsFloat) {
+                result.add(Datum.of(item.toDouble() / scalar));
+            } else {
+                result.add(Datum.of(item.toInt() / divisor.toInt()));
+            }
+        }
+        return new Datum.List(result);
     }
 }
