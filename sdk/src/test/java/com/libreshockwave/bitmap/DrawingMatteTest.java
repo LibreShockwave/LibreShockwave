@@ -34,7 +34,7 @@ class DrawingMatteTest {
     }
 
     @Test
-    void matteCopyPixelsUsesTopLeftColorForMixed32BitBitmap() {
+    void matteCopyPixelsOnlyRemovesWhiteBoundingPixels() {
         Bitmap dest = new Bitmap(3, 3, 32);
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
             0xFF2A6883, 0xFF2A6883, 0xFF2A6883,
@@ -44,7 +44,7 @@ class DrawingMatteTest {
 
         Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
 
-        assertEquals(0x00000000, dest.getPixel(0, 0));
+        assertEquals(0xFF2A6883, dest.getPixel(0, 0));
         assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
     }
 

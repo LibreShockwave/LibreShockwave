@@ -229,7 +229,7 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
-    void backgroundTransparentCopyPixelsUsesSourcePaletteIndexZero() {
+    void backgroundTransparentCopyPixelsDefaultsToWhiteKeyForPalettedSource() {
         Bitmap dest = new Bitmap(2, 1, 32);
         dest.fill(0xFFFFFFFF);
 
@@ -245,8 +245,31 @@ public class ScriptModifiedBitmapTest {
                 List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
                         new Datum.Rect(0, 0, 2, 1), props));
 
+        assertEquals(0xFFFF00FF, dest.getPixel(0, 0),
+                "Without #bgColor, ink 36 should still default to white even for paletted sources");
+        assertEquals(0xFFC89C32, dest.getPixel(1, 0));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsUsesExplicitBgColorKey() {
+        Bitmap dest = new Bitmap(2, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(2, 1, 8);
+        src.setImagePalette(new Palette(new int[] {0xFF00FF, 0xC89C32}, "test-purse"));
+        src.setPixel(0, 0, 0xFFFF00FF);
+        src.setPixel(1, 0, 0xFFC89C32);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(255, 0, 255), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1), props));
+
         assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
-                "Palette index 0 color should be treated as transparent for ink 36");
+                "With explicit #bgColor, ink 36 should key that exact color");
         assertEquals(0xFFC89C32, dest.getPixel(1, 0));
     }
 
@@ -271,7 +294,7 @@ public class ScriptModifiedBitmapTest {
                 List.of(srcRef, rect, new Datum.Rect(0, 0, 3, 3), props));
 
         assertEquals(0xFFC0C0C0, dest.getPixel(2, 2),
-                "Transparent source background should not be remapped into an opaque bgColor fill");
+                "Transparent source pixels should leave the destination unchanged");
         assertEquals(0xFF000000, dest.getPixel(3, 3),
                 "Black text pixels should still copy through");
     }

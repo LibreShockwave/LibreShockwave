@@ -19,7 +19,7 @@ public class Drawing {
                                    int srcX, int srcY,
                                    int width, int height,
                                    InkMode ink, int blend) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null);
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null);
     }
 
     /**
@@ -43,6 +43,16 @@ public class Drawing {
                                    int width, int height,
                                    InkMode ink, int blend,
                                    Bitmap mask) {
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null);
+    }
+
+    public static void copyPixels(Bitmap dest, Bitmap src,
+                                   int destX, int destY,
+                                   int srcX, int srcY,
+                                   int width, int height,
+                                   InkMode ink, int blend,
+                                   Bitmap mask,
+                                   Integer backgroundKeyRgb) {
         if (width <= 0 || height <= 0) return;
         // For MATTE ink, pre-process the FULL source image with flood-fill matte.
         // Director applies matte to the entire source member, then extracts the
@@ -57,7 +67,6 @@ public class Drawing {
             effectiveSrcX = srcX;
             effectiveSrcY = srcY;
         }
-
         for (int y = 0; y < height; y++) {
             int sy = effectiveSrcY + y;
             int dy = destY + y;
@@ -87,7 +96,7 @@ public class Drawing {
                 int srcPixel = effectiveSrc.getPixel(sx, sy);
                 int destPixel = dest.getPixel(dx, dy);
 
-                int resultPixel = applyInk(srcPixel, destPixel, ink, blend);
+                int resultPixel = applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
                 dest.setPixel(dx, dy, resultPixel);
             }
         }
@@ -115,6 +124,10 @@ public class Drawing {
      * @return Blended pixel (ARGB)
      */
     public static int applyInk(int src, int dest, InkMode ink, int blend) {
+        return applyInk(src, dest, ink, blend, null);
+    }
+
+    public static int applyInk(int src, int dest, InkMode ink, int blend, Integer backgroundKeyRgb) {
         int srcA = (src >> 24) & 0xFF;
         int srcR = (src >> 16) & 0xFF;
         int srcG = (src >> 8) & 0xFF;
@@ -230,11 +243,12 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case BACKGROUND_TRANSPARENT:
-                // Background color (palette index 0, typically white) is transparent.
-                // Director uses exact color matching, not a threshold.
-                // Skip pixels with alpha=0 (already transparent from prior processing).
+                // Director's Background Transparent is exact-match keying against the
+                // chosen background color for this copy operation. When copyPixels
+                // does not pass #bgColor, the default key remains white.
                 if (srcA == 0) return dest;
-                if (srcR == 255 && srcG == 255 && srcB == 255) {
+                int keyRgb = backgroundKeyRgb != null ? (backgroundKeyRgb & 0xFFFFFF) : 0xFFFFFF;
+                if (((srcR << 16) | (srcG << 8) | srcB) == keyRgb) {
                     return dest;
                 }
                 return src;
@@ -455,7 +469,7 @@ public class Drawing {
             }
         }
 
-        int matteRgb = resolveMatteColor(pixels, pixels.length > 0 ? (pixels[0] & 0xFFFFFF) : 0xFFFFFF);
+        int matteRgb = 0xFFFFFF;
 
         // BFS flood-fill from edges
         boolean[] transparent = new boolean[w * h];
@@ -503,27 +517,6 @@ public class Drawing {
 
     private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
         return ((pixel >>> 24) & 0xFF) == 0 || (pixel & 0xFFFFFF) == matteRgb;
-    }
-
-    private static int resolveMatteColor(int[] pixels, int topLeftRgb) {
-        int firstOpaque = -1;
-        boolean hasWhite = false;
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            int rgb = pixel & 0xFFFFFF;
-            if (rgb == 0xFFFFFF) {
-                hasWhite = true;
-            }
-            if (firstOpaque < 0) {
-                firstOpaque = rgb;
-            }
-        }
-        if (hasWhite && topLeftRgb != 0xFFFFFF) {
-            return topLeftRgb;
-        }
-        return 0xFFFFFF;
     }
 
     /**
