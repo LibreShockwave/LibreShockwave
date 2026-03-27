@@ -1008,6 +1008,15 @@ public class WasmEntry {
     }
 
     /**
+     * Handle browser/canvas focus loss.
+     */
+    @Export(name = "blur")
+    public static void blur() {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return;
+        wasmPlayer.getPlayer().getInputHandler().onBlur();
+    }
+
+    /**
      * Handle key press.
      * @param browserKeyCode browser KeyboardEvent.keyCode
      * @param keyCharLen length of key character string in stringBuffer

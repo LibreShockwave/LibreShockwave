@@ -232,8 +232,17 @@ var LibreShockwave = (function() {
 
         // Track whether the canvas has focus — suppress input when it doesn't
         self._canvasFocused = document.activeElement === canvas;
+        function notifyBlurRelease() {
+            self._canvasFocused = false;
+            if (!self._worker || !self._workerReady) return;
+            self._worker.postMessage({ type: 'blur' });
+        }
         canvas.addEventListener('focus', function() { self._canvasFocused = true; });
-        canvas.addEventListener('blur', function() { self._canvasFocused = false; });
+        canvas.addEventListener('blur', notifyBlurRelease);
+        window.addEventListener('blur', notifyBlurRelease);
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) notifyBlurRelease();
+        });
 
         canvas.addEventListener('mousemove', function(e) {
             var pt = getCanvasPoint(e.clientX, e.clientY);
@@ -256,7 +265,6 @@ var LibreShockwave = (function() {
             var pt = getCanvasPoint(e.clientX, e.clientY);
             var x = pt.x;
             var y = pt.y;
-            console.log('[CLICK] mouseDown at (' + x + ',' + y + ') button=' + e.button);
             self._worker.postMessage({ type: 'mouseDown', x: x, y: y, button: e.button });
         });
 
