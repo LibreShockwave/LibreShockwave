@@ -369,6 +369,10 @@ public class MovieProperties implements MoviePropertyProvider {
         player.goToLabel(label);
     }
 
+    @Override
+    public void gotoNetPage(String url, String target) {
+    }
+
     private String getMovieName() {
         if (file != null && file.getBasePath() != null) {
             String path = file.getBasePath();
