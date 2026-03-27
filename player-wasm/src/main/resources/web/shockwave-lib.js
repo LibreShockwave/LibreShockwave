@@ -534,15 +534,30 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype._handleGotoNetPage = function(url, target) {
         if (!url) return;
 
+        var rawTarget = (target == null ? '' : String(target));
+        var normalizedTarget = this._normalizeGotoNetPageTarget(rawTarget);
+        var destinationLabel = normalizedTarget === '_blank' ? 'a new page' : 'this page';
+
+        console.log('[LS] gotoNetPage request url=' + url
+            + ' rawTarget=' + JSON.stringify(rawTarget)
+            + ' normalizedTarget=' + normalizedTarget);
+
         if (typeof this._opts.onGotoNetPage === 'function') {
-            this._opts.onGotoNetPage(url, target || '');
+            this._opts.onGotoNetPage(url, normalizedTarget);
             return;
         }
 
-        var resolvedTarget = (target || '').trim();
         try {
-            if (resolvedTarget && resolvedTarget !== '_self' && resolvedTarget !== 'self') {
-                var opened = window.open(url, resolvedTarget, 'noopener');
+            var approved = window.confirm(
+                'Director wants to open:\n' + url + '\n\nDestination: ' + destinationLabel + '\n\nPress OK to continue.'
+            );
+            if (!approved) {
+                console.log('[LS] gotoNetPage cancelled by user');
+                return;
+            }
+
+            if (normalizedTarget !== '_self') {
+                var opened = window.open(url, normalizedTarget, 'noopener');
                 if (!opened) {
                     window.location.assign(url);
                 }
@@ -553,6 +568,20 @@ var LibreShockwave = (function() {
         } catch (e) {
             console.error('[LS] gotoNetPage failed:', e);
         }
+    };
+
+    ShockwavePlayer.prototype._normalizeGotoNetPageTarget = function(target) {
+        var raw = (target == null ? '' : String(target)).trim();
+        if (!raw) return '_self';
+
+        var lowered = raw.toLowerCase();
+        if (lowered === 'self' || lowered === '_self') return '_self';
+        if (lowered === 'new' || lowered === '_new' || lowered === 'blank' || lowered === '_blank') {
+            return '_blank';
+        }
+        if (lowered === 'parent' || lowered === '_parent') return '_parent';
+        if (lowered === 'top' || lowered === '_top') return '_top';
+        return raw;
     };
 
     // Simple one-shot resolver map: type → resolve function
