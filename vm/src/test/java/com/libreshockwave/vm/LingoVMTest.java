@@ -85,7 +85,7 @@ class LingoVMTest {
         LingoVM vm = new LingoVM(null);
 
         Datum result = vm.callHandler("integer", List.of(Datum.of(3.7)));
-        assertEquals(3, result.toInt());
+        assertEquals(4, result.toInt());
 
         result = vm.callHandler("integer", List.of(Datum.of("42")));
         assertEquals(42, result.toInt());
@@ -123,24 +123,24 @@ class LingoVMTest {
     }
 
     @Test
-    void testBuiltinIntegerReturnsOriginalStringForNonNumeric() {
-        // integer() should return the original string unchanged if it's not a valid number
+    void testBuiltinIntegerReturnsVoidForNonNumericString() {
+        // integer() returns VOID for non-numeric strings (Director behavior).
+        // ScummVM: strtol fails, res left as default (VOID).
         LingoVM vm = new LingoVM(null);
 
-        // Non-numeric string should be returned unchanged
+        // Non-numeric string should return VOID
         Datum result = vm.callHandler("integer", List.of(Datum.of("hello")));
-        assertTrue(result.isString(), "integer(\"hello\") should return a string");
-        assertEquals("hello", result.toStr());
+        assertTrue(result.isVoid(), "integer(\"hello\") should return VOID");
 
         // Numeric string should be converted
         result = vm.callHandler("integer", List.of(Datum.of("42")));
         assertTrue(result.isInt(), "integer(\"42\") should return an int");
         assertEquals(42, result.toInt());
 
-        // Float string should be truncated
+        // Float string: rounds to nearest, same as integer(3.7)
         result = vm.callHandler("integer", List.of(Datum.of("3.7")));
         assertTrue(result.isInt(), "integer(\"3.7\") should return an int");
-        assertEquals(3, result.toInt());
+        assertEquals(4, result.toInt());
     }
 
     @Test
