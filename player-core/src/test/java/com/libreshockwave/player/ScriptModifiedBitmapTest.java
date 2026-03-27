@@ -240,8 +240,8 @@ public class ScriptModifiedBitmapTest {
         assertNotNull(baked.getBakedBitmap());
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
-        assertNotEquals(0xFF6794A7, baked.getBakedBitmap().getPixel(1, 0),
-                "Border-touching key color should still trigger BACKGROUND_TRANSPARENT processing");
+        assertEquals(0xFF6794A7, baked.getBakedBitmap().getPixel(1, 0),
+                "Non-background-color pixel should remain unchanged");
     }
 
     /**
