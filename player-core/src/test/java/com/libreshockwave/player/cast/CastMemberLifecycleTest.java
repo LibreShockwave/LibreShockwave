@@ -1,12 +1,15 @@
 package com.libreshockwave.player.cast;
 
+import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 class CastMemberLifecycleTest {
 
@@ -21,5 +24,51 @@ class CastMemberLifecycleTest {
         assertEquals(1, result.toInt());
         assertEquals("", member.getName());
         assertEquals("", member.getTextContent());
+    }
+
+    @Test
+    void paletteSetterRemapsDynamicBitmapMembersWithoutFileBacking() {
+        Palette oldPalette = new Palette(new int[]{0xFFFFFF, 0x6C5230}, "old");
+        Palette newPalette = new Palette(new int[]{0xFFFFFF, 0xC49A5A}, "new");
+
+        Bitmap wrapper = new Bitmap(1, 1, 32);
+        wrapper.setImagePalette(oldPalette);
+        wrapper.setPixel(0, 0, 0xFF6C5230);
+
+        CastMember member = new CastMember(1, 10001, MemberType.BITMAP);
+        member.setBitmapDirectly(wrapper);
+
+        CastMember.setPaletteResolver((castLib, memberNum) ->
+                castLib == 9 && memberNum == 5 ? newPalette : null);
+        try {
+            assertTrue(member.setProp("palette", Datum.CastMemberRef.of(9, 5)));
+            assertEquals(0xFFC49A5A, member.getBitmap().getPixel(0, 0));
+            assertSame(newPalette, member.getBitmap().getImagePalette());
+
+            Datum palette = member.getProp("palette");
+            assertInstanceOf(Datum.CastMemberRef.class, palette);
+            assertEquals(9, ((Datum.CastMemberRef) palette).castLibNum());
+            assertEquals(5, ((Datum.CastMemberRef) palette).memberNum());
+        } finally {
+            CastMember.setPaletteResolver(null);
+        }
+    }
+
+    @Test
+    void blankingDynamicBitmapNameRetiresTheSlot() {
+        CastMember member = new CastMember(7, 10001, MemberType.BITMAP);
+        AtomicInteger retiredSlot = new AtomicInteger(-1);
+
+        CastMember.setMemberSlotRetiredCallback((castLib, memberNum) -> {
+            retiredSlot.set((castLib << 16) | memberNum);
+        });
+        try {
+            member.setProp("name", Datum.of("bb_tempworld"));
+            member.setProp("name", Datum.EMPTY_STRING);
+
+            assertEquals((7 << 16) | 10001, retiredSlot.get());
+        } finally {
+            CastMember.setMemberSlotRetiredCallback(null);
+        }
     }
 }

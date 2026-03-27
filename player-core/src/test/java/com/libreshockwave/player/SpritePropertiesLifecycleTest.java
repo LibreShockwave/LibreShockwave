@@ -31,6 +31,27 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
+    void memberZeroResetsReleasedSpriteTransformState() {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+
+        assertTrue(props.setSpriteProp(17, "member", Datum.CastMemberRef.of(3, 42)));
+
+        SpriteState state = registry.get(17);
+        state.setFlipH(true);
+        state.setFlipV(true);
+        state.setRotation(180.0);
+        state.setSkew(180.0);
+
+        assertTrue(props.setSpriteProp(17, "member", Datum.CastMemberRef.of(1, 0)));
+
+        assertFalse(state.isFlipH());
+        assertFalse(state.isFlipV());
+        assertEquals(0.0, state.getRotation());
+        assertEquals(0.0, state.getSkew());
+    }
+
+    @Test
     void memberNumZeroClearsDynamicMemberOverride() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteProperties props = new SpriteProperties(registry);
@@ -44,5 +65,23 @@ class SpritePropertiesLifecycleTest {
 
         assertFalse(state.hasDynamicMember());
         assertEquals(0, state.getEffectiveCastMember());
+    }
+
+    @Test
+    void clearDynamicMemberBindingsDetachesOnlyMatchingSprites() {
+        SpriteRegistry registry = new SpriteRegistry();
+
+        SpriteState floor = registry.getOrCreateDynamic(11);
+        floor.setDynamicMember(7, 10001);
+
+        SpriteState other = registry.getOrCreateDynamic(12);
+        other.setDynamicMember(7, 10002);
+
+        assertTrue(registry.clearDynamicMemberBindings(7, 10001));
+        assertFalse(floor.hasDynamicMember());
+        assertTrue(other.hasDynamicMember());
+        assertEquals(7, other.getEffectiveCastLib());
+        assertEquals(10002, other.getEffectiveCastMember());
+        assertEquals(1, registry.getRevision());
     }
 }

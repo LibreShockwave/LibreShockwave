@@ -174,6 +174,13 @@ public class SpriteState {
         this.hasDynamicMember = false;
     }
 
+    public void resetReleasedSpriteTransforms() {
+        this.flipH = false;
+        this.flipV = false;
+        this.rotation = 0.0;
+        this.skew = 0.0;
+    }
+
     /**
      * Get the effective cast library number (dynamic or from Score).
      */
