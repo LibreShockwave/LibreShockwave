@@ -37,3 +37,4 @@ package-lock.json
 BUGS.md
 *.png
 player-wasm/package.json
+/.gradle-user
