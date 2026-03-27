@@ -6,6 +6,7 @@ import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastChunk;
 import com.libreshockwave.chunks.CastListChunk;
 import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.SlotId;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
@@ -211,7 +212,6 @@ public class CastLibManager implements CastLibProvider {
             // Return reference anyway - member may not exist but reference is valid syntax
             return Datum.CastMemberRef.of(castLibNumber, memberNumber);
         }
-
         return Datum.CastMemberRef.of(castLibNumber, memberNumber);
     }
 
@@ -227,7 +227,6 @@ public class CastLibManager implements CastLibProvider {
     @Override
     public Datum getMemberByName(int castLibNumber, String memberName) {
         ensureInitialized();
-
         if (castLibNumber > 0) {
             // Search in specific cast
             CastLib castLib = getCastLib(castLibNumber);
@@ -314,6 +313,47 @@ public class CastLibManager implements CastLibProvider {
         if (member == null) {
             return Datum.VOID;
         }
+        if ("duplicate".equalsIgnoreCase(methodName) && !args.isEmpty()) {
+            Datum targetArg = args.get(0);
+            Datum.CastMemberRef targetRef = null;
+
+            if (targetArg instanceof Datum.CastMemberRef cmr) {
+                targetRef = cmr;
+            } else if (targetArg.isInt() || targetArg.isFloat()) {
+                int slotValue = targetArg.toInt();
+                SlotId slotId = new SlotId(slotValue);
+                if (slotId.castLib() >= 1 && slotId.member() >= 1) {
+                    Datum decodedRef = Datum.CastMemberRef.of(slotId.castLib(), slotId.member());
+                    if (decodedRef instanceof Datum.CastMemberRef cmr) {
+                        targetRef = cmr;
+                    }
+                } else if (castLibNumber >= 1 && slotValue >= 1) {
+                    // Fallback for callers that pass a raw member number instead of member.number.
+                    Datum fallbackRef = Datum.CastMemberRef.of(castLibNumber, slotValue);
+                    if (fallbackRef instanceof Datum.CastMemberRef cmr) {
+                        targetRef = cmr;
+                    }
+                }
+            }
+
+            if (targetRef == null) {
+                return member.callMethod(methodName, args);
+            }
+
+            CastLib targetCastLib = getCastLib(targetRef.castLibNum());
+            if (targetCastLib == null) {
+                return Datum.VOID;
+            }
+            CastMember targetMember = targetCastLib.getMember(targetRef.memberNum());
+            if (targetMember == null) {
+                return Datum.VOID;
+            }
+            Palette sourcePalette = member.getPaletteData();
+            if (sourcePalette != null) {
+                targetMember.setPaletteData(sourcePalette);
+                return targetArg;
+            }
+        }
         return member.callMethod(methodName, args);
     }
 
@@ -341,18 +381,31 @@ public class CastLibManager implements CastLibProvider {
         // Try specified cast lib first
         CastLib castLib = getCastLib(castLibNumber);
         if (castLib != null && castLib.isLoaded()) {
+            CastMember dynamicMember = castLib.getMember(memberNumber);
+            if (dynamicMember != null) {
+                Palette dynamicPalette = dynamicMember.getPaletteData();
+                if (dynamicPalette != null) {
+                    return dynamicPalette;
+                }
+            }
             CastMemberChunk chunk = castLib.findMemberByNumber(memberNumber);
             if (chunk != null && chunk.file() != null) {
-                // Use the DirectorFile's palette resolver which handles CLUT chunk lookup
-                return chunk.file().resolvePalette(chunk.id().value());
+                return chunk.file().resolvePaletteByMemberNumber(memberNumber);
             }
         }
         // Fallback: search all cast libs
         for (CastLib cl : castLibs.values()) {
             if (!cl.isLoaded()) continue;
+            CastMember dynamicMember = cl.getMember(memberNumber);
+            if (dynamicMember != null) {
+                Palette dynamicPalette = dynamicMember.getPaletteData();
+                if (dynamicPalette != null) {
+                    return dynamicPalette;
+                }
+            }
             CastMemberChunk chunk = cl.findMemberByNumber(memberNumber);
             if (chunk != null && chunk.file() != null) {
-                return chunk.file().resolvePalette(chunk.id().value());
+                return chunk.file().resolvePaletteByMemberNumber(memberNumber);
             }
         }
         return null;
@@ -363,6 +416,18 @@ public class CastLibManager implements CastLibProvider {
      * Used by the renderer when CastMemberChunk lookup fails for dynamically created members.
      */
     public CastMember getDynamicMember(int castLibNumber, int memberNumber) {
+        CastLib castLib = getCastLib(castLibNumber);
+        if (castLib == null) {
+            return null;
+        }
+        return castLib.getMember(memberNumber);
+    }
+
+    /**
+     * Resolve any runtime CastMember wrapper by cast/member number.
+     * Unlike getDynamicMember(), this also works for file-backed members.
+     */
+    public CastMember resolveMember(int castLibNumber, int memberNumber) {
         CastLib castLib = getCastLib(castLibNumber);
         if (castLib == null) {
             return null;
@@ -557,7 +622,6 @@ public class CastLibManager implements CastLibProvider {
      */
     public boolean setExternalCastDataByUrl(String url, byte[] data) {
         ensureInitialized();
-
         boolean anyLoaded = false;
         for (CastLib castLib : findCastLibsByUrl(url)) {
             // Skip if already loaded with member data (prevents re-parsing same file)
@@ -619,24 +683,50 @@ public class CastLibManager implements CastLibProvider {
     @Override
     public com.libreshockwave.bitmap.Palette resolvePaletteByName(String name) {
         ensureInitialized();
-        // Search all cast libraries for a palette member with this name
+        com.libreshockwave.bitmap.Palette firstMatch = null;
+
         for (CastLib castLib : castLibs.values()) {
             com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByName(name);
             if (chunk != null && chunk.file() != null) {
-                com.libreshockwave.bitmap.Palette pal = chunk.file().resolvePalette(chunk.id().value());
-                if (pal != null) return pal;
+                int memberNum = castLib.getMemberNumber(chunk);
+                com.libreshockwave.bitmap.Palette pal =
+                        memberNum > 0 ? chunk.file().resolvePaletteByMemberNumber(memberNum) : null;
+                if (pal != null) {
+                    if (firstMatch == null) {
+                        firstMatch = pal;
+                    }
+                }
+            }
+            CastMember dynamic = castLib.getMemberByName(name);
+            if (dynamic != null) {
+                com.libreshockwave.bitmap.Palette pal = dynamic.getPaletteData();
+                if (pal != null) {
+                    if (firstMatch == null) {
+                        firstMatch = pal;
+                    }
+                }
             }
         }
-        return null;
+        return firstMatch;
     }
 
     @Override
     public com.libreshockwave.bitmap.Palette resolvePaletteByMember(int castLibNum, int memberNum) {
         ensureInitialized();
-        // Use the CastMemberChunk from the cast library manager lookup
-        com.libreshockwave.chunks.CastMemberChunk chunk = getCastMember(castLibNum, memberNum);
+        CastLib castLib = getCastLib(castLibNum);
+        if (castLib == null) {
+            return null;
+        }
+        CastMember dynamicMember = castLib.getMember(memberNum);
+        if (dynamicMember != null) {
+            com.libreshockwave.bitmap.Palette dynamicPalette = dynamicMember.getPaletteData();
+            if (dynamicPalette != null) {
+                return dynamicPalette;
+            }
+        }
+        com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByNumber(memberNum);
         if (chunk != null && chunk.file() != null) {
-            return chunk.file().resolvePalette(chunk.id().value());
+            return chunk.file().resolvePaletteByMemberNumber(memberNum);
         }
         return null;
     }

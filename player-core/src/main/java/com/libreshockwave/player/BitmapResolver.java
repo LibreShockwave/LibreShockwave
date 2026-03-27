@@ -219,14 +219,14 @@ public class BitmapResolver {
 
     private Palette resolvePaletteByMember(int castLib, int memberNum) {
         if (castLibManager != null) {
-            CastMemberChunk palChunk = castLibManager.getCastMember(
-                castLib > 0 ? castLib : 1, memberNum);
-            if (palChunk != null && palChunk.file() != null) {
-                return palChunk.file().resolvePalette(memberNum - 1);
+            Palette dynamicOrFilePalette = castLibManager.resolvePaletteByMember(
+                    castLib > 0 ? castLib : 1, memberNum);
+            if (dynamicOrFilePalette != null) {
+                return dynamicOrFilePalette;
             }
         }
         if (file != null) {
-            return file.resolvePalette(memberNum - 1);
+            return file.resolvePaletteByMemberNumber(memberNum);
         }
         return null;
     }
