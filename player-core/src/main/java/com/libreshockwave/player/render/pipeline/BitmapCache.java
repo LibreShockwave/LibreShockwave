@@ -19,11 +19,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BitmapCache {
 
     private final Map<CacheKey, Bitmap> cache = new ConcurrentHashMap<>();
-    private final Set<Integer> decodeFailed = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<MemberCacheId> decodeFailed = Collections.newSetFromMap(new ConcurrentHashMap<>());
     /** Tracks the last known palette version per member ID to detect palette changes. */
-    private final Map<Integer, Integer> paletteVersions = new ConcurrentHashMap<>();
+    private final Map<MemberCacheId, Integer> paletteVersions = new ConcurrentHashMap<>();
 
-    private record CacheKey(int memberId, int ink, int foreColor, int backColor, boolean hasForeColor) {}
+    private record MemberCacheId(int fileIdentity, int memberId) {}
+
+    private record CacheKey(MemberCacheId member, int ink, int foreColor, int backColor, boolean hasForeColor) {}
 
     /**
      * Get an ink-processed bitmap for a file-loaded cast member.
@@ -50,15 +52,15 @@ public class BitmapCache {
     public Bitmap getProcessed(CastMemberChunk member, int ink, int backColor,
                                 int foreColor, boolean hasForeColor,
                                 Player player, Palette paletteOverride) {
-        int id = member.id().value();
-        CacheKey key = new CacheKey(id, ink, hasForeColor ? foreColor : 0, backColor, hasForeColor);
+        MemberCacheId memberId = memberKey(member);
+        CacheKey key = new CacheKey(memberId, ink, hasForeColor ? foreColor : 0, backColor, hasForeColor);
 
         Bitmap cached = cache.get(key);
         if (cached != null) {
             return cached;
         }
 
-        if (player == null || decodeFailed.contains(id)) {
+        if (player == null || decodeFailed.contains(memberId)) {
             return null;
         }
 
@@ -92,7 +94,7 @@ public class BitmapCache {
                 bitmap = player.getBitmapResolver().decodeBitmap(member);
             }
             if (bitmap.isEmpty()) {
-                decodeFailed.add(id);
+                decodeFailed.add(memberId);
                 return null;
             }
 
@@ -110,7 +112,7 @@ public class BitmapCache {
             cache.put(key, processed);
             return processed;
         } catch (Exception e) {
-            decodeFailed.add(id);
+            decodeFailed.add(memberId);
             return null;
         }
     }
@@ -119,14 +121,15 @@ public class BitmapCache {
      * Invalidate cache entries for a member if its palette version has changed.
      * Returns true if the cache was actually invalidated (palette changed since last render).
      */
-    public boolean invalidateIfPaletteChanged(int memberId, int paletteVersion) {
+    public boolean invalidateIfPaletteChanged(CastMemberChunk member, int paletteVersion) {
+        MemberCacheId memberId = memberKey(member);
         Integer lastVersion = paletteVersions.get(memberId);
         if (lastVersion != null && lastVersion == paletteVersion) {
             return false; // No change
         }
         paletteVersions.put(memberId, paletteVersion);
         // Remove from caches - scan for any key containing this member ID
-        cache.keySet().removeIf(key -> key.memberId() == memberId);
+        cache.keySet().removeIf(key -> key.member().equals(memberId));
         decodeFailed.remove(memberId);
         return true;
     }
@@ -143,7 +146,8 @@ public class BitmapCache {
         }
 
         if (InkProcessor.shouldProcessInk(ink)) {
-            return InkProcessor.applyInk(bmp, ink, backColor, false, null);
+            boolean useAlpha = bmp.getBitDepth() == 32 && bmp.isNativeAlpha();
+            return InkProcessor.applyInk(bmp, ink, backColor, useAlpha, bmp.getImagePalette());
         }
         return bmp;
     }
@@ -154,5 +158,12 @@ public class BitmapCache {
     public void clear() {
         cache.clear();
         decodeFailed.clear();
+        paletteVersions.clear();
+    }
+
+    private MemberCacheId memberKey(CastMemberChunk member) {
+        int fileIdentity = member != null && member.file() != null ? System.identityHashCode(member.file()) : 0;
+        int memberId = member != null ? member.id().value() : 0;
+        return new MemberCacheId(fileIdentity, memberId);
     }
 }

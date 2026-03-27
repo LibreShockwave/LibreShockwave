@@ -12,6 +12,7 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -24,7 +25,7 @@ import java.util.function.BiConsumer;
 public class CastLibManager implements CastLibProvider {
 
     private final DirectorFile file;
-    private final Map<Integer, CastLib> castLibs = new HashMap<>();
+    private final Map<Integer, CastLib> castLibs = new LinkedHashMap<>();
     private boolean initialized = false;
 
     // Callback for cast data loading: when Lingo sets castLib.fileName, this is called
