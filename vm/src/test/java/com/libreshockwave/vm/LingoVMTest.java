@@ -61,6 +61,20 @@ class LingoVMTest {
         assertEquals("123", fetched.toStr());
     }
 
+    @Test
+    void testBuiltinPrefsUseVmPreferenceStorage() {
+        LingoVM vm = new LingoVM(null);
+
+        assertTrue(vm.callHandler("getPref", List.of(Datum.of("Blocktime"))).isVoid());
+
+        Datum stored = vm.callHandler("setPref", List.of(Datum.of("blocktime"), Datum.of("123")));
+        assertEquals("123", stored.toStr());
+
+        Datum fetched = vm.callHandler("getPref", List.of(Datum.of("Blocktime")));
+        assertTrue(fetched.isString());
+        assertEquals("123", fetched.toStr());
+    }
+
     private static final class RecordingMovieProvider implements MoviePropertyProvider {
         private String lastPropName;
         private Datum lastValue = Datum.VOID;
