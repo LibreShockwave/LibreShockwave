@@ -6,6 +6,7 @@ import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.chunks.ScoreChunk;
 
@@ -100,6 +101,20 @@ public class SpriteBaker {
         if (sprite.getDynamicMember() == null) return false;
         Bitmap bmp = sprite.getDynamicMember().getBitmap();
         return bmp != null && bmp.isScriptModified();
+    }
+
+    private boolean shouldNeutralizeOpaqueWhiteForScriptCanvas(RenderSprite sprite, Bitmap bmp) {
+        if (sprite == null || bmp == null) {
+            return false;
+        }
+        if (bmp.getBitDepth() != 32 || bmp.isNativeAlpha()) {
+            return false;
+        }
+        InkMode ink = sprite.getInkMode();
+        if (ink != InkMode.DARKEN && ink != InkMode.LIGHTEN) {
+            return false;
+        }
+        return bmp.isScriptModified();
     }
 
     private void registerDefaultSteps() {
@@ -204,21 +219,19 @@ public class SpriteBaker {
                     // unblending in applyBackgroundTransparent is designed for text
                     // anti-aliasing, but destroys intentionally grayscale body parts
                     // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
-                    //
-                    // DARKEN/LIGHTEN ink on 32-bit script-built canvases: Director's
-                    // image(w,h,32) creates opaque white, but DARKEN needs to distinguish
-                    // white background from white content. Convert opaque white to
-                    // transparent white so the matte step skips background pixels while
-                    // preserving white wall/panel content for the bgColor multiply.
                     Bitmap inkSrc = liveBmp;
-                    if (liveBmp.getBitDepth() == 32
-                            && (sprite.getInkMode() == com.libreshockwave.id.InkMode.DARKEN
-                             || sprite.getInkMode() == com.libreshockwave.id.InkMode.LIGHTEN)) {
-                        inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(liveBmp);
+                    if (shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, inkSrc)) {
+                        // Script-built 32-bit canvases commonly start life as opaque white
+                        // buffers and then receive masked copyPixels draws. Under Director,
+                        // the untouched white canvas does not contribute visible slabs when
+                        // the final sprite uses DARKEN/LIGHTEN; only the drawn content is
+                        // colorized. Preserve that by neutralizing opaque white before the
+                        // runtime DARKEN/LIGHTEN ink path runs.
+                        inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(inkSrc);
                     }
-                    boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.hasTransparentPixels();
+                    boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.isNativeAlpha();
                     return InkProcessor.applyInk(inkSrc, sprite.getInk(),
-                            sprite.getBackColor(), hasNativeAlpha, null, true);
+                            sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true);
                 }
                 return liveBmp;
             }
