@@ -9,9 +9,12 @@ import com.libreshockwave.vm.datum.Datum;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /**
@@ -32,6 +35,7 @@ public class WasmEntry {
     private static byte[] movieBuffer;
     private static byte[] stringBuffer = new byte[65536];
     private static byte[] netBuffer;
+    private static final Queue<String[]> pendingGotoNetPages = new ArrayDeque<>();
 
     private static final Set<String> failedCasts = new HashSet<>();
 
@@ -41,6 +45,15 @@ public class WasmEntry {
     /** Append a timestamped debug message (accessible from player-wasm package). */
     static void log(String msg) {
         debugLog.append(msg).append('\n');
+    }
+
+    static void enqueueGotoNetPage(String url, String target) {
+        synchronized (pendingGotoNetPages) {
+            pendingGotoNetPages.offer(new String[] {
+                    url != null ? url : "",
+                    target != null ? target : ""
+            });
+        }
     }
 
     public static void main(String[] args) {
@@ -71,6 +84,30 @@ public class WasmEntry {
     @Export(name = "getStringBufferAddress")
     public static int getStringBufferAddress() {
         return Address.ofData(stringBuffer).toInt();
+    }
+
+    @Export(name = "readNextGotoNetPage")
+    public static int readNextGotoNetPage() {
+        String[] next;
+        synchronized (pendingGotoNetPages) {
+            next = pendingGotoNetPages.poll();
+        }
+        if (next == null) {
+            return 0;
+        }
+
+        byte[] urlBytes = next[0].getBytes(StandardCharsets.UTF_8);
+        byte[] targetBytes = next[1].getBytes(StandardCharsets.UTF_8);
+
+        int maxUrlLen = Math.min(urlBytes.length, 0xFFFF);
+        int maxTargetLen = Math.min(targetBytes.length, 0xFFFF);
+        if (maxUrlLen + maxTargetLen > stringBuffer.length) {
+            maxTargetLen = Math.max(0, stringBuffer.length - maxUrlLen);
+        }
+
+        System.arraycopy(urlBytes, 0, stringBuffer, 0, maxUrlLen);
+        System.arraycopy(targetBytes, 0, stringBuffer, maxUrlLen, maxTargetLen);
+        return (maxUrlLen << 16) | maxTargetLen;
     }
 
     // === Movie loading ===

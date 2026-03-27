@@ -73,6 +73,24 @@ function _fetchWithTimeout(url, opts, timeoutMs) {
     return fetch(url, opts).finally(function() { clearTimeout(timer); });
 }
 
+function _drainGotoNetPages() {
+    if (!_e || !_e.exports) return;
+    try {
+        while (true) {
+            var packed = _e.exports.readNextGotoNetPage(); _e._clearEx();
+            if (!packed) break;
+            var urlLen = (packed >>> 16) & 0xFFFF;
+            var targetLen = packed & 0xFFFF;
+            var strAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+            var url = urlLen > 0 ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr, urlLen)) : '';
+            var target = targetLen > 0 ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr + urlLen, targetLen)) : '';
+            self.postMessage({ type: 'gotoNetPage', url: url, target: target });
+        }
+    } catch (navErr) {
+        console.error('[WORKER] gotoNetPage drain error:', navErr);
+    }
+}
+
 // --- External params stored locally for pre-fetch access ---
 var _params = {};
 
@@ -786,7 +804,7 @@ self.onmessage = async function(e) {
 
             case 'play':
                 console.log('[WORKER] play() — starting animation');
-                _e.exports.play(); _e._clearEx(); _e.playing = true;
+                _e.exports.play(); _e._clearEx(); _e.playing = true; _drainGotoNetPages();
                 break;
             case 'pause':
                 _e.exports.pause(); _e._clearEx(); _e.playing = false;
@@ -796,13 +814,13 @@ self.onmessage = async function(e) {
                 break;
 
             case 'goToFrame':
-                _e.exports.goToFrame(msg.frame); _e._clearEx();
+                _e.exports.goToFrame(msg.frame); _e._clearEx(); _drainGotoNetPages();
                 break;
             case 'stepForward':
-                _e.exports.stepForward(); _e._clearEx();
+                _e.exports.stepForward(); _e._clearEx(); _drainGotoNetPages();
                 break;
             case 'stepBackward':
-                _e.exports.stepBackward(); _e._clearEx();
+                _e.exports.stepBackward(); _e._clearEx(); _drainGotoNetPages();
                 break;
 
             // --- Input events ---
@@ -811,7 +829,7 @@ self.onmessage = async function(e) {
                 break;
             case 'mouseDown':
                 if (_e && !_e._wasmDead) try {
-                    _e.mouseDown(msg.x, msg.y, msg.button);
+                    _e.mouseDown(msg.x, msg.y, msg.button); _drainGotoNetPages();
                 } catch(ie) {
                     console.error('[WORKER] mouseDown error:', ie);
                 }
@@ -861,23 +879,23 @@ self.onmessage = async function(e) {
                 }
                 break;
             case 'mouseUp':
-                if (_e && !_e._wasmDead) try { _e.mouseUp(msg.x, msg.y, msg.button); } catch(ie) {
+                if (_e && !_e._wasmDead) try { _e.mouseUp(msg.x, msg.y, msg.button); _drainGotoNetPages(); } catch(ie) {
                     console.error('[WORKER] mouseUp error:', ie);
                 }
                 break;
             case 'keyDown':
                 if (_e && !_e._wasmDead) try {
-                    _e.keyDown(msg.keyCode, msg.key || '', msg.modifiers);
+                    _e.keyDown(msg.keyCode, msg.key || '', msg.modifiers); _drainGotoNetPages();
                 } catch(ie) { console.error('[WORKER] keyDown error:', ie); }
                 break;
             case 'keyUp':
                 if (_e && !_e._wasmDead) try {
-                    _e.keyUp(msg.keyCode, msg.key || '', msg.modifiers);
+                    _e.keyUp(msg.keyCode, msg.key || '', msg.modifiers); _drainGotoNetPages();
                 } catch(ie) { console.error('[WORKER] keyUp error:', ie); }
                 break;
 
             case 'paste':
-                if (_e && !_e._wasmDead) try { _e.pasteText(msg.text); } catch(e) {}
+                if (_e && !_e._wasmDead) try { _e.pasteText(msg.text); _drainGotoNetPages(); } catch(e) {}
                 break;
 
             case 'getSelectedText':
@@ -1086,6 +1104,8 @@ self.onmessage = async function(e) {
                             debugLog = _e._readString(strAddr, logLen);
                         }
                     } catch (logErr) {}
+
+                    _drainGotoNetPages();
 
                     // Always send a frame response to unblock main thread
                     var transferList = [];
