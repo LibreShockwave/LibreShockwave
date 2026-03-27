@@ -124,6 +124,12 @@ public class WasmPlayer {
         return player != null ? player.getTempo() : 15;
     }
 
+    public void setPuppetTempo(int tempo) {
+        if (player != null) {
+            player.getMovieProperties().setPuppetTempo(tempo);
+        }
+    }
+
     public int getStageWidth() {
         return player != null ? player.getStageRenderer().getStageWidth() : 640;
     }

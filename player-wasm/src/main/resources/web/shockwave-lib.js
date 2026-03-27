@@ -85,6 +85,7 @@ var LibreShockwave = (function() {
         // Playback state (mirrors worker)
         this._playing     = false;
         this._lastTempo   = 15;
+        this._tempoOverride = 0;
         this._lastFrame   = 0;
         this._lastFrameCount = 0;
         this._stageWidth  = 640;
@@ -753,6 +754,9 @@ var LibreShockwave = (function() {
         }
 
         if (this._opts.onLoad) this._opts.onLoad(info);
+        if (this._tempoOverride > 0) {
+            this.setTempo(this._tempoOverride);
+        }
 
         // Preload external casts before starting; worker handles the network pump
         this._worker.postMessage({ type: 'preloadCasts' });
@@ -980,6 +984,18 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype.triggerTestError = function() {
         if (this._worker && this._workerReady) {
             this._worker.postMessage({ type: 'triggerTestError' });
+        }
+    };
+
+    ShockwavePlayer.prototype.setTempo = function(tempo) {
+        var nextTempo = parseInt(tempo, 10);
+        if (!(nextTempo >= 0)) return;
+        this._tempoOverride = nextTempo;
+        if (nextTempo > 0) {
+            this._lastTempo = nextTempo;
+        }
+        if (this._worker && this._workerReady) {
+            this._worker.postMessage({ type: 'setTempo', tempo: nextTempo });
         }
     };
 

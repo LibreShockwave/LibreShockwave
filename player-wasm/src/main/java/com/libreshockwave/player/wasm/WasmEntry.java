@@ -317,6 +317,13 @@ public class WasmEntry {
         return wasmPlayer != null ? wasmPlayer.getTempo() : 15;
     }
 
+    @Export(name = "setPuppetTempo")
+    public static void setPuppetTempo(int tempo) {
+        if (wasmPlayer != null) {
+            wasmPlayer.setPuppetTempo(tempo);
+        }
+    }
+
     /**
      * Get the number of active sprites in the current frame, without baking bitmaps.
      * @return sprite count, or 0 if not playing
