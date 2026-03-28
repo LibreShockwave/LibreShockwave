@@ -86,6 +86,7 @@ public class SpriteRegistry {
             }
             if (state.getEffectiveCastLib() == castLib && state.getEffectiveCastMember() == memberNum) {
                 state.clearDynamicMember();
+                state.resetReleasedSpriteTransforms();
                 changed = true;
             }
         }

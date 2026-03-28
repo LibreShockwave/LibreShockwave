@@ -24,6 +24,17 @@ class CastMemberLifecycleTest {
         assertEquals(1, result.toInt());
         assertEquals("", member.getName());
         assertEquals("", member.getTextContent());
+        assertEquals("empty", member.getProp("type").toKeyName());
+        assertTrue(member.getProp("type").isSymbol());
+    }
+
+    @Test
+    void memberTypePropertyReturnsDirectorSymbol() {
+        CastMember bitmap = new CastMember(1, 10001, MemberType.BITMAP);
+        Datum type = bitmap.getProp("type");
+
+        assertTrue(type.isSymbol());
+        assertEquals("bitmap", type.toKeyName());
     }
 
     @Test
@@ -70,5 +81,25 @@ class CastMemberLifecycleTest {
         } finally {
             CastMember.setMemberSlotRetiredCallback(null);
         }
+    }
+
+    @Test
+    void createDynamicMemberReusesFirstErasedRuntimeSlot() {
+        CastLib castLib = new CastLib(4, null, null);
+
+        CastMember first = castLib.createDynamicMember("bitmap");
+        CastMember second = castLib.createDynamicMember("text");
+
+        assertEquals(10000, first.getMemberNumber());
+        assertEquals(10001, second.getMemberNumber());
+
+        first.erase();
+
+        CastMember reused = castLib.createDynamicMember("palette");
+
+        assertSame(first, reused);
+        assertEquals(10000, reused.getMemberNumber());
+        assertEquals("palette", reused.getProp("type").toKeyName());
+        assertTrue(reused.getProp("type").isSymbol());
     }
 }

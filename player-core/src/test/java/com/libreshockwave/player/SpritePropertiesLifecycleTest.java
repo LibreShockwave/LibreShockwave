@@ -68,20 +68,46 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
+    void disablingPuppetOnEmptySpriteClearsLingeringScriptInstances() {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+
+        SpriteState state = registry.getOrCreateDynamic(23);
+        state.setScriptInstanceList(java.util.List.of(new Datum.ScriptInstance(99, new java.util.LinkedHashMap<>())));
+
+        assertTrue(props.setSpriteProp(23, "member", Datum.ZERO));
+        assertTrue(props.setSpriteProp(23, "puppet", Datum.ZERO));
+
+        assertTrue(state.getScriptInstanceList().isEmpty());
+    }
+
+    @Test
     void clearDynamicMemberBindingsDetachesOnlyMatchingSprites() {
         SpriteRegistry registry = new SpriteRegistry();
 
         SpriteState floor = registry.getOrCreateDynamic(11);
         floor.setDynamicMember(7, 10001);
+        floor.setFlipH(true);
+        floor.setRotation(180.0);
+        floor.setSkew(180.0);
 
         SpriteState other = registry.getOrCreateDynamic(12);
         other.setDynamicMember(7, 10002);
+        other.setFlipH(true);
+        other.setRotation(180.0);
+        other.setSkew(180.0);
 
         assertTrue(registry.clearDynamicMemberBindings(7, 10001));
         assertFalse(floor.hasDynamicMember());
+        assertFalse(floor.isFlipH());
+        assertEquals(0.0, floor.getRotation());
+        assertEquals(0.0, floor.getSkew());
         assertTrue(other.hasDynamicMember());
         assertEquals(7, other.getEffectiveCastLib());
         assertEquals(10002, other.getEffectiveCastMember());
+        assertTrue(other.isFlipH());
+        assertEquals(180.0, other.getRotation());
+        assertEquals(180.0, other.getSkew());
         assertEquals(1, registry.getRevision());
     }
 }
