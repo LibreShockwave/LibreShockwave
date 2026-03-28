@@ -151,6 +151,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 yield new Datum.Point(0, 0);
             }
             case "rightmousedown" -> Datum.of(inputState != null && inputState.isRightMouseDown() ? 1 : 0);
+            case "doubleclick" -> Datum.of(inputState != null && inputState.isDoubleClick() ? 1 : 0);
             case "rollover" -> Datum.of(inputState != null ? inputState.getRolloverSprite() : 0);
 
             // Key state
@@ -377,8 +378,21 @@ public class MovieProperties implements MoviePropertyProvider {
 
     @Override
     public void gotoNetPage(String url, String target) {
+        String safeUrl = url != null ? url : "";
+        String safeTarget = target != null ? target : "";
+        String recentError = player.getRecentScriptErrorMessage(10000);
+        String recentStack = player.getRecentScriptErrorStack(10000);
+
+        System.err.println("[NavigationRequest] url=" + safeUrl
+                + " target=" + safeTarget
+                + " frame=" + player.getCurrentFrame()
+                + " recentError=" + (recentError.isEmpty() ? "<none>" : recentError));
+        if (!recentStack.isEmpty()) {
+            System.err.println("[NavigationRequest] recentLingoStack:\n" + recentStack);
+        }
+
         if (gotoNetPageHandler != null) {
-            gotoNetPageHandler.accept(url, target);
+            gotoNetPageHandler.accept(safeUrl, safeTarget);
         }
     }
 
