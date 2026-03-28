@@ -10,6 +10,7 @@ import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.SpriteRegistry;
 import com.libreshockwave.player.sprite.SpriteState;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 
 /**
@@ -178,10 +179,8 @@ public class SpriteProperties implements SpritePropertyProvider {
             }
             case "puppet" -> {
                 sprite.setPuppet(value.isTruthy());
-                // An empty non-puppeted channel should return to a neutral runtime state
-                // before it is recycled for another sprite reservation.
                 if (!sprite.isPuppet() && sprite.getEffectiveCastMember() <= 0) {
-                    sprite.setScriptInstanceList(java.util.List.of());
+                    resetReleasedEmptyChannel(sprite);
                 }
                 return true;
             }
@@ -259,8 +258,7 @@ public class SpriteProperties implements SpritePropertyProvider {
             case "member" -> {
                 if (value instanceof Datum.CastMemberRef cmr) {
                     if (cmr.memberNum() <= 0) {
-                        sprite.clearDynamicMember();
-                        sprite.resetReleasedSpriteTransforms();
+                        applyEmptyMemberOverride(sprite);
                     } else {
                         sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
                         autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
@@ -270,8 +268,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                     Datum ref = castLibManager.getMemberByName(0, value.toStr());
                     if (ref instanceof Datum.CastMemberRef cmr) {
                         if (cmr.memberNum() <= 0) {
-                            sprite.clearDynamicMember();
-                            sprite.resetReleasedSpriteTransforms();
+                            applyEmptyMemberOverride(sprite);
                         } else {
                             sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
                             autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
@@ -280,8 +277,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                 } else {
                     int memberNum = value.toInt();
                     if (memberNum <= 0) {
-                        sprite.clearDynamicMember();
-                        sprite.resetReleasedSpriteTransforms();
+                        applyEmptyMemberOverride(sprite);
                     } else {
                         sprite.setDynamicMember(0, memberNum);
                         autoSizeSprite(sprite, 0, memberNum);
@@ -292,8 +288,7 @@ public class SpriteProperties implements SpritePropertyProvider {
             case "castnum", "membernum" -> {
                 int num = value.toInt();
                 if (num <= 0) {
-                    sprite.clearDynamicMember();
-                    sprite.resetReleasedSpriteTransforms();
+                    applyEmptyMemberOverride(sprite);
                     return true;
                 }
                 // Decode encoded slot numbers: (castLib << 16) | memberNum
@@ -385,6 +380,22 @@ public class SpriteProperties implements SpritePropertyProvider {
             }
         }
     }
+
+    private static void applyEmptyMemberOverride(SpriteState sprite) {
+        sprite.setDynamicMember(0, 0);
+        sprite.resetReleasedSpriteTransforms();
+    }
+
+    private static void resetReleasedEmptyChannel(SpriteState sprite) {
+        sprite.setScriptInstanceList(java.util.List.of());
+        sprite.setVisible(false);
+        sprite.setCursor(0);
+        sprite.setBlend(100);
+        sprite.setStretch(0);
+        sprite.resetReleasedChannelGeometry();
+        sprite.resetReleasedSpriteTransforms();
+    }
+
 
     /**
      * Auto-size the sprite to match its member's natural dimensions.

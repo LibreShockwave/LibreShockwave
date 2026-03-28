@@ -19,7 +19,7 @@ public class Drawing {
             int srcX, int srcY,
             int width, int height,
             InkMode ink, int blend) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null, null, null);
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null);
     }
 
     /**
@@ -45,7 +45,7 @@ public class Drawing {
             int width, int height,
             InkMode ink, int blend,
             Bitmap mask) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null, null, null);
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null);
     }
 
     public static void copyPixels(Bitmap dest, Bitmap src,
@@ -130,7 +130,7 @@ public class Drawing {
      * @return Blended pixel (ARGB)
      */
     public static int applyInk(int src, int dest, InkMode ink, int blend) {
-        return applyInk(src, dest, ink, blend, null, null, null);
+        return applyInk(src, dest, ink, blend, null);
     }
 
     public static int applyInk(int src, int dest, InkMode ink, int blend, Integer foregroundRemap,
@@ -301,19 +301,16 @@ public class Drawing {
 
                 int r_ = srcR, g_ = srcG, b_ = srcB;
                 if (foregroundRemap != null || backgroundRemap != null) {
-                    // Linear interpolation between foreground and background colors.
-                    // Grayscale 255 (White) becomes foreground color (#color).
-                    // Grayscale 0 (Black) becomes background color (#bgColor).
+                    // Linear interpolation between background and foreground colors.
+                    // Grayscale 255 becomes foreground color (#color).
+                    // Grayscale 0 becomes background color (#bgColor).
                     float luma = (srcR * 0.299f + srcG * 0.587f + srcB * 0.114f) / 255.0f;
                     int fg = foregroundRemap != null ? foregroundRemap : 0xFFFFFF;
                     int bg = backgroundRemap != null ? backgroundRemap : 0;
 
-                    int fgR_ = (fg >> 16) & 0xFF, fgG_ = (fg >> 8) & 0xFF, fgB_ = fg & 0xFF;
-                    int bgR_ = (bg >> 16) & 0xFF, bgG_ = (bg >> 8) & 0xFF, bgB_ = bg & 0xFF;
-
-                    r_ = (int) (fgR_ * luma + bgR_ * (1.0f - luma) + 0.5f);
-                    g_ = (int) (fgG_ * luma + bgG_ * (1.0f - luma) + 0.5f);
-                    b_ = (int) (fgB_ * luma + bgB_ * (1.0f - luma) + 0.5f);
+                    r_ = (int) (((fg >> 16) & 0xFF) * luma + ((bg >> 16) & 0xFF) * (1.0f - luma));
+                    g_ = (int) (((fg >> 8) & 0xFF) * luma + ((bg >> 8) & 0xFF) * (1.0f - luma));
+                    b_ = (int) ((fg & 0xFF) * luma + (bg & 0xFF) * (1.0f - luma));
                 }
 
                 if (ink == InkMode.DARKEN) {
@@ -323,8 +320,6 @@ public class Drawing {
                 } else {
                     r = Math.max(r_, destR);
                     g = Math.max(g_, destG);
-                    b = Math.max(b_, destB);
-                }
                     b = Math.max(b_, destB);
                 }
 

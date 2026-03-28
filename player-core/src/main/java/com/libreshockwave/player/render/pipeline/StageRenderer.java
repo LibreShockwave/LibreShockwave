@@ -63,6 +63,9 @@ public class StageRenderer {
 
     public void setBackgroundColor(int color) {
         this.backgroundColor = color;
+        if (stageImage != null && !stageImage.isScriptModified()) {
+            stageImage.fill(0xFF000000 | (backgroundColor & 0xFFFFFF));
+        }
     }
 
     /**
@@ -86,6 +89,13 @@ public class StageRenderer {
      */
     public boolean hasStageImage() {
         return stageImage != null;
+    }
+
+    public Bitmap getRenderableStageImage() {
+        if (stageImage == null || !stageImage.isScriptModified()) {
+            return null;
+        }
+        return stageImage;
     }
 
     /** Store baked sprites from last rendered frame for hit testing. */
@@ -468,6 +478,8 @@ public class StageRenderer {
 
     public void reset() {
         spriteRegistry.clear();
+        lastBakedSprites = List.of();
+        stageImage = null;
     }
 
     public void onSpriteEnd(int channel) {

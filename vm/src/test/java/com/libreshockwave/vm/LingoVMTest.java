@@ -2,6 +2,7 @@ package com.libreshockwave.vm;
 
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
+import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -90,6 +91,16 @@ class LingoVMTest {
         } finally {
             MoviePropertyProvider.clearProvider();
         }
+    }
+
+    @Test
+    void testCallHandlerPrefersGlobalScriptHandlerOverBuiltin() {
+        OverridingHandlerVm vm = new OverridingHandlerVm();
+
+        Datum result = vm.callHandler("getmemnum", List.of(Datum.of("much_sofa1b_a_0_2_0")));
+
+        assertEquals(1, vm.executeCount);
+        assertEquals("script:getmemnum", result.toStr());
     }
 
     @Test
@@ -241,6 +252,30 @@ class LingoVMTest {
             lastFieldCastId = castId;
             lastFieldMemberName = String.valueOf(memberNameOrNum);
             return fieldValue;
+        }
+    }
+
+    private static final class OverridingHandlerVm extends LingoVM {
+        private int executeCount;
+
+        private OverridingHandlerVm() {
+            super(null);
+        }
+
+        @Override
+        public HandlerRef findHandler(String handlerName) {
+            if ("getmemnum".equalsIgnoreCase(handlerName)) {
+                return new HandlerRef(null, null);
+            }
+            return null;
+        }
+
+        @Override
+        public Datum executeHandler(com.libreshockwave.chunks.ScriptChunk script,
+                                    com.libreshockwave.chunks.ScriptChunk.Handler handler,
+                                    List<Datum> args, Datum receiver) {
+            executeCount++;
+            return Datum.of("script:getmemnum");
         }
     }
 

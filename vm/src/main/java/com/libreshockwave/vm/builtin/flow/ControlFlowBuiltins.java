@@ -1,6 +1,7 @@
 package com.libreshockwave.vm.builtin.flow;
 
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.Scope;
@@ -29,6 +30,8 @@ public final class ControlFlowBuiltins {
         builtins.put("param", ControlFlowBuiltins::param);
         builtins.put("go", ControlFlowBuiltins::go);
         builtins.put("call", ControlFlowBuiltins::call);
+        builtins.put("receiveupdate", ControlFlowBuiltins::receiveUpdate);
+        builtins.put("removeupdate", ControlFlowBuiltins::removeUpdate);
     }
 
     /**
@@ -199,7 +202,7 @@ public final class ControlFlowBuiltins {
             var provider = com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.getProvider();
             if (provider != null) {
                 java.util.List<Datum> scripts = provider.getScriptInstanceList(channel);
-                if (scripts != null) {
+                if (scripts != null && !scripts.isEmpty()) {
                     Datum lastResult = Datum.VOID;
                     for (Datum si : scripts) {
                         if (si instanceof Datum.ScriptInstance instance) {
@@ -207,6 +210,10 @@ public final class ControlFlowBuiltins {
                         }
                     }
                     return lastResult;
+                }
+                Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(channel, handlerName, extraArgs);
+                if (!brokerResult.isVoid()) {
+                    return brokerResult;
                 }
             }
         }
@@ -227,5 +234,29 @@ public final class ControlFlowBuiltins {
             System.err.println("[callHandlerOnInstance] Exception in '" + handlerName + "': " + e.getMessage());
             return Datum.VOID;
         }
+    }
+
+    /**
+     * receiveUpdate(target)
+     */
+    private static Datum receiveUpdate(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+        UpdateProvider provider = UpdateProvider.getProvider();
+        if (provider != null) {
+            provider.receiveUpdate(args.get(0));
+        }
+        return Datum.VOID;
+    }
+
+    /**
+     * removeUpdate(target)
+     */
+    private static Datum removeUpdate(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+        UpdateProvider provider = UpdateProvider.getProvider();
+        if (provider != null) {
+            provider.removeUpdate(args.get(0));
+        }
+        return Datum.VOID;
     }
 }

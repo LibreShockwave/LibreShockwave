@@ -38,7 +38,7 @@ public final class FrameRenderPipeline {
                 stageRenderer.getStageWidth(),
                 stageRenderer.getStageHeight(),
                 stageRenderer.getBackgroundColor(),
-                stageRenderer.hasStageImage() ? stageRenderer.getStageImage() : null,
+                stageRenderer.getRenderableStageImage(),
                 "Frame " + frameNumber
         );
 

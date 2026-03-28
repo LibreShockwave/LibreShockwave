@@ -265,6 +265,9 @@ public final class PropertyOpcodes {
                 else if ("locv".equalsIgnoreCase(propName) || "y".equalsIgnoreCase(propName)) point.setY(v);
             }
             case Datum.ImageRef ir -> ImageMethodDispatcher.setProperty(ir, propName, value);
+            case Datum d when d.isVoid() -> {
+                // Silently ignore property assignment on Void to match getObjProp and Director behavior.
+            }
             default -> {
                 System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
                 System.err.println(ctx.formatCallStack());

@@ -30,6 +30,7 @@ import com.libreshockwave.vm.builtin.media.SoundProvider;
 import com.libreshockwave.vm.builtin.timeout.TimeoutProvider;
 import com.libreshockwave.vm.builtin.xtra.XtraBuiltins;
 import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
+import com.libreshockwave.vm.builtin.flow.UpdateProvider;
 import com.libreshockwave.player.audio.AudioBackend;
 import com.libreshockwave.player.audio.SoundManager;
 import com.libreshockwave.player.timeout.TimeoutManager;
@@ -55,7 +56,7 @@ import java.util.function.Consumer;
  * Handles frame playback, event dispatch, and score traversal.
  * Uses modular components for score navigation, behavior management, and event dispatch.
  */
-public class Player {
+public class Player implements UpdateProvider {
 
     private final DirectorFile file;
     private final LingoVM vm;
@@ -86,11 +87,15 @@ public class Player {
     // Event listeners for external notification
     private Consumer<PlayerEventInfo> eventListener;
 
-    // Cast loaded listener (called when external cast libraries are loaded and matched)
+    // Compatibility listener: notified when any external cast finishes loading.
     private Runnable castLoadedListener;
+    private Consumer<ExternalCastLoadEvent> externalCastLoadListener;
 
     // Error listener (called on Lingo script errors)
     private java.util.function.BiConsumer<String, LingoException> errorListener;
+    private volatile String lastScriptErrorMessage = "";
+    private volatile String lastScriptErrorStack = "";
+    private volatile long lastScriptErrorTimeMs = 0L;
 
     // Debug mode
     private boolean debugEnabled = false;
@@ -110,6 +115,11 @@ public class Player {
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
     private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
+    private final java.util.Set<Integer> pendingExternalCastNotificationSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+    private final java.util.Queue<Integer> pendingExternalCastNotificationQueue = new java.util.LinkedList<>();
+    private final java.util.List<ExternalCastLoadHandler> externalCastLoadHandlers = new java.util.ArrayList<>();
+    private PlayerCompatibilityProfile compatibilityProfile = PlayerCompatibilityProfile.NONE;
+    private final List<Datum> updatingObjects = new ArrayList<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -240,14 +250,7 @@ public class Player {
         // This runs synchronously so cast member lookup/state is ready before
         // scripts observe a completed net task.
         netManager.setCompletionCallback((fileName, data) -> {
-            if (castLibManager.setExternalCastDataByUrl(fileName, data)) {
-                System.out.println("[Player] Loaded external cast from: " + fileName);
-                bitmapCache.clear();
-                queueResourceReindexForUrl(fileName);
-                if (castLoadedListener != null) {
-                    castLoadedListener.run();
-                }
-            }
+            handleExternalCastFetch(fileName, data);
         });
 
         // Wire up event notifications
@@ -461,15 +464,7 @@ public class Player {
         if (qi > 0) lower = lower.substring(0, qi);
         if (!lower.endsWith(".cct") && !lower.endsWith(".cst")) return;
 
-        castLibManager.cacheExternalData(url, data);
-        try {
-            if (castLibManager.setExternalCastDataByUrl(url, data)) {
-                bitmapCache.clear();
-                queueResourceReindexForUrl(url);
-            }
-        } catch (Throwable e) {
-            // Cast parse failure — non-fatal, Lingo will see the error
-        }
+        handleExternalCastFetch(url, data);
     }
 
     public SoundManager getSoundManager() {
@@ -508,6 +503,77 @@ public class Player {
         return bitmapResolver;
     }
 
+    public void onSynchronousExternalCastLoad(int castLibNumber) {
+        if (castLibNumber <= 0) {
+            return;
+        }
+        bitmapCache.clear();
+        vm.invalidateHandlerCache();
+        if (!externalCastLoadHandlers.isEmpty()) {
+            queueResourceReindex(castLibNumber);
+            processPendingResourceReindexes();
+        }
+        notifyExternalCastLoaded(castLibNumber);
+    }
+
+    public void addExternalCastLoadHandler(ExternalCastLoadHandler handler) {
+        if (handler != null) {
+            externalCastLoadHandlers.add(handler);
+        }
+    }
+
+    private void queueExternalCastNotificationsForUrl(String url) {
+        for (int castNum : castLibManager.getMatchingCastLibNumbersByUrl(url)) {
+            queueExternalCastNotification(castNum);
+        }
+    }
+
+    private void queueExternalCastNotification(int castNum) {
+        if (castNum <= 0) {
+            return;
+        }
+        synchronized (pendingExternalCastNotificationQueue) {
+            if (pendingExternalCastNotificationSet.add(castNum)) {
+                pendingExternalCastNotificationQueue.offer(castNum);
+            }
+        }
+    }
+
+    private void processPendingExternalCastNotifications() {
+        while (true) {
+            Integer castNum;
+            synchronized (pendingExternalCastNotificationQueue) {
+                castNum = pendingExternalCastNotificationQueue.poll();
+                if (castNum != null) {
+                    pendingExternalCastNotificationSet.remove(castNum);
+                }
+            }
+            if (castNum == null) {
+                return;
+            }
+            notifyExternalCastLoaded(castNum);
+        }
+    }
+
+    private void notifyExternalCastLoaded(int castLibNumber) {
+        var castLib = castLibManager.getCastLib(castLibNumber);
+        if (castLib == null) {
+            return;
+        }
+
+        String fileName = castLib.getFileName();
+        ExternalCastLoadEvent event = new ExternalCastLoadEvent(castLibNumber, fileName);
+        for (ExternalCastLoadHandler handler : externalCastLoadHandlers) {
+            handler.onExternalCastLoaded(this, castLibNumber, fileName);
+        }
+        if (externalCastLoadListener != null) {
+            externalCastLoadListener.accept(event);
+        }
+        if (castLoadedListener != null) {
+            castLoadedListener.run();
+        }
+    }
+
     public CursorManager getCursorManager() {
         return cursorManager;
     }
@@ -518,6 +584,12 @@ public class Player {
 
     public TimeoutManager getTimeoutManager() {
         return timeoutManager;
+    }
+
+    public void setCompatibilityProfile(PlayerCompatibilityProfile compatibilityProfile) {
+        this.compatibilityProfile = compatibilityProfile != null
+                ? compatibilityProfile
+                : PlayerCompatibilityProfile.NONE;
     }
 
     /**
@@ -540,7 +612,6 @@ public class Player {
                     castLib.markFetching();
                     provider.preloadNetThing(fileName);
                     count++;
-                    System.out.println("[Player] Preloading external cast: " + fileName);
                 }
             }
         }
@@ -627,10 +698,18 @@ public class Player {
 
     /**
      * Set a listener to be notified when external cast libraries are loaded.
-     * This is useful for refreshing UI components that display cast contents.
+     * Compatibility API: use setExternalCastLoadListener for a typed event.
      */
     public void setCastLoadedListener(Runnable listener) {
         this.castLoadedListener = listener;
+    }
+
+    /**
+     * Set a generic listener for external cast load completion.
+     * This exposes the cast identity without embedding movie-specific logic in Player.
+     */
+    public void setExternalCastLoadListener(Consumer<ExternalCastLoadEvent> listener) {
+        this.externalCastLoadListener = listener;
     }
 
     /**
@@ -657,6 +736,22 @@ public class Player {
      */
     public String formatLingoCallStack() {
         return vm.formatCallStack();
+    }
+
+    public String getRecentScriptErrorMessage(long maxAgeMs) {
+        if (maxAgeMs < 0) {
+            maxAgeMs = 0;
+        }
+        long age = System.currentTimeMillis() - lastScriptErrorTimeMs;
+        return lastScriptErrorTimeMs > 0 && age <= maxAgeMs ? lastScriptErrorMessage : "";
+    }
+
+    public String getRecentScriptErrorStack(long maxAgeMs) {
+        if (maxAgeMs < 0) {
+            maxAgeMs = 0;
+        }
+        long age = System.currentTimeMillis() - lastScriptErrorTimeMs;
+        return lastScriptErrorTimeMs > 0 && age <= maxAgeMs ? lastScriptErrorStack : "";
     }
 
     public void setDebugEnabled(boolean enabled) {
@@ -931,14 +1026,17 @@ public class Player {
                     setupProviders();
                     try {
                         processPendingResourceReindexes();
+                        processPendingExternalCastNotifications();
                         inputHandler.processInputEvents();
                         frameContext.executeFrame();
                         processPendingResourceReindexes();
+                        processPendingExternalCastNotifications();
                         // Process Xtra callbacks AFTER frame execution so that
                         // prepareFrame (which runs CastLoad Manager download
                         // completions and member indexing) finishes before
                         // Multiuser Xtra messages trigger room object creation.
                         xtraManager.tickAll();
+                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -980,6 +1078,7 @@ public class Player {
         }
         try {
             processPendingResourceReindexes();
+            processPendingExternalCastNotifications();
             // Process queued mouse/keyboard input events before frame execution
             inputHandler.processInputEvents();
             frameContext.executeFrame();
@@ -989,13 +1088,16 @@ public class Player {
             // can find newly-loaded cast members when server messages trigger
             // room object creation.
             processPendingResourceReindexes();
+            processPendingExternalCastNotifications();
             // Process Xtra callbacks AFTER frame execution so that
             // prepareFrame (which runs CastLoad Manager download
             // completions and member indexing) finishes before
             // Multiuser Xtra messages trigger room object creation.
             xtraManager.tickAll();
-            repairVisualizerSprites();
+            compatibilityProfile.afterFrameExecution(this);
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
+            processUpdatingObjects();
+            processActorList();
             frameContext.advanceFrame();
         } finally {
             vm.setTickDeadline(0);
@@ -1030,15 +1132,20 @@ public class Player {
                     setupProviders();
                     try {
                         processPendingResourceReindexes();
+                        processPendingExternalCastNotifications();
                         inputHandler.processInputEvents();
                         frameContext.executeFrame();
                         processPendingResourceReindexes();
+                        processPendingExternalCastNotifications();
                         // Process Xtra callbacks AFTER frame execution so that
                         // prepareFrame (which runs CastLoad Manager download
                         // completions and member indexing) finishes before
                         // Multiuser Xtra messages trigger room object creation.
                         xtraManager.tickAll();
+                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
+                        processUpdatingObjects();
+                        processActorList();
                         frameContext.advanceFrame();
                     } finally {
                         clearProviders();
@@ -1063,6 +1170,7 @@ public class Player {
         SpritePropertyProvider.setProvider(spriteProperties);
         CastLibProvider.setProvider(castLibManager);
         TimeoutProvider.setProvider(timeoutManager);
+        UpdateProvider.setProvider(this);
         ExternalParamProvider.setProvider(externalParamProvider);
         SoundProvider.setProvider(soundManager);
         // Refresh palette each tick so Datum colour resolution uses the current frame's palette.
@@ -1084,6 +1192,7 @@ public class Player {
         SpritePropertyProvider.clearProvider();
         CastLibProvider.clearProvider();
         TimeoutProvider.clearProvider();
+        UpdateProvider.clearProvider();
         ExternalParamProvider.clearProvider();
         SoundProvider.clearProvider();
     }
@@ -1095,25 +1204,47 @@ public class Player {
      * This post-tick fixup detects the mismatch and assigns the correct sprites,
      * then triggers the part wrapper's updateWrap to render wall content.
      */
+    private Datum.ScriptInstance repairedVisualizerInstance = null;
+    private int repairedVisualizerSpriteCount = -1;
+    private int repairedVisualizerWrappedPartCount = -1;
     private boolean visualizerRepairDone = false;
 
-    private void repairVisualizerSprites() {
-        if (visualizerRepairDone) return;
-
+    boolean repairVisualizerSpritesIfNeeded() {
         try {
             Datum visObj = vm.callHandler("getObject",
                     java.util.List.of(Datum.of("Room_visualizer")));
-            if (!(visObj instanceof Datum.ScriptInstance visSI)) return;
+            if (!(visObj instanceof Datum.ScriptInstance visSI)) {
+                resetVisualizerRepairState();
+                return false;
+            }
 
             Datum spriteListDatum = visSI.properties().get("pSpriteList");
             Datum wrappedPartsDatum = visSI.properties().get("pWrappedParts");
             if (!(spriteListDatum instanceof Datum.List sl) ||
-                    !(wrappedPartsDatum instanceof Datum.PropList wpl)) return;
+                    !(wrappedPartsDatum instanceof Datum.PropList wpl)) {
+                repairedVisualizerInstance = visSI;
+                visualizerRepairDone = false;
+                repairedVisualizerSpriteCount = -1;
+                repairedVisualizerWrappedPartCount = -1;
+                return false;
+            }
 
-            boolean anyFixed = false;
+            int spriteCount = sl.items().size();
+            int wrappedPartCount = wpl.entries().size();
+            boolean visualizerChanged = visSI != repairedVisualizerInstance
+                    || spriteCount != repairedVisualizerSpriteCount
+                    || wrappedPartCount != repairedVisualizerWrappedPartCount;
+            if (!visualizerChanged && visualizerRepairDone) {
+                return true;
+            }
+
+            boolean unresolvedMissingSprite = false;
             int wi = 0;
             for (var entry : wpl.entries()) {
-                if (wi >= sl.items().size()) break;
+                if (wi >= sl.items().size()) {
+                    unresolvedMissingSprite = true;
+                    break;
+                }
                 Datum partDatum = entry.value();
                 if (!(partDatum instanceof Datum.ScriptInstance partSI)) { wi++; continue; }
 
@@ -1138,18 +1269,30 @@ public class Player {
                         // (integer instead of Color). Find the correct color from a
                         // sibling that has a proper Color bgColor and apply it directly.
                         fixSpriteWallColor(csr.channelNum(), wpl);
-                        anyFixed = true;
+                    } else {
+                        unresolvedMissingSprite = true;
                     }
                 }
                 wi++;
             }
 
-            if (anyFixed) {
-                visualizerRepairDone = true;
-            }
+            repairedVisualizerInstance = visSI;
+            repairedVisualizerSpriteCount = spriteCount;
+            repairedVisualizerWrappedPartCount = wrappedPartCount;
+            visualizerRepairDone = !unresolvedMissingSprite;
+            return visualizerRepairDone;
         } catch (Exception ignored) {
             // Not in a room or Visualizer not created yet
+            resetVisualizerRepairState();
+            return false;
         }
+    }
+
+    private void resetVisualizerRepairState() {
+        repairedVisualizerInstance = null;
+        repairedVisualizerSpriteCount = -1;
+        repairedVisualizerWrappedPartCount = -1;
+        visualizerRepairDone = false;
     }
 
     /**
@@ -1195,12 +1338,18 @@ public class Player {
 
         setupProviders();
         try {
+            compatibilityProfile.beforePrepareMovie(this);
+            processPendingResourceReindexes();
+            processPendingExternalCastNotifications();
+
             // 0. Initiate fetch of all external casts (async network requests)
             preloadAllCasts();
 
             // 1. Preload casts with preloadMode=2 (BeforeFrameOne / MovieLoaded)
             // dirplayer-rs: Mode 2 = BeforeFrameOne, Mode 1 = AfterFrameOne
             castLibManager.preloadCasts(2);
+            processPendingResourceReindexes();
+            processPendingExternalCastNotifications();
 
             // 2. prepareMovie -> timeout targets first, then movie scripts
             timeoutManager.dispatchSystemEvent(vm, "prepareMovie");
@@ -1236,6 +1385,14 @@ public class Player {
         }
     }
 
+    void ensureBuiltinVariableValue(String variableName, Datum defaultValue) {
+        Datum exists = vm.callBuiltin("variableExists", List.of(Datum.of(variableName)));
+        if (exists.isTruthy()) {
+            return;
+        }
+        vm.callBuiltin("setVariable", List.of(Datum.of(variableName), defaultValue));
+    }
+
     /**
      * Called when Lingo sets castLib.fileName — loads the data from NetManager's
      * download cache into the specific cast by number.
@@ -1245,22 +1402,41 @@ public class Player {
         byte[] data = netManager.getCachedData(fileName);
         if (data != null) {
             if (castLibManager.setExternalCastData(castLibNumber, data)) {
-                bitmapCache.clear();
-                queueResourceReindex(castLibNumber);
                 // Process reindexes immediately — this runs on the VM thread
                 // (triggered by Lingo setting castLib.fileName), so providers
-                // are already set up.  If we defer to the next tick, Lingo code
+                // are already set up. If we defer to the next tick, Lingo code
                 // in the same frame that calls getmemnum() won't find the
-                // newly-loaded members (causes "No good object" errors).
-                processPendingResourceReindexes();
-                if (castLoadedListener != null) {
-                    castLoadedListener.run();
-                }
+                // newly-loaded members.
+                onSynchronousExternalCastLoad(castLibNumber);
             }
         }
     }
 
+    private void handleExternalCastFetch(String url, byte[] data) {
+        castLibManager.cacheExternalData(url, data);
+        try {
+            java.util.List<Integer> loadedCastNums = castLibManager.fulfillRequestedExternalCastData(url);
+            if (loadedCastNums.isEmpty()) {
+                return;
+            }
+            bitmapCache.clear();
+            vm.invalidateHandlerCache();
+            for (Integer castNum : loadedCastNums) {
+                if (!externalCastLoadHandlers.isEmpty()) {
+                    queueResourceReindex(castNum);
+                }
+                queueExternalCastNotification(castNum);
+            }
+        } catch (Throwable e) {
+            System.err.println("[Player] External cast load failed for " + url + ": "
+                    + e.getClass().getName() + ": " + e.getMessage());
+        }
+    }
+
     private void queueResourceReindexForUrl(String url) {
+        if (externalCastLoadHandlers.isEmpty()) {
+            return;
+        }
         for (int castNum : castLibManager.getMatchingCastLibNumbersByUrl(url)) {
             queueResourceReindex(castNum);
         }
@@ -1280,36 +1456,36 @@ public class Player {
      * Runs on the VM thread with providers installed.
      */
     private void processPendingResourceReindexes() {
+        if (externalCastLoadHandlers.isEmpty()) {
+            return;
+        }
         synchronized (pendingResourceReindexQueue) {
             if (pendingResourceReindexQueue.isEmpty()) {
                 return;
             }
         }
 
-        Datum objectManager = vm.callHandler("getObjectManager", List.of());
-        if (!(objectManager instanceof Datum.ScriptInstance objMgr)) {
-            return;  // Resource manager not ready yet — leave queue intact for next tick
-        }
-
-        Datum hasResourceManager = ControlFlowBuiltins.callHandlerOnInstance(
-                vm, objMgr, "managerExists", List.of(Datum.symbol("resource_manager")));
-        if (!hasResourceManager.isTruthy()) {
-            return;  // Resource manager not ready yet — leave queue intact for next tick
-        }
-
-        Datum resourceManager = ControlFlowBuiltins.callHandlerOnInstance(
-                vm, objMgr, "getManager", List.of(Datum.symbol("resource_manager")));
-        if (!(resourceManager instanceof Datum.ScriptInstance manager)) {
-            return;  // Resource manager not ready yet — leave queue intact for next tick
-        }
-
+        java.util.List<Integer> retryCastNums = new java.util.ArrayList<>();
         synchronized (pendingResourceReindexQueue) {
             Integer castNum;
             while ((castNum = pendingResourceReindexQueue.poll()) != null) {
                 pendingResourceReindexSet.remove(castNum);
-                ControlFlowBuiltins.callHandlerOnInstance(
-                        vm, manager, "preIndexMembers", List.of(Datum.of(castNum)));
+                var castLib = castLibManager.getCastLib(castNum);
+                String fileName = castLib != null ? castLib.getFileName() : "";
+                boolean retry = false;
+                for (ExternalCastLoadHandler handler : externalCastLoadHandlers) {
+                    if (!handler.prepareExternalCastLoad(this, castNum, fileName)) {
+                        retry = true;
+                    }
+                }
+                if (retry) {
+                    retryCastNums.add(castNum);
+                }
             }
+        }
+
+        for (Integer castNum : retryCastNums) {
+            queueResourceReindex(castNum);
         }
     }
 
@@ -1373,25 +1549,18 @@ public class Player {
     }
 
     /**
-     * Delegating TraceListener that intercepts constructObjectManager handler exit
-     * to auto-create the fuse_frameProxy timeout. This enables the Fuse Object Manager
-     * to receive prepareFrame system events each frame (the "frameProxy" trick).
-     *
-     * An optional delegate (typically a DebugControllerApi) receives all callbacks
-     * so debugging works alongside this interception.
+     * Delegating TraceListener that forwards callbacks to the active compatibility
+     * profile and an optional debug delegate.
      */
     private class PlayerTraceListener implements TraceListener {
 
         private TraceListener delegate;
-        private boolean frameProxyCreated;
 
         void setDelegate(TraceListener delegate) {
             this.delegate = delegate;
         }
 
-        void reset() {
-            frameProxyCreated = false;
-        }
+        void reset() {}
 
         @Override
         public void onHandlerEnter(HandlerInfo info) {
@@ -1400,17 +1569,7 @@ public class Player {
 
         @Override
         public void onHandlerExit(HandlerInfo info, Datum returnValue) {
-            // Intercept: when constructObjectManager returns a ScriptInstance,
-            // register it as a timeout target so it receives prepareFrame events.
-            String hn = info.handlerName();
-            if (!frameProxyCreated
-                    && hn.equalsIgnoreCase("constructObjectManager")
-                    && returnValue instanceof Datum.ScriptInstance) {
-                frameProxyCreated = true;
-                timeoutManager.createTimeout(
-                        "fuse_frameProxy", Integer.MAX_VALUE, "null", returnValue);
-            }
-
+            compatibilityProfile.onHandlerExit(Player.this, info, returnValue);
             if (delegate != null) delegate.onHandlerExit(info, returnValue);
         }
 
@@ -1432,6 +1591,13 @@ public class Player {
         @Override
         public void onError(String message, Exception error) {
             if (delegate != null) delegate.onError(message, error);
+            lastScriptErrorTimeMs = System.currentTimeMillis();
+            lastScriptErrorMessage = message != null ? message : "";
+            if (error instanceof LingoException leForState) {
+                lastScriptErrorStack = leForState.formatLingoCallStack();
+            } else {
+                lastScriptErrorStack = "";
+            }
             if (errorListener != null) {
                 LingoException le = error instanceof LingoException ? (LingoException) error : null;
                 errorListener.accept(message, le);
@@ -1444,5 +1610,46 @@ public class Player {
         }
     }
 
+    // --- UpdateProvider implementation ---
 
+    @Override
+    public void receiveUpdate(Datum target) {
+        if (target != null && !target.isVoid()) {
+            if (!updatingObjects.contains(target)) {
+                updatingObjects.add(target);
+            }
+        }
+    }
+
+    @Override
+    public void removeUpdate(Datum target) {
+        if (target != null) {
+            updatingObjects.remove(target);
+        }
+    }
+
+    private void processUpdatingObjects() {
+        if (updatingObjects.isEmpty()) return;
+
+        // Create a snapshot to allow removeUpdate() during iteration
+        List<Datum> snapshot = new ArrayList<>(updatingObjects);
+        for (Datum target : snapshot) {
+            if (target instanceof Datum.ScriptInstance si) {
+                ControlFlowBuiltins.callHandlerOnInstance(vm, si, "update", List.of());
+            }
+        }
+    }
+
+    private void processActorList() {
+        Datum actorListDatum = movieProperties.getMovieProp("actorList");
+        if (actorListDatum instanceof Datum.List list) {
+            // Create a snapshot to allow list modification during iteration
+            List<Datum> items = new ArrayList<>(list.items());
+            for (Datum item : items) {
+                if (item instanceof Datum.ScriptInstance si) {
+                    ControlFlowBuiltins.callHandlerOnInstance(vm, si, "stepFrame", List.of());
+                }
+            }
+        }
+    }
 }
