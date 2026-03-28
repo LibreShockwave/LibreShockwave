@@ -397,7 +397,8 @@ public class Drawing {
     }
 
     /**
-     * Director's image.createMatte() prefers the image alpha layer when usable.
+     * Director's image.createMatte() uses authored/native alpha when present;
+     * otherwise it falls back to classic white-border matte extraction.
      */
     public static Bitmap createMatte(Bitmap src) {
         return createMatte(src, 0);
@@ -413,7 +414,7 @@ public class Drawing {
             return new Bitmap(1, 1, 32);
         }
 
-        if (src.isNativeAlpha() || src.hasTransparentPixels()) {
+        if (src.hasNativeMatteAlpha()) {
             return createAlphaMatte(src, alphaThreshold);
         }
 
