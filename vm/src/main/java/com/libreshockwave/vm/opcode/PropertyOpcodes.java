@@ -125,6 +125,7 @@ public final class PropertyOpcodes {
                 SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
                 yield spriteProvider != null ? spriteProvider.getSpriteProp(sr.channelNum(), propName) : Datum.VOID;
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             case Datum.Int intVal -> {
                 // Director: property access on integers routes to sprite properties.
                 // e.g., 42.bgColor == sprite(42).bgColor. Window system stores pSprite
@@ -236,6 +237,7 @@ public final class PropertyOpcodes {
                     spriteProvider.setSpriteProp(sr.channelNum(), propName, value);
                 }
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.setProperty(sc, propName, value);
             case Datum.Int intVal -> {
                 // Director: property assignment on integers routes to sprite properties.
                 // e.g., 42.bgColor = color == sprite(42).bgColor = color.
@@ -596,6 +598,7 @@ public final class PropertyOpcodes {
                 }
                 yield Datum.VOID;
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
             case Datum.CastLibRef clr -> getCastLibProp(clr, propName);
             case Datum.MovieRef m -> {
@@ -661,6 +664,7 @@ public final class PropertyOpcodes {
                 yield stageProvider != null ? stageProvider.getStageProp(propName) : Datum.VOID;
             }
             case Datum.ImageRef ir -> ImageMethodDispatcher.getProperty(ir, propName);
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             default -> Datum.VOID;
         };
     }
