@@ -542,7 +542,7 @@ public class CastLib {
         return switch (prop) {
             case "name" -> Datum.EMPTY_STRING;
             case "number", "castlibnum", "membernum" -> Datum.of(-1);
-            case "type" -> Datum.of("empty");
+            case "type" -> Datum.symbol("empty");
             default -> Datum.VOID;
         };
     }
@@ -645,9 +645,6 @@ public class CastLib {
             load();
         }
 
-        // Find the next available member number
-        int memberNum = nextDynamicMember++;
-
         // Map type name to MemberType
         MemberType type = switch (typeName.toLowerCase()) {
             case "field", "text" -> MemberType.TEXT;
@@ -660,6 +657,15 @@ public class CastLib {
             default -> MemberType.TEXT; // Default to text for unknown types
         };
 
+        for (int memberNum = 10000; memberNum < nextDynamicMember; memberNum++) {
+            CastMember existing = members.get(memberNum);
+            if (existing != null && existing.isReusableDynamicSlot()) {
+                existing.reuseAs(type);
+                return existing;
+            }
+        }
+
+        int memberNum = nextDynamicMember++;
         CastMember member = new CastMember(castLibId.value(), memberNum, type);
         members.put(memberNum, member);
         return member;

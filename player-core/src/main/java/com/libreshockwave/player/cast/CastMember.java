@@ -447,6 +447,18 @@ public class CastMember {
         return chunk == null && sourceFile == null;
     }
 
+    public boolean isReusableDynamicSlot() {
+        return isRuntimeDynamicMember()
+                && memberType == MemberType.NULL
+                && (name == null || name.isEmpty());
+    }
+
+    public void reuseAs(MemberType newType) {
+        resetRuntimePayload();
+        memberType = newType != null ? newType : MemberType.NULL;
+        state = State.LOADED;
+    }
+
     private void notifyMemberSlotRetired() {
         if (memberSlotRetiredCallback != null) {
             memberSlotRetiredCallback.accept(castLibId.value(), memberId.value());
@@ -571,7 +583,7 @@ public class CastMember {
             case "name" -> Datum.of(name);
             case "number" -> Datum.of(getSlotNumber());
             case "membernum" -> Datum.of(memberId.value());
-            case "type" -> Datum.of(memberType.getName());
+            case "type" -> Datum.symbol(memberType == MemberType.NULL ? "empty" : memberType.getName());
             case "castlibnum" -> Datum.of(castLibId.value());
             case "castlib" -> Datum.CastLibRef.of(castLibId.value());
             case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
@@ -1150,6 +1162,17 @@ public class CastMember {
      */
     public void erase() {
         boolean retiredDynamicSlot = isRuntimeDynamicMember();
+        resetRuntimePayload();
+        memberType = MemberType.NULL;
+        state = State.LOADED;
+
+        if (retiredDynamicSlot) {
+            notifyMemberSlotRetired();
+        }
+        notifyMemberVisualChanged();
+    }
+
+    private void resetRuntimePayload() {
         name = "";
         bitmap = null;
         script = null;
@@ -1158,6 +1181,7 @@ public class CastMember {
         dynamicPalette = null;
         regPointX = 0;
         regPointY = 0;
+        bitmapAlphaThreshold = 0;
         editable = false;
 
         textFont = "Arial";
@@ -1182,12 +1206,6 @@ public class CastMember {
         paletteRefMemberNum = -1;
         paletteVersion++;
         lastDecodedPaletteVersion = 0;
-        state = State.LOADED;
-
-        if (retiredDynamicSlot) {
-            notifyMemberSlotRetired();
-        }
-        notifyMemberVisualChanged();
     }
 
     /**

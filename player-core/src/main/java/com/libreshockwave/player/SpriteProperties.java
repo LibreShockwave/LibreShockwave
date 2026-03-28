@@ -178,6 +178,11 @@ public class SpriteProperties implements SpritePropertyProvider {
             }
             case "puppet" -> {
                 sprite.setPuppet(value.isTruthy());
+                // An empty non-puppeted channel should return to a neutral runtime state
+                // before it is recycled for another sprite reservation.
+                if (!sprite.isPuppet() && sprite.getEffectiveCastMember() <= 0) {
+                    sprite.setScriptInstanceList(java.util.List.of());
+                }
                 return true;
             }
             case "ink" -> {
