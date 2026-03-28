@@ -71,6 +71,21 @@ class DrawingMatteTest {
     }
 
     @Test
+    void createMatteTreatsNonNativeAlpha32BitImagesAsWhiteFloodFill() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+            0xFFFFFFFF, 0x40000000, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0x40FFFFFF, matte.getPixel(1, 1));
+        assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
     void matteCopyPixelsKeepsSolidColoredTileContent() {
         Bitmap dest = new Bitmap(1, 1, 32);
         Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFD4DDE1 });

@@ -60,6 +60,11 @@ public class Bitmap {
         return false;
     }
 
+    /** Returns true when this bitmap carries authored/native 32-bit alpha. */
+    public boolean hasNativeMatteAlpha() {
+        return bitDepth == 32 && nativeAlpha;
+    }
+
     /** Mark this bitmap as modified by Lingo script operations. */
     public void markScriptModified() {
         this.scriptModified = true;

@@ -79,7 +79,7 @@ public final class InkProcessor {
             // Matte ink: flood-fill from edges
             int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
             if (matteColor < 0) {
-                return src; // 32-bit with useAlpha — skip processing
+                return src;
             }
             return applyMatte(src, matteColor);
         } else if (ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE
@@ -152,10 +152,8 @@ public final class InkProcessor {
      */
     static int resolveMatteColor(Bitmap src, InkMode ink, int backColor,
                                   boolean useAlpha, Palette palette) {
-        int bitDepth = src.getBitDepth();
-
-        // 32-bit with native alpha: skip matte entirely
-        if (bitDepth == 32 && useAlpha) {
+        // Native 32-bit alpha drives matte directly; no white-border extraction.
+        if (src.hasNativeMatteAlpha() && useAlpha) {
             return -1;
         }
 
@@ -175,8 +173,8 @@ public final class InkProcessor {
                                  boolean useAlpha, Palette palette) {
         int bitDepth = src.getBitDepth();
 
-        // 32-bit with native alpha: skip processing
-        if (bitDepth == 32 && useAlpha) {
+        // Native 32-bit alpha already defines transparency when the sprite uses alpha.
+        if (src.hasNativeMatteAlpha() && useAlpha) {
             return -1;
         }
 

@@ -100,6 +100,24 @@ class InkProcessorTest {
     }
 
     @Test
+    void matteSkipsWhiteFloodFillForNativeAlpha32BitImages() {
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+            0xFFFFFFFF,
+            0x40000000,
+            0x00FFFFFF
+        });
+        src.setNativeAlpha(true);
+
+        int matte = InkProcessor.resolveMatteColor(src, InkMode.MATTE, 0, true, null);
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, true, null);
+
+        assertEquals(-1, matte);
+        assertEquals(0xFFFFFFFF, result.getPixel(0, 0));
+        assertEquals(0x40000000, result.getPixel(1, 0));
+        assertEquals(0x00FFFFFF, result.getPixel(2, 0));
+    }
+
+    @Test
     void matteKeepsSolidColored32BitTile() {
         Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFD4DDE1 });
 
