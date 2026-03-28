@@ -8,6 +8,7 @@ import com.libreshockwave.player.input.HitTester;
 import com.libreshockwave.player.input.InputEvent;
 import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.player.render.output.TextRenderer;
+import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 import com.libreshockwave.player.sprite.SpriteState;
 import com.libreshockwave.util.IntValueProvider;
@@ -91,6 +92,7 @@ public class InputHandler {
             int hit = hitTestExact(stageX, stageY);
             inputState.setClickOnSprite(hit);
             inputState.setClickLoc(stageX, stageY);
+            inputState.updateDoubleClick(stageX, stageY);
             inputState.queueEvent(InputEvent.mouseDown(stageX, stageY));
         }
     }
@@ -225,10 +227,6 @@ public class InputHandler {
                 autoFocusEditableField(hitSprite, event.stageX(), event.stageY());
                 dispatcher.resetEventStopped();
                 if (hitSprite > 0) {
-                    // Director-style mouse presses target the front-most interactive sprite.
-                    // Letting the event fall through to every overlapping sprite breaks
-                    // Habbo window buttons, because tabs and background controls can
-                    // react to the same press and rebuild the UI before mouseUp.
                     dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_DOWN, List.of());
                 }
                 dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.MOUSE_DOWN, List.of());
