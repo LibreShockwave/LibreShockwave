@@ -234,9 +234,9 @@ public class InputHandler {
                 dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.MOUSE_DOWN, List.of());
             }
             case MOUSE_UP -> {
-                dispatcher.resetEventStopped();
                 int pressedSprite = inputState.getClickOnSprite();
                 int releaseSprite = hitTestExact(event.stageX(), event.stageY());
+                dispatcher.resetEventStopped();
                 if (pressedSprite > 0 && releaseSprite == pressedSprite) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
                 } else if (pressedSprite > 0

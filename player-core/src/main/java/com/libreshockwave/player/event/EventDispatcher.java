@@ -24,8 +24,6 @@ import java.util.Locale;
  * Follows Director's event propagation: sprite behaviors → frame behaviors → movie scripts.
  */
 public class EventDispatcher {
-    public static String lastDispatchInfo = "";
-
     private final DirectorFile file;
     private final LingoVM vm;
     private final BehaviorManager behaviorManager;
@@ -160,6 +158,9 @@ public class EventDispatcher {
         // 1. Score-based behaviors
         List<BehaviorInstance> instances = behaviorManager.getInstancesForChannel(channel);
         for (BehaviorInstance instance : instances) {
+            if (!behaviorHasHandler(instance, handlerName)) {
+                continue;
+            }
             invokeHandler(instance, handlerName, args);
         }
 
@@ -179,7 +180,7 @@ public class EventDispatcher {
                                 // The handler itself routes the event through the
                                 // Habbo event system via redirectEvent → call.
                                 vm.resetErrorState();
-                                if (AncestorChainWalker.hasHandler(si, handlerName)) {
+                                if (scriptInstanceRespondsToEvent(si, handlerName)) {
                                     ControlFlowBuiltins.callHandlerOnInstance(vm, si, handlerName, args);
                                 }
                             } catch (Exception e) {
@@ -214,8 +215,7 @@ public class EventDispatcher {
                 if (scriptInstances != null) {
                     for (Datum target : scriptInstances) {
                         if (target instanceof Datum.ScriptInstance si
-                                && (scriptInstanceHasProc(si, handlerName)
-                                || AncestorChainWalker.hasHandler(si, handlerName))) {
+                                && scriptInstanceRespondsToEvent(si, handlerName)) {
                             return true;
                         }
                     }
@@ -371,7 +371,27 @@ public class EventDispatcher {
         if (!isMouseHandler(handlerName)) {
             return false;
         }
-        return !getScriptInstanceProcEntry(instance, handlerName).isVoid();
+        Datum procEntry = getScriptInstanceProcEntry(instance, handlerName);
+        if (!(procEntry instanceof Datum.List procList) || procList.items().size() < 2) {
+            return false;
+        }
+        return isTruthy(procList.items().get(1));
+    }
+
+    private boolean scriptInstanceRespondsToEvent(Datum.ScriptInstance instance, String handlerName) {
+        if (instance == null) {
+            return false;
+        }
+        if (!isMouseHandler(handlerName)) {
+            return AncestorChainWalker.hasHandler(instance, handlerName);
+        }
+        if (scriptInstanceHasProc(instance, handlerName)) {
+            return true;
+        }
+        if (isEventBrokerLike(instance)) {
+            return PlayerEvent.MOUSE_UP.getHandlerName().equals(handlerName) && scriptInstanceHasLink(instance);
+        }
+        return AncestorChainWalker.hasHandler(instance, handlerName);
     }
 
     private boolean isMouseHandler(String handlerName) {
@@ -408,6 +428,27 @@ public class EventDispatcher {
             }
         }
         return Datum.VOID;
+    }
+
+    private boolean isEventBrokerLike(Datum.ScriptInstance instance) {
+        return AncestorChainWalker.hasHandler(instance, "redirectEvent")
+                && AncestorChainWalker.hasHandler(instance, "registerProcedure")
+                && AncestorChainWalker.hasHandler(instance, "createProcListTemplate");
+    }
+
+    private boolean scriptInstanceHasLink(Datum.ScriptInstance instance) {
+        Datum link = AncestorChainWalker.getProperty(instance, "pLink");
+        return link instanceof Datum.Str str && !str.value().isEmpty();
+    }
+
+    private boolean isTruthy(Datum datum) {
+        return switch (datum) {
+            case Datum.Void ignored -> false;
+            case Datum.Int i -> i.value() != 0;
+            case Datum.Float f -> f.value() != 0.0;
+            case Datum.Str s -> !s.value().isEmpty();
+            default -> true;
+        };
     }
 
     /**
