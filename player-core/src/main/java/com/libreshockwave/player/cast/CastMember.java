@@ -85,6 +85,7 @@ public class CastMember {
     private MemberType memberType;
     private int regPointX;
     private int regPointY;
+    private int bitmapAlphaThreshold = 0;
 
     // Dynamic text content (for dynamically created field/text members)
     private String dynamicText;
@@ -148,6 +149,10 @@ public class CastMember {
             BitmapInfo bi = BitmapInfo.parse(chunk.specificData());
             regPointX = bi.regX();
             regPointY = bi.regY();
+            bitmapAlphaThreshold = bi.alphaThreshold();
+        } else if (chunk != null && chunk.isBitmap()
+                && chunk.specificData() != null && chunk.specificData().length >= 10) {
+            bitmapAlphaThreshold = BitmapInfo.parse(chunk.specificData()).alphaThreshold();
         }
     }
 
@@ -533,6 +538,14 @@ public class CastMember {
         return regPointY;
     }
 
+    public int getBitmapAlphaThreshold() {
+        return bitmapAlphaThreshold;
+    }
+
+    public void setBitmapAlphaThreshold(int alphaThreshold) {
+        this.bitmapAlphaThreshold = Math.max(0, Math.min(255, alphaThreshold));
+    }
+
     public void setRegPoint(int x, int y) {
         this.regPointX = x;
         this.regPointY = y;
@@ -629,6 +642,7 @@ public class CastMember {
             case "width" -> Datum.of(bmp != null ? bmp.getWidth() : 0);
             case "height" -> Datum.of(bmp != null ? bmp.getHeight() : 0);
             case "depth" -> Datum.of(bmp != null ? bmp.getBitDepth() : 0);
+            case "alphathreshold" -> Datum.of(bitmapAlphaThreshold);
             case "regpoint" -> new Datum.Point(regPointX, regPointY);
             case "paletteref" -> {
                 // Return the palette override if set, otherwise the embedded palette reference
@@ -872,6 +886,7 @@ public class CastMember {
                 this.bitmap = copy;
                 this.regPointX = source.getRegPointX();
                 this.regPointY = source.getRegPointY();
+                this.bitmapAlphaThreshold = source.bitmapAlphaThreshold;
                 this.paletteRefCastLib = source.paletteRefCastLib;
                 this.paletteRefMemberNum = source.paletteRefMemberNum;
                 this.paletteVersion = source.paletteVersion;
@@ -1101,6 +1116,10 @@ public class CastMember {
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
                 }
+                yield true;
+            }
+            case "alphathreshold" -> {
+                setBitmapAlphaThreshold(value.toInt());
                 yield true;
             }
             case "height" -> {
