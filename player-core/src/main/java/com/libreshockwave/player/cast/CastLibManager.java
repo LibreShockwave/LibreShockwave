@@ -148,7 +148,12 @@ public class CastLibManager implements CastLibProvider {
         if (castLib == null) {
             return Datum.VOID;
         }
-        return castLib.getProp(propName);
+        Datum result = castLib.getProp(propName);
+        // Log get access on external cast slots to trace Lingo verification logic
+        if (castLib.isExternal() || castLibNumber >= 10) {
+            System.out.println("[CastLib#" + castLibNumber + "] get " + propName + " = " + result);
+        }
+        return result;
     }
 
     @Override
@@ -158,6 +163,11 @@ public class CastLibManager implements CastLibProvider {
             return false;
         }
 
+        // Log set access on external cast slots to trace Lingo sequence
+        if (castLib.isExternal() || castLibNumber >= 10) {
+            System.out.println("[CastLib#" + castLibNumber + "] set " + propName + " = " + value + " (name before=" + castLib.getName() + ")");
+        }
+
         boolean result = castLib.setProp(propName, value);
 
         // When Lingo's CastLoad Manager sets castLib.fileName to a new URL (after downloading
@@ -165,6 +175,11 @@ public class CastLibManager implements CastLibProvider {
         // In real Director, setting castLib.fileName triggers an automatic reload.
         if (result && "filename".equalsIgnoreCase(propName)) {
             tryLoadCastFromCache(castLibNumber, value.toStr());
+        }
+
+        // Log name after filename triggers load
+        if (castLib.isExternal() || castLibNumber >= 10) {
+            System.out.println("[CastLib#" + castLibNumber + "] after set " + propName + ": name=" + castLib.getName() + " loaded=" + castLib.isLoaded() + " members=" + castLib.getMemberChunks().size());
         }
 
         return result;
@@ -182,6 +197,8 @@ public class CastLibManager implements CastLibProvider {
         CastLib target = getCastLib(castLibNumber);
         if (target == null) return;
 
+        markPendingExternalLoad(castLibNumber, newFileName);
+
         // Try the primary callback first (JVM: netManager cache, WASM: JS cache)
         castDataRequestCallback.accept(castLibNumber, newFileName);
 
@@ -194,7 +211,9 @@ public class CastLibManager implements CastLibProvider {
             String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(newFileName));
             byte[] cached = castDataCache.get(baseName);
             if (cached != null) {
-                setExternalCastData(castLibNumber, cached);
+                if (setExternalCastData(castLibNumber, cached)) {
+                    clearPendingExternalLoad(castLibNumber);
+                }
             }
         }
     }
@@ -581,6 +600,7 @@ public class CastLibManager implements CastLibProvider {
     // so that later castLib.fileName assignments can load instantly without
     // a JS round-trip.
     private final Map<String, byte[]> castDataCache = new HashMap<>();
+    private final Map<Integer, String> pendingExternalLoads = new HashMap<>();
 
     /**
      * Cache raw external cast data by base name for later reuse.
@@ -597,6 +617,15 @@ public class CastLibManager implements CastLibProvider {
         return castDataCache.get(baseName);
     }
 
+    public void clearPendingExternalLoad(int castLibNumber) {
+        pendingExternalLoads.remove(castLibNumber);
+    }
+
+    private void markPendingExternalLoad(int castLibNumber, String fileName) {
+        pendingExternalLoads.put(castLibNumber,
+                FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(fileName)));
+    }
+
     /**
      * Set external cast data from preloadNetThing.
      * @param castLibNumber The cast library number
@@ -609,7 +638,11 @@ public class CastLibManager implements CastLibProvider {
         if (castLib == null) {
             return false;
         }
-        return castLib.setExternalData(data);
+        boolean loaded = castLib.setExternalData(data);
+        if (loaded) {
+            clearPendingExternalLoad(castLibNumber);
+        }
+        return loaded;
     }
 
     /**
@@ -648,6 +681,36 @@ public class CastLibManager implements CastLibProvider {
             result.add(castLib.getNumber());
         }
         return result;
+    }
+
+    /**
+     * Fulfill any cast slots that are already waiting for this external file.
+     * This keeps fetch completion generic: network arrival only makes bytes
+     * available, and cast slots become visible once a matching fileName is
+     * already requested by the movie or authored cast list.
+     */
+    public java.util.List<Integer> fulfillRequestedExternalCastData(String url) {
+        ensureInitialized();
+
+        String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
+        byte[] data = castDataCache.get(baseName);
+        if (data == null) {
+            return java.util.List.of();
+        }
+
+        java.util.List<Integer> loadedCastNums = new java.util.ArrayList<>();
+        for (CastLib castLib : findCastLibsByUrl(url)) {
+            int castLibNumber = castLib.getNumber();
+            boolean wasRequested = castLib.isFetching()
+                    || baseName.equalsIgnoreCase(pendingExternalLoads.get(castLibNumber));
+            if (!wasRequested) {
+                continue;
+            }
+            if (setExternalCastData(castLibNumber, data)) {
+                loadedCastNums.add(castLibNumber);
+            }
+        }
+        return loadedCastNums;
     }
 
     private java.util.List<CastLib> findCastLibsByUrl(String url) {

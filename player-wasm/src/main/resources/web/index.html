@@ -49,6 +49,9 @@
                 <!-- Status bar -->
                 <div class="statusbar">
                     <span id="status">Ready</span>
+                    <button id="clear-cache-btn" class="btn btn-sm btn-clear-cache">
+                        <span class="icon-reload">&#10227;</span> Clean cache
+                    </button>
                 </div>
 
                 <!-- Footer -->
@@ -327,6 +330,16 @@
         debugCb.addEventListener('change', function() {
             player.setDebugPlayback(this.checked);
             try { localStorage.setItem('ls_debugPlayback', this.checked ? '1' : '0'); } catch(e) {}
+        });
+
+        // Clean cache button
+        document.getElementById('clear-cache-btn').addEventListener('click', function() {
+            if (!confirm('This will clear all saved preferences and reset the player. Continue?')) return;
+            try { localStorage.setItem('ls_urlInput', urlInput.value.trim()); } catch(e) {}
+            status.textContent = 'Clearing cache...';
+            player.clearCache().then(function() {
+                location.reload();
+            });
         });
 
         // Keyboard shortcuts

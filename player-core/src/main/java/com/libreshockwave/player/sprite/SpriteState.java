@@ -49,7 +49,8 @@ public class SpriteState {
     // Script instance list (behaviors attached dynamically via Lingo)
     private List<Datum> scriptInstanceList = new ArrayList<>();
 
-    // Dynamic member assignment (overrides Score data when set)
+    // Dynamic member assignment (overrides Score data when set, including an
+    // explicit empty override with member 0)
     private int dynamicCastLib = -1;
     private int dynamicCastMember = -1;
     private boolean hasDynamicMember = false;
@@ -157,7 +158,8 @@ public class SpriteState {
     }
 
     /**
-     * Set a dynamic cast member (overrides Score data).
+     * Set a dynamic cast member override. A member value of 0 represents an
+     * explicit empty channel and must not fall back to Score data.
      */
     public void setDynamicMember(int castLib, int member) {
         this.dynamicCastLib = castLib;
@@ -166,7 +168,7 @@ public class SpriteState {
     }
 
     /**
-     * Clear a dynamic cast member override and fall back to Score data.
+     * Clear the dynamic member override and fall back to Score data.
      */
     public void clearDynamicMember() {
         this.dynamicCastLib = -1;
@@ -179,6 +181,12 @@ public class SpriteState {
         this.flipV = false;
         this.rotation = 0.0;
         this.skew = 0.0;
+    }
+
+    public void resetReleasedChannelGeometry() {
+        this.width = 1;
+        this.height = 1;
+        this.hasSizeChanged = false;
     }
 
     /**

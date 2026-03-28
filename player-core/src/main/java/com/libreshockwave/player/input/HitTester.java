@@ -165,17 +165,20 @@ public final class HitTester {
     }
 
     private static AlphaHitRule getAlphaHitRule(RenderSprite sprite, com.libreshockwave.bitmap.Bitmap baked) {
-        if (baked == null || !baked.isNativeAlpha() || baked.getBitDepth() != 32) {
-            return AlphaHitRule.DISABLED;
-        }
-
         CastMember dynamicMember = sprite.getDynamicMember();
         if (dynamicMember != null) {
             Bitmap memberBitmap = dynamicMember.getBitmap();
-            if (memberBitmap == null || memberBitmap.getBitDepth() != 32 || !memberBitmap.isNativeAlpha()) {
+            if (memberBitmap == null) {
                 return AlphaHitRule.DISABLED;
             }
-            return new AlphaHitRule(true, dynamicMember.getBitmapAlphaThreshold());
+            if (memberBitmap.getBitDepth() == 32 && memberBitmap.isNativeAlpha()) {
+                return new AlphaHitRule(true, dynamicMember.getBitmapAlphaThreshold());
+            }
+            return AlphaHitRule.DISABLED;
+        }
+
+        if (baked == null || !baked.isNativeAlpha() || baked.getBitDepth() != 32) {
+            return AlphaHitRule.DISABLED;
         }
 
         var castMember = sprite.getCastMember();

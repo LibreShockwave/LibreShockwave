@@ -602,6 +602,27 @@ public class CastLib {
             DirectorFile file = DirectorFile.load(data);
             if (file != null) {
                 this.sourceFile = file;
+
+                // Preserve the cast library name. Lingo scripts (e.g. Habbo's CastLoadManager)
+                // set castLib.name BEFORE setting castLib.fileName, then verify castLib.name
+                // still matches after the load. Since Habbo's CCTs have no CastListChunk,
+                // we must NOT overwrite this.name when it was already set from the outside.
+                // Only update name if the external file's CastListChunk provides one.
+                String nameBeforeLoad = this.name;
+                CastListChunk externalCastList = file.getCastList();
+                if (externalCastList != null && !externalCastList.entries().isEmpty()) {
+                    String internalName = externalCastList.entries().get(0).name();
+                    if (internalName != null && !internalName.isEmpty()) {
+                        this.name = internalName;
+                    }
+                    // else: keep nameBeforeLoad (already the right value)
+                }
+                // If no CastListChunk, restore the name that was set before loading
+                // (e.g. by Lingo: castLib(N).name = "hh_furni_xx_present_gen5")
+                if (this.name == null || this.name.isEmpty()) {
+                    this.name = nameBeforeLoad;
+                }
+
                 // Preserve dynamically created members (memberNum >= nextDynamicMember start).
                 // These are runtime-created by Lingo via new(#type, castLib) and must survive
                 // cast reloads — otherwise window system buffers lose their bitmap data.

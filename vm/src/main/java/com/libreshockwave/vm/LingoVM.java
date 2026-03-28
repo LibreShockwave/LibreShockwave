@@ -31,6 +31,8 @@ public class LingoVM {
     private final OpcodeRegistry opcodeRegistry;
     private final TracingHelper tracingHelper;
     private final ConsoleTracePrinter consolePrinter;
+    private final Map<String, HandlerRef> handlerCache = new HashMap<>();
+    private final Set<String> missingHandlerCache = new HashSet<>();
 
     private boolean traceEnabled = false;
     private int stepLimit = 0;  // 0 = unlimited
@@ -269,12 +271,27 @@ public class LingoVM {
      * @return The script and handler, or null if not found
      */
     public HandlerRef findHandler(String handlerName) {
+        if (handlerName == null || handlerName.isEmpty()) {
+            return null;
+        }
+
+        String cacheKey = handlerName.toLowerCase(Locale.ROOT);
+        HandlerRef cached = handlerCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        if (missingHandlerCache.contains(cacheKey)) {
+            return null;
+        }
+
         // First search the main file
         if (file != null) {
             for (ScriptChunk script : file.getScripts()) {
                 ScriptChunk.Handler handler = script.findHandler(handlerName);
                 if (handler != null) {
-                    return new HandlerRef(script, handler);
+                    HandlerRef ref = new HandlerRef(script, handler);
+                    handlerCache.put(cacheKey, ref);
+                    return ref;
                 }
             }
         }
@@ -285,11 +302,23 @@ public class LingoVM {
             var location = provider.findHandler(handlerName);
             if (location != null && location.script() instanceof ScriptChunk script
                     && location.handler() instanceof ScriptChunk.Handler handler) {
-                return new HandlerRef(script, handler);
+                HandlerRef ref = new HandlerRef(script, handler);
+                handlerCache.put(cacheKey, ref);
+                return ref;
             }
         }
 
+        missingHandlerCache.add(cacheKey);
         return null;
+    }
+
+    /**
+     * Invalidate cached global handler lookups.
+     * Required when external casts become visible or are replaced.
+     */
+    public void invalidateHandlerCache() {
+        handlerCache.clear();
+        missingHandlerCache.clear();
     }
 
     /**
@@ -305,23 +334,32 @@ public class LingoVM {
 
     /**
      * Call a handler by name with arguments.
-     * Checks built-in functions first, then script handlers.
+     * Global script handlers take precedence over builtins.
      * @param handlerName The handler name
      * @param args Arguments to pass
      * @return The return value
      */
     public Datum callHandler(String handlerName, List<Datum> args) {
-        // Check builtins first
+        HandlerRef ref = findHandler(handlerName);
+        if (ref != null) {
+            return executeHandler(ref.script(), ref.handler(), args, null);
+        }
         if (builtins.contains(handlerName)) {
             return builtins.invoke(handlerName, this, args);
         }
+        return Datum.VOID;
+    }
 
-        // Then try script handlers
-        HandlerRef ref = findHandler(handlerName);
-        if (ref == null) {
-            return Datum.VOID;
+    /**
+     * Invoke a builtin directly, bypassing global script handlers.
+     * Used by engine/bootstrap code that must access runtime services before
+     * movie-level APIs or managers exist.
+     */
+    public Datum callBuiltin(String handlerName, List<Datum> args) {
+        if (builtins.contains(handlerName)) {
+            return builtins.invoke(handlerName, this, args);
         }
-        return executeHandler(ref.script(), ref.handler(), args, null);
+        return Datum.VOID;
     }
 
     /**

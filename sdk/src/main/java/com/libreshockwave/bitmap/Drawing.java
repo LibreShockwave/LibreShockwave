@@ -15,45 +15,50 @@ public class Drawing {
      * Copy pixels from source to destination with ink mode blending.
      */
     public static void copyPixels(Bitmap dest, Bitmap src,
-                                   int destX, int destY,
-                                   int srcX, int srcY,
-                                   int width, int height,
-                                   InkMode ink, int blend) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null);
+            int destX, int destY,
+            int srcX, int srcY,
+            int width, int height,
+            InkMode ink, int blend) {
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null, null, null);
     }
 
     /**
-     * Copy pixels from source to destination with ink mode blending and optional mask.
+     * Copy pixels from source to destination with ink mode blending and optional
+     * mask.
      *
-     * @param dest Destination bitmap
-     * @param src Source bitmap
-     * @param destX Destination X coordinate
-     * @param destY Destination Y coordinate
-     * @param srcX Source X coordinate
-     * @param srcY Source Y coordinate
-     * @param width Width to copy
+     * @param dest   Destination bitmap
+     * @param src    Source bitmap
+     * @param destX  Destination X coordinate
+     * @param destY  Destination Y coordinate
+     * @param srcX   Source X coordinate
+     * @param srcY   Source Y coordinate
+     * @param width  Width to copy
      * @param height Height to copy
-     * @param ink Ink mode for blending
-     * @param blend Blend amount (0-255, used for BLEND ink)
-     * @param mask Optional mask bitmap (same dimensions as source). Pixels with alpha=0 in mask are skipped.
+     * @param ink    Ink mode for blending
+     * @param blend  Blend amount (0-255, used for BLEND ink)
+     * @param mask   Optional mask bitmap (same dimensions as source). Pixels with
+     *               alpha=0 in mask are skipped.
      */
     public static void copyPixels(Bitmap dest, Bitmap src,
-                                   int destX, int destY,
-                                   int srcX, int srcY,
-                                   int width, int height,
-                                   InkMode ink, int blend,
-                                   Bitmap mask) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null);
+            int destX, int destY,
+            int srcX, int srcY,
+            int width, int height,
+            InkMode ink, int blend,
+            Bitmap mask) {
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null, null, null);
     }
 
     public static void copyPixels(Bitmap dest, Bitmap src,
-                                   int destX, int destY,
-                                   int srcX, int srcY,
-                                   int width, int height,
-                                   InkMode ink, int blend,
-                                   Bitmap mask,
-                                   Integer backgroundKeyRgb) {
-        if (width <= 0 || height <= 0) return;
+            int destX, int destY,
+            int srcX, int srcY,
+            int width, int height,
+            InkMode ink, int blend,
+            Bitmap mask,
+            Integer foregroundRemap,
+            Integer backgroundRemap,
+            Integer backgroundKeyRgb) {
+        if (width <= 0 || height <= 0)
+            return;
         // For MATTE ink, pre-process the FULL source image with flood-fill matte.
         // Director applies matte to the entire source member, then extracts the
         // copy region. This preserves content that forms "islands" in the full
@@ -96,7 +101,8 @@ public class Drawing {
                 int srcPixel = effectiveSrc.getPixel(sx, sy);
                 int destPixel = dest.getPixel(dx, dy);
 
-                int resultPixel = applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
+                int resultPixel = applyInk(srcPixel, destPixel, ink, blend, foregroundRemap, backgroundRemap,
+                        backgroundKeyRgb);
                 dest.setPixel(dx, dy, resultPixel);
             }
         }
@@ -117,17 +123,18 @@ public class Drawing {
     /**
      * Apply ink mode to blend source and destination pixels.
      *
-     * @param src Source pixel (ARGB)
-     * @param dest Destination pixel (ARGB)
-     * @param ink Ink mode
+     * @param src   Source pixel (ARGB)
+     * @param dest  Destination pixel (ARGB)
+     * @param ink   Ink mode
      * @param blend Blend factor (0-255)
      * @return Blended pixel (ARGB)
      */
     public static int applyInk(int src, int dest, InkMode ink, int blend) {
-        return applyInk(src, dest, ink, blend, null);
+        return applyInk(src, dest, ink, blend, null, null, null);
     }
 
-    public static int applyInk(int src, int dest, InkMode ink, int blend, Integer backgroundKeyRgb) {
+    public static int applyInk(int src, int dest, InkMode ink, int blend, Integer foregroundRemap,
+            Integer backgroundRemap, Integer backgroundKeyRgb) {
         int srcA = (src >> 24) & 0xFF;
         int srcR = (src >> 16) & 0xFF;
         int srcG = (src >> 8) & 0xFF;
@@ -210,7 +217,8 @@ public class Drawing {
                 }
                 if (blend < 255) {
                     int matteAlpha = (srcA * blend) / 255;
-                    if (matteAlpha == 0) return dest;
+                    if (matteAlpha == 0)
+                        return dest;
                     return alphaBlend(src, dest, matteAlpha);
                 }
                 return alphaBlend(src, dest, srcA);
@@ -250,7 +258,8 @@ public class Drawing {
                 // Director's Background Transparent is exact-match keying against the
                 // chosen background color for this copy operation. When copyPixels
                 // does not pass #bgColor, the default key remains white.
-                if (srcA == 0) return dest;
+                if (srcA == 0)
+                    return dest;
                 int keyRgb = backgroundKeyRgb != null ? (backgroundKeyRgb & 0xFFFFFF) : 0xFFFFFF;
                 if (((srcR << 16) | (srcG << 8) | srcB) == keyRgb) {
                     return dest;
@@ -261,7 +270,8 @@ public class Drawing {
                 return src;
 
             case LIGHTEST:
-                if (srcA == 0) return dest;
+                if (srcA == 0)
+                    return dest;
                 r = Math.max(srcR, destR);
                 g = Math.max(srcG, destG);
                 b = Math.max(srcB, destB);
@@ -274,7 +284,8 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case DARKEST:
-                if (srcA == 0) return dest;
+                if (srcA == 0)
+                    return dest;
                 r = Math.min(srcR, destR);
                 g = Math.min(srcG, destG);
                 b = Math.min(srcB, destB);
@@ -282,8 +293,45 @@ public class Drawing {
 
             case LIGHTEN:
             case DARKEN:
-                if (srcA == 0) return dest;
-                return alphaBlend(src, dest, combineAlpha(srcA, blend));
+                // Director's DARKEN/LIGHTEN inks compare RGB values.
+                // When colorized (#color/#bgColor), they remap the source's
+                // white/black to those colors before the comparison.
+                if (srcA == 0)
+                    return dest;
+
+                int r_ = srcR, g_ = srcG, b_ = srcB;
+                if (foregroundRemap != null || backgroundRemap != null) {
+                    // Linear interpolation between foreground and background colors.
+                    // Grayscale 255 (White) becomes foreground color (#color).
+                    // Grayscale 0 (Black) becomes background color (#bgColor).
+                    float luma = (srcR * 0.299f + srcG * 0.587f + srcB * 0.114f) / 255.0f;
+                    int fg = foregroundRemap != null ? foregroundRemap : 0xFFFFFF;
+                    int bg = backgroundRemap != null ? backgroundRemap : 0;
+
+                    int fgR_ = (fg >> 16) & 0xFF, fgG_ = (fg >> 8) & 0xFF, fgB_ = fg & 0xFF;
+                    int bgR_ = (bg >> 16) & 0xFF, bgG_ = (bg >> 8) & 0xFF, bgB_ = bg & 0xFF;
+
+                    r_ = (int) (fgR_ * luma + bgR_ * (1.0f - luma) + 0.5f);
+                    g_ = (int) (fgG_ * luma + bgG_ * (1.0f - luma) + 0.5f);
+                    b_ = (int) (fgB_ * luma + bgB_ * (1.0f - luma) + 0.5f);
+                }
+
+                if (ink == InkMode.DARKEN) {
+                    r = Math.min(r_, destR);
+                    g = Math.min(g_, destG);
+                    b = Math.min(b_, destB);
+                } else {
+                    r = Math.max(r_, destR);
+                    g = Math.max(g_, destG);
+                    b = Math.max(b_, destB);
+                }
+                    b = Math.max(b_, destB);
+                }
+
+                if (blend < 255 || srcA < 255) {
+                    return alphaBlend((srcA << 24) | (r << 16) | (g << 8) | b, dest, combineAlpha(srcA, blend));
+                }
+                return packOpaqueRgb(r, g, b);
 
             default:
                 return src;
@@ -294,8 +342,10 @@ public class Drawing {
      * Alpha blend two pixels.
      */
     private static int alphaBlend(int fg, int bg, int alpha) {
-        if (alpha == 0) return bg;
-        if (alpha == 255) return fg;
+        if (alpha == 0)
+            return bg;
+        if (alpha == 255)
+            return fg;
 
         int fgR = (fg >> 16) & 0xFF;
         int fgG = (fg >> 8) & 0xFF;
@@ -369,7 +419,8 @@ public class Drawing {
         while (true) {
             dest.setPixel(x0, y0, color);
 
-            if (x0 == x1 && y0 == y1) break;
+            if (x0 == x1 && y0 == y1)
+                break;
 
             int e2 = 2 * err;
             if (e2 > -dy) {
@@ -469,10 +520,14 @@ public class Drawing {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
+            if (px > 0)
+                seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
+            if (px < w - 1)
+                seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
+            if (py > 0)
+                seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
+            if (py < h - 1)
+                seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
         }
 
         int[] mask = new int[w * h];
@@ -534,10 +589,14 @@ public class Drawing {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
+            if (px > 0)
+                seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
+            if (px < w - 1)
+                seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
+            if (py > 0)
+                seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
+            if (py < h - 1)
+                seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
         }
 
         int[] result = new int[w * h];
@@ -553,7 +612,7 @@ public class Drawing {
     }
 
     private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
-                                   int x, int y, int w, int matteRgb) {
+            int x, int y, int w, int matteRgb) {
         int idx = y * w + x;
         if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb)) {
             transparent[idx] = true;
@@ -577,7 +636,7 @@ public class Drawing {
         int y = ry;
         int rxSq = rx * rx;
         int rySq = ry * ry;
-        int p = (int)(rySq - rxSq * ry + 0.25 * rxSq);
+        int p = (int) (rySq - rxSq * ry + 0.25 * rxSq);
 
         // Region 1
         while (rySq * x < rxSq * y) {
@@ -597,7 +656,7 @@ public class Drawing {
         }
 
         // Region 2
-        p = (int)(rySq * (x + 0.5) * (x + 0.5) + rxSq * (y - 1) * (y - 1) - rxSq * rySq);
+        p = (int) (rySq * (x + 0.5) * (x + 0.5) + rxSq * (y - 1) * (y - 1) - rxSq * rySq);
         while (y >= 0) {
             dest.setPixel(cx + x, cy + y, color);
             dest.setPixel(cx - x, cy + y, color);

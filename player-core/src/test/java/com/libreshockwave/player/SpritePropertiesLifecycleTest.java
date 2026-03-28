@@ -1,9 +1,14 @@
 package com.libreshockwave.player;
 
+import com.libreshockwave.chunks.ScoreChunk;
 import com.libreshockwave.player.render.SpriteRegistry;
 import com.libreshockwave.player.sprite.SpriteState;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
+
+import java.util.LinkedHashMap;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -12,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SpritePropertiesLifecycleTest {
 
     @Test
-    void memberZeroClearsDynamicMemberOverride() {
+    void memberZeroCreatesExplicitEmptyOverride() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteProperties props = new SpriteProperties(registry);
 
@@ -25,7 +30,7 @@ class SpritePropertiesLifecycleTest {
 
         assertTrue(props.setSpriteProp(17, "member", Datum.CastMemberRef.of(1, 0)));
 
-        assertFalse(state.hasDynamicMember());
+        assertTrue(state.hasDynamicMember());
         assertEquals(0, state.getEffectiveCastLib());
         assertEquals(0, state.getEffectiveCastMember());
     }
@@ -52,7 +57,7 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
-    void memberNumZeroClearsDynamicMemberOverride() {
+    void memberNumZeroCreatesExplicitEmptyOverride() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteProperties props = new SpriteProperties(registry);
 
@@ -63,22 +68,75 @@ class SpritePropertiesLifecycleTest {
 
         assertTrue(props.setSpriteProp(23, "memberNum", Datum.ZERO));
 
-        assertFalse(state.hasDynamicMember());
+        assertTrue(state.hasDynamicMember());
         assertEquals(0, state.getEffectiveCastMember());
     }
 
     @Test
-    void disablingPuppetOnEmptySpriteClearsLingeringScriptInstances() {
+    void memberZeroOnScoreBackedSpriteDoesNotFallBackToScoreMember() {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+
+        registry.getOrCreate(31, new ScoreChunk.ChannelData(
+                1, 0, 0, 0, 0, 0,
+                4, 88,
+                0, 0, 10, 20, 30, 40,
+                0, 0, 0, 0, 0, 0
+        ));
+
+        assertTrue(props.setSpriteProp(31, "member", Datum.ZERO));
+
+        SpriteState state = registry.get(31);
+        assertTrue(state.hasDynamicMember());
+        assertEquals(0, state.getEffectiveCastLib());
+        assertEquals(0, state.getEffectiveCastMember());
+    }
+
+    @Test
+    void memberZeroDoesNotPruneSyntheticEventBrokerInstances() {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+
+        SpriteState state = registry.getOrCreateDynamic(21);
+        assertTrue(props.setSpriteProp(21, "member", Datum.CastMemberRef.of(3, 42)));
+
+        Datum.ScriptInstance broker = new Datum.ScriptInstance(99, new LinkedHashMap<>(java.util.Map.of(
+                SpriteEventBrokerSupport.SYNTHETIC_BROKER_FLAG, Datum.TRUE
+        )));
+        Datum.ScriptInstance behavior = new Datum.ScriptInstance(100, new LinkedHashMap<>());
+        state.setScriptInstanceList(List.of(broker, behavior));
+
+        assertTrue(props.setSpriteProp(21, "member", Datum.ZERO));
+
+        assertEquals(2, state.getScriptInstanceList().size());
+        assertTrue(state.getScriptInstanceList().contains(broker));
+        assertTrue(state.getScriptInstanceList().contains(behavior));
+    }
+
+    @Test
+    void disablingPuppetOnEmptySpriteResetsReleasedChannelState() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteProperties props = new SpriteProperties(registry);
 
         SpriteState state = registry.getOrCreateDynamic(23);
-        state.setScriptInstanceList(java.util.List.of(new Datum.ScriptInstance(99, new java.util.LinkedHashMap<>())));
+        state.setScriptInstanceList(List.of(new Datum.ScriptInstance(99, new LinkedHashMap<>())));
+        state.setVisible(true);
+        state.setBlend(30);
+        state.setStretch(1);
+        state.setCursor(4);
+        state.setWidth(88);
+        state.setHeight(44);
 
         assertTrue(props.setSpriteProp(23, "member", Datum.ZERO));
         assertTrue(props.setSpriteProp(23, "puppet", Datum.ZERO));
 
         assertTrue(state.getScriptInstanceList().isEmpty());
+        assertFalse(state.isVisible());
+        assertEquals(100, state.getBlend());
+        assertEquals(0, state.getStretch());
+        assertEquals(0, state.getCursor());
+        assertEquals(1, state.getWidth());
+        assertEquals(1, state.getHeight());
     }
 
     @Test
