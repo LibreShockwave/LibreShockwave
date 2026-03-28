@@ -83,15 +83,7 @@ public final class CastLibBuiltins {
         Datum memberArg = args.get(0);
         int castLibNumber = 0; // 0 = search all or use default
 
-        // Check for castLib argument
-        if (args.size() > 1) {
-            Datum castArg = args.get(1);
-            if (castArg instanceof Datum.CastLibRef clr) {
-                castLibNumber = clr.castLibNum();
-            } else if (castArg.isInt()) {
-                castLibNumber = castArg.toInt();
-            }
-        }
+        castLibNumber = resolveCastLibArg(provider, args.size() > 1 ? args.get(1) : Datum.VOID);
 
         // Get member by number or name
         if (memberArg.isInt() || memberArg.isFloat()) {
@@ -144,14 +136,7 @@ public final class CastLibBuiltins {
         Datum fieldArg = args.get(0);
         int castId = 0; // 0 = search all casts
 
-        if (args.size() > 1) {
-            Datum castArg = args.get(1);
-            if (castArg instanceof Datum.CastLibRef clr) {
-                castId = clr.castLibNum();
-            } else if (castArg.isInt()) {
-                castId = castArg.toInt();
-            }
-        }
+        castId = resolveCastLibArg(provider, args.size() > 1 ? args.get(1) : Datum.VOID);
 
         Object identifier = fieldArg instanceof Datum.Str s ? s.value()
                 : fieldArg instanceof Datum.Int i ? i.value()
@@ -209,6 +194,24 @@ public final class CastLibBuiltins {
         }
 
         return Datum.of(0);
+    }
+
+    private static int resolveCastLibArg(CastLibProvider provider, Datum castArg) {
+        if (provider == null || castArg == null || castArg.isVoid()) {
+            return 0;
+        }
+        if (castArg instanceof Datum.CastLibRef clr) {
+            return clr.castLibNum();
+        }
+        if (castArg.isInt() || castArg.isFloat()) {
+            int castLibNumber = provider.getCastLibByNumber(castArg.toInt());
+            return castLibNumber >= 0 ? castLibNumber : 0;
+        }
+        if (castArg.isString() || castArg.isSymbol()) {
+            int castLibNumber = provider.getCastLibByName(castArg.toStr());
+            return castLibNumber >= 0 ? castLibNumber : 0;
+        }
+        return 0;
     }
 
 }
