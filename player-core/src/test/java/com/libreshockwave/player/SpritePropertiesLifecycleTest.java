@@ -299,6 +299,33 @@ class SpritePropertiesLifecycleTest {
         assertEquals(18, state.getHeight());
     }
 
+    @Test
+    void blankingDynamicMemberNameDoesNotDetachBoundSprite() throws Exception {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+        CastLibManager castLibManager = new CastLibManager(null, (castLib, fileName) -> {});
+        CastLib castLib = new CastLib(7, null, null);
+        injectCastLib(castLibManager, castLib);
+        props.setCastLibManager(castLibManager);
+
+        CastMember preview = castLib.createDynamicMember("bitmap");
+        assertTrue(props.setSpriteProp(51, "member",
+                Datum.CastMemberRef.of(7, preview.getMemberNumber())));
+
+        CastMember.setMemberSlotRetiredCallback(registry::clearDynamicMemberBindings);
+        try {
+            assertTrue(preview.setProp("name", Datum.of("handcontainer_temp")));
+            assertTrue(preview.setProp("name", Datum.EMPTY_STRING));
+        } finally {
+            CastMember.setMemberSlotRetiredCallback(null);
+        }
+
+        SpriteState state = registry.get(51);
+        assertTrue(state.hasDynamicMember());
+        assertEquals(7, state.getEffectiveCastLib());
+        assertEquals(preview.getMemberNumber(), state.getEffectiveCastMember());
+    }
+
     @SuppressWarnings("unchecked")
     private static void injectCastLib(CastLibManager castLibManager, CastLib castLib) throws Exception {
         Field castLibsField = CastLibManager.class.getDeclaredField("castLibs");
