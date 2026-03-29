@@ -1,13 +1,15 @@
 package com.libreshockwave.id;
 
 /**
- * 1-based member slot number within a cast library.
+ * Director member slot number within a cast library.
+ * Member 0 is a valid "empty member" reference even though real stored
+ * cast members begin at slot 1.
  */
 public record MemberId(int value) implements TypedId, Comparable<MemberId> {
 
     public MemberId {
-        if (value < 1) {
-            throw new IllegalArgumentException("MemberId must be >= 1, got " + value);
+        if (value < 0) {
+            throw new IllegalArgumentException("MemberId must be >= 0, got " + value);
         }
     }
 

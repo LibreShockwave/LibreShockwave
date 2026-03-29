@@ -112,7 +112,12 @@ public final class CastLibBuiltins {
             // Not found in any cast — return ref in cast 1 (Director fallback)
             return provider.getMember(1, memberNumber);
         } else if (memberArg.isString() || memberArg.isSymbol()) {
-            return provider.getMemberByName(castLibNumber, memberArg.toStr());
+            Datum found = provider.getMemberByName(castLibNumber, memberArg.toStr());
+            if (!found.isVoid()) {
+                return found;
+            }
+            int fallbackCast = castLibNumber > 0 ? castLibNumber : 1;
+            return provider.getMember(fallbackCast, 0);
         }
 
         return Datum.VOID;
@@ -142,8 +147,7 @@ public final class CastLibBuiltins {
                 : fieldArg instanceof Datum.Int i ? i.value()
                 : fieldArg.toStr();
 
-        String fieldValue = provider.getFieldValue(identifier, castId);
-        return Datum.of(fieldValue);
+        return provider.getFieldDatum(identifier, castId);
     }
 
     /**

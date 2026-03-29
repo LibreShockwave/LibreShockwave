@@ -45,6 +45,7 @@ public final class DatumFormatter {
         if (d instanceof Datum.Int i) return String.valueOf(i.value());
         if (d instanceof Datum.Float f) return String.valueOf(f.value());
         if (d instanceof Datum.Str s) return "\"" + StringUtils.truncate(s.value(), maxStringLength) + "\"";
+        if (d instanceof Datum.FieldText ft) return "\"" + StringUtils.truncate(ft.value(), maxStringLength) + "\"";
         if (d instanceof Datum.Symbol sym) return "#" + sym.name();
         if (d instanceof Datum.List list) return "[list:" + list.items().size() + "]";
         if (d instanceof Datum.PropList pl) return "[propList:" + pl.size() + "]";
@@ -83,6 +84,7 @@ public final class DatumFormatter {
             case Datum.Int i -> String.valueOf(i.value());
             case Datum.Float f -> String.valueOf(f.value());
             case Datum.Str s -> "\"" + StringUtils.truncate(StringUtils.escapeForDisplay(s.value()), DEFAULT_BRIEF_STRING_LENGTH) + "\"";
+            case Datum.FieldText ft -> "\"" + StringUtils.truncate(StringUtils.escapeForDisplay(ft.value()), DEFAULT_BRIEF_STRING_LENGTH) + "\"";
             case Datum.Symbol sym -> "#" + sym.name();
             case Datum.List list -> "[list:" + list.items().size() + "]";
             case Datum.PropList pl -> "[propList:" + pl.size() + "]";
@@ -111,6 +113,7 @@ public final class DatumFormatter {
             case Datum.Int i -> String.valueOf(i.value());
             case Datum.Float f -> String.valueOf(f.value());
             case Datum.Str s -> "\"" + escapeForJson(s.value()) + "\"";
+            case Datum.FieldText ft -> "\"" + escapeForJson(ft.value()) + "\"";
             case Datum.Symbol sym -> "\"#" + sym.name() + "\"";
 
             case Datum.ArgList argList -> {
