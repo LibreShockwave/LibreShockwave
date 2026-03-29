@@ -38,44 +38,45 @@ public final class StringMethodDispatcher {
         _lineCacheStr = null; _lineCacheResult = null;
     }
 
-    public static Datum dispatch(Datum.Str str, String methodName, List<Datum> args) {
+    public static Datum dispatch(Datum str, String methodName, List<Datum> args) {
         // Use equalsIgnoreCase to avoid toLowerCase allocation
         char itemDelimiter = getItemDelimiter();
+        String value = str.toStr();
 
         if ("length".equalsIgnoreCase(methodName)) {
-            return Datum.of(str.value().length());
+            return Datum.of(value.length());
         } else if ("char".equalsIgnoreCase(methodName)) {
             if (args.isEmpty()) return Datum.EMPTY_STRING;
             int index = args.get(0).toInt();
-            if (index >= 1 && index <= str.value().length()) {
-                return Datum.of(String.valueOf(str.value().charAt(index - 1)));
+            if (index >= 1 && index <= value.length()) {
+                return Datum.of(String.valueOf(value.charAt(index - 1)));
             }
             return Datum.EMPTY_STRING;
         } else if ("count".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.of(str.value().length());
+            if (args.isEmpty()) return Datum.of(value.length());
             Datum chunkType = args.get(0);
             if (chunkType instanceof Datum.Symbol s) {
                 String type = s.name();
-                if ("char".equalsIgnoreCase(type)) return Datum.of(str.value().length());
-                else if ("word".equalsIgnoreCase(type)) return Datum.of(countWords(str.value()));
-                else if ("line".equalsIgnoreCase(type)) return Datum.of(countLines(str.value()));
-                else if ("item".equalsIgnoreCase(type)) return Datum.of(countItems(str.value(), itemDelimiter));
-                else return Datum.of(str.value().length());
+                if ("char".equalsIgnoreCase(type)) return Datum.of(value.length());
+                else if ("word".equalsIgnoreCase(type)) return Datum.of(countWords(value));
+                else if ("line".equalsIgnoreCase(type)) return Datum.of(countLines(value));
+                else if ("item".equalsIgnoreCase(type)) return Datum.of(countItems(value, itemDelimiter));
+                else return Datum.of(value.length());
             }
-            return Datum.of(str.value().length());
+            return Datum.of(value.length());
         } else if ("getpropref".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.EMPTY_STRING;
             Datum chunkType = args.get(0);
             int index = args.get(1).toInt();
             if (!(chunkType instanceof Datum.Symbol s)) return Datum.EMPTY_STRING;
-            return Datum.of(getStringChunk(str.value(), s.name(), index, index, itemDelimiter));
+            return Datum.of(getStringChunk(value, s.name(), index, index, itemDelimiter));
         } else if ("getprop".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.EMPTY_STRING;
             Datum chunkType = args.get(0);
             int startIndex = args.get(1).toInt();
             int endIndex = args.size() >= 3 ? args.get(2).toInt() : startIndex;
             if (!(chunkType instanceof Datum.Symbol s)) return Datum.EMPTY_STRING;
-            String result = getStringChunk(str.value(), s.name(), startIndex, endIndex, itemDelimiter);
+            String result = getStringChunk(value, s.name(), startIndex, endIndex, itemDelimiter);
             return Datum.of(result);
         }
         return Datum.VOID;
