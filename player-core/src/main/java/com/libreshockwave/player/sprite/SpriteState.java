@@ -15,7 +15,7 @@ import java.util.List;
  */
 public class SpriteState {
     private final ChannelId channelId;
-    private final ScoreChunk.ChannelData initialData;  // null for dynamic sprites
+    private ScoreChunk.ChannelData scoreData;  // null for dynamic sprites
 
     private int locH;
     private int locV;
@@ -49,7 +49,8 @@ public class SpriteState {
     // Script instance list (behaviors attached dynamically via Lingo)
     private List<Datum> scriptInstanceList = new ArrayList<>();
 
-    // Dynamic member assignment (overrides Score data when set)
+    // Dynamic member assignment (overrides Score data when set, including an
+    // explicit empty override with member 0)
     private int dynamicCastLib = -1;
     private int dynamicCastMember = -1;
     private boolean hasDynamicMember = false;
@@ -59,20 +60,7 @@ public class SpriteState {
      */
     public SpriteState(int channel, ScoreChunk.ChannelData data) {
         this.channelId = new ChannelId(channel);
-        this.initialData = data;
-        this.locH = data.posX();
-        this.locV = data.posY();
-        this.width = data.width();
-        this.height = data.height();
-        this.inkMode = InkMode.fromCode(data.ink());
-        this.trails = data.trails();
-        this.stretch = data.stretch();
-        // Director stores score blend inverted in byte 21: 255 means 0%, 0 means 100%.
-        if (this.inkMode == InkMode.BLEND && data.blendByte() > 0) {
-            this.blend = Math.round((255 - data.blendByte()) * 100f / 255f);
-        }
-        this.foreColor = data.resolvedForeColor();
-        this.backColor = data.resolvedBackColor();
+        rebindToScore(data);
     }
 
     /**
@@ -80,7 +68,7 @@ public class SpriteState {
      */
     public SpriteState(int channel) {
         this.channelId = new ChannelId(channel);
-        this.initialData = null;
+        this.scoreData = null;
         this.puppet = true;
     }
 
@@ -157,7 +145,8 @@ public class SpriteState {
     }
 
     /**
-     * Set a dynamic cast member (overrides Score data).
+     * Set a dynamic cast member override. A member value of 0 represents an
+     * explicit empty channel and must not fall back to Score data.
      */
     public void setDynamicMember(int castLib, int member) {
         this.dynamicCastLib = castLib;
@@ -166,7 +155,7 @@ public class SpriteState {
     }
 
     /**
-     * Clear a dynamic cast member override and fall back to Score data.
+     * Clear the dynamic member override and fall back to Score data.
      */
     public void clearDynamicMember() {
         this.dynamicCastLib = -1;
@@ -181,6 +170,12 @@ public class SpriteState {
         this.skew = 0.0;
     }
 
+    public void resetReleasedChannelGeometry() {
+        this.width = 1;
+        this.height = 1;
+        this.hasSizeChanged = false;
+    }
+
     /**
      * Get the effective cast library number (dynamic or from Score).
      */
@@ -188,7 +183,7 @@ public class SpriteState {
         if (hasDynamicMember) {
             return dynamicCastLib;
         }
-        return initialData != null ? initialData.castLib() : 0;
+        return scoreData != null ? scoreData.castLib() : 0;
     }
 
     /**
@@ -198,11 +193,11 @@ public class SpriteState {
         if (hasDynamicMember) {
             return dynamicCastMember;
         }
-        return initialData != null ? initialData.castMember() : 0;
+        return scoreData != null ? scoreData.castMember() : 0;
     }
 
     public boolean hasDynamicMember() { return hasDynamicMember; }
-    public boolean isDynamic() { return initialData == null; }
+    public boolean isDynamic() { return scoreData == null; }
     public boolean hasSizeChanged() { return hasSizeChanged; }
 
     /**
@@ -213,6 +208,19 @@ public class SpriteState {
         if (!hasSizeChanged && w > 0 && h > 0) {
             this.width = w;
             this.height = h;
+        }
+    }
+
+    /**
+     * Director resets sprite dimensions to the assigned member's intrinsic size
+     * when sprite.member/memberNum/castNum changes. This must override any prior
+     * layout/default sizing so later member swaps display at the new bitmap size.
+     */
+    public void applyMemberAssignmentSize(int w, int h) {
+        if (w > 0 && h > 0) {
+            this.width = w;
+            this.height = h;
+            this.hasSizeChanged = false;
         }
     }
 
@@ -252,6 +260,7 @@ public class SpriteState {
      */
     public void syncFromScore(ScoreChunk.ChannelData data) {
         if (data == null) return;
+        this.scoreData = data;
         this.locH = data.posX();
         this.locV = data.posY();
         if (!hasSizeChanged && data.width() > 0 && data.height() > 0) {
@@ -278,5 +287,58 @@ public class SpriteState {
         }
     }
 
-    public ScoreChunk.ChannelData getInitialData() { return initialData; }
+    public boolean matchesScoreIdentity(ScoreChunk.ChannelData data) {
+        if (scoreData == null || data == null) {
+            return false;
+        }
+        return scoreData.castLib() == data.castLib()
+                && scoreData.castMember() == data.castMember()
+                && scoreData.spriteType() == data.spriteType();
+    }
+
+    /**
+     * Rebind this channel to a new score-backed sprite identity.
+     * This drops stale runtime overrides so reused score channels behave like
+     * fresh Director sprites when the score member changes underneath them.
+     */
+    public void rebindToScore(ScoreChunk.ChannelData data) {
+        this.scoreData = data;
+        this.locH = data.posX();
+        this.locV = data.posY();
+        this.locZ = 0;
+        this.width = data.width();
+        this.height = data.height();
+        this.visible = true;
+        this.puppet = false;
+        this.inkMode = InkMode.fromCode(data.ink());
+        this.blend = 100;
+        if (this.inkMode == InkMode.BLEND && data.blendByte() > 0) {
+            this.blend = Math.round((255 - data.blendByte()) * 100f / 255f);
+        }
+        this.trails = data.trails();
+        this.stretch = data.stretch();
+        this.foreColor = data.resolvedForeColor();
+        this.backColor = data.resolvedBackColor();
+        this.hasForeColor = false;
+        this.hasBackColor = false;
+        this.hasSizeChanged = false;
+        this.inkExplicitlySet = false;
+        this.blendExplicitlySet = false;
+        this.trailsExplicitlySet = false;
+        this.stretchExplicitlySet = false;
+        this.scoreDefaultsApplied = false;
+        this.flipH = false;
+        this.flipV = false;
+        this.rotation = 0.0;
+        this.skew = 0.0;
+        this.cursor = 0;
+        this.cursorMemberNum = 0;
+        this.cursorMaskNum = 0;
+        this.scriptInstanceList = new ArrayList<>();
+        this.dynamicCastLib = -1;
+        this.dynamicCastMember = -1;
+        this.hasDynamicMember = false;
+    }
+
+    public ScoreChunk.ChannelData getInitialData() { return scoreData; }
 }

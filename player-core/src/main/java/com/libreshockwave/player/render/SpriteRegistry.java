@@ -26,6 +26,8 @@ public class SpriteRegistry {
         if (state == null) {
             state = new SpriteState(channel, data);
             sprites.put(channel, state);
+        } else if (!state.isPuppet() && !state.hasDynamicMember() && !state.matchesScoreIdentity(data)) {
+            state.rebindToScore(data);
         }
         return state;
     }
@@ -56,7 +58,12 @@ public class SpriteRegistry {
     public void updateFromScore(int channel, ScoreChunk.ChannelData data) {
         SpriteState state = sprites.get(channel);
         if (state != null && !state.isPuppet() && !state.hasDynamicMember()) {
-            state.syncFromScore(data);
+            if (state.matchesScoreIdentity(data)) {
+                state.syncFromScore(data);
+            } else {
+                state.rebindToScore(data);
+                bumpRevision();
+            }
         }
     }
 

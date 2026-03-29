@@ -1,6 +1,7 @@
 package com.libreshockwave.vm.builtin.flow;
 
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.Scope;
@@ -199,7 +200,7 @@ public final class ControlFlowBuiltins {
             var provider = com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider.getProvider();
             if (provider != null) {
                 java.util.List<Datum> scripts = provider.getScriptInstanceList(channel);
-                if (scripts != null) {
+                if (scripts != null && !scripts.isEmpty()) {
                     Datum lastResult = Datum.VOID;
                     for (Datum si : scripts) {
                         if (si instanceof Datum.ScriptInstance instance) {
@@ -207,6 +208,10 @@ public final class ControlFlowBuiltins {
                         }
                     }
                     return lastResult;
+                }
+                Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(channel, handlerName, extraArgs);
+                if (!brokerResult.isVoid()) {
+                    return brokerResult;
                 }
             }
         }

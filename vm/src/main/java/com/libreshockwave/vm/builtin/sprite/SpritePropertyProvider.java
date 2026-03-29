@@ -28,6 +28,17 @@ public interface SpritePropertyProvider {
     boolean setSpriteProp(int spriteNum, String propName, Datum value);
 
     /**
+     * Assign a sprite member through the sprite method path (for example
+     * {@code sprite(n).setMember(...)}). Some Director movies use this to swap
+     * in runtime-created preview members onto sprites whose initial size came
+     * from an authored layout, so implementations may choose different sizing
+     * behavior than plain property assignment.
+     */
+    default boolean setSpriteMember(int spriteNum, Datum value) {
+        return setSpriteProp(spriteNum, "member", value);
+    }
+
+    /**
      * Get the scriptInstanceList for a sprite channel.
      * Used by the {@code call} builtin to dispatch to behaviors on sprite channels.
      * @param spriteNum The sprite channel number

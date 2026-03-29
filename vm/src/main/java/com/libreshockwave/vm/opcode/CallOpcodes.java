@@ -8,6 +8,7 @@ import com.libreshockwave.vm.DebugConfig;
 import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 import com.libreshockwave.vm.builtin.timeout.TimeoutBuiltins;
 import com.libreshockwave.vm.builtin.xtra.XtraBuiltins;
@@ -175,6 +176,11 @@ public final class CallOpcodes {
                                 }
                             }
                         }
+                    }
+                    Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(
+                            sr.channelNum(), methodName, args);
+                    if (!brokerResult.isVoid()) {
+                        yield brokerResult;
                     }
                 }
                 yield Datum.VOID;
