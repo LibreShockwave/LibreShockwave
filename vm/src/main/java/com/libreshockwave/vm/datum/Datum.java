@@ -84,6 +84,12 @@ public sealed interface Datum {
         public String toString() { return "\"" + value + "\""; }
     }
 
+    /** String value backed by a specific field member. */
+    record FieldText(String value, int castLibNum, int memberNum) implements Datum {
+        @Override
+        public String toString() { return "\"" + value + "\""; }
+    }
+
     /** Symbol value (like #symbol in Lingo) */
     record Symbol(String name) implements Datum {
         @Override
@@ -325,9 +331,9 @@ public sealed interface Datum {
 
     /** Cast member reference */
     record CastMemberRef(CastLibId castLib, MemberId member) implements Datum {
-        /** Safe factory: returns VOID for invalid castLib/member (0 means "no member" in Director). */
+        /** Safe factory: returns VOID only for invalid castLib or negative member numbers. */
         public static Datum of(int castLib, int member) {
-            if (castLib < 1 || member < 1) return VOID;
+            if (castLib < 1 || member < 0) return VOID;
             return new CastMemberRef(new CastLibId(castLib), new MemberId(member));
         }
         public int castLibNum() { return castLib.value(); }
@@ -595,7 +601,7 @@ public sealed interface Datum {
     default boolean isInt() { return this instanceof Int; }
     default boolean isFloat() { return this instanceof Float; }
     default boolean isNumber() { return isInt() || isFloat(); }
-    default boolean isString() { return this instanceof Str; }
+    default boolean isString() { return this instanceof Str || this instanceof FieldText; }
     default boolean isSymbol() { return this instanceof Symbol; }
     default boolean isList() { return this instanceof List; }
     default boolean isPropList() { return this instanceof PropList; }
@@ -607,6 +613,7 @@ public sealed interface Datum {
             case Int i -> "int";
             case Float f -> "float";
             case Str s -> "string";
+            case FieldText ft -> "string";
             case Symbol sym -> "symbol";
             case List l -> "list";
             case PropList pl -> "propList";
@@ -657,6 +664,7 @@ public sealed interface Datum {
             case Int i -> i.value() != 0;
             case Float f -> f.value() != 0.0;
             case Str s -> !s.value().isEmpty();
+            case FieldText ft -> !ft.value().isEmpty();
             default -> true;
         };
     }
@@ -673,6 +681,14 @@ public sealed interface Datum {
                     yield 0;
                 }
             }
+            case FieldText ft -> {
+                try {
+                    yield Integer.parseInt(ft.value().trim());
+                } catch (NumberFormatException e) {
+                    yield 0;
+                }
+            }
+            case CastLibRef cl -> cl.castLibNum();
             case SpriteRef sr -> sr.channelNum();
             case Color c -> (c.r() << 16) | (c.g() << 8) | c.b();
             case PaletteIndexColor pic -> {
@@ -695,6 +711,13 @@ public sealed interface Datum {
                     yield 0.0;
                 }
             }
+            case FieldText ft -> {
+                try {
+                    yield Double.parseDouble(ft.value().trim());
+                } catch (NumberFormatException e) {
+                    yield 0.0;
+                }
+            }
             default -> 0.0;
         };
     }
@@ -705,6 +728,7 @@ public sealed interface Datum {
             case Int i -> String.valueOf(i.value());
             case Float f -> String.valueOf(f.value());
             case Str s -> s.value();
+            case FieldText ft -> ft.value();
             case Symbol s -> s.name();
             default -> toString();
         };
@@ -770,6 +794,7 @@ public sealed interface Datum {
             case Int i -> i;
             case Float f -> f;
             case Str s -> s;
+            case FieldText ft -> ft;
             case Symbol sym -> sym;
             case Point p -> new Point(p.x(), p.y());
             case Rect r -> new Rect(r.left(), r.top(), r.right(), r.bottom());
