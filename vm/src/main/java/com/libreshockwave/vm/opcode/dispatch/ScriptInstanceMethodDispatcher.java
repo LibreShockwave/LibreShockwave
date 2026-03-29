@@ -26,7 +26,7 @@ public final class ScriptInstanceMethodDispatcher {
         // This matches dirplayer-rs ScriptInstanceHandlers.call()
         String method = methodName.toLowerCase();
         LingoVM currentVm = LingoVM.getCurrentVM();
-        if (shouldDeferDynamicCastThreadClose(currentVm, instance, method, args)) {
+        if (shouldDeferNumericCloseThread(currentVm, method, args)) {
             currentVm.deferScriptInstanceCall(instance, methodName, args);
             return Datum.TRUE;
         }
@@ -256,9 +256,8 @@ public final class ScriptInstanceMethodDispatcher {
         return Datum.VOID;
     }
 
-    private static boolean shouldDeferDynamicCastThreadClose(
+    static boolean shouldDeferNumericCloseThread(
             LingoVM vm,
-            Datum.ScriptInstance instance,
             String methodName,
             List<Datum> args) {
         if (vm == null || vm.isFlushingDeferredScriptInstanceCalls() || !vm.hasActiveCallStack()) {
@@ -268,12 +267,7 @@ public final class ScriptInstanceMethodDispatcher {
             return false;
         }
         Datum target = args.get(0);
-        if (!(target.isInt() || target.isFloat())) {
-            return false;
-        }
-        return instance.properties().containsKey("pThreadList")
-                && instance.properties().containsKey("pIndexField")
-                && instance.properties().containsKey("pVarMngrObj");
+        return target.isInt() || target.isFloat();
     }
 
     private static String getPropertyName(Datum datum) {
