@@ -104,22 +104,20 @@ public final class CallOpcodes {
         List<Datum> args = getArgs(argListDatum);
 
         Datum result;
-        if (ctx.isBuiltin(handlerName)) {
+        HandlerRef ref = ctx.findHandler(handlerName);
+        if (ref != null) {
+            result = safeExecuteHandler(ctx, ref.script(), ref.handler(), args, null);
+        } else if (ctx.isBuiltin(handlerName)) {
             result = ctx.invokeBuiltin(handlerName, args);
         } else {
-            HandlerRef ref = ctx.findHandler(handlerName);
-            if (ref != null) {
-                result = safeExecuteHandler(ctx, ref.script(), ref.handler(), args, null);
+            // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
+            // Director compiles these as EXT_CALL with 0 args when used without "the"
+            if (args.isEmpty()) {
+                result = PropertyOpcodes.getBuiltinConstant(handlerName);
             } else {
-                // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
-                // Director compiles these as EXT_CALL with 0 args when used without "the"
-                if (args.isEmpty()) {
-                    result = PropertyOpcodes.getBuiltinConstant(handlerName);
-                } else {
-                    System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
-                    System.err.println(ctx.formatCallStack());
-                    result = Datum.VOID;
-                }
+                System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                System.err.println(ctx.formatCallStack());
+                result = Datum.VOID;
             }
         }
         if (!noRet) {
