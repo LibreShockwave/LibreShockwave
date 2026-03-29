@@ -228,6 +228,8 @@ public class Player {
         // Wire up member visual change callback to bump sprite revision
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
+        com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher.setImageMutationCallback(
+                () -> stageRenderer.getSpriteRegistry().bumpRevision());
         com.libreshockwave.player.cast.CastMember.setMemberSlotRetiredCallback(
                 (castLib, memberNum) -> stageRenderer.getSpriteRegistry().clearDynamicMemberBindings(castLib, memberNum));
 
@@ -306,6 +308,8 @@ public class Player {
         com.libreshockwave.player.cast.CastMember.setPaletteResolver(castLibManager::resolvePaletteByMember);
         com.libreshockwave.player.cast.CastMember.setMemberResolver(castLibManager::resolveMember);
         com.libreshockwave.player.cast.CastMember.setMemberVisualChangedCallback(
+                () -> stageRenderer.getSpriteRegistry().bumpRevision());
+        com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher.setImageMutationCallback(
                 () -> stageRenderer.getSpriteRegistry().bumpRevision());
         com.libreshockwave.player.cast.CastMember.setMemberSlotRetiredCallback(
                 (castLib, memberNum) -> stageRenderer.getSpriteRegistry().clearDynamicMemberBindings(castLib, memberNum));
