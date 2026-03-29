@@ -5,6 +5,7 @@ import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.format.ChunkType;
 import com.libreshockwave.id.ChunkId;
+import com.libreshockwave.player.sprite.SpriteState;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
@@ -13,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StageRendererRegPointFlipTest {
 
@@ -40,6 +42,19 @@ class StageRendererRegPointFlipTest {
         assertEquals(5, regY(normal));
         assertEquals(14, regX(flipped));
         assertEquals(5, regY(flipped));
+    }
+
+    @Test
+    void directorHorizontalMirrorIsTreatedAsEffectiveFlipForRegPointMath() throws Exception {
+        StageRenderer renderer = new StageRenderer(newEmptyDirectorFile());
+        SpriteState state = new SpriteState(7);
+        state.setRotation(180);
+        state.setSkew(180);
+
+        Method method = StageRenderer.class.getDeclaredMethod("effectiveFlipH", SpriteState.class);
+        method.setAccessible(true);
+
+        assertTrue((boolean) method.invoke(renderer, state));
     }
 
     private static Object invokeScaledRegPoint(StageRenderer renderer, CastMemberChunk member,
