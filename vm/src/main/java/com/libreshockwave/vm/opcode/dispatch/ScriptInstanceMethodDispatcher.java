@@ -1,8 +1,9 @@
 package com.libreshockwave.vm.opcode.dispatch;
 
 import com.libreshockwave.chunks.ScriptChunk;
-import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.DebugConfig;
+import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.opcode.ExecutionContext;
@@ -24,6 +25,11 @@ public final class ScriptInstanceMethodDispatcher {
         // FIRST: Handle built-in property access/modification methods
         // This matches dirplayer-rs ScriptInstanceHandlers.call()
         String method = methodName.toLowerCase();
+        LingoVM currentVm = LingoVM.getCurrentVM();
+        if (shouldDeferDynamicCastThreadClose(currentVm, instance, method, args)) {
+            currentVm.deferScriptInstanceCall(instance, methodName, args);
+            return Datum.TRUE;
+        }
         switch (method) {
             case "setat" -> {
                 // setAt on ScriptInstance: only "ancestor" key is allowed (dirplayer-rs)
@@ -201,6 +207,12 @@ public final class ScriptInstanceMethodDispatcher {
             }
         }
 
+        MemberRegistryMethodDispatcher.DispatchResult bridgeResult =
+                MemberRegistryMethodDispatcher.dispatch(instance, methodName, args);
+        if (bridgeResult.handled()) {
+            return bridgeResult.value();
+        }
+
         // SECOND: Check for Lingo handlers in the script (and ancestor chain)
         // This is for non-built-in methods like create(), dump(), etc.
         CastLibProvider provider = CastLibProvider.getProvider();
@@ -242,6 +254,26 @@ public final class ScriptInstanceMethodDispatcher {
         }
 
         return Datum.VOID;
+    }
+
+    private static boolean shouldDeferDynamicCastThreadClose(
+            LingoVM vm,
+            Datum.ScriptInstance instance,
+            String methodName,
+            List<Datum> args) {
+        if (vm == null || vm.isFlushingDeferredScriptInstanceCalls() || !vm.hasActiveCallStack()) {
+            return false;
+        }
+        if (!"closethread".equals(methodName) || args.size() != 1) {
+            return false;
+        }
+        Datum target = args.get(0);
+        if (!(target.isInt() || target.isFloat())) {
+            return false;
+        }
+        return instance.properties().containsKey("pThreadList")
+                && instance.properties().containsKey("pIndexField")
+                && instance.properties().containsKey("pVarMngrObj");
     }
 
     private static String getPropertyName(Datum datum) {
