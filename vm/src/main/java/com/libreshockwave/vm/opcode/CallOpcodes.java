@@ -157,6 +157,7 @@ public final class CallOpcodes {
             case Datum.Point point -> handlePointMethod(point, methodName, args);
             case Datum.Rect rect -> handleRectMethod(rect, methodName, args);
             case Datum.Str str -> StringMethodDispatcher.dispatch(str, methodName, args);
+            case Datum.FieldText fieldText -> StringMethodDispatcher.dispatch(fieldText, methodName, args);
             case Datum.TimeoutRef ref -> TimeoutBuiltins.handleMethod(ref, methodName, args);
             case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.dispatch(sc, methodName, args);
             case Datum.XtraInstance xi -> XtraBuiltins.callHandler(xi, methodName, args);
@@ -300,8 +301,8 @@ public final class CallOpcodes {
             int end = args.size() >= 3 ? args.get(2).toInt() : start;
             return Datum.of(getStringChunk(str, chunkType, start, end));
         } else {
-            if (value instanceof Datum.Str s) {
-                return StringMethodDispatcher.dispatch(s, methodName, args);
+            if (value.isString()) {
+                return StringMethodDispatcher.dispatch(value, methodName, args);
             }
             return Datum.VOID;
         }
