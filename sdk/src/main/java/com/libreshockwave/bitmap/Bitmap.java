@@ -19,6 +19,9 @@ public class Bitmap {
     private int paletteRefCastLib = -1;
     private int paletteRefMemberNum = -1;
     private String paletteRefSystemName;
+    private boolean hasAnchorPoint;
+    private int anchorX;
+    private int anchorY;
 
     public Bitmap(int width, int height, int bitDepth) {
         this.width = width;
@@ -194,6 +197,30 @@ public class Bitmap {
         this.paletteRefSystemName = null;
     }
 
+    public void setAnchorPoint(int x, int y) {
+        this.hasAnchorPoint = true;
+        this.anchorX = x;
+        this.anchorY = y;
+    }
+
+    public boolean hasAnchorPoint() {
+        return hasAnchorPoint;
+    }
+
+    public int getAnchorX() {
+        return anchorX;
+    }
+
+    public int getAnchorY() {
+        return anchorY;
+    }
+
+    public void clearAnchorPoint() {
+        this.hasAnchorPoint = false;
+        this.anchorX = 0;
+        this.anchorY = 0;
+    }
+
     public void copyPaletteMetadataFrom(Bitmap other) {
         if (other == null) {
             this.imagePalette = null;
@@ -209,6 +236,9 @@ public class Bitmap {
         this.paletteRefCastLib = other.paletteRefCastLib;
         this.paletteRefMemberNum = other.paletteRefMemberNum;
         this.paletteRefSystemName = other.paletteRefSystemName;
+        this.hasAnchorPoint = other.hasAnchorPoint;
+        this.anchorX = other.anchorX;
+        this.anchorY = other.anchorY;
     }
 
     /**
@@ -329,6 +359,9 @@ public class Bitmap {
         }
         if (regionIndices != null) {
             result.paletteIndices = regionIndices;
+        }
+        if (hasAnchorPoint) {
+            result.setAnchorPoint(anchorX - x, anchorY - y);
         }
         return result;
     }

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -678,5 +679,59 @@ public class ScriptModifiedBitmapTest {
         assertEquals(2, dest.getPaletteRefCastLib());
         assertEquals(77, dest.getPaletteRefMemberNum());
         assertEquals(0xFF6C5230, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void imageMutationCallbackFiresForScriptImageOps() {
+        Bitmap bmp = new Bitmap(2, 2, 32);
+        AtomicInteger callbackCount = new AtomicInteger();
+        ImageMethodDispatcher.setImageMutationCallback(callbackCount::incrementAndGet);
+        try {
+            ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                    List.of(new Datum.Rect(0, 0, 2, 2), new Datum.Color(255, 0, 0)));
+            assertEquals(1, callbackCount.get());
+
+            Bitmap src = new Bitmap(1, 1, 32);
+            src.fill(0xFF00FF00);
+            ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "copyPixels",
+                    List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                            new Datum.Rect(0, 0, 1, 1)));
+            assertEquals(2, callbackCount.get());
+        } finally {
+            ImageMethodDispatcher.setImageMutationCallback(null);
+        }
+    }
+
+    @Test
+    void copyPixelsTransfersAnchorMetadataIntoBlankDestination() {
+        Bitmap src = new Bitmap(4, 4, 32);
+        src.setAnchorPoint(2, 3);
+        src.fill(0xFF00FF00);
+
+        Bitmap dest = new Bitmap(8, 8, 32);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(1, 2, 5, 6),
+                        new Datum.Rect(0, 0, 4, 4)));
+
+        assertTrue(dest.hasAnchorPoint());
+        assertEquals(3, dest.getAnchorX());
+        assertEquals(5, dest.getAnchorY());
+    }
+
+    @Test
+    void memberImageAssignmentPreservesMemberRegPoint() {
+        CastMember member = new CastMember(1, 10001, MemberType.BITMAP);
+        assertTrue(member.setProp("regPoint", new Datum.Point(9, 11)));
+        Bitmap preview = new Bitmap(10, 12, 32);
+        preview.setAnchorPoint(4, 7);
+        preview.fill(0xFF123456);
+
+        assertTrue(member.setProp("image", new Datum.ImageRef(preview)));
+
+        assertEquals(9, member.getRegPointX());
+        assertEquals(11, member.getRegPointY());
+        assertTrue(member.getBitmap().hasAnchorPoint());
+        assertEquals(9, member.getBitmap().getAnchorX());
+        assertEquals(11, member.getBitmap().getAnchorY());
     }
 }

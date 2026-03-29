@@ -523,12 +523,18 @@ public class CastMember {
                 && paletteVersion > lastDecodedPaletteVersion) {
             redecodeBitmapWithPaletteRef();
         }
+        if (bitmap != null) {
+            bitmap.setAnchorPoint(regPointX, regPointY);
+        }
         return bitmap;
     }
 
     /** Set bitmap directly (for initial load, not Lingo assignment). Does NOT mark as script-modified. */
     public void setBitmapDirectly(Bitmap bmp) {
         this.bitmap = bmp;
+        if (this.bitmap != null) {
+            this.bitmap.setAnchorPoint(regPointX, regPointY);
+        }
     }
 
     public ScriptChunk getScript() {
@@ -841,6 +847,7 @@ public class CastMember {
                 if (value instanceof Datum.Point p) {
                     this.regPointX = p.x();
                     this.regPointY = p.y();
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -860,13 +867,18 @@ public class CastMember {
             if (source == null) {
                 return false;
             }
-            return copyMediaFrom(source);
+            boolean copied = copyMediaFrom(source);
+            if (copied) {
+                notifyMemberVisualChanged();
+            }
+            return copied;
         }
         if (memberType == MemberType.BITMAP && value instanceof Datum.ImageRef ir) {
             Bitmap newBmp = ir.bitmap().copy();
             newBmp.markScriptModified();
             this.bitmap = newBmp;
             this.state = State.LOADED;
+            notifyMemberVisualChanged();
             return true;
         }
         if ((memberType == MemberType.TEXT || memberType == MemberType.BUTTON)
@@ -1111,6 +1123,7 @@ public class CastMember {
                     Bitmap newBmp = ir.bitmap().copy();
                     newBmp.markScriptModified();
                     this.bitmap = newBmp;
+                    notifyMemberVisualChanged();
                     yield true;
                 }
                 yield false;
@@ -1123,6 +1136,7 @@ public class CastMember {
                     this.bitmap = new Bitmap(newW, h, bitmap != null ? bitmap.getBitDepth() : 32);
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
+                    notifyMemberVisualChanged();
                 }
                 yield true;
             }
@@ -1137,6 +1151,7 @@ public class CastMember {
                     this.bitmap = new Bitmap(w, newH, bitmap != null ? bitmap.getBitDepth() : 32);
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
+                    notifyMemberVisualChanged();
                 }
                 yield true;
             }

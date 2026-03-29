@@ -14,17 +14,33 @@ import java.util.List;
  */
 public final class ImageMethodDispatcher {
 
+    private static Runnable imageMutationCallback;
+
     private ImageMethodDispatcher() {}
+
+    public static void setImageMutationCallback(Runnable callback) {
+        imageMutationCallback = callback;
+    }
+
+    private static void notifyImageMutation(Bitmap bmp) {
+        if (bmp == null) {
+            return;
+        }
+        bmp.markScriptModified();
+        if (imageMutationCallback != null) {
+            imageMutationCallback.run();
+        }
+    }
 
     public static Datum dispatch(Datum.ImageRef imageRef, String methodName, List<Datum> args) {
         String method = methodName.toLowerCase();
         Bitmap bmp = imageRef.bitmap();
 
         return switch (method) {
-            case "fill" -> { bmp.markScriptModified(); yield fill(bmp, args); }
-            case "draw" -> { bmp.markScriptModified(); yield draw(bmp, args); }
+            case "fill" -> { notifyImageMutation(bmp); yield fill(bmp, args); }
+            case "draw" -> { notifyImageMutation(bmp); yield draw(bmp, args); }
             case "copypixels" -> {
-                bmp.markScriptModified();
+                notifyImageMutation(bmp);
                 yield copyPixels(bmp, args);
             }
             case "duplicate" -> new Datum.ImageRef(bmp.copy());
@@ -37,7 +53,7 @@ public final class ImageMethodDispatcher {
                     int color = Datum.datumToArgb(args.get(2));
                     if (px >= 0 && px < bmp.getWidth() && py >= 0 && py < bmp.getHeight()) {
                         bmp.setPixel(px, py, color);
-                        bmp.markScriptModified();
+                        notifyImageMutation(bmp);
                     }
                 }
                 yield Datum.VOID;
@@ -109,6 +125,7 @@ public final class ImageMethodDispatcher {
                         if (pal != null) {
                             bmp.remapImagePalette(pal);
                             bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
+                            notifyImageMutation(bmp);
                         }
                     }
                 } else if (value instanceof Datum.Symbol sym) {
@@ -116,9 +133,11 @@ public final class ImageMethodDispatcher {
                     if ("systemmac".equals(name)) {
                         bmp.remapImagePalette(Palette.SYSTEM_MAC_PALETTE);
                         bmp.setPaletteRefSystemName("systemMac");
+                        notifyImageMutation(bmp);
                     } else if ("systemwin".equals(name) || "systemwindows".equals(name)) {
                         bmp.remapImagePalette(Palette.SYSTEM_WIN_PALETTE);
                         bmp.setPaletteRefSystemName("systemWin");
+                        notifyImageMutation(bmp);
                     }
                 }
             }
@@ -349,6 +368,11 @@ public final class ImageMethodDispatcher {
         int destH = destRect.bottom() - destRect.top();
         if (dest.getImagePalette() == null && src.getImagePalette() != null) {
             dest.copyPaletteMetadataFrom(src);
+        }
+        if (!dest.hasAnchorPoint() && src.hasAnchorPoint()) {
+            dest.setAnchorPoint(
+                    destRect.left() + src.getAnchorX() - srcRect.left(),
+                    destRect.top() + src.getAnchorY() - srcRect.top());
         }
         Integer backgroundKeyRgb = ink == Palette.InkMode.BACKGROUND_TRANSPARENT
                 ? Integer.valueOf(bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF)
