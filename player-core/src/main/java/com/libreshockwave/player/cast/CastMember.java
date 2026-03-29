@@ -13,9 +13,12 @@ import com.libreshockwave.id.CastLibId;
 import com.libreshockwave.id.MemberId;
 import com.libreshockwave.player.render.RenderConfig;
 import com.libreshockwave.player.render.output.TextRenderer;
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.util.LingoValueParser;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 
@@ -89,6 +92,9 @@ public class CastMember {
 
     // Dynamic text content (for dynamically created field/text members)
     private String dynamicText;
+    private String parsedTextSource;
+    private Datum parsedTextValue = Datum.VOID;
+    private boolean parsedTextValid;
 
     // Runtime palette override (for palette swap animation)
     // Stores the castLib and memberNum of the palette cast member to use instead of the embedded one.
@@ -331,6 +337,7 @@ public class CastMember {
     private void loadText() {
         if (sourceFile == null || chunk == null) {
             textContent = "";
+            invalidateParsedTextCache();
             return;
         }
 
@@ -345,6 +352,7 @@ public class CastMember {
                 var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
                 if (textChunk.isPresent()) {
                     textContent = textChunk.get().text();
+                    invalidateParsedTextCache();
                     return;
                 }
             }
@@ -355,13 +363,15 @@ public class CastMember {
         if (textChunk.isPresent()) {
             textContent = textChunk.get().text();
         } else {
-                textContent = "";
+            textContent = "";
         }
+        invalidateParsedTextCache();
     }
 
     private void loadXmedText() {
         if (sourceFile == null || chunk == null) {
             textContent = "";
+            invalidateParsedTextCache();
             return;
         }
 
@@ -376,6 +386,7 @@ public class CastMember {
         } else {
             textContent = "";
         }
+        invalidateParsedTextCache();
     }
 
     /**
@@ -402,6 +413,17 @@ public class CastMember {
             }
         }
         return textContent != null ? textContent : "";
+    }
+
+    public Datum getParsedTextValue(LingoVM vm) {
+        String text = getTextContent();
+        if (parsedTextValid && Objects.equals(parsedTextSource, text)) {
+            return parsedTextValue;
+        }
+        parsedTextSource = text;
+        parsedTextValue = LingoValueParser.parseWithPartial(text, vm);
+        parsedTextValid = true;
+        return parsedTextValue;
     }
 
     // Accessors
@@ -489,6 +511,14 @@ public class CastMember {
     public void setDynamicText(String text) {
         this.dynamicText = text;
         this.textImageDirty = true;
+        invalidateParsedTextCache();
+        notifyMemberVisualChanged();
+    }
+
+    private void invalidateParsedTextCache() {
+        parsedTextSource = null;
+        parsedTextValue = Datum.VOID;
+        parsedTextValid = false;
     }
 
     public TextRenderer getTextRenderer() { return textRenderer; }
@@ -589,13 +619,29 @@ public class CastMember {
             case "name" -> Datum.of(name);
             case "number" -> Datum.of(getSlotNumber());
             case "membernum" -> Datum.of(memberId.value());
-            case "type" -> Datum.symbol(memberType == MemberType.NULL ? "empty" : memberType.getName());
+            case "type" -> Datum.symbol(getDirectorTypeName());
             case "castlibnum" -> Datum.of(castLibId.value());
             case "castlib" -> Datum.CastLibRef.of(castLibId.value());
             case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
             case "mediaready" -> Datum.of(1); // Always ready for now
             default -> getTypeProp(prop);
         };
+    }
+
+    private String getDirectorTypeName() {
+        if (memberType == MemberType.NULL) {
+            return "empty";
+        }
+        if (isTextLike()) {
+            return "field";
+        }
+        return memberType.getName();
+    }
+
+    private boolean isTextLike() {
+        return memberType == MemberType.TEXT
+                || memberType == MemberType.BUTTON
+                || (memberType == MemberType.XTRA && chunk != null && chunk.isTextXtra());
     }
 
     /**
@@ -885,11 +931,13 @@ public class CastMember {
             notifyMemberVisualChanged();
             return true;
         }
-        if ((memberType == MemberType.TEXT || memberType == MemberType.BUTTON)
+        if (isTextLike()
                 && (value instanceof Datum.Str || value instanceof Datum.Symbol)) {
             this.dynamicText = value.toStr();
             this.textImageDirty = true;
+            invalidateParsedTextCache();
             this.state = State.LOADED;
+            notifyMemberVisualChanged();
             return true;
         }
         return false;
@@ -898,6 +946,30 @@ public class CastMember {
     private boolean copyMediaFrom(CastMember source) {
         if (source == null) {
             return false;
+        }
+        if (source.isTextLike()) {
+            this.dynamicText = source.getTextContent();
+            this.textContent = source.getTextContent();
+            invalidateParsedTextCache();
+            this.textFont = source.textFont;
+            this.textFontSize = source.textFontSize;
+            this.textFontStyle = source.textFontStyle;
+            this.textAlignment = source.textAlignment;
+            this.textColor = source.textColor;
+            this.textBgColor = source.textBgColor;
+            this.textWordWrap = source.textWordWrap;
+            this.textAntialias = source.textAntialias;
+            this.textBoxType = source.textBoxType;
+            this.textRectLeft = source.textRectLeft;
+            this.textRectTop = source.textRectTop;
+            this.textRectRight = source.textRectRight;
+            this.textRectBottom = source.textRectBottom;
+            this.textFixedLineSpace = source.textFixedLineSpace;
+            this.textTopSpacing = source.textTopSpacing;
+            this.editable = source.editable;
+            this.textImageDirty = true;
+            this.state = State.LOADED;
+            return true;
         }
         switch (source.getMemberType()) {
             case BITMAP -> {
@@ -932,29 +1004,6 @@ public class CastMember {
                 this.state = State.LOADED;
                 return true;
             }
-            case TEXT, BUTTON -> {
-                this.dynamicText = source.getTextContent();
-                this.textContent = source.getTextContent();
-                this.textFont = source.textFont;
-                this.textFontSize = source.textFontSize;
-                this.textFontStyle = source.textFontStyle;
-                this.textAlignment = source.textAlignment;
-                this.textColor = source.textColor;
-                this.textBgColor = source.textBgColor;
-                this.textWordWrap = source.textWordWrap;
-                this.textAntialias = source.textAntialias;
-                this.textBoxType = source.textBoxType;
-                this.textRectLeft = source.textRectLeft;
-                this.textRectTop = source.textRectTop;
-                this.textRectRight = source.textRectRight;
-                this.textRectBottom = source.textRectBottom;
-                this.textFixedLineSpace = source.textFixedLineSpace;
-                this.textTopSpacing = source.textTopSpacing;
-                this.editable = source.editable;
-                this.textImageDirty = true;
-                this.state = State.LOADED;
-                return true;
-            }
             case SCRIPT -> {
                 this.script = source.getScript();
                 this.state = State.LOADED;
@@ -967,11 +1016,7 @@ public class CastMember {
     }
 
     private boolean setTypeProp(String prop, Datum value) {
-        if (memberType == MemberType.TEXT || memberType == MemberType.BUTTON) {
-            return setTextProp(prop, value);
-        }
-        // XTRA "text" sub-type members behave like TEXT for property access
-        if (memberType == MemberType.XTRA && chunk != null && chunk.isTextXtra()) {
+        if (isTextLike()) {
             return setTextProp(prop, value);
         }
         if (memberType == MemberType.BITMAP) {
@@ -989,6 +1034,8 @@ public class CastMember {
             case "text" -> {
                 this.dynamicText = value.toStr();
                 textImageDirty = true;
+                invalidateParsedTextCache();
+                notifyMemberVisualChanged();
                 return true;
             }
             case "html" -> {
@@ -996,16 +1043,20 @@ public class CastMember {
                 String html = value.toStr();
                 this.dynamicText = html.replaceAll("<[^>]*>", "");
                 textImageDirty = true;
+                invalidateParsedTextCache();
+                notifyMemberVisualChanged();
                 return true;
             }
             case "font" -> {
                 this.textFont = value.toStr();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fontsize" -> {
                 this.textFontSize = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fontstyle" -> {
@@ -1021,6 +1072,7 @@ public class CastMember {
                     this.textFontStyle = value.toStr();
                 }
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "alignment" -> {
@@ -1030,6 +1082,7 @@ public class CastMember {
                     this.textAlignment = value.toStr().toLowerCase();
                 }
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "color" -> {
@@ -1037,6 +1090,7 @@ public class CastMember {
                 if (!value.isVoid()) {
                     this.textColor = Datum.datumToArgb(value);
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                 }
                 return true;
             }
@@ -1045,22 +1099,26 @@ public class CastMember {
                 if (!value.isVoid()) {
                     this.textBgColor = Datum.datumToArgb(value);
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                 }
                 return true;
             }
             case "wordwrap" -> {
                 this.textWordWrap = value.toInt() != 0;
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "antialias" -> {
                 this.textAntialias = value.toInt() != 0;
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "boxtype" -> {
                 this.textBoxType = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "rect" -> {
@@ -1070,6 +1128,7 @@ public class CastMember {
                     this.textRectRight = r.right();
                     this.textRectBottom = r.bottom();
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -1077,21 +1136,25 @@ public class CastMember {
             case "width" -> {
                 this.textRectRight = this.textRectLeft + value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "height" -> {
                 this.textRectBottom = this.textRectTop + value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fixedlinespace" -> {
                 this.textFixedLineSpace = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "topspacing" -> {
                 this.textTopSpacing = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "editable" -> {
@@ -1104,11 +1167,7 @@ public class CastMember {
                     this.bitmap = ir.bitmap().copy();
                     this.textRenderedImage = this.bitmap;
                     this.textImageDirty = false;
-                    Bitmap nb = this.bitmap;
-                    if (nb.getWidth() > 50 || nb.getHeight() > 50) {
-                        System.out.println("[TXT-IMG] cl=" + castLibId.value() + " cm=" + getMemberNumber()
-                                + " " + nb.getWidth() + "x" + nb.getHeight());
-                    }
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -1193,6 +1252,7 @@ public class CastMember {
         script = null;
         textContent = "";
         dynamicText = null;
+        invalidateParsedTextCache();
         dynamicPalette = null;
         regPointX = 0;
         regPointY = 0;
