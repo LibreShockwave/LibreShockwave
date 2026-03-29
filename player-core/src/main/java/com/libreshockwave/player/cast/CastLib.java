@@ -31,6 +31,7 @@ public class CastLib {
     private final CastLibId castLibId;  // 1-based cast library number
     private String name;
     private String fileName;
+    private final String authoredFileName;
     private State state = State.NONE;
     private int preloadMode = 0;
     private Datum selection = Datum.list(); // Selected members as [[start, end], ...]
@@ -49,6 +50,7 @@ public class CastLib {
 
     // Reference to the source file
     private DirectorFile sourceFile;
+    private byte[] fetchedExternalData;
     private final CastChunk castChunk;
 
     public CastLib(int number, CastChunk castChunk, CastListChunk.CastListEntry listEntry) {
@@ -59,9 +61,11 @@ public class CastLib {
         if (listEntry != null) {
             this.name = listEntry.name() != null ? listEntry.name() : "";
             this.fileName = listEntry.path() != null ? listEntry.path() : "";
+            this.authoredFileName = this.fileName;
         } else {
             this.name = "";
             this.fileName = "";
+            this.authoredFileName = "";
         }
 
         // Default name for internal cast
@@ -88,7 +92,7 @@ public class CastLib {
      * Check if the external cast data has been fetched (via preloadNetThing).
      */
     public boolean isFetched() {
-        return sourceFile != null || !isExternal();
+        return sourceFile != null || fetchedExternalData != null || !isExternal();
     }
 
     /**
@@ -106,6 +110,11 @@ public class CastLib {
         // External casts must be fetched first via preloadNetThing
         // Don't auto-load them here
         if (sourceFile == null) {
+            if (fetchedExternalData != null) {
+                if (setExternalData(fetchedExternalData)) {
+                    return;
+                }
+            }
             if (isExternal()) {
                 // External cast not yet fetched - stay in LOADING state but don't block
                 // It will be loaded when preloadNetThing completes
@@ -260,6 +269,19 @@ public class CastLib {
 
     public void setFileName(String fileName) {
         this.fileName = fileName;
+    }
+
+    public boolean hasAuthoredExternalBinding() {
+        return authoredFileName != null && !authoredFileName.isEmpty();
+    }
+
+    public boolean matchesAuthoredExternalFile(String baseName) {
+        if (!hasAuthoredExternalBinding() || baseName == null || baseName.isEmpty()) {
+            return false;
+        }
+        String authoredBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(authoredFileName));
+        return authoredBaseName.equalsIgnoreCase(baseName);
     }
 
     public State getState() {
@@ -599,9 +621,27 @@ public class CastLib {
         }
 
         try {
+            fetchedExternalData = data.clone();
             DirectorFile file = DirectorFile.load(data);
             if (file != null) {
                 this.sourceFile = file;
+
+                // Preserve any externally assigned castLib.name across the load.
+                // Movies may set castLib.name before castLib.fileName and expect the
+                // chosen name to survive if the loaded external cast provides no name.
+                // Only replace it when the loaded file explicitly supplies one.
+                String nameBeforeLoad = this.name;
+                CastListChunk externalCastList = file.getCastList();
+                if (externalCastList != null && !externalCastList.entries().isEmpty()) {
+                    String internalName = externalCastList.entries().get(0).name();
+                    if (internalName != null && !internalName.isEmpty()) {
+                        this.name = internalName;
+                    }
+                }
+                if (this.name == null || this.name.isEmpty()) {
+                    this.name = nameBeforeLoad;
+                }
+
                 // Preserve dynamically created members (memberNum >= nextDynamicMember start).
                 // These are runtime-created by Lingo via new(#type, castLib) and must survive
                 // cast reloads — otherwise window system buffers lose their bitmap data.
@@ -629,6 +669,18 @@ public class CastLib {
             System.err.println("[CastLib] Failed to parse external cast " + name + ": " + e.getClass().getName() + ": " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * Remember bytes from preloadNetThing without forcing an immediate parse.
+     * This keeps external casts generically "fetched" so preloadCasts(mode)
+     * and later castLib.load() calls can consume the already-downloaded data.
+     */
+    public void cacheFetchedExternalData(byte[] data) {
+        if (data == null || data.length == 0) {
+            return;
+        }
+        fetchedExternalData = data.clone();
     }
 
     // Track next dynamic member number for new members created at runtime
