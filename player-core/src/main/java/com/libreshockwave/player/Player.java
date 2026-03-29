@@ -110,6 +110,8 @@ public class Player {
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
     private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
+    private PlayerCompatibilityProfile compatibilityProfile = PlayerCompatibilityProfile.NONE;
+    private final Map<String, Datum> initialBuiltinVariables = new LinkedHashMap<>();
 
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
@@ -625,6 +627,37 @@ public class Player {
         return bitmapCache;
     }
 
+    public void setCompatibilityProfile(PlayerCompatibilityProfile compatibilityProfile) {
+        this.compatibilityProfile = compatibilityProfile != null
+                ? compatibilityProfile
+                : PlayerCompatibilityProfile.NONE;
+    }
+
+    /**
+     * Register a builtin variable value that should exist before authored movie
+     * startup handlers run.
+     */
+    public void setInitialBuiltinVariable(String variableName, Datum defaultValue) {
+        if (variableName == null || variableName.isEmpty()) {
+            return;
+        }
+        initialBuiltinVariables.put(variableName,
+                defaultValue != null ? defaultValue.deepCopy() : Datum.VOID);
+    }
+
+    /**
+     * Replace all configured builtin bootstrap variables.
+     */
+    public void setInitialBuiltinVariables(Map<String, Datum> values) {
+        initialBuiltinVariables.clear();
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        for (var entry : values.entrySet()) {
+            setInitialBuiltinVariable(entry.getKey(), entry.getValue());
+        }
+    }
+
     public void setEventListener(Consumer<PlayerEventInfo> listener) {
         this.eventListener = listener;
     }
@@ -674,8 +707,8 @@ public class Player {
     /**
      * Set the debug controller for bytecode-level debugging.
      * The controller will receive TraceListener callbacks and can pause/step the VM.
-     * The controller is installed as a delegate inside our PlayerTraceListener so that
-     * the constructObjectManager interception continues to work alongside debugging.
+     * The controller is installed as a delegate inside our PlayerTraceListener so core
+     * compatibility hooks continue to work alongside debugging.
      */
     public void setDebugController(DebugControllerApi controller) {
         this.debugController = controller;
@@ -943,6 +976,7 @@ public class Player {
                         // completions and member indexing) finishes before
                         // Multiuser Xtra messages trigger room object creation.
                         xtraManager.tickAll();
+                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -998,6 +1032,7 @@ public class Player {
             // completions and member indexing) finishes before
             // Multiuser Xtra messages trigger room object creation.
             xtraManager.tickAll();
+            compatibilityProfile.afterFrameExecution(this);
             repairVisualizerSprites();
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             frameContext.advanceFrame();
@@ -1042,6 +1077,7 @@ public class Player {
                         // completions and member indexing) finishes before
                         // Multiuser Xtra messages trigger room object creation.
                         xtraManager.tickAll();
+                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -1199,6 +1235,9 @@ public class Player {
 
         setupProviders();
         try {
+            applyInitialBuiltinVariables();
+            compatibilityProfile.beforePrepareMovie(this);
+
             // 0. Initiate fetch of all external casts (async network requests)
             preloadAllCasts();
 
@@ -1237,6 +1276,23 @@ public class Player {
             // Frame loop will handle subsequent frames
         } finally {
             clearProviders();
+        }
+    }
+
+    void ensureBuiltinVariableValue(String variableName, Datum defaultValue) {
+        Datum exists = vm.callBuiltin("variableExists", List.of(Datum.of(variableName)));
+        if (exists.isTruthy()) {
+            return;
+        }
+        vm.callBuiltin("setVariable", List.of(Datum.of(variableName), defaultValue));
+    }
+
+    private void applyInitialBuiltinVariables() {
+        if (initialBuiltinVariables.isEmpty()) {
+            return;
+        }
+        for (var entry : initialBuiltinVariables.entrySet()) {
+            ensureBuiltinVariableValue(entry.getKey(), entry.getValue());
         }
     }
 
@@ -1399,6 +1455,7 @@ public class Player {
 
         @Override
         public void onHandlerEnter(HandlerInfo info) {
+            compatibilityProfile.onHandlerEnter(Player.this, info);
             if (delegate != null) delegate.onHandlerEnter(info);
         }
 
@@ -1415,6 +1472,7 @@ public class Player {
                         "fuse_frameProxy", Integer.MAX_VALUE, "null", returnValue);
             }
 
+            compatibilityProfile.onHandlerExit(Player.this, info, returnValue);
             if (delegate != null) delegate.onHandlerExit(info, returnValue);
         }
 
