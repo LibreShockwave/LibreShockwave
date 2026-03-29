@@ -3,6 +3,9 @@ package com.libreshockwave.player.cast;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
+import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.ChunkId;
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +38,35 @@ class CastMemberLifecycleTest {
 
         assertTrue(type.isSymbol());
         assertEquals("bitmap", type.toKeyName());
+    }
+
+    @Test
+    void textMembersReportDirectorFieldType() {
+        CastMember field = new CastMember(1, 10001, MemberType.TEXT);
+
+        Datum type = field.getProp("type");
+
+        assertTrue(type.isSymbol());
+        assertEquals("field", type.toKeyName());
+    }
+
+    @Test
+    void parsedFieldValueIsCachedUntilTextChanges() {
+        CastMember field = new CastMember(1, 10001, MemberType.TEXT);
+        LingoVM vm = new LingoVM(null);
+
+        field.setDynamicText("[#foo: 7]");
+        Datum first = field.getParsedTextValue(vm);
+        Datum second = field.getParsedTextValue(vm);
+
+        assertSame(first, second);
+        assertEquals(7, ((Datum.PropList) first).get("foo").toInt());
+
+        field.setDynamicText("[#foo: 8]");
+        Datum third = field.getParsedTextValue(vm);
+
+        assertNotSame(first, third);
+        assertEquals(8, ((Datum.PropList) third).get("foo").toInt());
     }
 
     @Test
@@ -102,5 +134,49 @@ class CastMemberLifecycleTest {
         assertEquals(10000, reused.getMemberNumber());
         assertEquals("palette", reused.getProp("type").toKeyName());
         assertTrue(reused.getProp("type").isSymbol());
+    }
+
+    @Test
+    void mediaCopyTreatsTextXtraSourcesAsFields() {
+        CastMemberChunk sourceChunk = createTextXtraChunk(42, "grunge_barrel.props");
+        CastMember source = new CastMember(11, 42, sourceChunk, null);
+        assertTrue(source.setProp("text", Datum.of("[#a: [#blend: 80]]")));
+
+        CastMember target = new CastMember(2, 10000, MemberType.TEXT);
+        CastMember.setMemberResolver((castLib, memberNum) ->
+                castLib == 11 && memberNum == 42 ? source : null);
+        try {
+            assertTrue(target.setProp("media", Datum.CastMemberRef.of(11, 42)));
+        } finally {
+            CastMember.setMemberResolver(null);
+        }
+
+        assertEquals("[#a: [#blend: 80]]", target.getTextContent());
+        assertEquals("field", target.getProp("type").toKeyName());
+    }
+
+    @Test
+    void textXtraTargetsAcceptStringMediaAssignments() {
+        CastMember target = new CastMember(11, 99, createTextXtraChunk(99, "dynamic.props"), null);
+
+        assertTrue(target.setProp("media", Datum.of("[#foo: 1]")));
+        assertEquals("[#foo: 1]", target.getTextContent());
+        assertEquals("field", target.getProp("type").toKeyName());
+    }
+
+    private static CastMemberChunk createTextXtraChunk(int memberNum, String name) {
+        byte[] textXtraSpecificData = new byte[]{0, 0, 0, 0, 't', 'e', 'x', 't'};
+        return new CastMemberChunk(
+                null,
+                new ChunkId(memberNum),
+                MemberType.XTRA,
+                0,
+                textXtraSpecificData.length,
+                new byte[0],
+                textXtraSpecificData,
+                name,
+                0,
+                0,
+                0);
     }
 }
