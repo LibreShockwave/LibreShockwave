@@ -1,5 +1,6 @@
 package com.libreshockwave.vm.builtin.cast;
 
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
 
 /**
@@ -99,6 +100,23 @@ public interface CastLibProvider {
      */
     default String getFieldValue(Object memberNameOrNum, int castId) {
         return "";
+    }
+
+    /**
+     * Get a field value as a string-like Datum.
+     * Allows the runtime to preserve source member identity for caching while
+     * keeping Director-visible field() semantics string-based.
+     */
+    default Datum getFieldDatum(Object memberNameOrNum, int castId) {
+        return Datum.of(getFieldValue(memberNameOrNum, castId));
+    }
+
+    /**
+     * Get a parsed Datum for a field member's text content.
+     * Used by value(field(...)) to reuse the same parser/cache path generically.
+     */
+    default Datum getFieldParsedValue(int castLibNumber, int memberNumber, LingoVM vm) {
+        return Datum.VOID;
     }
 
     /**
