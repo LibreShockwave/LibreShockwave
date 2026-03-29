@@ -435,12 +435,8 @@ public class CastMember {
     }
 
     private void updateName(String newName) {
-        String oldName = this.name != null ? this.name : "";
         String nextName = newName != null ? newName : "";
         this.name = nextName;
-        if (isRuntimeDynamicMember() && !oldName.isEmpty() && nextName.isEmpty()) {
-            notifyMemberSlotRetired();
-        }
     }
 
     private boolean isRuntimeDynamicMember() {

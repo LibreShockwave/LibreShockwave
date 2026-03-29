@@ -66,7 +66,7 @@ class CastMemberLifecycleTest {
     }
 
     @Test
-    void blankingDynamicBitmapNameRetiresTheSlot() {
+    void blankingDynamicBitmapNameDoesNotRetireTheSlot() {
         CastMember member = new CastMember(7, 10001, MemberType.BITMAP);
         AtomicInteger retiredSlot = new AtomicInteger(-1);
 
@@ -77,7 +77,8 @@ class CastMemberLifecycleTest {
             member.setProp("name", Datum.of("bb_tempworld"));
             member.setProp("name", Datum.EMPTY_STRING);
 
-            assertEquals((7 << 16) | 10001, retiredSlot.get());
+            assertEquals("", member.getName());
+            assertEquals(-1, retiredSlot.get());
         } finally {
             CastMember.setMemberSlotRetiredCallback(null);
         }
