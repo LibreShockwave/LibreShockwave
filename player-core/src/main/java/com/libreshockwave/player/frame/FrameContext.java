@@ -323,6 +323,9 @@ public class FrameContext {
             // Remove from active set
             activeChannels.remove(channel);
             behaviorManager.removeInstancesForChannel(channel);
+            if (spriteRegistry != null) {
+                spriteRegistry.remove(channel);
+            }
 
             logEvent("endSprite: channel " + channel);
         }
