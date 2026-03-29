@@ -443,6 +443,10 @@ public class CastMember {
         return chunk == null && sourceFile == null;
     }
 
+    public boolean isRuntimeDynamic() {
+        return isRuntimeDynamicMember();
+    }
+
     public boolean isReusableDynamicSlot() {
         return isRuntimeDynamicMember()
                 && memberType == MemberType.NULL

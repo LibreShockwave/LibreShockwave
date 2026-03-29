@@ -91,6 +91,9 @@ public class Player {
 
     // Error listener (called on Lingo script errors)
     private java.util.function.BiConsumer<String, LingoException> errorListener;
+    private volatile String lastScriptErrorMessage = "";
+    private volatile String lastScriptErrorStack = "";
+    private volatile long lastScriptErrorTimeMs = 0L;
 
     // Debug mode
     private boolean debugEnabled = false;
@@ -694,6 +697,22 @@ public class Player {
      */
     public String formatLingoCallStack() {
         return vm.formatCallStack();
+    }
+
+    public String getRecentScriptErrorMessage(long maxAgeMs) {
+        if (maxAgeMs < 0) {
+            maxAgeMs = 0;
+        }
+        long age = System.currentTimeMillis() - lastScriptErrorTimeMs;
+        return lastScriptErrorTimeMs > 0 && age <= maxAgeMs ? lastScriptErrorMessage : "";
+    }
+
+    public String getRecentScriptErrorStack(long maxAgeMs) {
+        if (maxAgeMs < 0) {
+            maxAgeMs = 0;
+        }
+        long age = System.currentTimeMillis() - lastScriptErrorTimeMs;
+        return lastScriptErrorTimeMs > 0 && age <= maxAgeMs ? lastScriptErrorStack : "";
     }
 
     public void setDebugEnabled(boolean enabled) {
@@ -1494,6 +1513,19 @@ public class Player {
         @Override
         public void onError(String message, Exception error) {
             if (delegate != null) delegate.onError(message, error);
+            lastScriptErrorTimeMs = System.currentTimeMillis();
+            if (message != null && !message.isEmpty()) {
+                lastScriptErrorMessage = message;
+            } else if (error != null && error.getMessage() != null) {
+                lastScriptErrorMessage = error.getMessage();
+            } else {
+                lastScriptErrorMessage = "";
+            }
+            if (error instanceof LingoException leForState) {
+                lastScriptErrorStack = leForState.formatLingoCallStack();
+            } else {
+                lastScriptErrorStack = "";
+            }
             if (errorListener != null) {
                 LingoException le = error instanceof LingoException ? (LingoException) error : null;
                 errorListener.accept(message, le);
