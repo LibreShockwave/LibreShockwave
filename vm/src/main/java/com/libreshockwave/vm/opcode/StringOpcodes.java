@@ -521,7 +521,7 @@ public final class StringOpcodes {
                     Object identifier = idDatum instanceof Datum.Str s ? s.value()
                             : idDatum instanceof Datum.Int i ? i.value()
                             : idDatum.toStr();
-                    return Datum.of(provider.getFieldValue(identifier, castId));
+                    return provider.getFieldDatum(identifier, castId);
                 }
                 return Datum.EMPTY_STRING;
             }
