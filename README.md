@@ -51,7 +51,7 @@ The player is available in two forms:
 
 All player functionality is decoupled from the SDK and VM via the `player-core` module, which provides platform-independent playback logic (score traversal, event dispatch, sprite management, bitmap decoding).
 
-![](https://i.imgur.com/rlrsHov.gif)
+<img width="1920" height="1200" alt="image" src="https://github.com/user-attachments/assets/ea55ad95-bc72-4994-89e6-d0259bf0cc6b" />
 
 ## Editor
 
