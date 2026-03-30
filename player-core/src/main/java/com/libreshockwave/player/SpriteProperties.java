@@ -10,6 +10,7 @@ import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.SpriteRegistry;
 import com.libreshockwave.player.sprite.SpriteState;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 
@@ -367,13 +368,29 @@ public class SpriteProperties implements SpritePropertyProvider {
     }
 
     private static void resetReleasedEmptyChannel(SpriteState sprite) {
-        sprite.setScriptInstanceList(java.util.List.of());
+        sprite.setScriptInstanceList(retainSyntheticBrokerInstances(sprite.getScriptInstanceList()));
         sprite.setVisible(false);
         sprite.setCursor(0);
         sprite.setBlend(100);
         sprite.setStretch(0);
         sprite.resetReleasedChannelGeometry();
         sprite.resetReleasedSpriteTransforms();
+    }
+
+    private static java.util.List<Datum> retainSyntheticBrokerInstances(java.util.List<Datum> scriptInstances) {
+        if (scriptInstances == null || scriptInstances.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.List<Datum> retained = new java.util.ArrayList<>();
+        for (Datum script : scriptInstances) {
+            if (script instanceof Datum.ScriptInstance instance
+                    && instance.properties().getOrDefault(
+                            SpriteEventBrokerSupport.SYNTHETIC_BROKER_FLAG,
+                            Datum.FALSE).isTruthy()) {
+                retained.add(instance);
+            }
+        }
+        return retained;
     }
 
     private boolean assignMember(SpriteState sprite, Datum value, boolean viaSetMemberMethod) {

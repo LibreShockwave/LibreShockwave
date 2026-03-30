@@ -121,12 +121,16 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
-    void disablingPuppetOnEmptySpriteResetsReleasedChannelState() {
+    void disablingPuppetOnEmptySpriteRetainsSyntheticBrokerButResetsReleasedChannelState() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteProperties props = new SpriteProperties(registry);
 
         SpriteState state = registry.getOrCreateDynamic(23);
-        state.setScriptInstanceList(List.of(new Datum.ScriptInstance(99, new LinkedHashMap<>())));
+        Datum.ScriptInstance broker = new Datum.ScriptInstance(99, new LinkedHashMap<>(java.util.Map.of(
+                SpriteEventBrokerSupport.SYNTHETIC_BROKER_FLAG, Datum.TRUE
+        )));
+        Datum.ScriptInstance behavior = new Datum.ScriptInstance(100, new LinkedHashMap<>());
+        state.setScriptInstanceList(List.of(broker, behavior));
         state.setVisible(true);
         state.setBlend(30);
         state.setStretch(1);
@@ -137,7 +141,7 @@ class SpritePropertiesLifecycleTest {
         assertTrue(props.setSpriteProp(23, "member", Datum.ZERO));
         assertTrue(props.setSpriteProp(23, "puppet", Datum.ZERO));
 
-        assertTrue(state.getScriptInstanceList().isEmpty());
+        assertEquals(List.of(broker), state.getScriptInstanceList());
         assertFalse(state.isVisible());
         assertEquals(100, state.getBlend());
         assertEquals(0, state.getStretch());
@@ -216,6 +220,11 @@ class SpritePropertiesLifecycleTest {
         assertTrue(props.setSpriteProp(9, "member",
                 Datum.CastMemberRef.of(7, first.getMemberNumber())));
 
+        Datum.ScriptInstance broker = new Datum.ScriptInstance(77, new LinkedHashMap<>(java.util.Map.of(
+                SpriteEventBrokerSupport.SYNTHETIC_BROKER_FLAG, Datum.TRUE
+        )));
+        state.setScriptInstanceList(List.of(broker));
+
         state.setWidth(160);
         state.setHeight(120);
         assertTrue(state.hasSizeChanged());
@@ -231,6 +240,7 @@ class SpritePropertiesLifecycleTest {
         assertEquals(40, state.getWidth());
         assertEquals(30, state.getHeight());
         assertFalse(state.hasSizeChanged());
+        assertEquals(List.of(broker), state.getScriptInstanceList());
 
         CastMember reused = castLib.createDynamicMember("bitmap");
         assertSame(first, reused);
@@ -246,7 +256,7 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
-    void scoreSpriteRebindClearsStaleRuntimeStateWhenMemberChanges() {
+    void scoreSpriteRebindPreservesRuntimeScriptInstancesWhenMemberChanges() {
         SpriteRegistry registry = new SpriteRegistry();
         SpriteState state = registry.getOrCreate(9, new ScoreChunk.ChannelData(
                 1, 0, 0, 0, 0, 0,
@@ -255,7 +265,8 @@ class SpritePropertiesLifecycleTest {
                 0, 0, 0, 0, 0, 0
         ));
 
-        state.setScriptInstanceList(List.of(new Datum.ScriptInstance(77, new LinkedHashMap<>())));
+        Datum.ScriptInstance scriptInstance = new Datum.ScriptInstance(77, new LinkedHashMap<>());
+        state.setScriptInstanceList(List.of(scriptInstance));
         state.setForeColor(0x123456);
         state.setBackColor(0x654321);
         state.setRotation(180.0);
@@ -275,7 +286,8 @@ class SpritePropertiesLifecycleTest {
 
         assertEquals(4, state.getEffectiveCastLib());
         assertEquals(41, state.getEffectiveCastMember());
-        assertTrue(state.getScriptInstanceList().isEmpty());
+        assertEquals(List.of(scriptInstance), state.getScriptInstanceList());
+        assertSame(scriptInstance, state.getScriptInstanceList().get(0));
         assertEquals(80, state.getWidth());
         assertEquals(70, state.getHeight());
         assertEquals(0.0, state.getRotation());
