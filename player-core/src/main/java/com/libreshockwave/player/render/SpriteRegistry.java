@@ -27,7 +27,7 @@ public class SpriteRegistry {
             state = new SpriteState(channel, data);
             sprites.put(channel, state);
         } else if (!state.isPuppet() && !state.hasDynamicMember() && !state.matchesScoreIdentity(data)) {
-            state.rebindToScore(data);
+            state.rebindToScorePreservingScriptInstances(data);
         }
         return state;
     }
@@ -61,7 +61,7 @@ public class SpriteRegistry {
             if (state.matchesScoreIdentity(data)) {
                 state.syncFromScore(data);
             } else {
-                state.rebindToScore(data);
+                state.rebindToScorePreservingScriptInstances(data);
                 bumpRevision();
             }
         }
@@ -142,7 +142,7 @@ public class SpriteRegistry {
 
         ScoreChunk.ChannelData initialData = state.getInitialData();
         if (initialData != null) {
-            state.rebindToScore(initialData);
+            state.rebindToScorePreservingScriptInstances(initialData);
             return;
         }
 

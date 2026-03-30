@@ -340,5 +340,17 @@ public class SpriteState {
         this.hasDynamicMember = false;
     }
 
+    /**
+     * Rebind score-backed display state while preserving runtime child objects
+     * attached to the channel itself (for example registerProcedure brokers).
+     * These objects belong to the live sprite channel, not to the member that
+     * happened to be displayed before the swap.
+     */
+    public void rebindToScorePreservingScriptInstances(ScoreChunk.ChannelData data) {
+        List<Datum> preserved = new ArrayList<>(scriptInstanceList);
+        rebindToScore(data);
+        this.scriptInstanceList = preserved;
+    }
+
     public ScoreChunk.ChannelData getInitialData() { return scoreData; }
 }
