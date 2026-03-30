@@ -207,6 +207,24 @@ class DrawingMatteTest {
     }
 
     @Test
+    void matteCopyPixelsDoesNotStripColoredContentInsideDarkFrame() {
+        Bitmap dest = new Bitmap(4, 4, 32);
+        Bitmap src = new Bitmap(4, 4, 32, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFF2A6883, 0xFF2A6883, 0xFF000000,
+                0xFF000000, 0xFF2A6883, 0xFF2A6883, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 4, 4, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFF000000, dest.getPixel(0, 0));
+        assertEquals(0xFF2A6883, dest.getPixel(1, 1));
+        assertEquals(0xFF2A6883, dest.getPixel(2, 2));
+        assertEquals(0xFF000000, dest.getPixel(3, 3));
+    }
+
+    @Test
     void matteCopyPixelsKeepsMixed32BitNoWhiteEdgeStripOpaque() {
         Bitmap dest = new Bitmap(5, 1, 32);
         Bitmap src = new Bitmap(5, 1, 32, new int[] {
