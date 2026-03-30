@@ -600,6 +600,18 @@ class OpcodeTest {
             assertTrue(advance);
             assertEquals(Datum.FALSE, scope.pop());
         }
+
+        @Test
+        void emptyNeedleDoesNotMatchContains() {
+            scope.push(Datum.of("Hello World"));
+            scope.push(Datum.EMPTY_STRING);
+
+            OpcodeHandler handler = registry.get(Opcode.CONTAINS_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals(Datum.FALSE, scope.pop());
+        }
     }
 
     @Nested
