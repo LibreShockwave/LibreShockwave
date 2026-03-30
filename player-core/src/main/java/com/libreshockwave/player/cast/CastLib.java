@@ -604,8 +604,11 @@ public class CastLib {
                 return true;
             }
             case "filename" -> {
-                this.fileName = value.toStr();
-                // TODO: trigger reload if fileName changes
+                String newFileName = value.toStr();
+                if (!sameFileBinding(this.fileName, newFileName)) {
+                    invalidateFileBackedBinding();
+                }
+                this.fileName = newFileName;
                 return true;
             }
             case "preloadmode" -> {
@@ -625,6 +628,33 @@ public class CastLib {
                 return false;
             }
         }
+    }
+
+    private boolean sameFileBinding(String currentFileName, String newFileName) {
+        if (currentFileName == null) {
+            return newFileName == null || newFileName.isEmpty();
+        }
+        return currentFileName.equals(newFileName);
+    }
+
+    private void invalidateFileBackedBinding() {
+        Map<Integer, CastMember> dynamicMembers = new HashMap<>();
+        for (Map.Entry<Integer, CastMember> entry : members.entrySet()) {
+            if (entry.getKey() >= 10000) {
+                dynamicMembers.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        // Swapping castLib.fileName should immediately retire the old external cast contents
+        // while preserving runtime-created members that live in high-numbered dynamic slots.
+        sourceFile = null;
+        fetchedExternalData = null;
+        state = State.NONE;
+        totalSlotCount = 0;
+        memberChunks.clear();
+        scripts.clear();
+        members.clear();
+        members.putAll(dynamicMembers);
     }
 
     /**
