@@ -29,7 +29,7 @@ public final class InkProcessor {
     public static boolean shouldProcessInk(InkMode ink) {
         return ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE || ink == InkMode.GHOST
             || ink == InkMode.NOT_COPY || ink == InkMode.NOT_TRANSPARENT || ink == InkMode.NOT_REVERSE
-            || ink == InkMode.NOT_GHOST || ink == InkMode.MATTE || ink == InkMode.ADD_PIN
+            || ink == InkMode.NOT_GHOST || ink == InkMode.MATTE || ink == InkMode.MASK || ink == InkMode.ADD_PIN
             || ink == InkMode.ADD || ink == InkMode.SUBTRACT_PIN || ink == InkMode.SUBTRACT
             || ink == InkMode.BACKGROUND_TRANSPARENT || ink == InkMode.BLEND
             || ink == InkMode.LIGHTEN || ink == InkMode.DARKEN;
@@ -87,6 +87,10 @@ public final class InkProcessor {
                 return src;
             }
             return applyMatte(src, matteSpec.matteColorRgb(), matteSpec.tolerance());
+        } else if (ink == InkMode.MASK) {
+            // Mask ink derives sprite opacity from source brightness. Convert the
+            // source luma into alpha so colored masks render consistently.
+            return applyMask(src);
         } else if (ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE
                 || ink == InkMode.GHOST || ink == InkMode.NOT_COPY
                 || ink == InkMode.NOT_TRANSPARENT || ink == InkMode.NOT_REVERSE) {
@@ -247,7 +251,29 @@ public final class InkProcessor {
             result[i] = pixel | 0xFF000000;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
+    }
+
+    static Bitmap applyMask(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] srcPixels = src.getPixels();
+        int[] result = new int[w * h];
+
+        for (int i = 0; i < srcPixels.length; i++) {
+            int pixel = srcPixels[i];
+            int srcAlpha = (pixel >>> 24) & 0xFF;
+            if (srcAlpha == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
+
+            int maskAlpha = Drawing.maskAlphaFromPixel(pixel);
+            int combinedAlpha = (srcAlpha * maskAlpha) / 255;
+            result[i] = (combinedAlpha << 24) | (pixel & 0xFFFFFF);
+        }
+
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -295,7 +321,7 @@ public final class InkProcessor {
             }
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
@@ -342,7 +368,7 @@ public final class InkProcessor {
             }
         }
         if (!changed) return src;
-        return new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -374,7 +400,7 @@ public final class InkProcessor {
             result[i] = (alpha << 24) | (r << 16) | (g << 8) | b;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -392,7 +418,7 @@ public final class InkProcessor {
                 result[i] = pixels[i];
             }
         }
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -462,7 +488,7 @@ public final class InkProcessor {
             result[i] = (alpha << 24) | (nr << 16) | (ng << 8) | nb;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -512,6 +538,12 @@ public final class InkProcessor {
                 maskedSource.getBitDepth(), result);
         remapped.copyPaletteMetadataFrom(maskedSource);
         return remapped;
+    }
+
+    private static Bitmap newDerivedBitmap(Bitmap src, int[] pixels) {
+        Bitmap derived = new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth(), pixels);
+        derived.copyPaletteMetadataFrom(src);
+        return derived;
     }
 
     /**

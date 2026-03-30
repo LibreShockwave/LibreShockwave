@@ -10,6 +10,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class InkProcessorTest {
 
     @Test
+    void maskInkIsHandledBySpriteInkPipeline() {
+        assertEquals(true, InkProcessor.shouldProcessInk(InkMode.MASK));
+    }
+
+    @Test
+    void maskInkTurnsPoolWaterColorIntoTranslucentAlpha() {
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+            0xFF009999,
+            0xFFFFFFFF,
+            0x80009999
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MASK, 0, false, null);
+
+        assertEquals(0x6B009999, result.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, result.getPixel(1, 0));
+        assertEquals(0x35009999, result.getPixel(2, 0));
+    }
+
+    @Test
     void backgroundTransparentUsesExactMatchWithoutRecoveringNearColorAlpha() {
         Bitmap src = new Bitmap(3, 1, 32, new int[] {
             0xFFFFFFFF,
