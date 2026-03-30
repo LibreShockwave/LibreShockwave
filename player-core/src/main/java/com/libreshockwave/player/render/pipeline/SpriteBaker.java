@@ -202,11 +202,12 @@ public class SpriteBaker {
      */
     private Bitmap bakeBitmap(RenderSprite sprite) {
         Bitmap b = null;
+        CastMember liveMember = resolveRuntimeBitmapMember(sprite);
 
         // Check if the runtime CastMember's bitmap was modified by Lingo (fill, copyPixels, etc.)
         // If so, use the live bitmap directly instead of the stale BitmapCache entry.
-        if (sprite.getDynamicMember() != null) {
-            Bitmap liveBmp = sprite.getDynamicMember().getBitmap();
+        if (liveMember != null) {
+            Bitmap liveBmp = liveMember.getBitmap();
             if (liveBmp != null && liveBmp.isScriptModified()) {
                 System.out.println("[Hand] bakeBitmap: using script-modified live bitmap for channel " + sprite.getChannel() +
                     " (" + liveBmp.getWidth() + "x" + liveBmp.getHeight() + ")");
@@ -282,6 +283,19 @@ public class SpriteBaker {
              System.out.println("[Hand] bakeBitmap: channel " + sprite.getChannel() + " baked bitmap size: " + b.getWidth() + "x" + b.getHeight());
         }
         return b;
+    }
+
+    private CastMember resolveRuntimeBitmapMember(RenderSprite sprite) {
+        if (sprite == null) {
+            return null;
+        }
+        if (sprite.getDynamicMember() != null) {
+            return sprite.getDynamicMember();
+        }
+        if (castLibManager == null || sprite.getCastMember() == null) {
+            return null;
+        }
+        return castLibManager.findRuntimeMember(sprite.getCastMember());
     }
 
     private boolean hasBorderColor(Bitmap bmp, int colorRgb) {
