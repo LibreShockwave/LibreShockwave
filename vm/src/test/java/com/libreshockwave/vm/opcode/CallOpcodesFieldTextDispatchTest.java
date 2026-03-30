@@ -66,6 +66,14 @@ class CallOpcodesFieldTextDispatchTest {
         }
     }
 
+    @Test
+    void charChunkHelpersIgnoreInvertedRanges() {
+        assertEquals("", invokeGetStringChunk("abc", "char", 1, -1));
+        assertEquals("abc", invokeDeleteChunkRange("abc", "char", 1, -1));
+        assertEquals("", invokeGetStringChunk("abc", "char", 3, 1));
+        assertEquals("abc", invokeDeleteChunkRange("abc", "char", 3, 1));
+    }
+
     private static Datum invokeDispatchMethod(ExecutionContext ctx, Datum target, String methodName, List<Datum> args) {
         try {
             Method method = CallOpcodes.class.getDeclaredMethod(
@@ -111,6 +119,40 @@ class CallOpcodesFieldTextDispatchTest {
                     Datum.class);
             method.setAccessible(true);
             return (Datum) method.invoke(null, ctx, varType, idDatum, castIdDatum);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new AssertionError(e);
+        } catch (InvocationTargetException e) {
+            throw unwrap(e);
+        }
+    }
+
+    private static String invokeGetStringChunk(String str, String chunkType, int start, int end) {
+        try {
+            Method method = CallOpcodes.class.getDeclaredMethod(
+                    "getStringChunk",
+                    String.class,
+                    String.class,
+                    int.class,
+                    int.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, str, chunkType, start, end);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new AssertionError(e);
+        } catch (InvocationTargetException e) {
+            throw unwrap(e);
+        }
+    }
+
+    private static String invokeDeleteChunkRange(String str, String chunkType, int start, int end) {
+        try {
+            Method method = CallOpcodes.class.getDeclaredMethod(
+                    "deleteChunkRange",
+                    String.class,
+                    String.class,
+                    int.class,
+                    int.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, str, chunkType, start, end);
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new AssertionError(e);
         } catch (InvocationTargetException e) {

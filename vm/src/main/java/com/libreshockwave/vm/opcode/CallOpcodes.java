@@ -381,7 +381,7 @@ public final class CallOpcodes {
         if (str.isEmpty() || start < 1) return "";
         if ("char".equalsIgnoreCase(chunkType)) {
             int s = Math.max(0, start - 1);
-            int e = Math.min(str.length(), end);
+            int e = Math.max(s, Math.min(str.length(), end));
             if (s >= str.length() || s >= e) return "";
             return str.substring(s, e);
         }
@@ -392,8 +392,8 @@ public final class CallOpcodes {
         if (str.isEmpty() || start < 1) return str;
         if ("char".equalsIgnoreCase(chunkType)) {
             int s = Math.max(0, start - 1);
-            int e = Math.min(str.length(), end);
-            if (s >= str.length()) return str;
+            int e = Math.max(s, Math.min(str.length(), end));
+            if (s >= str.length() || s >= e) return str;
             return str.substring(0, s) + str.substring(e);
         }
         return str;
