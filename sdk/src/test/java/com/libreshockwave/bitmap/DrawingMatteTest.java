@@ -196,6 +196,17 @@ class DrawingMatteTest {
     }
 
     @Test
+    void matteCopyPixelsHonorsNativeAlphaInsteadOfWhiteFloodFill() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF000000 });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        src.setNativeAlpha(true);
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 1, 1, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
+    }
+
+    @Test
     void darkenCopyPixelsOverwritesOldDestinationGhosts() {
         Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF204080 });
         Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC08020 });

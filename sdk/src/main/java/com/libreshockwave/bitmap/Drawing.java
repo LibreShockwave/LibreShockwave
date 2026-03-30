@@ -542,6 +542,11 @@ public class Drawing {
         if (w <= 0 || h <= 0) {
             return new Bitmap(Math.max(w, 1), Math.max(h, 1), src.getBitDepth());
         }
+        if (src.hasNativeMatteAlpha()) {
+            Bitmap region = src.getRegion(srcX, srcY, w, h);
+            region.setNativeAlpha(true);
+            return region;
+        }
         Bitmap region = src.getRegion(srcX, srcY, w, h);
         int[] pixels = region.getPixels();
         byte[] paletteIndices = region.getPaletteIndices();
