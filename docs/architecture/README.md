@@ -4,6 +4,14 @@ This document set explains how LibreShockwave currently emulates a Director movi
 
 That distinction matters because the project is still under active development. The goal of these documents is to describe what the emulator does today, which parts are strongly evidenced by code, and which parts still depend on compatibility assumptions.
 
+## Discovery Highlights
+
+- ✓ The emulator is not split into separate desktop and web engines. `player-wasm` wraps the same `player-core` runtime with queued host bridges.
+- ◆ The runtime is more stateful than the score alone suggests. `SpriteRegistry` preserves mutable sprite state, dynamic members, and puppeted channels across frame changes.
+- → Text rendering is not a browser or AWT fallback detail. `SimpleTextRenderer` has an explicit font-resolution chain for PFR, Mac bitmap fonts, Windows fonts, and builtin pixel fallback.
+- ⚠ Item behavior is mostly not a dedicated Java subsystem. It emerges from cast members, `.props` text resources, sprite state, and Lingo scripts.
+- ✓ Cursor behavior is richer than a single property. `CursorManager` resolves bitmap cursors, button hand cursors, editable-text ibeam behavior, and mask-backed cursor bitmaps.
+
 ## Document Set
 
 - `emulator-overview.md`
@@ -34,6 +42,11 @@ That distinction matters because the project is still under active development. 
 - The descriptions are implementation-oriented rather than aspirational. If code and historical Director expectations differ, the docs describe the code path that exists in this repository.
 - When a subsystem has broad coverage from concrete code paths and tests, its confidence score is higher.
 - When a subsystem depends more on runtime integration, movie-specific scripts, or partially implemented compatibility behavior, its confidence score is lower.
+- Glyph legend:
+  - `✓` strongly evidenced by core runtime code
+  - `◆` structural discovery that changes how the emulator should be understood
+  - `→` important downstream consequence
+  - `⚠` compatibility-sensitive or script-dependent area
 
 ## Confidence Score
 

@@ -13,6 +13,13 @@ LibreShockwave reflects that. The cast subsystem is one of the most important co
 - external cast loading
 - item metadata such as `.props` text resources
 
+## Key Discoveries
+
+- ◆ Cast libraries are both asset containers and runtime namespaces.
+- ✓ Dynamic members are a first-class part of the design, not a late add-on.
+- ◆ Item behavior mostly emerges from cast text resources plus Lingo interpretation, not from a specialized Java item engine.
+- → Retargeting and dynamic-member reuse forced the codebase to distinguish stable registry visibility from temporary runtime visibility.
+
 ## 2. Cast Library Lifecycle
 
 `CastLibManager` is responsible for constructing and resolving cast libraries. A cast library can exist in different practical states:
@@ -70,6 +77,8 @@ The current model includes:
 - explicit retirement and cleanup when a dynamic member is erased
 
 This is central to Director compatibility because many movies create or repurpose members at runtime, especially for generated images, temporary text, UI states, and item visuals.
+
+That design choice also explains why sprite rebinding and retired-slot cleanup matter so much: without them, reused dynamic member slots would leak old visual or semantic state into unrelated content.
 
 ## 6. Sprite Binding To Members
 

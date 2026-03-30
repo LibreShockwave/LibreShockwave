@@ -17,6 +17,13 @@ LibreShockwave is organized into a small number of clearly separated layers:
 
 In practical terms, the emulator is not one monolith. It is a Director file parser plus a Lingo interpreter plus a stateful movie player plus a rendering pipeline.
 
+## Key Discoveries
+
+- ◆ `Player` is the real runtime boundary. Most behavior that users perceive as "the emulator" is coordinated there rather than in the parser or VM alone.
+- ✓ Frame execution is highly ordered, not event-driven chaos. Input, frame logic, xtras, timeouts, updating objects, and frame advance happen in a fixed sequence.
+- ◆ The score is only half the story. Runtime sprite state survives long enough to make puppeting, dynamic members, and score rebinding work.
+- → Compatibility profiles and thread-local providers are a major design seam. They let the VM stay generic while the player injects movie-specific services each tick.
+
 ## 2. What The `Player` Owns
 
 `player-core` centers the runtime around `Player`. That object is the integration point for the rest of the system. It owns or coordinates:
@@ -67,6 +74,8 @@ The current `prepareMovie()` sequence is important because it defines the runtim
 
 This is not a generic "load assets and start" flow. It is a compatibility-shaped startup pipeline designed to match Director movie expectations around when data and handlers become visible.
 
+One of the most important discoveries here is that startup is allowed to change what is available before frame one fully settles. `prepareMovie()` handlers can alter preload behavior, trigger additional network work, and make new casts visible before the rest of frame-one startup finishes.
+
 ## 4. Frame Execution Model
 
 The steady-state runtime loop is driven by `Player.tick()`. Each tick performs a fixed set of steps:
@@ -83,6 +92,8 @@ The steady-state runtime loop is driven by `Player.tick()`. Each tick performs a
 10. Clear temporary providers and flush deferred VM tasks.
 
 This ordering matters. Input is applied before frame logic. Timeout processing happens after frame execution. Frame advancement is explicit, not implicit. Deferred work is flushed at the end of a tick rather than at arbitrary points.
+
+That ordering is one of the clearest "this is an emulator, not an app framework" signals in the codebase.
 
 ## 5. Timing, Tempo, And Deadlines
 
@@ -143,6 +154,8 @@ Frame advancement then performs the exit side of the lifecycle:
 - begin sprites entering the new frame
 
 The actor list is not a side feature. It is a core part of event dispatch and participates alongside global handlers and frame scripts.
+
+That is an important discovery because it means movie-global behavior is intentionally layered, not centralized in one script bucket.
 
 ## 8. Script Propagation Model
 
