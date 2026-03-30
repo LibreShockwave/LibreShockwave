@@ -466,10 +466,14 @@ public class CastLib {
             load();
         }
 
-        for (CastMemberChunk member : memberChunks.values()) {
-            if (member.name() != null && member.name().equalsIgnoreCase(name)) {
-                return member;
-            }
+        CastMemberChunk direct = findMemberChunkByNameExact(name);
+        if (direct != null) {
+            return direct;
+        }
+
+        String sourcePrefixedName = sourcePrefixedLookupName(name);
+        if (sourcePrefixedName != null) {
+            return findMemberChunkByNameExact(sourcePrefixedName);
         }
         return null;
     }
@@ -483,20 +487,54 @@ public class CastLib {
             load();
         }
 
-        // Search file-loaded members first
+        CastMember direct = findMemberByNameExact(name);
+        if (direct != null) {
+            return direct;
+        }
+
+        String sourcePrefixedName = sourcePrefixedLookupName(name);
+        if (sourcePrefixedName != null) {
+            return findMemberByNameExact(sourcePrefixedName);
+        }
+        return null;
+    }
+
+    private CastMemberChunk findMemberChunkByNameExact(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        for (CastMemberChunk member : memberChunks.values()) {
+            if (member.name() != null && member.name().equalsIgnoreCase(name)) {
+                return member;
+            }
+        }
+        return null;
+    }
+
+    private CastMember findMemberByNameExact(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
         for (Map.Entry<Integer, CastMemberChunk> entry : memberChunks.entrySet()) {
             if (entry.getValue().name() != null && entry.getValue().name().equalsIgnoreCase(name)) {
                 return getMember(entry.getKey());
             }
         }
 
-        // Search dynamic members (created at runtime via new(#field, castLib))
         for (CastMember member : members.values()) {
             if (member.getName() != null && member.getName().equalsIgnoreCase(name)) {
                 return member;
             }
         }
         return null;
+    }
+
+    private static String sourcePrefixedLookupName(String requestedName) {
+        if (requestedName == null || requestedName.isEmpty()) {
+            return null;
+        }
+        return requestedName.regionMatches(true, 0, "s_", 0, 2) ? null : "s_" + requestedName;
     }
 
     /**

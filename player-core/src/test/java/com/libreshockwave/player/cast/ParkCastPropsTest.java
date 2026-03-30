@@ -39,6 +39,23 @@ class ParkCastPropsTest {
     }
 
     @Test
+    void standaloneParkCanonicalLookupFallsBackToSourcePrefixedMembers() throws Exception {
+        if (!Files.isRegularFile(PARK_CAST)) {
+            return;
+        }
+
+        DirectorFile file = DirectorFile.load(PARK_CAST);
+        CastLib castLib = new CastLib(1, null, null);
+        castLib.setSourceFile(file);
+        castLib.load();
+
+        assertTrue(castLib.getMemberByName("s_queue_tile2_a_0_1_1_2_0") != null,
+                "expected source-prefixed park member to exist");
+        assertTrue(castLib.getMemberByName("queue_tile2_a_0_1_1_2_0") != null,
+                "canonical park lookup should fall back to s_-prefixed source member");
+    }
+
+    @Test
     void movieLevelParkBenchPropsParseToPropList() throws Exception {
         if (!Files.isRegularFile(PARK_MOVIE) || !Files.isRegularFile(PARK_COMPRESSED_CAST)) {
             return;
@@ -95,6 +112,41 @@ class ParkCastPropsTest {
 
             assertTrue(benchParsed.isPropList(), "bench.props parsed as " + benchParsed + " from " + benchField);
             assertTrue(bench2Parsed.isPropList(), "bench2.props parsed as " + bench2Parsed + " from " + bench2Field);
+        } finally {
+            player.shutdown();
+        }
+    }
+
+    @Test
+    void habboHostMovieParkQueueAliasesResolveAgainstSourcePrefixedTargets() throws Exception {
+        if (!Files.isRegularFile(HABBO_MOVIE) || !Files.isRegularFile(PARK_COMPRESSED_CAST)) {
+            return;
+        }
+
+        DirectorFile movie = DirectorFile.load(HABBO_MOVIE);
+        Player player = new Player(movie);
+        try {
+            int parkCastSlot = findParkCastSlot(player);
+            assertTrue(parkCastSlot > 0, "could not find authored park cast slot");
+            assertTrue(player.getCastLibManager().setExternalCastData(parkCastSlot, Files.readAllBytes(PARK_COMPRESSED_CAST)));
+
+            LingoVM vm = player.getVM();
+
+            Datum sourcePrefixed = vm.callHandler("getmemnum",
+                    java.util.List.of(Datum.of("s_queue_tile2_a_0_1_1_2_0")));
+            Datum canonicalTarget = vm.callHandler("getmemnum",
+                    java.util.List.of(Datum.of("queue_tile2_a_0_1_1_2_0")));
+            Datum mirroredAlias = vm.callHandler("getmemnum",
+                    java.util.List.of(Datum.of("queue_tile2_a_0_1_1_4_0")));
+            Datum aliasExists = vm.callHandler("memberExists",
+                    java.util.List.of(Datum.of("queue_tile2_a_0_1_1_4_0")));
+
+            assertTrue(sourcePrefixed.toInt() > 0, "expected prefixed queue tile member to resolve");
+            assertEquals(sourcePrefixed.toInt(), canonicalTarget.toInt(),
+                    "canonical queue tile lookup should resolve to the prefixed source member");
+            assertEquals(-sourcePrefixed.toInt(), mirroredAlias.toInt(),
+                    "park alias index should publish mirrored queue tile aliases");
+            assertEquals(1, aliasExists.toInt(), "mirrored queue tile alias should be visible to memberExists");
         } finally {
             player.shutdown();
         }
