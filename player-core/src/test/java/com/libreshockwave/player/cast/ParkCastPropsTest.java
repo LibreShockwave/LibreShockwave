@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -147,6 +149,63 @@ class ParkCastPropsTest {
             assertEquals(-sourcePrefixed.toInt(), mirroredAlias.toInt(),
                     "park alias index should publish mirrored queue tile aliases");
             assertEquals(1, aliasExists.toInt(), "mirrored queue tile alias should be visible to memberExists");
+        } finally {
+            player.shutdown();
+        }
+    }
+
+    @Test
+    void habboHostMovieParkAliasFieldIsRewrittenForScriptedPreIndexMembers() throws Exception {
+        if (!Files.isRegularFile(HABBO_MOVIE) || !Files.isRegularFile(PARK_COMPRESSED_CAST)) {
+            return;
+        }
+
+        DirectorFile movie = DirectorFile.load(HABBO_MOVIE);
+        Player player = new Player(movie);
+        try {
+            int parkCastSlot = findParkCastSlot(player);
+            assertTrue(parkCastSlot > 0, "could not find authored park cast slot");
+            assertTrue(player.getCastLibManager().setExternalCastData(parkCastSlot, Files.readAllBytes(PARK_COMPRESSED_CAST)));
+
+            String aliasText = player.getCastLibManager().getFieldValue("memberalias.index", parkCastSlot);
+            assertTrue(aliasText.contains("queue_tile2_a_0_1_1_4_0=s_queue_tile2_a_0_1_1_2_0*"),
+                    "memberalias.index should target source-prefixed queue tile members, got: " + aliasText);
+
+            CastLib parkCast = player.getCastLibManager().getCastLib(parkCastSlot);
+            assertTrue(parkCast != null && parkCast.isLoaded(), "park cast should be loaded");
+
+            Map<String, Integer> scriptedRegistry = new LinkedHashMap<>();
+            for (Map.Entry<Integer, com.libreshockwave.chunks.CastMemberChunk> entry : parkCast.getMemberChunks().entrySet()) {
+                String memberName = entry.getValue().name();
+                if (memberName != null && !memberName.isEmpty()) {
+                    scriptedRegistry.put(memberName, (parkCastSlot << 16) | entry.getKey());
+                }
+            }
+
+            for (String rawLine : aliasText.split("\\r\\n|\\r|\\n")) {
+                if (rawLine == null || rawLine.length() <= 2) {
+                    continue;
+                }
+                int delimiter = rawLine.indexOf('=');
+                if (delimiter <= 0 || delimiter >= rawLine.length() - 1) {
+                    continue;
+                }
+                String aliasName = rawLine.substring(0, delimiter);
+                String targetName = rawLine.substring(delimiter + 1);
+                boolean mirrored = targetName.charAt(targetName.length() - 1) == '*';
+                if (mirrored) {
+                    targetName = targetName.substring(0, targetName.length() - 1);
+                }
+                Integer resolved = scriptedRegistry.get(targetName);
+                if (resolved != null) {
+                    scriptedRegistry.put(aliasName, mirrored ? -resolved : resolved);
+                }
+            }
+
+            int expectedSourceMember = (parkCastSlot << 16) | parkCast.getMemberNumber(
+                    parkCast.findMemberChunkByNameExact("s_queue_tile2_a_0_1_1_2_0"));
+            assertEquals(expectedSourceMember, scriptedRegistry.get("queue_tile2_a_0_1_1_2_0"));
+            assertEquals(-expectedSourceMember, scriptedRegistry.get("queue_tile2_a_0_1_1_4_0"));
         } finally {
             player.shutdown();
         }

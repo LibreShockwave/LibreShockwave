@@ -799,7 +799,7 @@ public class CastLibManager implements CastLibProvider {
         ensureInitialized();
         CastMember member = resolveFieldMember(memberNameOrNum, castId);
         if (member != null) {
-            return member.getTextContent();
+            return resolveFieldText(member);
         }
         return "";
     }
@@ -811,7 +811,7 @@ public class CastLibManager implements CastLibProvider {
         if (member == null) {
             return Datum.EMPTY_STRING;
         }
-        return new Datum.FieldText(member.getTextContent(), member.getCastLibNumber(), member.getMemberNumber());
+        return new Datum.FieldText(resolveFieldText(member), member.getCastLibNumber(), member.getMemberNumber());
     }
 
     @Override
@@ -874,6 +874,72 @@ public class CastLibManager implements CastLibProvider {
         }
 
         return member;
+    }
+
+    private String resolveFieldText(CastMember member) {
+        if (member == null) {
+            return "";
+        }
+
+        String text = member.getTextContent();
+        if (text.isEmpty() || !"memberalias.index".equalsIgnoreCase(member.getName())) {
+            return text;
+        }
+
+        CastLib castLib = getCastLib(member.getCastLibNumber());
+        if (castLib == null) {
+            return text;
+        }
+        // Authored Resource Manager.preIndexMembers() indexes exact member names
+        // before importing memberalias.index. Some public-room casts keep their
+        // actual members under s_-prefixed source names while the alias table
+        // still points at the canonical unprefixed names, so normalize the field
+        // text before legacy scripts consume it.
+        return rewriteAliasIndexTargetsForSourcePrefixedMembers(castLib, text);
+    }
+
+    private static String rewriteAliasIndexTargetsForSourcePrefixedMembers(CastLib castLib, String aliasText) {
+        if (castLib == null || aliasText == null || aliasText.isEmpty()) {
+            return aliasText != null ? aliasText : "";
+        }
+
+        boolean changed = false;
+        StringBuilder rewritten = new StringBuilder(aliasText.length() + 32);
+        String[] lines = aliasText.split("\\r\\n|\\r|\\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String rawLine = lines[i];
+            String normalizedLine = rawLine;
+
+            int delimiter = rawLine.indexOf('=');
+            if (delimiter > 0 && delimiter < rawLine.length() - 1) {
+                String targetName = rawLine.substring(delimiter + 1);
+                boolean mirrored = targetName.charAt(targetName.length() - 1) == '*';
+                String bareTarget = mirrored ? targetName.substring(0, targetName.length() - 1) : targetName;
+                String prefixedTarget = sourcePrefixedLookupName(bareTarget);
+                if (prefixedTarget != null
+                        && !castLib.hasMemberNamedExact(bareTarget)
+                        && castLib.hasMemberNamedExact(prefixedTarget)) {
+                    normalizedLine = rawLine.substring(0, delimiter + 1)
+                            + prefixedTarget
+                            + (mirrored ? "*" : "");
+                    changed = true;
+                }
+            }
+
+            if (i > 0) {
+                rewritten.append('\r');
+            }
+            rewritten.append(normalizedLine);
+        }
+
+        return changed ? rewritten.toString() : aliasText;
+    }
+
+    private static String sourcePrefixedLookupName(String requestedName) {
+        if (requestedName == null || requestedName.isEmpty()) {
+            return null;
+        }
+        return requestedName.regionMatches(true, 0, "s_", 0, 2) ? null : "s_" + requestedName;
     }
 
     /**

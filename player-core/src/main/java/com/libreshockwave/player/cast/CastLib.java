@@ -499,7 +499,7 @@ public class CastLib {
         return null;
     }
 
-    private CastMemberChunk findMemberChunkByNameExact(String name) {
+    CastMemberChunk findMemberChunkByNameExact(String name) {
         if (name == null || name.isEmpty()) {
             return null;
         }
@@ -511,7 +511,7 @@ public class CastLib {
         return null;
     }
 
-    private CastMember findMemberByNameExact(String name) {
+    CastMember findMemberByNameExact(String name) {
         if (name == null || name.isEmpty()) {
             return null;
         }
@@ -528,6 +528,10 @@ public class CastLib {
             }
         }
         return null;
+    }
+
+    boolean hasMemberNamedExact(String name) {
+        return findMemberChunkByNameExact(name) != null || findMemberByNameExact(name) != null;
     }
 
     private static String sourcePrefixedLookupName(String requestedName) {
