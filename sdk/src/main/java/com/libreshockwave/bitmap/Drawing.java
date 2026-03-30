@@ -731,18 +731,9 @@ public class Drawing {
             return null;
         }
 
-        int opaqueCornerCount = 0;
-        for (int index : cornerIndices) {
-            if (((pixels[index] >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            opaqueCornerCount++;
-            if ((pixels[index] & 0xFFFFFF) != dominantRgb) {
-                return null;
-            }
-        }
-
-        if (opaqueCornerCount == 0) {
+        // Tightly cropped text can legitimately occupy some corners; require only
+        // enough corner support to show the dominant edge color still owns the frame.
+        if (!hasDominantRgbCornerCoverage(pixels, cornerIndices, dominantRgb)) {
             return null;
         }
 
@@ -752,6 +743,21 @@ public class Drawing {
         }
 
         return dominantRgb;
+    }
+
+    private static boolean hasDominantRgbCornerCoverage(int[] pixels, int[] cornerIndices, int dominantRgb) {
+        int opaqueCornerCount = 0;
+        int matchingCornerCount = 0;
+        for (int index : cornerIndices) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            opaqueCornerCount++;
+            if ((pixels[index] & 0xFFFFFF) == dominantRgb) {
+                matchingCornerCount++;
+            }
+        }
+        return opaqueCornerCount > 0 && matchingCornerCount * 2 >= opaqueCornerCount;
     }
 
     private static boolean isUniformRgb(int[] pixels, int rgb) {

@@ -489,3 +489,17 @@ tasks.register('runCinemaPublicRoomTest', JavaExec) {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
+
+tasks.register('runPublicRoomDiagnostic', JavaExec) {
+    group = 'verification'
+    description = 'Generic public-room diagnostic: open a category row, enter a room row, and capture room rendering'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.PublicRoomDiagnostic'
+    if (project.hasProperty('args')) {
+        args project.property('args').toString().split('\\s+')
+    }
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
