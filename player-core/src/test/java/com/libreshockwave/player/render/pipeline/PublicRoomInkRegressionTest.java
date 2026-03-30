@@ -4,7 +4,9 @@ import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastLib;
+import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
+import com.libreshockwave.chunks.CastMemberChunk;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -75,6 +77,45 @@ class PublicRoomInkRegressionTest {
         );
 
         Bitmap baked = new SpriteBaker(new BitmapCache(), null, null)
+                .bake(sprite)
+                .getBakedBitmap();
+
+        assertNotNull(baked);
+        assertEquals(0x6B009999, baked.getPixel(10, 10));
+    }
+
+    @Test
+    void poolWaterScoreSpriteUsesRuntimeMemberBitmapAfterScriptFill() throws Exception {
+        if (!Files.isRegularFile(POOL_CAST)) {
+            return;
+        }
+
+        DirectorFile file = DirectorFile.load(POOL_CAST);
+        CastLibManager castLibManager = new CastLibManager(file, null);
+        CastLib castLib = castLibManager.getCastLib(1);
+        assertNotNull(castLib);
+
+        CastMemberChunk waterChunk = castLib.findMemberByName("vesi2");
+        assertNotNull(waterChunk);
+
+        CastMember water = castLib.getMemberByName("vesi2");
+        assertNotNull(water);
+
+        Bitmap live = water.getBitmap();
+        assertNotNull(live);
+        live.fill(0xFF009999);
+        live.markScriptModified();
+
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, live.getWidth(), live.getHeight(), 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                waterChunk, null,
+                0, 0xFFFFFF, false, false,
+                InkMode.MASK.code(), 60,
+                false, false, null, false
+        );
+
+        Bitmap baked = new SpriteBaker(new BitmapCache(), castLibManager, null)
                 .bake(sprite)
                 .getBakedBitmap();
 
