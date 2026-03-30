@@ -972,7 +972,7 @@ public class Player implements UpdateProvider {
                 timeoutManager.dispatchSystemEvent(vm, "stopMovie");
                 frameContext.getEventDispatcher().dispatchToMovieScripts(PlayerEvent.STOP_MOVIE, List.of());
             } finally {
-                clearProviders();
+                flushDeferredVmTasksAndClearProviders();
             }
             frameContext.reset();
             stageRenderer.reset();
@@ -1012,7 +1012,7 @@ public class Player implements UpdateProvider {
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             frameContext.advanceFrame();
         } finally {
-            clearProviders();
+            flushDeferredVmTasksAndClearProviders();
         }
     }
 
@@ -1054,7 +1054,7 @@ public class Player implements UpdateProvider {
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
-                        clearProviders();
+                        flushDeferredVmTasksAndClearProviders();
                     }
                 } while (debugController != null && debugController.isAwaitingStepContinuation());
             } finally {
@@ -1104,7 +1104,7 @@ public class Player implements UpdateProvider {
             frameContext.advanceFrame();
         } finally {
             vm.setTickDeadline(0);
-            clearProviders();
+            flushDeferredVmTasksAndClearProviders();
         }
         return true;
     }
@@ -1144,7 +1144,7 @@ public class Player implements UpdateProvider {
                         processUpdatingObjects();
                         frameContext.advanceFrame();
                     } finally {
-                        clearProviders();
+                        flushDeferredVmTasksAndClearProviders();
                     }
                 } while (debugController != null && debugController.isAwaitingStepContinuation());
             } finally {
@@ -1247,7 +1247,7 @@ public class Player implements UpdateProvider {
 
             // Frame loop will handle subsequent frames
         } finally {
-            clearProviders();
+            flushDeferredVmTasksAndClearProviders();
         }
     }
 
@@ -1325,6 +1325,14 @@ public class Player implements UpdateProvider {
         setupProviders();
         try {
             return vm.fireAlertHook(errorMsg);
+        } finally {
+            flushDeferredVmTasksAndClearProviders();
+        }
+    }
+
+    private void flushDeferredVmTasksAndClearProviders() {
+        try {
+            vm.flushDeferredTasks();
         } finally {
             clearProviders();
         }

@@ -34,7 +34,9 @@ public class LingoVM {
     private final Map<String, HandlerRef> handlerCache = new HashMap<>();
     private final Set<String> missingHandlerCache = new HashSet<>();
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
+    private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
     private boolean flushingDeferredScriptInstanceCalls = false;
+    private boolean flushingDeferredTasks = false;
     private static final ThreadLocal<LingoVM> CURRENT_VM = new ThreadLocal<>();
 
     private boolean traceEnabled = false;
@@ -348,6 +350,21 @@ public class LingoVM {
                 List.copyOf(args)));
     }
 
+    /**
+     * Queue a task for the next safe VM boundary managed by the caller
+     * (typically the end of the current player tick).
+     */
+    public void deferTask(Runnable task) {
+        if (task == null) {
+            return;
+        }
+        deferredTasks.addLast(task);
+    }
+
+    public boolean isFlushingDeferredTasks() {
+        return flushingDeferredTasks;
+    }
+
     private void flushDeferredScriptInstanceCalls() {
         if (flushingDeferredScriptInstanceCalls || deferredScriptInstanceCalls.isEmpty() || !callStack.isEmpty()) {
             return;
@@ -365,6 +382,25 @@ public class LingoVM {
             }
         } finally {
             flushingDeferredScriptInstanceCalls = false;
+        }
+    }
+
+    public void flushDeferredTasks() {
+        if (flushingDeferredTasks || deferredTasks.isEmpty() || !callStack.isEmpty()) {
+            return;
+        }
+
+        flushingDeferredTasks = true;
+        try {
+            while (!deferredTasks.isEmpty()) {
+                Runnable task = deferredTasks.removeFirst();
+                task.run();
+                if (!callStack.isEmpty()) {
+                    break;
+                }
+            }
+        } finally {
+            flushingDeferredTasks = false;
         }
     }
 

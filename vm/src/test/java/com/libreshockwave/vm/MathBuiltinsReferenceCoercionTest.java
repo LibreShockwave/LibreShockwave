@@ -41,6 +41,19 @@ class MathBuiltinsReferenceCoercionTest {
     }
 
     @Test
+    void integerBuiltinParsesDirectorStarHexStrings() {
+        LingoVM vm = new LingoVM(null);
+
+        Datum white = vm.callHandler("integer", List.of(Datum.of("*ffffff")));
+        Datum accent = vm.callHandler("integer", List.of(Datum.of(" *00cc66 ")));
+
+        assertTrue(white.isInt());
+        assertEquals(0xFFFFFF, white.toInt());
+        assertTrue(accent.isInt());
+        assertEquals(0x00CC66, accent.toInt());
+    }
+
+    @Test
     void floatBuiltinCoercesReferenceLikeDatumsViaNumericValue() {
         LingoVM vm = new LingoVM(null);
 
