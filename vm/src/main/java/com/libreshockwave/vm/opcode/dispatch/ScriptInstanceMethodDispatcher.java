@@ -207,13 +207,16 @@ public final class ScriptInstanceMethodDispatcher {
             }
         }
 
-        MemberRegistryMethodDispatcher.DispatchResult bridgeResult =
-                MemberRegistryMethodDispatcher.dispatch(instance, methodName, args);
-        if (bridgeResult.handled()) {
-            return bridgeResult.value();
+        // SECOND: For registry-owner script instances, prefill stable entries
+        // before their authored handlers run. This mirrors Director's member
+        // registry semantics without forcing movie-specific reindex hooks.
+        MemberRegistryMethodDispatcher.DispatchResult prefillResult =
+                MemberRegistryMethodDispatcher.prefill(instance, methodName, args);
+        if (prefillResult.handled()) {
+            return prefillResult.value();
         }
 
-        // SECOND: Check for Lingo handlers in the script (and ancestor chain)
+        // THIRD: Check for Lingo handlers in the script (and ancestor chain)
         // This is for non-built-in methods like create(), dump(), etc.
         CastLibProvider provider = CastLibProvider.getProvider();
         if (provider != null) {
@@ -246,7 +249,16 @@ public final class ScriptInstanceMethodDispatcher {
             // Director doesn't fall back to global handlers for OBJ_CALL on instances
         }
 
-        // THIRD: Check if the method is getting a property (walk ancestor chain)
+        // FOURTH: Registry-style lookups are a compatibility fallback for script
+        // instances that expose pAllMemNumList but do not implement their own
+        // getmemnum/exists/getmember handlers in Lingo.
+        MemberRegistryMethodDispatcher.DispatchResult bridgeResult =
+                MemberRegistryMethodDispatcher.dispatch(instance, methodName, args);
+        if (bridgeResult.handled()) {
+            return bridgeResult.value();
+        }
+
+        // FIFTH: Check if the method is getting a property (walk ancestor chain)
         String prop = methodName.toLowerCase();
         Datum propValue = AncestorChainWalker.getProperty(instance, prop);
         if (propValue != null && !propValue.isVoid()) {

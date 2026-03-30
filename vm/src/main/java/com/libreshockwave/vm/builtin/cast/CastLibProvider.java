@@ -60,6 +60,32 @@ public interface CastLibProvider {
     Datum getMemberByName(int castLibNumber, String memberName);
 
     /**
+     * Get a cast member by name for registry-style lookups.
+     * This is narrower than getMemberByName(0, ...): it should only expose
+     * members that are already part of the movie's stable global namespace.
+     * Temporary runtime-retargeted cast slots should remain invisible here
+     * until authored movie code explicitly registers or copies them.
+     *
+     * The default falls back to the broader lookup so existing providers keep
+     * their current behavior unless they need stricter registry visibility.
+     */
+    default Datum getRegistryMemberByName(int castLibNumber, String memberName) {
+        return getMemberByName(castLibNumber, memberName);
+    }
+
+    /**
+     * Check whether a specific member slot should remain visible through
+     * registry-style lookups such as movie-owned getmemnum()/exists() APIs.
+     *
+     * This is narrower than plain memberExists(): temporary import/scratch
+     * casts may be live Director members while still being intentionally
+     * excluded from the movie's stable registry namespace.
+     */
+    default boolean isRegistryVisibleMember(int castLibNumber, int memberNumber) {
+        return memberExists(castLibNumber, memberNumber);
+    }
+
+    /**
      * Get the number of cast libraries.
      */
     int getCastLibCount();

@@ -170,36 +170,15 @@ public class CastLibManager implements CastLibProvider {
         return result;
     }
 
-    /**
-     * Called when Lingo sets castLib.fileName, triggering a cast reload.
-     * Delegates to castDataRequestCallback for data delivery.
-     * Falls back to castDataCache (populated by onNetFetchComplete) if the
-     * callback doesn't load the data.
-     */
     private void tryLoadCastFromCache(int castLibNumber, String newFileName) {
         if (newFileName == null || newFileName.isEmpty()) return;
 
-        CastLib target = getCastLib(castLibNumber);
-        if (target == null) return;
-
         markPendingExternalLoad(castLibNumber, newFileName);
 
-        // Try the primary callback first (JVM: netManager cache, WASM: JS cache)
-        castDataRequestCallback.accept(castLibNumber, newFileName);
-
-        // If the cast still has no actual members after the callback, try our own castDataCache.
-        // This handles the WASM path where the primary callback (JS) may not deliver data
-        // synchronously, but onNetFetchComplete already cached it by baseName.
-        // Note: getMemberCount() returns total SLOT count (including empties), so we check
-        // getMemberChunks() which only contains actually populated member entries.
-        if (!target.isLoaded() || target.getMemberChunks().isEmpty()) {
-            String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(newFileName));
-            byte[] cached = castDataCache.get(baseName);
-            if (cached != null) {
-                if (setExternalCastData(castLibNumber, cached)) {
-                    clearPendingExternalLoad(castLibNumber);
-                }
-            }
+        // Player provides a callback that checks its internal caches safely
+        // before delegating to system-specific async logic.
+        if (castDataRequestCallback != null) {
+            castDataRequestCallback.accept(castLibNumber, newFileName);
         }
     }
 
@@ -230,46 +209,70 @@ public class CastLibManager implements CastLibProvider {
     }
 
     @Override
+    public boolean isRegistryVisibleMember(int castLibNumber, int memberNumber) {
+        if (memberNumber <= 0) {
+            return false;
+        }
+        CastLib castLib = getCastLib(castLibNumber);
+        if (!isRegistryFallbackEligibleCast(castLib)) {
+            return false;
+        }
+        return castLib.getMember(memberNumber) != null;
+    }
+
+    @Override
     public Datum getMemberByName(int castLibNumber, String memberName) {
         ensureInitialized();
         if (castLibNumber > 0) {
-            // Search in specific cast
-            CastLib castLib = getCastLib(castLibNumber);
-            if (castLib != null) {
-                // Search file members first
-                CastMemberChunk member = castLib.findMemberByName(memberName);
-                if (member != null) {
-                    int memberNumber = castLib.getMemberNumber(member);
-                    return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-                }
-                // Search dynamic members (created at runtime via new(#type, castLib))
-                CastMember dynamic = castLib.getMemberByName(memberName);
-                if (dynamic != null) {
-                    return Datum.CastMemberRef.of(castLibNumber, dynamic.getMemberNumber());
-                }
-            }
+            return getMemberByNameInCast(getCastLib(castLibNumber), memberName);
         } else {
-            // Search in all casts
+            // Prefer the movie's stable/authored namespace first. Runtime-retargeted
+            // scratch casts may legitimately contain members with colliding names,
+            // but they should not hijack broad member("name") lookups while a
+            // stable cast already exposes the same member.
             for (CastLib castLib : castLibs.values()) {
-                if (!castLib.isLoaded()) {
-                    castLib.load();
+                CastLib loadedCast = getCastLib(castLib.getNumber());
+                if (!isRegistryFallbackEligibleCast(loadedCast)) {
+                    continue;
                 }
-                CastMemberChunk member = castLib.findMemberByName(memberName);
-                if (member != null) {
-                    int memberNumber = castLib.getMemberNumber(member);
-                    return Datum.CastMemberRef.of(castLib.getNumber(), memberNumber);
+                Datum found = getMemberByNameInCast(loadedCast, memberName);
+                if (!found.isVoid()) {
+                    return found;
                 }
             }
-            // If not found in file members, search dynamic members in all casts
+
             for (CastLib castLib : castLibs.values()) {
-                if (!castLib.isLoaded()) continue;
-                CastMember dynamic = castLib.getMemberByName(memberName);
-                if (dynamic != null) {
-                    return Datum.CastMemberRef.of(castLib.getNumber(), dynamic.getMemberNumber());
+                Datum found = getMemberByNameInCast(getCastLib(castLib.getNumber()), memberName);
+                if (!found.isVoid()) {
+                    return found;
                 }
             }
         }
 
+        return Datum.VOID;
+    }
+
+    @Override
+    public Datum getRegistryMemberByName(int castLibNumber, String memberName) {
+        ensureInitialized();
+        if (castLibNumber > 0) {
+            CastLib castLib = getCastLib(castLibNumber);
+            if (!isRegistryFallbackEligibleCast(castLib)) {
+                return Datum.VOID;
+            }
+            return getMemberByNameInCast(castLib, memberName);
+        }
+
+        for (CastLib castLib : castLibs.values()) {
+            CastLib loadedCast = getCastLib(castLib.getNumber());
+            if (!isRegistryFallbackEligibleCast(loadedCast)) {
+                continue;
+            }
+            Datum found = getMemberByNameInCast(loadedCast, memberName);
+            if (!found.isVoid()) {
+                return found;
+            }
+        }
         return Datum.VOID;
     }
 
@@ -671,35 +674,22 @@ public class CastLibManager implements CastLibProvider {
         return result;
     }
 
-    /**
-     * Fulfill any cast slots that are already waiting for this external file.
-     * This keeps fetch completion generic: network arrival only makes bytes
-     * available, and cast slots become visible once a matching fileName is
-     * already requested by the movie or authored cast list.
-     */
-    public java.util.List<Integer> fulfillRequestedExternalCastData(String url) {
+    public java.util.List<Integer> getRequestedExternalCastSlots(String url) {
         ensureInitialized();
 
         String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
-        byte[] data = castDataCache.get(baseName);
-        if (data == null) {
-            return java.util.List.of();
-        }
-
-        java.util.List<Integer> loadedCastNums = new java.util.ArrayList<>();
+        java.util.List<Integer> slots = new java.util.ArrayList<>();
+        
         for (CastLib castLib : findCastLibsByUrl(url)) {
             int castLibNumber = castLib.getNumber();
             boolean wasRequested = castLib.isFetching()
                     || baseName.equalsIgnoreCase(pendingExternalLoads.get(castLibNumber))
                     || (!castLib.isLoaded() && castLib.matchesAuthoredExternalFile(baseName));
-            if (!wasRequested) {
-                continue;
-            }
-            if (setExternalCastData(castLibNumber, data)) {
-                loadedCastNums.add(castLibNumber);
+            if (wasRequested) {
+                slots.add(castLibNumber);
             }
         }
-        return loadedCastNums;
+        return slots;
     }
 
     private java.util.List<CastLib> findCastLibsByUrl(String url) {
@@ -718,6 +708,26 @@ public class CastLibManager implements CastLibProvider {
             }
         }
         return result;
+    }
+
+    private static Datum getMemberByNameInCast(CastLib castLib, String memberName) {
+        if (castLib == null || memberName == null || memberName.isEmpty()) {
+            return Datum.VOID;
+        }
+        CastMemberChunk member = castLib.findMemberByName(memberName);
+        if (member != null) {
+            int memberNumber = castLib.getMemberNumber(member);
+            return Datum.CastMemberRef.of(castLib.getNumber(), memberNumber);
+        }
+        CastMember dynamic = castLib.getMemberByName(memberName);
+        if (dynamic != null) {
+            return Datum.CastMemberRef.of(castLib.getNumber(), dynamic.getMemberNumber());
+        }
+        return Datum.VOID;
+    }
+
+    private static boolean isRegistryFallbackEligibleCast(CastLib castLib) {
+        return castLib != null && castLib.usesStableRegistryBinding();
     }
 
     @Override
