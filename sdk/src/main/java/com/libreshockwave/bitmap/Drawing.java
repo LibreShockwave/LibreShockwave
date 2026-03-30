@@ -12,6 +12,21 @@ import java.util.Queue;
 public class Drawing {
 
     /**
+     * A border-connected matte inferred from authored bitmap content.
+     * Indexed Director art commonly uses palette slot 0 as the matte/background
+     * entry; direct-RGB art falls back to a white flood-fill matte.
+     */
+    public record FloodFillMatte(Integer mattePaletteIndex, int matteColorRgb, int tolerance) {
+        public FloodFillMatte(int matteColorRgb, int tolerance) {
+            this(null, matteColorRgb, tolerance);
+        }
+
+        public boolean usesPaletteIndex() {
+            return mattePaletteIndex != null;
+        }
+    }
+
+    /**
      * Copy pixels from source to destination with ink mode blending.
      */
     public static void copyPixels(Bitmap dest, Bitmap src,
@@ -397,8 +412,10 @@ public class Drawing {
     }
 
     /**
-     * Director's image.createMatte() uses authored/native alpha when present;
-     * otherwise it falls back to classic white-border matte extraction.
+     * Director's image.createMatte() uses authored/native alpha when present.
+     * Otherwise it falls back to flood-fill matte extraction:
+     * indexed art prefers palette slot 0 when it is edge-connected, and RGB art
+     * falls back to the classic white-border matte.
      */
     public static Bitmap createMatte(Bitmap src) {
         return createMatte(src, 0);
@@ -418,7 +435,7 @@ public class Drawing {
             return createAlphaMatte(src, alphaThreshold);
         }
 
-        return createWhiteFloodFillMatte(src);
+        return createFloodFillMatte(src);
     }
 
     private static Bitmap createAlphaMatte(Bitmap src, int alphaThreshold) {
@@ -441,7 +458,32 @@ public class Drawing {
         return matte;
     }
 
-    private static Bitmap createWhiteFloodFillMatte(Bitmap src) {
+    public static FloodFillMatte resolveFloodFillMatte(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) {
+            return new FloodFillMatte(0xFFFFFF, 0);
+        }
+
+        int[] pixels = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                pixels[y * w + x] = src.getPixel(x, y);
+            }
+        }
+        byte[] paletteIndices = src.getPaletteIndices();
+        return resolveFloodFillMatte(pixels, paletteIndices, w, h);
+    }
+
+    /**
+     * Remove the edge-connected matte/background from the bitmap while preserving
+     * the original pixel colors for the remaining content.
+     */
+    public static Bitmap applyFloodFillTransparency(Bitmap src) {
+        return applyMatteToRegion(src, 0, 0, src.getWidth(), src.getHeight());
+    }
+
+    private static Bitmap createFloodFillMatte(Bitmap src) {
         int w = src.getWidth();
         int h = src.getHeight();
         int[] pixels = new int[w * h];
@@ -451,29 +493,9 @@ public class Drawing {
             }
         }
 
-        int matteRgb = 0xFFFFFF;
-
-        boolean[] transparent = new boolean[w * h];
-        Queue<Integer> queue = new ArrayDeque<>();
-
-        for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteRgb);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteRgb);
-        }
-        for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteRgb);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteRgb);
-        }
-
-        while (!queue.isEmpty()) {
-            int idx = queue.poll();
-            int px = idx % w;
-            int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
-        }
+        byte[] paletteIndices = src.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
 
         int[] mask = new int[w * h];
         for (int i = 0; i < pixels.length; i++) {
@@ -488,9 +510,9 @@ public class Drawing {
             }
         }
 
-        Bitmap matte = new Bitmap(w, h, 32, mask);
-        matte.setNativeAlpha(true);
-        return matte;
+        Bitmap matteBitmap = new Bitmap(w, h, 32, mask);
+        matteBitmap.setNativeAlpha(true);
+        return matteBitmap;
     }
 
     /**
@@ -502,71 +524,122 @@ public class Drawing {
         if (w <= 0 || h <= 0) {
             return new Bitmap(Math.max(w, 1), Math.max(h, 1), src.getBitDepth());
         }
-        int[] pixels = new int[w * h];
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int sx = srcX + x;
-                int sy = srcY + y;
-                if (sx >= 0 && sx < src.getWidth() && sy >= 0 && sy < src.getHeight()) {
-                    pixels[y * w + x] = src.getPixel(sx, sy);
-                } else {
-                    pixels[y * w + x] = 0xFFFFFFFF;
-                }
+        Bitmap region = src.getRegion(srcX, srcY, w, h);
+        int[] pixels = region.getPixels();
+        byte[] paletteIndices = region.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+
+        for (int i = 0; i < pixels.length; i++) {
+            if (transparent[i]) {
+                pixels[i] &= 0x00FFFFFF;
             }
         }
 
-        int matteRgb = 0xFFFFFF;
+        return region;
+    }
 
-        // BFS flood-fill from edges
+    private static FloodFillMatte resolveFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        FloodFillMatte indexedMatte = resolveIndexedFloodFillMatte(pixels, paletteIndices, w, h);
+        if (indexedMatte != null) {
+            return indexedMatte;
+        }
+        return resolveRgbFloodFillMatte(pixels, w, h);
+    }
+
+    private static FloodFillMatte resolveIndexedFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        if (paletteIndices == null || paletteIndices.length < w * h || !hasEdgePaletteIndex(paletteIndices, w, h, 0)) {
+            return null;
+        }
+        return new FloodFillMatte(0, resolvePaletteIndexRgb(pixels, paletteIndices, 0), 0);
+    }
+
+    private static boolean hasEdgePaletteIndex(byte[] paletteIndices, int w, int h, int paletteIndex) {
+        for (int x = 0; x < w; x++) {
+            if ((paletteIndices[x] & 0xFF) == paletteIndex
+                    || (paletteIndices[(h - 1) * w + x] & 0xFF) == paletteIndex) {
+                return true;
+            }
+        }
+        for (int y = 1; y < h - 1; y++) {
+            if ((paletteIndices[y * w] & 0xFF) == paletteIndex
+                    || (paletteIndices[y * w + (w - 1)] & 0xFF) == paletteIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int resolvePaletteIndexRgb(int[] pixels, byte[] paletteIndices, int paletteIndex) {
+        for (int i = 0; i < pixels.length && i < paletteIndices.length; i++) {
+            if ((paletteIndices[i] & 0xFF) == paletteIndex) {
+                return pixels[i] & 0xFFFFFF;
+            }
+        }
+        return 0xFFFFFF;
+    }
+
+    private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
+        return new FloodFillMatte(0xFFFFFF, 0);
+    }
+
+    private static boolean[] computeFloodFillTransparency(int[] pixels, byte[] paletteIndices, int w, int h,
+                                                          FloodFillMatte matte) {
         boolean[] transparent = new boolean[w * h];
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteRgb);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteRgb);
+            seedMatte(pixels, paletteIndices, transparent, queue, x, 0, w, matte);
+            seedMatte(pixels, paletteIndices, transparent, queue, x, h - 1, w, matte);
         }
         for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteRgb);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteRgb);
+            seedMatte(pixels, paletteIndices, transparent, queue, 0, y, w, matte);
+            seedMatte(pixels, paletteIndices, transparent, queue, w - 1, y, w, matte);
         }
 
         while (!queue.isEmpty()) {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
+            if (px > 0)     seedMatte(pixels, paletteIndices, transparent, queue, px - 1, py, w, matte);
+            if (px < w - 1) seedMatte(pixels, paletteIndices, transparent, queue, px + 1, py, w, matte);
+            if (py > 0)     seedMatte(pixels, paletteIndices, transparent, queue, px, py - 1, w, matte);
+            if (py < h - 1) seedMatte(pixels, paletteIndices, transparent, queue, px, py + 1, w, matte);
         }
 
-        int[] result = new int[w * h];
-        for (int i = 0; i < pixels.length; i++) {
-            if (transparent[i]) {
-                result[i] = 0x00000000;
-            } else {
-                result[i] = pixels[i];
-            }
-        }
-
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return transparent;
     }
 
-    private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
-                                   int x, int y, int w, int matteRgb) {
+    private static void seedMatte(int[] pixels, byte[] paletteIndices, boolean[] transparent,
+                                  Queue<Integer> queue, int x, int y, int w, FloodFillMatte matte) {
         int idx = y * w + x;
-        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb)) {
+        if (!transparent[idx] && isTransparentOrMatte(pixels, paletteIndices, idx, matte)) {
             transparent[idx] = true;
             queue.add(idx);
         }
     }
 
-    private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
+    private static boolean isTransparentOrMatte(int[] pixels, byte[] paletteIndices, int index, FloodFillMatte matte) {
+        int pixel = pixels[index];
         if (((pixel >>> 24) & 0xFF) == 0) {
             return true;
         }
-        int rgb = pixel & 0xFFFFFF;
-        return rgb == matteRgb;
+        if (matte.usesPaletteIndex() && paletteIndices != null && index < paletteIndices.length) {
+            return (paletteIndices[index] & 0xFF) == matte.mattePaletteIndex();
+        }
+        return matchesRgb(pixel, matte.matteColorRgb(), matte.tolerance());
+    }
+
+    private static boolean matchesRgb(int pixel, int matteRgb, int tolerance) {
+        int pr = (pixel >> 16) & 0xFF;
+        int pg = (pixel >> 8) & 0xFF;
+        int pb = pixel & 0xFF;
+        int mr = (matteRgb >> 16) & 0xFF;
+        int mg = (matteRgb >> 8) & 0xFF;
+        int mb = matteRgb & 0xFF;
+        return Math.abs(pr - mr) <= tolerance
+                && Math.abs(pg - mg) <= tolerance
+                && Math.abs(pb - mb) <= tolerance;
     }
 
     /**
