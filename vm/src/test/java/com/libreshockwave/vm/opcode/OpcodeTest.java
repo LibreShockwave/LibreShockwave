@@ -214,6 +214,66 @@ class OpcodeTest {
         }
 
         @Test
+        void multiplyListByFloatScalesEachElement() {
+            scope.push(new Datum.List(List.of(Datum.of(10), Datum.of(20), Datum.of(30))));
+            scope.push(Datum.of(0.5));
+
+            OpcodeHandler handler = registry.get(Opcode.MUL);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            Datum result = scope.pop();
+            assertInstanceOf(Datum.List.class, result);
+            var items = ((Datum.List) result).items();
+            assertEquals(5.0, items.get(0).toDouble(), 0.001);
+            assertEquals(10.0, items.get(1).toDouble(), 0.001);
+            assertEquals(15.0, items.get(2).toDouble(), 0.001);
+        }
+
+        @Test
+        void multiplyPointByFloatDoesNotTruncateFactorToZero() {
+            scope.push(new Datum.Point(10, 20));
+            scope.push(Datum.of(0.5));
+
+            OpcodeHandler handler = registry.get(Opcode.MUL);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            Datum result = scope.pop();
+            assertInstanceOf(Datum.Point.class, result);
+            Datum.Point point = (Datum.Point) result;
+            assertEquals(5, point.x());
+            assertEquals(10, point.y());
+        }
+
+        @Test
+        void roomMovementInterpolationExpressionProducesInterpolatedList() {
+            OpcodeHandler sub = registry.get(Opcode.SUB);
+            OpcodeHandler mul = registry.get(Opcode.MUL);
+            OpcodeHandler add = registry.get(Opcode.ADD);
+
+            Datum.List start = new Datum.List(List.of(Datum.of(100), Datum.of(200), Datum.of(3000)));
+            Datum.List dest = new Datum.List(List.of(Datum.of(120), Datum.of(240), Datum.of(3200)));
+
+            scope.push(dest);
+            scope.push(start);
+            assertTrue(sub.execute(createContext(0)));
+
+            scope.push(Datum.of(0.5));
+            assertTrue(mul.execute(createContext(0)));
+
+            scope.push(start);
+            assertTrue(add.execute(createContext(0)));
+
+            Datum result = scope.pop();
+            assertInstanceOf(Datum.List.class, result);
+            var items = ((Datum.List) result).items();
+            assertEquals(110.0, items.get(0).toDouble(), 0.001);
+            assertEquals(220.0, items.get(1).toDouble(), 0.001);
+            assertEquals(3100.0, items.get(2).toDouble(), 0.001);
+        }
+
+        @Test
         void divide() {
             // Director: int / int = int (truncated toward zero)
             scope.push(Datum.of(10));
@@ -494,6 +554,30 @@ class OpcodeTest {
         }
 
         @Test
+        void joinPaddedStringsSkipsLeadingSpaceWhenLeftIsEmpty() {
+            scope.push(Datum.EMPTY_STRING);
+            scope.push(Datum.of("World"));
+
+            OpcodeHandler handler = registry.get(Opcode.JOIN_PAD_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals("World", scope.pop().toStr());
+        }
+
+        @Test
+        void joinPaddedStringsSkipsTrailingSpaceWhenRightIsEmpty() {
+            scope.push(Datum.of("Hello"));
+            scope.push(Datum.VOID);
+
+            OpcodeHandler handler = registry.get(Opcode.JOIN_PAD_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals("Hello", scope.pop().toStr());
+        }
+
+        @Test
         void containsString() {
             scope.push(Datum.of("Hello World"));
             scope.push(Datum.of("World"));
@@ -509,6 +593,18 @@ class OpcodeTest {
         void notContainsString() {
             scope.push(Datum.of("Hello World"));
             scope.push(Datum.of("foo"));
+
+            OpcodeHandler handler = registry.get(Opcode.CONTAINS_STR);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals(Datum.FALSE, scope.pop());
+        }
+
+        @Test
+        void emptyNeedleDoesNotMatchContains() {
+            scope.push(Datum.of("Hello World"));
+            scope.push(Datum.EMPTY_STRING);
 
             OpcodeHandler handler = registry.get(Opcode.CONTAINS_STR);
             boolean advance = handler.execute(createContext(0));

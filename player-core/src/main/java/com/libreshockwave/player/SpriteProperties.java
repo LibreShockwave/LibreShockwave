@@ -5,10 +5,12 @@ import com.libreshockwave.cast.BitmapInfo;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.SpriteRegistry;
 import com.libreshockwave.player.sprite.SpriteState;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 
@@ -113,7 +115,8 @@ public class SpriteProperties implements SpritePropertyProvider {
                 yield Datum.VOID;
             }
             case "ilk" -> Datum.symbol("sprite");
-            case "rotation" -> Datum.of(0.0);
+            case "rotation" -> Datum.of(sprite.getRotation());
+            case "skew" -> Datum.of(sprite.getSkew());
             case "fliph" -> Datum.of(sprite.isFlipH() ? 1 : 0);
             case "flipv" -> Datum.of(sprite.isFlipV() ? 1 : 0);
             case "moveable", "moveablesprite" -> Datum.of(0);
@@ -177,12 +180,15 @@ public class SpriteProperties implements SpritePropertyProvider {
             }
             case "puppet" -> {
                 sprite.setPuppet(value.isTruthy());
+                if (!sprite.isPuppet() && sprite.getEffectiveCastMember() <= 0) {
+                    resetReleasedEmptyChannel(sprite);
+                }
                 return true;
             }
             case "ink" -> {
                 // Director ignores VOID values - keeps the current ink
                 if (!value.isVoid()) {
-                    sprite.setInk(value.toInt());
+                    sprite.setInk(coerceInkCode(value));
                 }
                 return true;
             }
@@ -251,35 +257,25 @@ public class SpriteProperties implements SpritePropertyProvider {
                 return true;
             }
             case "member" -> {
-                if (value instanceof Datum.CastMemberRef cmr) {
-                    sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
-                    autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
-                } else if (value.isString() && castLibManager != null) {
-                    // Director resolves string member names: sprite.member = "name"
-                    Datum ref = castLibManager.getMemberByName(0, value.toStr());
-                    if (ref instanceof Datum.CastMemberRef cmr) {
-                        sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
-                        autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum());
-                    }
-                } else {
-                    sprite.setDynamicMember(0, value.toInt());
-                    autoSizeSprite(sprite, 0, value.toInt());
-                }
-                return true;
+                return assignMember(sprite, value, false);
             }
             case "castnum", "membernum" -> {
                 int num = value.toInt();
+                if (num <= 0) {
+                    applyEmptyMemberOverride(sprite);
+                    return true;
+                }
                 // Decode encoded slot numbers: (castLib << 16) | memberNum
                 // These come from preIndexMembers → member.number in Director
                 int encodedCast = (num >> 16) & 0xFFFF;
                 int encodedMember = num & 0xFFFF;
                 if (encodedCast > 0 && encodedMember > 0) {
                     sprite.setDynamicMember(encodedCast, encodedMember);
-                    autoSizeSprite(sprite, encodedCast, encodedMember);
+                    autoSizeSprite(sprite, encodedCast, encodedMember, false);
                 } else {
                     int cl = sprite.getEffectiveCastLib();
                     sprite.setDynamicMember(cl, num);
-                    autoSizeSprite(sprite, cl, num);
+                    autoSizeSprite(sprite, cl, num, false);
                 }
                 return true;
             }
@@ -292,11 +288,11 @@ public class SpriteProperties implements SpritePropertyProvider {
                 return true;
             }
             case "rotation" -> {
-                // sprite.rotation - silently accept
+                sprite.setRotation(value.toDouble());
                 return true;
             }
             case "skew" -> {
-                // sprite.skew - silently accept
+                sprite.setSkew(value.toDouble());
                 return true;
             }
             case "fliph" -> {
@@ -349,6 +345,13 @@ public class SpriteProperties implements SpritePropertyProvider {
         }
     }
 
+    @Override
+    public boolean setSpriteMember(int spriteNum, Datum value) {
+        SpriteState sprite = registry.getOrCreateDynamic(spriteNum);
+        registry.bumpRevision();
+        return assignMember(sprite, value, true);
+    }
+
     private static void setColorValue(Datum value, java.util.function.IntConsumer setter) {
         if (!value.isVoid()) {
             if (value instanceof Datum.Color c) {
@@ -359,13 +362,86 @@ public class SpriteProperties implements SpritePropertyProvider {
         }
     }
 
+    private static void applyEmptyMemberOverride(SpriteState sprite) {
+        sprite.setDynamicMember(0, 0);
+        sprite.resetReleasedSpriteTransforms();
+    }
+
+    private static void resetReleasedEmptyChannel(SpriteState sprite) {
+        sprite.setScriptInstanceList(retainSyntheticBrokerInstances(sprite.getScriptInstanceList()));
+        sprite.setVisible(false);
+        sprite.setCursor(0);
+        sprite.setBlend(100);
+        sprite.setStretch(0);
+        sprite.resetReleasedChannelGeometry();
+        sprite.resetReleasedSpriteTransforms();
+    }
+
+    private static java.util.List<Datum> retainSyntheticBrokerInstances(java.util.List<Datum> scriptInstances) {
+        if (scriptInstances == null || scriptInstances.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.List<Datum> retained = new java.util.ArrayList<>();
+        for (Datum script : scriptInstances) {
+            if (script instanceof Datum.ScriptInstance instance
+                    && instance.properties().getOrDefault(
+                            SpriteEventBrokerSupport.SYNTHETIC_BROKER_FLAG,
+                            Datum.FALSE).isTruthy()) {
+                retained.add(instance);
+            }
+        }
+        return retained;
+    }
+
+    private boolean assignMember(SpriteState sprite, Datum value, boolean viaSetMemberMethod) {
+        if (value instanceof Datum.CastMemberRef cmr) {
+            if (cmr.memberNum() <= 0) {
+                applyEmptyMemberOverride(sprite);
+            } else {
+                sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum(), viaSetMemberMethod);
+            }
+            return true;
+        }
+
+        if (value.isString() && castLibManager != null) {
+            Datum ref = castLibManager.getMemberByName(0, value.toStr());
+            if (ref instanceof Datum.CastMemberRef cmr) {
+                if (cmr.memberNum() <= 0) {
+                    applyEmptyMemberOverride(sprite);
+                } else {
+                    sprite.setDynamicMember(cmr.castLibNum(), cmr.memberNum());
+                    autoSizeSprite(sprite, cmr.castLibNum(), cmr.memberNum(), viaSetMemberMethod);
+                }
+            }
+            return true;
+        }
+
+        int memberNum = value.toInt();
+        if (memberNum <= 0) {
+            applyEmptyMemberOverride(sprite);
+            return true;
+        }
+
+        int encodedCast = (memberNum >> 16) & 0xFFFF;
+        int encodedMember = memberNum & 0xFFFF;
+        if (encodedCast > 0 && encodedMember > 0) {
+            sprite.setDynamicMember(encodedCast, encodedMember);
+            autoSizeSprite(sprite, encodedCast, encodedMember, viaSetMemberMethod);
+        } else {
+            sprite.setDynamicMember(0, memberNum);
+            autoSizeSprite(sprite, 0, memberNum, viaSetMemberMethod);
+        }
+        return true;
+    }
+
     /**
      * Auto-size the sprite to match its member's natural dimensions.
      * Director automatically adjusts sprite width/height when member is assigned.
      * This enables Lingo-created sprites (e.g. Logo during loading) to render
      * at their correct size without explicit width/height setting.
      */
-    private void autoSizeSprite(SpriteState sprite, int castLib, int memberNum) {
+    private void autoSizeSprite(SpriteState sprite, int castLib, int memberNum, boolean viaSetMemberMethod) {
         if (castLibManager == null || memberNum <= 0) return;
 
         // Try file-loaded member first (CastMemberChunk)
@@ -389,7 +465,13 @@ public class SpriteProperties implements SpritePropertyProvider {
         // Try dynamic member (created at runtime via new(#type, castLib))
         CastMember dm = castLibManager.getDynamicMember(castLib, memberNum);
         if (dm != null) {
-            sprite.applyIntrinsicSize(dm.getProp("width").toInt(), dm.getProp("height").toInt());
+            int width = dm.getProp("width").toInt();
+            int height = dm.getProp("height").toInt();
+            if (viaSetMemberMethod && dm.isRuntimeDynamic()) {
+                sprite.applyMemberAssignmentSize(width, height);
+            } else {
+                sprite.applyIntrinsicSize(width, height);
+            }
         }
     }
 
@@ -402,5 +484,21 @@ public class SpriteProperties implements SpritePropertyProvider {
             return (ref.castLibNum() << 16) | ref.memberNum();
         }
         return d.toInt();
+    }
+
+    private static int coerceInkCode(Datum value) {
+        if (value instanceof Datum.Symbol sym) {
+            InkMode ink = InkMode.fromNameOrNull(sym.name());
+            if (ink != null) {
+                return ink.code();
+            }
+        }
+        if (value instanceof Datum.Str str) {
+            InkMode ink = InkMode.fromNameOrNull(str.value());
+            if (ink != null) {
+                return ink.code();
+            }
+        }
+        return value.toInt();
     }
 }

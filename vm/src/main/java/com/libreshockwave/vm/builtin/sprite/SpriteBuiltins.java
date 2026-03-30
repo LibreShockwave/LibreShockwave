@@ -28,6 +28,7 @@ public final class SpriteBuiltins {
         builtins.put("puppetsprite", SpriteBuiltins::puppetSprite);
         builtins.put("puppetpalette", SpriteBuiltins::puppetPalette);
         builtins.put("cursor", SpriteBuiltins::cursor);
+        builtins.put("setcursor", SpriteBuiltins::cursor);
         builtins.put("pauseupdate", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("updatestage", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("movetofront", (vm, args) -> Datum.VOID);  // No-op stub

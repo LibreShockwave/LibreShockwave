@@ -1,5 +1,6 @@
 package com.libreshockwave.vm.builtin.cast;
 
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
 
 /**
@@ -59,6 +60,32 @@ public interface CastLibProvider {
     Datum getMemberByName(int castLibNumber, String memberName);
 
     /**
+     * Get a cast member by name for registry-style lookups.
+     * This is narrower than getMemberByName(0, ...): it should only expose
+     * members that are already part of the movie's stable global namespace.
+     * Temporary runtime-retargeted cast slots should remain invisible here
+     * until authored movie code explicitly registers or copies them.
+     *
+     * The default falls back to the broader lookup so existing providers keep
+     * their current behavior unless they need stricter registry visibility.
+     */
+    default Datum getRegistryMemberByName(int castLibNumber, String memberName) {
+        return getMemberByName(castLibNumber, memberName);
+    }
+
+    /**
+     * Check whether a specific member slot should remain visible through
+     * registry-style lookups such as movie-owned getmemnum()/exists() APIs.
+     *
+     * This is narrower than plain memberExists(): temporary import/scratch
+     * casts may be live Director members while still being intentionally
+     * excluded from the movie's stable registry namespace.
+     */
+    default boolean isRegistryVisibleMember(int castLibNumber, int memberNumber) {
+        return memberExists(castLibNumber, memberNumber);
+    }
+
+    /**
      * Get the number of cast libraries.
      */
     int getCastLibCount();
@@ -99,6 +126,23 @@ public interface CastLibProvider {
      */
     default String getFieldValue(Object memberNameOrNum, int castId) {
         return "";
+    }
+
+    /**
+     * Get a field value as a string-like Datum.
+     * Allows the runtime to preserve source member identity for caching while
+     * keeping Director-visible field() semantics string-based.
+     */
+    default Datum getFieldDatum(Object memberNameOrNum, int castId) {
+        return Datum.of(getFieldValue(memberNameOrNum, castId));
+    }
+
+    /**
+     * Get a parsed Datum for a field member's text content.
+     * Used by value(field(...)) to reuse the same parser/cache path generically.
+     */
+    default Datum getFieldParsedValue(int castLibNumber, int memberNumber, LingoVM vm) {
+        return Datum.VOID;
     }
 
     /**

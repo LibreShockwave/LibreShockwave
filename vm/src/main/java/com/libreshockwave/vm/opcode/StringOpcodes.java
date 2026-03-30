@@ -57,7 +57,11 @@ public final class StringOpcodes {
     private static boolean joinPadStr(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
-        ctx.push(Datum.of(a.toStr() + " " + b.toStr()));
+        String aStr = a.toStr();
+        String bStr = b.toStr();
+        if (aStr.isEmpty()) { ctx.push(b instanceof Datum.Str ? b : Datum.of(bStr)); return true; }
+        if (bStr.isEmpty()) { ctx.push(a instanceof Datum.Str ? a : Datum.of(aStr)); return true; }
+        ctx.push(Datum.of(aStr + " " + bStr));
         return true;
     }
 
@@ -68,6 +72,10 @@ public final class StringOpcodes {
         // c_contains which normalizeString() lowercases before comparing)
         String h = haystack.toStr();
         String n = needle.toStr();
+        if (n.isEmpty()) {
+            ctx.push(Datum.FALSE);
+            return true;
+        }
         boolean contains = h.toLowerCase().contains(n.toLowerCase());
         ctx.push(contains ? Datum.TRUE : Datum.FALSE);
         return true;
@@ -88,7 +96,7 @@ public final class StringOpcodes {
             // Use regionMatches to avoid 2 toLowerCase() String allocations
             String h = haystack.toStr();
             String n = needle.toStr();
-            result = h.regionMatches(true, 0, n, 0, n.length());
+            result = !n.isEmpty() && h.regionMatches(true, 0, n, 0, n.length());
         }
 
         ctx.push(result ? Datum.TRUE : Datum.FALSE);
@@ -147,7 +155,7 @@ public final class StringOpcodes {
             int lc = lastChar < 0 ? str.length() : lastChar;
             int start = fc - 1;
             int end = Math.min(lc, str.length());
-            if (start >= 0 && start < str.length()) {
+            if (start >= 0 && start < str.length() && end > start) {
                 ctx.push(Datum.of(str.substring(start, end)));
             } else {
                 ctx.push(Datum.EMPTY_STRING);
@@ -517,7 +525,7 @@ public final class StringOpcodes {
                     Object identifier = idDatum instanceof Datum.Str s ? s.value()
                             : idDatum instanceof Datum.Int i ? i.value()
                             : idDatum.toStr();
-                    return Datum.of(provider.getFieldValue(identifier, castId));
+                    return provider.getFieldDatum(identifier, castId);
                 }
                 return Datum.EMPTY_STRING;
             }

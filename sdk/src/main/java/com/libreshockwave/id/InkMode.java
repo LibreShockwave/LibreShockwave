@@ -1,5 +1,7 @@
 package com.libreshockwave.id;
 
+import java.util.Locale;
+
 /**
  * Director ink modes for sprite blending/compositing.
  */
@@ -47,5 +49,41 @@ public enum InkMode {
             if (mode.code == code) return mode;
         }
         return COPY;
+    }
+
+    public static InkMode fromNameOrNull(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
+        String normalized = name
+                .replace("_", "")
+                .replace("-", "")
+                .replace(" ", "")
+                .toLowerCase(Locale.ROOT);
+
+        return switch (normalized) {
+            case "copy" -> COPY;
+            case "transparent" -> TRANSPARENT;
+            case "reverse" -> REVERSE;
+            case "ghost" -> GHOST;
+            case "notcopy" -> NOT_COPY;
+            case "nottransparent" -> NOT_TRANSPARENT;
+            case "notreverse" -> NOT_REVERSE;
+            case "notghost" -> NOT_GHOST;
+            case "matte" -> MATTE;
+            case "mask" -> MASK;
+            case "blend" -> BLEND;
+            case "addpin" -> ADD_PIN;
+            case "add" -> ADD;
+            case "subtractpin" -> SUBTRACT_PIN;
+            case "backgroundtransparent", "bgtransparent" -> BACKGROUND_TRANSPARENT;
+            case "lightest" -> LIGHTEST;
+            case "subtract" -> SUBTRACT;
+            case "darkest" -> DARKEST;
+            case "lighten" -> LIGHTEN;
+            case "darken" -> DARKEN;
+            default -> null;
+        };
     }
 }

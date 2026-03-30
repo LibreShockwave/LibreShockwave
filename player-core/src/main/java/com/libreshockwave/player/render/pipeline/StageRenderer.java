@@ -29,6 +29,7 @@ public class StageRenderer {
     private CastLibManager castLibManager;
 
     private int backgroundColor = 0xFFFFFF;  // White default
+    private int defaultBackgroundColor = 0xFFFFFF;
 
     // Stage image buffer - used by (the stage).image for direct pixel drawing
     private Bitmap stageImage;
@@ -39,6 +40,11 @@ public class StageRenderer {
     public StageRenderer(DirectorFile file) {
         this.file = file;
         this.spriteRegistry = new SpriteRegistry();
+        if (file != null && file.getConfig() != null) {
+            int stageColor = file.getConfig().stageColorRGB();
+            this.backgroundColor = stageColor;
+            this.defaultBackgroundColor = stageColor;
+        }
     }
 
     public void setCastLibManager(CastLibManager castLibManager) {
@@ -63,6 +69,14 @@ public class StageRenderer {
 
     public void setBackgroundColor(int color) {
         this.backgroundColor = color;
+        if (stageImage != null && !stageImage.isScriptModified()) {
+            stageImage.fill(0xFF000000 | (backgroundColor & 0xFFFFFF));
+        }
+    }
+
+    public void setDefaultBackgroundColor(int color) {
+        this.defaultBackgroundColor = color;
+        setBackgroundColor(color);
     }
 
     /**
@@ -86,6 +100,31 @@ public class StageRenderer {
      */
     public boolean hasStageImage() {
         return stageImage != null;
+    }
+
+    public Bitmap getRenderableStageImage() {
+        if (stageImage == null || !stageImage.isScriptModified()) {
+            return null;
+        }
+        return stageImage;
+    }
+
+    /**
+     * Discard any script-owned stage image buffer and fall back to the stage
+     * background color on the next render.
+     */
+    public void discardStageImage() {
+        stageImage = null;
+    }
+
+    /**
+     * Reset transient stage visuals back to the movie baseline.
+     * Used when room/program/error transitions should not retain a script-drawn
+     * stage buffer or a room-specific background color.
+     */
+    public void resetVisualState() {
+        backgroundColor = defaultBackgroundColor;
+        stageImage = null;
     }
 
     /** Store baked sprites from last rendered frame for hit testing. */
@@ -202,7 +241,15 @@ public class StageRenderer {
 
         // Apply registration point offset (scaled for stretched sprites per ScummVM behavior)
         if (member != null) {
-            RegPoint reg = scaledRegPoint(member, width, height, x, y);
+            RegPoint reg = scaledRegPoint(
+                    member,
+                    width,
+                    height,
+                    x,
+                    y,
+                    effectiveFlipH(state),
+                    state.isFlipV()
+            );
             x -= reg.x();
             y -= reg.y();
         }
@@ -296,7 +343,15 @@ public class StageRenderer {
         if (member != null) {
             type = determineSpriteTypeFromMember(member);
             // Apply registration point offset (scaled for stretched sprites)
-            RegPoint reg = scaledRegPoint(member, width, height, x, y);
+            RegPoint reg = scaledRegPoint(
+                    member,
+                    width,
+                    height,
+                    x,
+                    y,
+                    effectiveFlipH(state),
+                    state.isFlipV()
+            );
             x -= reg.x();
             y -= reg.y();
             // Fallback auto-size: if sprite still has 0x0 dimensions, derive from member
@@ -309,8 +364,15 @@ public class StageRenderer {
         } else if (dynamicMember != null) {
             type = determineSpriteTypeFromDynamic(dynamicMember);
             // Apply registration point offset from dynamic member
-            x -= dynamicMember.getRegPointX();
-            y -= dynamicMember.getRegPointY();
+            RegPoint reg = mirroredDynamicRegPoint(
+                    dynamicMember,
+                    width,
+                    height,
+                    effectiveFlipH(state),
+                    state.isFlipV()
+            );
+            x -= reg.x();
+            y -= reg.y();
             // Fallback auto-size for dynamic members
             if (width == 0 && height == 0) {
                 int dw = dynamicMember.getProp("width").toInt();
@@ -332,7 +394,9 @@ public class StageRenderer {
             state.getForeColor(), state.getBackColor(),
             state.hasForeColor(), state.hasBackColor(),
             state.getInk(), state.getBlend(),
-            state.isFlipH(), state.isFlipV(), null,
+            state.isFlipH(), state.isFlipV(),
+            state.getRotation(), state.getSkew(),
+            null,
             state.hasScriptBehaviors()
         );
     }
@@ -387,7 +451,7 @@ public class StageRenderer {
      * Director (confirmed via ScummVM) scales regPoint by spriteSize/bitmapSize for stretched sprites.
      */
     private RegPoint scaledRegPoint(CastMemberChunk member, int spriteWidth, int spriteHeight,
-                                     int posX, int posY) {
+                                     int posX, int posY, boolean flipH, boolean flipV) {
         if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
             var bi = com.libreshockwave.cast.BitmapInfo.parse(member.specificData());
             // ScummVM's getRegistrationOffset() uses bitmap-local coordinates
@@ -402,6 +466,8 @@ public class StageRenderer {
             if (spriteHeight > 0 && bmpH > 0 && bmpH != spriteHeight) {
                 regY = regY * spriteHeight / bmpH;
             }
+            regX = mirrorOffset(regX, spriteWidth > 0 ? spriteWidth : bmpW, flipH);
+            regY = mirrorOffset(regY, spriteHeight > 0 ? spriteHeight : bmpH, flipV);
             return new RegPoint(regX, regY);
         }
         // Film loop: the specificData stores a bounding rect in stage coordinates.
@@ -412,7 +478,44 @@ public class StageRenderer {
             var fi = com.libreshockwave.cast.FilmLoopInfo.parse(member.specificData());
             return new RegPoint(posX - fi.rectLeft(), posY - fi.rectTop());
         }
-        return new RegPoint(member.regPointX(), member.regPointY());
+        int regX = mirrorOffset(member.regPointX(), spriteWidth, flipH);
+        int regY = mirrorOffset(member.regPointY(), spriteHeight, flipV);
+        return new RegPoint(regX, regY);
+    }
+
+    private RegPoint mirroredDynamicRegPoint(CastMember dynamicMember, int spriteWidth, int spriteHeight,
+                                             boolean flipH, boolean flipV) {
+        Bitmap bmp = dynamicMember.getBitmap();
+        int width = spriteWidth > 0 ? spriteWidth : (bmp != null ? bmp.getWidth() : 0);
+        int height = spriteHeight > 0 ? spriteHeight : (bmp != null ? bmp.getHeight() : 0);
+        int regX = dynamicMember.getRegPointX();
+        int regY = dynamicMember.getRegPointY();
+        regX = mirrorOffset(regX, width, flipH);
+        regY = mirrorOffset(regY, height, flipV);
+        return new RegPoint(regX, regY);
+    }
+
+    private int mirrorOffset(int reg, int span, boolean flipped) {
+        if (!flipped || span <= 0) {
+            return reg;
+        }
+        return span - reg;
+    }
+
+    private boolean effectiveFlipH(SpriteState state) {
+        return state.isFlipH() ^ hasDirectorHorizontalMirror(state.getRotation(), state.getSkew());
+    }
+
+    private static boolean hasDirectorHorizontalMirror(double rotation, double skew) {
+        return normalizeTransformAngle(rotation) == 180 && normalizeTransformAngle(skew) == 180;
+    }
+
+    private static int normalizeTransformAngle(double angle) {
+        int normalized = (int) Math.round(angle) % 360;
+        if (normalized < 0) {
+            normalized += 360;
+        }
+        return normalized;
     }
 
     /**
@@ -441,6 +544,8 @@ public class StageRenderer {
 
     public void reset() {
         spriteRegistry.clear();
+        lastBakedSprites = List.of();
+        resetVisualState();
     }
 
     public void onSpriteEnd(int channel) {

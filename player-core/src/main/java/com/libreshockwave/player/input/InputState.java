@@ -22,6 +22,10 @@ public class InputState {
     private int clickOnSprite;  // sprite channel of last click
     private int clickLocH;
     private int clickLocV;
+    private long lastClickTime;
+    private int lastClickLocH;
+    private int lastClickLocV;
+    private boolean doubleClick;
 
     // Rollover tracking
     private int rolloverSprite;  // sprite channel mouse is currently over
@@ -74,6 +78,19 @@ public class InputState {
     public int getClickLocH() { return clickLocH; }
     public int getClickLocV() { return clickLocV; }
     public void setClickLoc(int h, int v) { this.clickLocH = h; this.clickLocV = v; }
+
+    public boolean isDoubleClick() { return doubleClick; }
+    public void updateDoubleClick(int h, int v) {
+        long now = System.currentTimeMillis();
+        // Standard double-click threshold: 500ms and ~5 pixels
+        boolean timeMatch = (now - lastClickTime) <= 500;
+        boolean distMatch = Math.abs(h - lastClickLocH) <= 5 && Math.abs(v - lastClickLocV) <= 5;
+
+        this.doubleClick = timeMatch && distMatch;
+        this.lastClickTime = now;
+        this.lastClickLocH = h;
+        this.lastClickLocV = v;
+    }
 
     // --- Rollover ---
 

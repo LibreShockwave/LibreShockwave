@@ -12,8 +12,16 @@ public class Bitmap {
     private final int height;
     private final int[] pixels; // ARGB format (0xAARRGGBB)
     private final int bitDepth;
+    private byte[] paletteIndices;
     private boolean scriptModified; // Set when Lingo modifies this bitmap via image API
+    private boolean nativeAlpha; // True for Director-decoded 32-bit bitmaps with real alpha
     private Palette imagePalette; // Palette for 8-bit images created via image(w,h,8,paletteMember)
+    private int paletteRefCastLib = -1;
+    private int paletteRefMemberNum = -1;
+    private String paletteRefSystemName;
+    private boolean hasAnchorPoint;
+    private int anchorX;
+    private int anchorY;
 
     public Bitmap(int width, int height, int bitDepth) {
         this.width = width;
@@ -41,18 +49,30 @@ public class Bitmap {
         return bitDepth;
     }
 
-    /** Returns true if this bitmap was modified by Lingo image API (fill, copyPixels, etc.). */
+    /**
+     * Returns true if this bitmap was modified by Lingo image API (fill,
+     * copyPixels, etc.).
+     */
     public boolean isScriptModified() {
         return scriptModified;
     }
 
-    /** Returns true if this bitmap contains any fully transparent pixels (alpha=0). */
+    /**
+     * Returns true if this bitmap contains any fully transparent pixels (alpha=0).
+     */
     public boolean hasTransparentPixels() {
-        if (pixels == null || bitDepth < 32) return false;
+        if (pixels == null || bitDepth < 32)
+            return false;
         for (int pixel : pixels) {
-            if ((pixel >>> 24) == 0) return true;
+            if ((pixel >>> 24) == 0)
+                return true;
         }
         return false;
+    }
+
+    /** Returns true when this bitmap carries authored/native 32-bit alpha. */
+    public boolean hasNativeMatteAlpha() {
+        return bitDepth == 32 && nativeAlpha;
     }
 
     /** Mark this bitmap as modified by Lingo script operations. */
@@ -60,7 +80,18 @@ public class Bitmap {
         this.scriptModified = true;
     }
 
-    /** Set the palette for this bitmap (for 8-bit images created with a palette member). */
+    public boolean isNativeAlpha() {
+        return nativeAlpha;
+    }
+
+    public void setNativeAlpha(boolean nativeAlpha) {
+        this.nativeAlpha = nativeAlpha;
+    }
+
+    /**
+     * Set the palette for this bitmap (for 8-bit images created with a palette
+     * member).
+     */
     public void setImagePalette(Palette palette) {
         this.imagePalette = palette;
     }
@@ -68,6 +99,156 @@ public class Bitmap {
     /** Get the palette for this bitmap, or null if none. */
     public Palette getImagePalette() {
         return imagePalette;
+    }
+
+    public void setPaletteIndices(byte[] paletteIndices) {
+        if (paletteIndices == null) {
+            this.paletteIndices = null;
+            return;
+        }
+        this.paletteIndices = java.util.Arrays.copyOf(paletteIndices, paletteIndices.length);
+    }
+
+    public byte[] getPaletteIndices() {
+        return paletteIndices != null ? java.util.Arrays.copyOf(paletteIndices, paletteIndices.length) : null;
+    }
+
+    private void clearPaletteIndices() {
+        this.paletteIndices = null;
+    }
+
+    /**
+     * Director can recolor an existing image by assigning image.paletteRef
+     * after pixels have already been copied into it. Our runtime stores decoded
+     * ARGB pixels, so emulate that by remapping exact old-palette colors to the
+     * corresponding entries in the new palette.
+     *
+     * @return number of pixels changed
+     */
+    public int remapImagePalette(Palette newPalette) {
+        Palette oldPalette = this.imagePalette;
+        this.imagePalette = newPalette;
+
+        if (oldPalette == null || newPalette == null || oldPalette == newPalette) {
+            return 0;
+        }
+
+        if (paletteIndices != null && paletteIndices.length == pixels.length) {
+            int changed = 0;
+            int max = newPalette.size();
+            for (int i = 0; i < pixels.length; i++) {
+                int alpha = (pixels[i] >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                int index = paletteIndices[i] & 0xFF;
+                if (index >= max) {
+                    continue;
+                }
+                int newRgb = newPalette.getColor(index) & 0xFFFFFF;
+                if ((pixels[i] & 0xFFFFFF) != newRgb) {
+                    pixels[i] = (alpha << 24) | newRgb;
+                    changed++;
+                }
+            }
+            return changed;
+        }
+
+        int changed = 0;
+        int max = Math.min(oldPalette.size(), newPalette.size());
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            int alpha = (pixel >>> 24) & 0xFF;
+            if (alpha == 0) {
+                continue;
+            }
+            int rgb = pixel & 0xFFFFFF;
+            for (int idx = 0; idx < max; idx++) {
+                if ((oldPalette.getColor(idx) & 0xFFFFFF) == rgb) {
+                    int newRgb = newPalette.getColor(idx) & 0xFFFFFF;
+                    if (newRgb != rgb) {
+                        pixels[i] = (alpha << 24) | newRgb;
+                        changed++;
+                    }
+                    break;
+                }
+            }
+        }
+        return changed;
+    }
+
+    public void setPaletteRefCastMember(int castLibNumber, int memberNumber) {
+        this.paletteRefCastLib = castLibNumber;
+        this.paletteRefMemberNum = memberNumber;
+        this.paletteRefSystemName = null;
+    }
+
+    public int getPaletteRefCastLib() {
+        return paletteRefCastLib;
+    }
+
+    public int getPaletteRefMemberNum() {
+        return paletteRefMemberNum;
+    }
+
+    public void setPaletteRefSystemName(String systemName) {
+        this.paletteRefSystemName = systemName;
+        this.paletteRefCastLib = -1;
+        this.paletteRefMemberNum = -1;
+    }
+
+    public String getPaletteRefSystemName() {
+        return paletteRefSystemName;
+    }
+
+    public void clearPaletteRefMetadata() {
+        this.paletteRefCastLib = -1;
+        this.paletteRefMemberNum = -1;
+        this.paletteRefSystemName = null;
+    }
+
+    public void setAnchorPoint(int x, int y) {
+        this.hasAnchorPoint = true;
+        this.anchorX = x;
+        this.anchorY = y;
+    }
+
+    public boolean hasAnchorPoint() {
+        return hasAnchorPoint;
+    }
+
+    public int getAnchorX() {
+        return anchorX;
+    }
+
+    public int getAnchorY() {
+        return anchorY;
+    }
+
+    public void clearAnchorPoint() {
+        this.hasAnchorPoint = false;
+        this.anchorX = 0;
+        this.anchorY = 0;
+    }
+
+    public void copyPaletteMetadataFrom(Bitmap other) {
+        if (other == null) {
+            this.imagePalette = null;
+            this.paletteIndices = null;
+            clearPaletteRefMetadata();
+            return;
+        }
+        this.imagePalette = other.imagePalette;
+        this.nativeAlpha = other.nativeAlpha;
+        this.paletteIndices = other.paletteIndices != null
+                ? java.util.Arrays.copyOf(other.paletteIndices, other.paletteIndices.length)
+                : null;
+        this.paletteRefCastLib = other.paletteRefCastLib;
+        this.paletteRefMemberNum = other.paletteRefMemberNum;
+        this.paletteRefSystemName = other.paletteRefSystemName;
+        this.hasAnchorPoint = other.hasAnchorPoint;
+        this.anchorX = other.anchorX;
+        this.anchorY = other.anchorY;
     }
 
     /**
@@ -103,6 +284,7 @@ public class Bitmap {
      */
     public void setPixel(int x, int y, int argb) {
         if (x >= 0 && x < width && y >= 0 && y < height) {
+            clearPaletteIndices();
             pixels[y * width + x] = argb;
         }
     }
@@ -125,6 +307,7 @@ public class Bitmap {
      * Fill the entire bitmap with a single color.
      */
     public void fill(int argb) {
+        clearPaletteIndices();
         java.util.Arrays.fill(pixels, argb);
     }
 
@@ -132,6 +315,7 @@ public class Bitmap {
      * Fill a rectangular region.
      */
     public void fillRect(int x, int y, int w, int h, int argb) {
+        clearPaletteIndices();
         int x2 = Math.min(x + w, width);
         int y2 = Math.min(y + h, height);
         x = Math.max(0, x);
@@ -159,7 +343,9 @@ public class Bitmap {
     public Bitmap copy() {
         int[] pixelsCopy = new int[pixels.length];
         System.arraycopy(pixels, 0, pixelsCopy, 0, pixels.length);
-        return new Bitmap(width, height, bitDepth, pixelsCopy);
+        Bitmap copy = new Bitmap(width, height, bitDepth, pixelsCopy);
+        copy.copyPaletteMetadataFrom(this);
+        return copy;
     }
 
     /**
@@ -167,14 +353,27 @@ public class Bitmap {
      */
     public Bitmap getRegion(int x, int y, int w, int h) {
         Bitmap result = new Bitmap(w, h, bitDepth);
+        result.copyPaletteMetadataFrom(this);
+        byte[] regionIndices = paletteIndices != null ? new byte[w * h] : null;
         for (int dy = 0; dy < h; dy++) {
             int srcY = y + dy;
-            if (srcY < 0 || srcY >= height) continue;
+            if (srcY < 0 || srcY >= height)
+                continue;
             for (int dx = 0; dx < w; dx++) {
                 int srcX = x + dx;
-                if (srcX < 0 || srcX >= width) continue;
+                if (srcX < 0 || srcX >= width)
+                    continue;
                 result.pixels[dy * w + dx] = pixels[srcY * width + srcX];
+                if (regionIndices != null) {
+                    regionIndices[dy * w + dx] = paletteIndices[srcY * width + srcX];
+                }
             }
+        }
+        if (regionIndices != null) {
+            result.paletteIndices = regionIndices;
+        }
+        if (hasAnchorPoint) {
+            result.setAnchorPoint(anchorX - x, anchorY - y);
         }
         return result;
     }
@@ -190,17 +389,24 @@ public class Bitmap {
             for (int x = 0; x < width; x++) {
                 int pixel = pixels[y * width + x];
                 int a = (pixel >>> 24);
-                if (a == 0) continue; // transparent = white
+                if (a == 0)
+                    continue; // transparent = white
                 int rgb = pixel & 0xFFFFFF;
-                if (rgb == 0xFFFFFF) continue; // white
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
+                if (rgb == 0xFFFFFF)
+                    continue; // white
+                if (x < minX)
+                    minX = x;
+                if (x > maxX)
+                    maxX = x;
+                if (y < minY)
+                    minY = y;
+                if (y > maxY)
+                    maxY = y;
             }
         }
-        if (maxX < 0) return new int[]{0, 0, 0, 0};
-        return new int[]{minX, minY, maxX + 1, maxY + 1};
+        if (maxX < 0)
+            return new int[] { 0, 0, 0, 0 };
+        return new int[] { minX, minY, maxX + 1, maxY + 1 };
     }
 
     @Override
@@ -212,9 +418,9 @@ public class Bitmap {
      * Create a swatch image from an array of colors.
      * Each color is rendered as a small square in a grid.
      *
-     * @param colors Array of RGB colors (0xRRGGBB format)
+     * @param colors     Array of RGB colors (0xRRGGBB format)
      * @param swatchSize Size of each color swatch in pixels
-     * @param columns Number of columns in the grid (0 = auto)
+     * @param columns    Number of columns in the grid (0 = auto)
      * @return A Bitmap containing the color swatches
      */
     public static Bitmap createPaletteSwatch(int[] colors, int swatchSize, int columns) {
@@ -249,7 +455,7 @@ public class Bitmap {
     /**
      * Create a swatch image from a Palette.
      *
-     * @param palette The palette to visualize
+     * @param palette    The palette to visualize
      * @param swatchSize Size of each color swatch in pixels
      * @return A Bitmap containing the color swatches
      */

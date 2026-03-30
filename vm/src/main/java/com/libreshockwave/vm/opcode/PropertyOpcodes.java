@@ -115,7 +115,8 @@ public final class PropertyOpcodes {
             case Datum.TimeoutRef tr -> TimeoutBuiltins.getProperty(tr, propName);
             case Datum.PropList pl -> getPropListProp(pl, propName);
             case Datum.List list -> getListProp(list, propName);
-            case Datum.Str str -> getStringProp(str, propName);
+            case Datum.Str str -> getStringProp(str.toStr(), propName);
+            case Datum.FieldText fieldText -> getStringProp(fieldText.toStr(), propName);
             case Datum.MovieRef m -> {
                 MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
                 yield provider != null ? provider.getMovieProp(propName) : Datum.VOID;
@@ -125,6 +126,7 @@ public final class PropertyOpcodes {
                 SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
                 yield spriteProvider != null ? spriteProvider.getSpriteProp(sr.channelNum(), propName) : Datum.VOID;
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             case Datum.Int intVal -> {
                 // Director: property access on integers routes to sprite properties.
                 // e.g., 42.bgColor == sprite(42).bgColor. Window system stores pSprite
@@ -203,8 +205,8 @@ public final class PropertyOpcodes {
         return Datum.VOID;
     }
 
-    private static Datum getStringProp(Datum.Str str, String propName) {
-        if ("length".equalsIgnoreCase(propName)) return Datum.of(str.value().length());
+    private static Datum getStringProp(String str, String propName) {
+        if ("length".equalsIgnoreCase(propName)) return Datum.of(str.length());
         if ("ilk".equalsIgnoreCase(propName)) return Datum.symbol("string");
         return Datum.VOID;
     }
@@ -236,6 +238,7 @@ public final class PropertyOpcodes {
                     spriteProvider.setSpriteProp(sr.channelNum(), propName, value);
                 }
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.setProperty(sc, propName, value);
             case Datum.Int intVal -> {
                 // Director: property assignment on integers routes to sprite properties.
                 // e.g., 42.bgColor = color == sprite(42).bgColor = color.
@@ -263,6 +266,9 @@ public final class PropertyOpcodes {
                 else if ("locv".equalsIgnoreCase(propName) || "y".equalsIgnoreCase(propName)) point.setY(v);
             }
             case Datum.ImageRef ir -> ImageMethodDispatcher.setProperty(ir, propName, value);
+            case Datum d when d.isVoid() -> {
+                // Silently ignore property assignment on Void to match getObjProp and Director behavior.
+            }
             default -> {
                 System.err.println("[LingoVM] Missing set accessor: " + propName + " on " + obj.getClass().getSimpleName());
                 System.err.println(ctx.formatCallStack());
@@ -299,16 +305,40 @@ public final class PropertyOpcodes {
      */
     private static Datum getCastMemberProp(Datum.CastMemberRef cmr, String propName) {
         CastLibProvider provider = CastLibProvider.getProvider();
+        boolean invalidRef = isInvalidCastMemberRef(cmr, provider);
+
+        if ("number".equalsIgnoreCase(propName)) {
+            if (invalidRef) {
+                return Datum.ZERO;
+            }
+            return Datum.of((cmr.castLibNum() << 16) | (cmr.memberNum() & 0xFFFF));
+        }
+        if ("membernum".equalsIgnoreCase(propName)) {
+            if (invalidRef) {
+                return Datum.ZERO;
+            }
+            return Datum.of(cmr.memberNum());
+        }
+        if ("castlibnum".equalsIgnoreCase(propName)) {
+            return Datum.of(cmr.castLibNum());
+        }
+        if ("castlib".equalsIgnoreCase(propName)) {
+            return new Datum.CastLibRef(cmr.castLib());
+        }
+
         if (provider == null) {
-            if ("number".equalsIgnoreCase(propName)) return Datum.of((cmr.castLibNum() << 16) | (cmr.memberNum() & 0xFFFF));
-            if ("membernum".equalsIgnoreCase(propName)) return Datum.of(cmr.memberNum());
-            if ("castlibnum".equalsIgnoreCase(propName)) return Datum.of(cmr.castLibNum());
-            if ("castlib".equalsIgnoreCase(propName)) return new Datum.CastLibRef(cmr.castLib());
             return Datum.VOID;
         }
 
         // Delegate to provider for full property access with lazy loading
         return provider.getMemberProp(cmr.castLibNum(), cmr.memberNum(), propName);
+    }
+
+    private static boolean isInvalidCastMemberRef(Datum.CastMemberRef cmr, CastLibProvider provider) {
+        if (cmr.memberNum() <= 0) {
+            return true;
+        }
+        return provider != null && !provider.memberExists(cmr.castLibNum(), cmr.memberNum());
     }
 
     /**
@@ -488,8 +518,7 @@ public final class PropertyOpcodes {
                 : fieldNameOrNum instanceof Datum.Int i ? i.value()
                 : fieldNameOrNum.toStr();
 
-        String fieldValue = provider.getFieldValue(identifier, castId);
-        ctx.push(Datum.of(fieldValue));
+        ctx.push(provider.getFieldDatum(identifier, castId));
         return true;
     }
 
@@ -596,6 +625,7 @@ public final class PropertyOpcodes {
                 }
                 yield Datum.VOID;
             }
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
             case Datum.CastLibRef clr -> getCastLibProp(clr, propName);
             case Datum.MovieRef m -> {
@@ -661,6 +691,7 @@ public final class PropertyOpcodes {
                 yield stageProvider != null ? stageProvider.getStageProp(propName) : Datum.VOID;
             }
             case Datum.ImageRef ir -> ImageMethodDispatcher.getProperty(ir, propName);
+            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             default -> Datum.VOID;
         };
     }

@@ -88,6 +88,9 @@ public interface MoviePropertyProvider {
         // Default: no-op
     }
 
+    default void gotoNetPage(String url, String target) {
+    }
+
     // Thread-local provider for VM access
     ThreadLocal<MoviePropertyProvider> CURRENT = new ThreadLocal<>();
 

@@ -1,15 +1,34 @@
 package com.libreshockwave.vm;
 
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
+import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
+import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 
 /**
  * Unit tests for the Lingo VM.
  */
 class LingoVMTest {
+
+    @Test
+    void testBuiltinSetCursorAliasesCursor() {
+        LingoVM vm = new LingoVM(null);
+        RecordingMovieProvider provider = new RecordingMovieProvider();
+        MoviePropertyProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("setcursor", List.of(Datum.symbol("timer")));
+            assertTrue(result.isVoid());
+            assertEquals("cursor", provider.lastPropName);
+            assertEquals("timer", provider.lastValue.toStr());
+        } finally {
+            MoviePropertyProvider.clearProvider();
+        }
+    }
 
     @Test
     void testGlobalVariables() {
@@ -29,6 +48,382 @@ class LingoVMTest {
         // Clear
         vm.clearGlobals();
         assertTrue(vm.getGlobals().isEmpty());
+    }
+
+    @Test
+    void testPrefsAreCaseInsensitiveAndMissingReturnsVoid() {
+        LingoVM vm = new LingoVM(null);
+
+        assertTrue(vm.getPref("Blocktime").isVoid());
+
+        Datum stored = vm.setPref("blocktime", Datum.of("123"));
+        assertEquals("123", stored.toStr());
+
+        Datum fetched = vm.getPref("Blocktime");
+        assertTrue(fetched.isString());
+        assertEquals("123", fetched.toStr());
+    }
+
+    @Test
+    void testBuiltinPrefsUseVmPreferenceStorage() {
+        LingoVM vm = new LingoVM(null);
+
+        assertTrue(vm.callHandler("getPref", List.of(Datum.of("Blocktime"))).isVoid());
+
+        Datum stored = vm.callHandler("setPref", List.of(Datum.of("blocktime"), Datum.of("123")));
+        assertEquals("123", stored.toStr());
+
+        Datum fetched = vm.callHandler("getPref", List.of(Datum.of("Blocktime")));
+        assertTrue(fetched.isString());
+        assertEquals("123", fetched.toStr());
+    }
+
+    @Test
+    void testDeferredTasksFlushOnlyAtExplicitBoundary() {
+        LingoVM vm = new LingoVM(null);
+        AtomicInteger calls = new AtomicInteger();
+
+        vm.deferTask(calls::incrementAndGet);
+
+        assertEquals(0, calls.get());
+
+        vm.flushDeferredTasks();
+
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void testGotoNetPageBuiltinDelegatesToMovieProvider() {
+        LingoVM vm = new LingoVM(null);
+        RecordingMovieProvider provider = new RecordingMovieProvider();
+        MoviePropertyProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("gotoNetPage",
+                    List.of(Datum.of("https://example.com"), Datum.of("_new")));
+            assertTrue(result.isTruthy());
+            assertEquals("https://example.com", provider.lastGotoUrl);
+            assertEquals("_new", provider.lastGotoTarget);
+        } finally {
+            MoviePropertyProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testCallHandlerPrefersGlobalScriptHandlerOverBuiltin() {
+        OverridingHandlerVm vm = new OverridingHandlerVm();
+
+        Datum result = vm.callHandler("getmemnum", List.of(Datum.of("much_sofa1b_a_0_2_0")));
+
+        assertEquals(1, vm.executeCount);
+        assertEquals("script:getmemnum", result.toStr());
+    }
+
+    @Test
+    void testMemberBuiltinResolvesCastLibNameArgument() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("member", List.of(Datum.of("present_gen5_small"), Datum.of("bin")));
+            assertEquals(11, provider.lastMemberByNameCastLibNumber);
+            assertEquals("present_gen5_small", provider.lastMemberByName);
+            assertTrue(result instanceof Datum.CastMemberRef);
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testMemberBuiltinResolvesCastLibSymbolArgument() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("member", List.of(Datum.of("present_gen5_small"), Datum.symbol("bin")));
+            assertEquals(11, provider.lastMemberByNameCastLibNumber);
+            assertEquals("present_gen5_small", provider.lastMemberByName);
+            assertTrue(result instanceof Datum.CastMemberRef);
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testMemberBuiltinReturnsInvalidRefWhenNamedMemberIsMissingFromSpecificCast() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.memberByNameResult = Datum.VOID;
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("member", List.of(Datum.of("grunge_barrel.props"), Datum.of("bin")));
+            assertEquals(11, provider.lastMemberByNameCastLibNumber);
+            assertEquals("grunge_barrel.props", provider.lastMemberByName);
+            assertEquals(11, provider.lastGetMemberCastLibNumber);
+            assertEquals(0, provider.lastGetMemberNumber);
+            assertInstanceOf(Datum.CastMemberRef.class, result);
+            Datum.CastMemberRef ref = (Datum.CastMemberRef) result;
+            assertEquals(11, ref.castLibNum());
+            assertEquals(0, ref.memberNum());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testFieldBuiltinResolvesCastLibNameArgument() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.fieldValue = "ok";
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("field", List.of(Datum.of("memberalias.index"), Datum.of("bin")));
+            assertEquals(11, provider.lastFieldCastId);
+            assertEquals("memberalias.index", provider.lastFieldMemberName);
+            assertEquals("ok", result.toStr());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testFieldBuiltinResolvesCastLibSymbolArgument() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.fieldValue = "ok";
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("field", List.of(Datum.of("memberalias.index"), Datum.symbol("bin")));
+            assertEquals(11, provider.lastFieldCastId);
+            assertEquals("memberalias.index", provider.lastFieldMemberName);
+            assertEquals("ok", result.toStr());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testValueBuiltinUsesParsedFieldDatum() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.fieldValue = "[#foo: 7]";
+        provider.fieldParsedValue = Datum.propList(java.util.Map.of("foo", Datum.of(7)));
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum field = vm.callHandler("field", List.of(Datum.of("grunge_barrel.props"), Datum.of("bin")));
+            assertInstanceOf(Datum.FieldText.class, field);
+
+            Datum parsed = vm.callHandler("value", List.of(field));
+            assertInstanceOf(Datum.PropList.class, parsed);
+            assertEquals(1, provider.fieldParsedCalls);
+            assertEquals(7, ((Datum.PropList) parsed).get("foo").toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testValueBuiltinFallsBackToGenericFieldParsingWhenProviderCacheMisses() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.fieldValue = "[#foo: 9]";
+        provider.fieldParsedValue = Datum.VOID;
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum field = vm.callHandler("field", List.of(Datum.of("grunge_barrel.props"), Datum.of("bin")));
+
+            Datum parsed = vm.callHandler("value", List.of(field));
+            assertInstanceOf(Datum.PropList.class, parsed);
+            assertEquals(1, provider.fieldParsedCalls);
+            assertEquals(9, ((Datum.PropList) parsed).get("foo").toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testValueBuiltinPreservesBareMultiWordScriptClassNames() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("value", List.of(Datum.of("Broker Manager Class")));
+
+            assertTrue(result.isString());
+            assertEquals("Broker Manager Class", result.toStr());
+            assertEquals(0, provider.lastMemberByNameCastLibNumber);
+            assertEquals("Broker Manager Class", provider.lastMemberByName);
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testValueBuiltinStillReturnsVoidForUnknownMultiWordStrings() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.memberByNameResult = Datum.VOID;
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("value", List.of(Datum.of("Broker Manager Class")));
+
+            assertTrue(result.isVoid());
+            assertEquals(0, provider.lastMemberByNameCastLibNumber);
+            assertEquals("Broker Manager Class", provider.lastMemberByName);
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testFieldDatumBehavesLikeAString() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        provider.fieldValue = "ok";
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum field = vm.callHandler("field", List.of(Datum.of("memberalias.index"), Datum.of("bin")));
+
+            assertInstanceOf(Datum.FieldText.class, field);
+            assertTrue(vm.callHandler("stringp", List.of(field)).isTruthy());
+            assertFalse(vm.callHandler("objectp", List.of(field)).isTruthy());
+            assertEquals(2, vm.callHandler("length", List.of(field)).toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    private static final class RecordingMovieProvider implements MoviePropertyProvider {
+        private String lastPropName;
+        private Datum lastValue = Datum.VOID;
+        private String lastGotoUrl;
+        private String lastGotoTarget;
+
+        @Override
+        public Datum getMovieProp(String propName) {
+            return Datum.VOID;
+        }
+
+        @Override
+        public boolean setMovieProp(String propName, Datum value) {
+            lastPropName = propName;
+            lastValue = value;
+            return true;
+        }
+
+        @Override
+        public void gotoNetPage(String url, String target) {
+            lastGotoUrl = url;
+            lastGotoTarget = target;
+        }
+    }
+
+    private static final class RecordingCastProvider implements CastLibProvider {
+        private int lastMemberByNameCastLibNumber = -1;
+        private String lastMemberByName;
+        private int lastGetMemberCastLibNumber = -1;
+        private int lastGetMemberNumber = -1;
+        private int lastFieldCastId = -1;
+        private String lastFieldMemberName;
+        private String fieldValue = "";
+        private Datum fieldParsedValue = Datum.VOID;
+        private int fieldParsedCalls = 0;
+        private Datum memberByNameResult = Datum.CastMemberRef.of(11, 7);
+
+        @Override
+        public int getCastLibByNumber(int castLibNumber) {
+            return castLibNumber;
+        }
+
+        @Override
+        public int getCastLibByName(String name) {
+            if ("bin".equalsIgnoreCase(name)) {
+                return 11;
+            }
+            return -1;
+        }
+
+        @Override
+        public Datum getCastLibProp(int castLibNumber, String propName) {
+            return Datum.VOID;
+        }
+
+        @Override
+        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
+            return false;
+        }
+
+        @Override
+        public Datum getMember(int castLibNumber, int memberNumber) {
+            lastGetMemberCastLibNumber = castLibNumber;
+            lastGetMemberNumber = memberNumber;
+            return Datum.CastMemberRef.of(castLibNumber, memberNumber);
+        }
+
+        @Override
+        public Datum getMemberByName(int castLibNumber, String memberName) {
+            lastMemberByNameCastLibNumber = castLibNumber;
+            lastMemberByName = memberName;
+            return memberByNameResult;
+        }
+
+        @Override
+        public int getCastLibCount() {
+            return 11;
+        }
+
+        @Override
+        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
+            return Datum.VOID;
+        }
+
+        @Override
+        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
+            return false;
+        }
+
+        @Override
+        public String getFieldValue(Object memberNameOrNum, int castId) {
+            lastFieldCastId = castId;
+            lastFieldMemberName = String.valueOf(memberNameOrNum);
+            return fieldValue;
+        }
+
+        @Override
+        public Datum getFieldDatum(Object memberNameOrNum, int castId) {
+            lastFieldCastId = castId;
+            lastFieldMemberName = String.valueOf(memberNameOrNum);
+            return new Datum.FieldText(fieldValue, castId > 0 ? castId : 11, 7);
+        }
+
+        @Override
+        public Datum getFieldParsedValue(int castLibNumber, int memberNumber, LingoVM vm) {
+            fieldParsedCalls++;
+            return fieldParsedValue;
+        }
+    }
+
+    private static final class OverridingHandlerVm extends LingoVM {
+        private int executeCount;
+
+        private OverridingHandlerVm() {
+            super(null);
+        }
+
+        @Override
+        public HandlerRef findHandler(String handlerName) {
+            if ("getmemnum".equalsIgnoreCase(handlerName)) {
+                return new HandlerRef(null, null);
+            }
+            return null;
+        }
+
+        @Override
+        public Datum executeHandler(com.libreshockwave.chunks.ScriptChunk script,
+                                    com.libreshockwave.chunks.ScriptChunk.Handler handler,
+                                    List<Datum> args, Datum receiver) {
+            executeCount++;
+            return Datum.of("script:getmemnum");
+        }
     }
 
     @Test

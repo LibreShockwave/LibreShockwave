@@ -2,10 +2,13 @@ package com.libreshockwave.player.render.pipeline;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.cast.ShapeInfo;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.chunks.ScoreChunk;
 
@@ -102,6 +105,20 @@ public class SpriteBaker {
         return bmp != null && bmp.isScriptModified();
     }
 
+    private boolean shouldNeutralizeOpaqueWhiteForScriptCanvas(RenderSprite sprite, Bitmap bmp) {
+        if (sprite == null || bmp == null) {
+            return false;
+        }
+        if (bmp.getBitDepth() != 32 || bmp.isNativeAlpha()) {
+            return false;
+        }
+        InkMode ink = sprite.getInkMode();
+        if (ink != InkMode.DARKEN && ink != InkMode.LIGHTEN) {
+            return false;
+        }
+        return bmp.isScriptModified();
+    }
+
     private void registerDefaultSteps() {
         registerBakeStep(new BitmapSpriteBakeStep());
         registerBakeStep(new TextSpriteBakeStep());
@@ -185,11 +202,12 @@ public class SpriteBaker {
      */
     private Bitmap bakeBitmap(RenderSprite sprite) {
         Bitmap b = null;
+        CastMember liveMember = resolveRuntimeBitmapMember(sprite);
 
         // Check if the runtime CastMember's bitmap was modified by Lingo (fill, copyPixels, etc.)
         // If so, use the live bitmap directly instead of the stale BitmapCache entry.
-        if (sprite.getDynamicMember() != null) {
-            Bitmap liveBmp = sprite.getDynamicMember().getBitmap();
+        if (liveMember != null) {
+            Bitmap liveBmp = liveMember.getBitmap();
             if (liveBmp != null && liveBmp.isScriptModified()) {
                 // Director applies foreColor/backColor colorization BEFORE ink for 1-bit bitmaps.
                 // This ensures masks with foreColor=white become all-white before ink removes
@@ -204,23 +222,37 @@ public class SpriteBaker {
                     // unblending in applyBackgroundTransparent is designed for text
                     // anti-aliasing, but destroys intentionally grayscale body parts
                     // (e.g., Habbo avatar sprites that use grayscale-to-color remapping).
-                    //
-                    // DARKEN/LIGHTEN ink on 32-bit script-built canvases: Director's
-                    // image(w,h,32) creates opaque white, but DARKEN needs to distinguish
-                    // white background from white content. Convert opaque white to
-                    // transparent white so the matte step skips background pixels while
-                    // preserving white wall/panel content for the bgColor multiply.
                     Bitmap inkSrc = liveBmp;
-                    if (liveBmp.getBitDepth() == 32
-                            && (sprite.getInkMode() == com.libreshockwave.id.InkMode.DARKEN
-                             || sprite.getInkMode() == com.libreshockwave.id.InkMode.LIGHTEN)) {
-                        inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(liveBmp);
+                    if (shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, inkSrc)) {
+                        // Script-built 32-bit canvases commonly start life as opaque white
+                        // buffers and then receive masked copyPixels draws. Under Director,
+                        // the untouched white canvas does not contribute visible slabs when
+                        // the final sprite uses DARKEN/LIGHTEN; only the drawn content is
+                        // colorized. Preserve that by neutralizing opaque white before the
+                        // runtime DARKEN/LIGHTEN ink path runs.
+                        inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(inkSrc);
                     }
-                    boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.hasTransparentPixels();
-                    return InkProcessor.applyInk(inkSrc, sprite.getInk(),
-                            sprite.getBackColor(), hasNativeAlpha, null, true);
+                    boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.isNativeAlpha();
+                    return BitmapCache.applyIndexedMatteColorRemapIfNeeded(
+                            liveBmp,
+                            InkProcessor.applyInk(inkSrc, sprite.getInk(),
+                                    sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true),
+                            sprite.getInk(),
+                            sprite.getForeColor(),
+                            sprite.getBackColor(),
+                            sprite.hasForeColor(),
+                            sprite.hasBackColor(),
+                            liveBmp.getImagePalette());
                 }
-                return liveBmp;
+                return BitmapCache.applyIndexedMatteColorRemapIfNeeded(
+                        liveBmp,
+                        liveBmp,
+                        sprite.getInk(),
+                        sprite.getForeColor(),
+                        sprite.getBackColor(),
+                        sprite.hasForeColor(),
+                        sprite.hasBackColor(),
+                        liveBmp.getImagePalette());
             }
         }
 
@@ -230,20 +262,41 @@ public class SpriteBaker {
             Palette paletteOverride = null;
             if (palInfo != null) {
                 // Only invalidate cache when palette actually changed
-                bitmapCache.invalidateIfPaletteChanged(
-                        sprite.getCastMember().id().value(), palInfo.version);
+                bitmapCache.invalidateIfPaletteChanged(sprite.getCastMember(), palInfo.version);
                 paletteOverride = palInfo.palette;
             }
             b = bitmapCache.getProcessed(sprite.getCastMember(), sprite.getInk(),
                     sprite.getBackColor(),
-                    sprite.getForeColor(), sprite.hasForeColor(),
+                    sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor(),
                     player, paletteOverride);
         }
         if (b == null && sprite.getDynamicMember() != null) {
             b = bitmapCache.getProcessedDynamic(sprite.getDynamicMember(),
-                    sprite.getInk(), sprite.getBackColor());
+                    sprite.getInk(), sprite.getBackColor(),
+                    sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor());
         }
         return b;
+    }
+
+    /**
+     * Resolve the runtime CastMember wrapper for a bitmap sprite.
+     *
+     * Score-placed sprites still need this lookup because authored sprites can
+     * have their member.image mutated at runtime without turning into dynamic
+     * sprite bindings. In that case the cast member chunk still describes the
+     * authored asset, while the runtime wrapper owns the live bitmap buffer.
+     */
+    private CastMember resolveRuntimeBitmapMember(RenderSprite sprite) {
+        if (sprite == null) {
+            return null;
+        }
+        if (sprite.getDynamicMember() != null) {
+            return sprite.getDynamicMember();
+        }
+        if (castLibManager == null || sprite.getCastMember() == null) {
+            return null;
+        }
+        return castLibManager.findRuntimeMember(sprite.getCastMember());
     }
 
     private boolean hasBorderColor(Bitmap bmp, int colorRgb) {
@@ -271,13 +324,21 @@ public class SpriteBaker {
             return null;
         }
 
-        // Find the runtime CastMember for this sprite's bitmap by name
-        String name = sprite.getCastMember().name();
-        if (name == null || name.isEmpty()) {
-            return null;
+        CastMember member = null;
+        if (player != null) {
+            com.libreshockwave.player.sprite.SpriteState spriteState =
+                    player.getStageRenderer().getSpriteRegistry().get(sprite.getChannel());
+            if (spriteState != null) {
+                int castLibNum = spriteState.getEffectiveCastLib();
+                int memberNum = spriteState.getEffectiveCastMember();
+                if (castLibNum > 0 && memberNum > 0) {
+                    member = castLibManager.getDynamicMember(castLibNum, memberNum);
+                }
+            }
         }
-
-        CastMember member = castLibManager.findCastMemberByName(name);
+        if (member == null) {
+            member = castLibManager.findRuntimeMember(sprite.getCastMember());
+        }
         if (member == null || !member.hasPaletteOverride()) {
             return null;
         }
@@ -286,17 +347,7 @@ public class SpriteBaker {
         int palCastLib = member.getPaletteRefCastLib();
         int palMemberNum = member.getPaletteRefMemberNum();
 
-        CastLib paletteCastLib = castLibManager.getCastLib(palCastLib);
-        if (paletteCastLib == null) {
-            return null;
-        }
-
-        DirectorFile palFile = paletteCastLib.getSourceFile();
-        if (palFile == null) {
-            return null;
-        }
-
-        Palette palette = palFile.resolvePaletteByMemberNumber(palMemberNum);
+        Palette palette = castLibManager.resolvePaletteByMember(palCastLib, palMemberNum);
         return palette != null ? new PaletteOverrideInfo(palette, member.getPaletteVersion()) : null;
     }
 
@@ -643,18 +694,19 @@ public class SpriteBaker {
     }
 
     /**
-     * Bake a SHAPE sprite: create a solid-color bitmap filled with the sprite's foreColor.
+     * Bake a SHAPE sprite. Authored shape members use their Director outline/fill
+     * metadata; synthetic no-member shapes still behave as solid color fills.
      */
     private Bitmap bakeShape(RenderSprite sprite) {
         int w = sprite.getWidth() > 0 ? sprite.getWidth() : 50;
         int h = sprite.getHeight() > 0 ? sprite.getHeight() : 50;
-        int fc = sprite.getForeColor();
-
         Bitmap shape = new Bitmap(w, h, 32);
-        int argb = 0xFF000000 | (fc & 0xFFFFFF);
-        int[] pixels = shape.getPixels();
-        for (int i = 0; i < pixels.length; i++) {
-            pixels[i] = argb;
+        ShapeInfo shapeInfo = resolveShapeInfo(sprite);
+
+        if (shapeInfo == null) {
+            fillSolidShape(shape, sprite.getForeColor());
+        } else {
+            drawAuthoredShape(shape, sprite, shapeInfo);
         }
 
         // Apply ink processing — shapes respect ink modes just like bitmaps.
@@ -666,6 +718,93 @@ public class SpriteBaker {
         }
 
         return shape;
+    }
+
+    private ShapeInfo resolveShapeInfo(RenderSprite sprite) {
+        if (sprite.getCastMember() != null && sprite.getCastMember().memberType() == com.libreshockwave.cast.MemberType.SHAPE) {
+            return ShapeInfo.parse(sprite.getCastMember().specificData());
+        }
+        if (sprite.getDynamicMember() != null
+                && sprite.getDynamicMember().getChunk() != null
+                && sprite.getDynamicMember().getMemberType() == com.libreshockwave.cast.MemberType.SHAPE) {
+            return ShapeInfo.parse(sprite.getDynamicMember().getChunk().specificData());
+        }
+        return null;
+    }
+
+    private void drawAuthoredShape(Bitmap shape, RenderSprite sprite, ShapeInfo shapeInfo) {
+        int argb = 0xFF000000 | (sprite.getForeColor() & 0xFFFFFF);
+        if (shapeInfo.isOutlineInvisible() && shapeInfo.shapeType() != ShapeInfo.ShapeType.LINE) {
+            return;
+        }
+
+        switch (shapeInfo.shapeType()) {
+            case RECT, OVAL_RECT -> drawRectShape(shape, shapeInfo, argb);
+            case OVAL -> drawOvalShape(shape, shapeInfo, argb);
+            case LINE -> drawLineShape(shape, shapeInfo, argb);
+            case UNKNOWN -> fillSolidShape(shape, sprite.getForeColor());
+        }
+    }
+
+    private void drawRectShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        if (shapeInfo.isFilled()) {
+            Drawing.fillRect(shape, 0, 0, shape.getWidth(), shape.getHeight(), argb);
+            return;
+        }
+        int strokes = Math.max(0, shapeInfo.lineThickness() - 1);
+        for (int i = 0; i < strokes; i++) {
+            int x = i;
+            int y = i;
+            int w = shape.getWidth() - (i * 2);
+            int h = shape.getHeight() - (i * 2);
+            if (w <= 0 || h <= 0) {
+                break;
+            }
+            Drawing.drawRect(shape, x, y, w, h, argb);
+        }
+    }
+
+    private void drawOvalShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        int cx = shape.getWidth() / 2;
+        int cy = shape.getHeight() / 2;
+        int rx = Math.max(0, shape.getWidth() / 2);
+        int ry = Math.max(0, shape.getHeight() / 2);
+
+        if (shapeInfo.isFilled()) {
+            Drawing.fillEllipse(shape, cx, cy, rx, ry, argb);
+            return;
+        }
+
+        int strokes = Math.max(0, shapeInfo.lineThickness() - 1);
+        for (int i = 0; i < strokes; i++) {
+            int strokeRx = rx - i;
+            int strokeRy = ry - i;
+            if (strokeRx < 0 || strokeRy < 0) {
+                break;
+            }
+            Drawing.drawEllipse(shape, cx, cy, strokeRx, strokeRy, argb);
+        }
+    }
+
+    private void drawLineShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        int strokes = Math.max(1, shapeInfo.lineThickness());
+        boolean bottomToTop = shapeInfo.lineDirection() == 6;
+        int startY = bottomToTop ? shape.getHeight() - 1 : 0;
+        int endY = bottomToTop ? 0 : shape.getHeight() - 1;
+
+        for (int i = 0; i < strokes; i++) {
+            int y0 = Math.max(0, startY - i);
+            int y1 = Math.max(0, endY - i);
+            Drawing.drawLine(shape, 0, y0, Math.max(0, shape.getWidth() - 1), y1, argb);
+        }
+    }
+
+    private void fillSolidShape(Bitmap shape, int rgb) {
+        int argb = 0xFF000000 | (rgb & 0xFFFFFF);
+        int[] pixels = shape.getPixels();
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = argb;
+        }
     }
 
 }

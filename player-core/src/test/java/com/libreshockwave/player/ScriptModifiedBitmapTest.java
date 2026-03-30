@@ -12,7 +12,9 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -164,6 +166,159 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void copyPixelsQuadRotatesClockwiseLikeDirectorDropdown() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.setPixel(0, 0, 0xFFFF0000);
+        src.setPixel(1, 0, 0xFF00FF00);
+        src.setPixel(0, 1, 0xFF0000FF);
+        src.setPixel(1, 1, 0xFFFFFF00);
+        src.setPixel(0, 2, 0xFFFF00FF);
+        src.setPixel(1, 2, 0xFF00FFFF);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        Datum.ImageRef destRef = new Datum.ImageRef(dest);
+        Datum.ImageRef srcRef = new Datum.ImageRef(src);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2),
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0)
+        )));
+
+        ImageMethodDispatcher.dispatch(destRef, "copyPixels",
+                List.of(srcRef, quad, new Datum.Rect(0, 0, 2, 3)));
+
+        assertEquals(0xFFFF00FF, dest.getPixel(0, 0));
+        assertEquals(0xFF0000FF, dest.getPixel(1, 0));
+        assertEquals(0xFFFF0000, dest.getPixel(2, 0));
+        assertEquals(0xFF00FFFF, dest.getPixel(0, 1));
+        assertEquals(0xFFFFFF00, dest.getPixel(1, 1));
+        assertEquals(0xFF00FF00, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void copyPixelsQuadRotatesCounterClockwiseLikeDirectorDropdown() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.setPixel(0, 0, 0xFFFF0000);
+        src.setPixel(1, 0, 0xFF00FF00);
+        src.setPixel(0, 1, 0xFF0000FF);
+        src.setPixel(1, 1, 0xFFFFFF00);
+        src.setPixel(0, 2, 0xFFFF00FF);
+        src.setPixel(1, 2, 0xFF00FFFF);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        Datum.ImageRef destRef = new Datum.ImageRef(dest);
+        Datum.ImageRef srcRef = new Datum.ImageRef(src);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0),
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2)
+        )));
+
+        ImageMethodDispatcher.dispatch(destRef, "copyPixels",
+                List.of(srcRef, quad, new Datum.Rect(0, 0, 2, 3)));
+
+        assertEquals(0xFF00FF00, dest.getPixel(0, 0));
+        assertEquals(0xFFFFFF00, dest.getPixel(1, 0));
+        assertEquals(0xFF00FFFF, dest.getPixel(2, 0));
+        assertEquals(0xFFFF0000, dest.getPixel(0, 1));
+        assertEquals(0xFF0000FF, dest.getPixel(1, 1));
+        assertEquals(0xFFFF00FF, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsDefaultsToWhiteKeyForPalettedSource() {
+        Bitmap dest = new Bitmap(2, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(2, 1, 8);
+        src.setImagePalette(new Palette(new int[] {0xFF00FF, 0xC89C32}, "test-purse"));
+        src.setPixel(0, 0, 0xFFFF00FF);
+        src.setPixel(1, 0, 0xFFC89C32);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1), props));
+
+        assertEquals(0xFFFF00FF, dest.getPixel(0, 0),
+                "Without #bgColor, ink 36 should still default to white even for paletted sources");
+        assertEquals(0xFFC89C32, dest.getPixel(1, 0));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsUsesExplicitBgColorKey() {
+        Bitmap dest = new Bitmap(2, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(2, 1, 8);
+        src.setImagePalette(new Palette(new int[] {0xFF00FF, 0xC89C32}, "test-purse"));
+        src.setPixel(0, 0, 0xFFFF00FF);
+        src.setPixel(1, 0, 0xFFC89C32);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(255, 0, 255), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1), props));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "With explicit #bgColor, ink 36 should key that exact color");
+        assertEquals(0xFFC89C32, dest.getPixel(1, 0));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsKeepsDirectorWhiteDefaultForGrayscaleSource() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFAF8349);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0xFF6E6E6E);
+        src.setPixel(1, 1, 0xFF000000);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFF6E6E6E, dest.getPixel(0, 0),
+                "Without explicit #bgColor, Director ink 36 should still key only white");
+        assertEquals(0xFF000000, dest.getPixel(1, 1),
+                "Foreground text pixels must still copy through");
+        assertEquals(0xFF6E6E6E, dest.getPixel(2, 2));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsDoesNotInferColoredBorderAsKey() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0xFF00AA44);
+        src.setPixel(1, 1, 0xFFCC2200);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFF00AA44, dest.getPixel(0, 0),
+                "Non-grayscale art should keep the historical white default key");
+        assertEquals(0xFFCC2200, dest.getPixel(1, 1));
+    }
+
+    @Test
     void backgroundTransparentCopyPixelsPreservesTransparentTextBackground() {
         Bitmap dest = new Bitmap(10, 10, 32);
         dest.fill(0xFFC0C0C0);
@@ -184,9 +339,160 @@ public class ScriptModifiedBitmapTest {
                 List.of(srcRef, rect, new Datum.Rect(0, 0, 3, 3), props));
 
         assertEquals(0xFFC0C0C0, dest.getPixel(2, 2),
-                "Transparent source background should not be remapped into an opaque bgColor fill");
+                "Transparent source pixels should leave the destination unchanged");
         assertEquals(0xFF000000, dest.getPixel(3, 3),
                 "Black text pixels should still copy through");
+    }
+
+    @Test
+    void copyPixelsIgnoresMaskImageWhenSourceUsesNativeAlpha() {
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0x80000000 });
+        src.setNativeAlpha(true);
+
+        Bitmap mask = new Bitmap(1, 1, 32, new int[] { 0x00000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF7F7F7F, dest.getPixel(0, 0),
+                "Native alpha should take precedence over #maskImage");
+    }
+
+    @Test
+    void darkenCopyPixelsUsesBgColorAsTintInsteadOfMinAgainstDestination() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFF202020 });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC0C0C0 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(160, 112, 32), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF785418, dest.getPixel(0, 0),
+                "DARKEN should tint the source with #bgColor, not preserve prior darker destination pixels");
+    }
+
+    @Test
+    void repeatedDarkenCopyPixelsDoesNotKeepGhostOfPreviousPattern() {
+        Bitmap persistentDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap freshDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap firstPattern = new Bitmap(1, 1, 32, new int[] { 0xFF303030 });
+        Bitmap secondPattern = new Bitmap(1, 1, 32, new int[] { 0xFFE0E0E0 });
+
+        Datum.PropList firstProps = new Datum.PropList();
+        firstProps.add("ink", Datum.of(41), true);
+        firstProps.add("bgColor", new Datum.Color(40, 80, 180), true);
+
+        Datum.PropList secondProps = new Datum.PropList();
+        secondProps.add("ink", Datum.of(41), true);
+        secondProps.add("bgColor", new Datum.Color(200, 140, 60), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(persistentDest), "copyPixels",
+                List.of(new Datum.ImageRef(firstPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), firstProps));
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(persistentDest), "copyPixels",
+                List.of(new Datum.ImageRef(secondPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), secondProps));
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(freshDest), "copyPixels",
+                List.of(new Datum.ImageRef(secondPattern), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), secondProps));
+
+        assertEquals(freshDest.getPixel(0, 0), persistentDest.getPixel(0, 0),
+                "Changing a DARKEN-tinted preview should replace the prior pattern instead of leaving a ghost");
+    }
+
+    @Test
+    void createMatteOnOpaqueFigurePartStillCutsWhiteBoundingBoxForDarken() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap mask = Drawing.createMatte(src);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(240, 200, 120), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "Opaque non-alpha figure assets still rely on createMatte() to skip white border pixels");
+        assertEquals(0xFF000000, dest.getPixel(1, 1));
+    }
+
+    @Test
+    void copyPixelsBlendOnCopyInkUsesBlendPercentage() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("blend", Datum.of(50), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF808080, dest.getPixel(0, 0),
+                "Default copyPixels should honor #blend as source opacity over the destination");
+    }
+
+    @Test
+    void copyPixelsBlendCombinesSourceAlphaWithBlend() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0x80000000 });
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("blend", Datum.of(50), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "copyPixels blend should scale, not replace, the source alpha");
+    }
+
+    @Test
+    void copyPixelsAcceptsSymbolicAddPinInk() {
+        Bitmap dest = new Bitmap(2, 1, 32, new int[] {
+                0xFF204060,
+                0xFF204060
+        });
+        Bitmap src = new Bitmap(2, 1, 32, new int[] {
+                0xFF000000,
+                0xFF40D0FF
+        });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.symbol("addPin"), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1), props));
+
+        assertEquals(0xFF204060, dest.getPixel(0, 0),
+                "Symbolic #addPin must keep black source pixels neutral");
+        assertEquals(0xFF60FFFF, dest.getPixel(1, 0),
+                "Symbolic #addPin should brighten the destination like numeric ink 33");
     }
 
     @Test
@@ -241,7 +547,69 @@ public class ScriptModifiedBitmapTest {
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
         assertEquals(0xFF6794A7, baked.getBakedBitmap().getPixel(1, 0),
-                "Non-background-color pixel should remain unchanged");
+                "Only the key color should be removed when BACKGROUND_TRANSPARENT processing triggers");
+    }
+
+    @Test
+    void scriptBuiltBitmapWithTransparentPixelsStillProcessesBackgroundTransparent() {
+        CastMember member = new CastMember(1, 44, MemberType.BITMAP);
+        Bitmap bmp = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF,
+                0x00000000,
+                0xFF111111
+        });
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                43, 0, 0, 3, 1, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0x00FFFFFF, false, true,
+                36, 255, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0),
+                "White key color should still be removed even when the script bitmap already contains transparency");
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(1, 0),
+                "Existing transparent pixels must be preserved");
+        assertEquals(0xFF111111, baked.getBakedBitmap().getPixel(2, 0),
+                "Non-key pixels must survive BACKGROUND_TRANSPARENT processing");
+    }
+
+    @Test
+    void scriptModifiedDarkenTreatsOpaqueWhiteCanvasAsNeutral() {
+        CastMember member = new CastMember(1, 45, MemberType.BITMAP);
+        member.setName("dynamic_tint_canvas");
+        Bitmap bmp = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF,
+                0xFF808080,
+                0xFFFFFFFF
+        });
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                44, 0, 0, 3, 1, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0xA07020, false, true,
+                41, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0),
+                "Untouched opaque white on a script canvas should stay non-contributing under DARKEN");
+        assertEquals(0xFF503810, baked.getBakedBitmap().getPixel(1, 0),
+                "Actual drawn content should still be tinted by the sprite bgColor");
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
     }
 
     /**
@@ -287,5 +655,272 @@ public class ScriptModifiedBitmapTest {
                 "member.getBitmap() should reflect the fill done through pImg");
         assertTrue(member.getBitmap().isScriptModified(),
                 "member's bitmap should be marked script-modified");
+    }
+
+    @Test
+    void duplicatePreservesPaletteRefMetadata() {
+        Bitmap src = new Bitmap(4, 4, 8);
+        src.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        src.setPaletteRefCastMember(2, 77);
+
+        Datum.ImageRef duplicate = (Datum.ImageRef) ImageMethodDispatcher.dispatch(
+                new Datum.ImageRef(src), "duplicate", List.of());
+
+        assertSame(Palette.SYSTEM_MAC_PALETTE, duplicate.bitmap().getImagePalette());
+        Datum paletteRef = ImageMethodDispatcher.getProperty(duplicate, "paletteRef");
+        assertInstanceOf(Datum.CastMemberRef.class, paletteRef);
+        assertEquals(2, ((Datum.CastMemberRef) paletteRef).castLibNum());
+        assertEquals(77, ((Datum.CastMemberRef) paletteRef).memberNum());
+    }
+
+    @Test
+    void cropPreservesPaletteRefMetadata() {
+        Bitmap src = new Bitmap(4, 4, 8);
+        src.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+        src.setPaletteRefSystemName("systemWin");
+
+        Datum.ImageRef cropped = (Datum.ImageRef) ImageMethodDispatcher.dispatch(
+                new Datum.ImageRef(src), "crop", List.of(new Datum.Rect(1, 1, 3, 3)));
+
+        assertSame(Palette.SYSTEM_WIN_PALETTE, cropped.bitmap().getImagePalette());
+        Datum paletteRef = ImageMethodDispatcher.getProperty(cropped, "paletteRef");
+        assertInstanceOf(Datum.Symbol.class, paletteRef);
+        assertEquals("systemWin", ((Datum.Symbol) paletteRef).name());
+    }
+
+    @Test
+    void remapImagePaletteRecolorsExisting8BitPixels() {
+        Palette oldPalette = new Palette(new int[]{0xFFFFFF, 0x111111, 0x224466}, "old");
+        Palette newPalette = new Palette(new int[]{0xFFFFFF, 0xAA5500, 0x66CC22}, "new");
+        Bitmap bmp = new Bitmap(2, 1, 8);
+        bmp.setImagePalette(oldPalette);
+        bmp.setPixel(0, 0, 0xFF111111);
+        bmp.setPixel(1, 0, 0xFF224466);
+
+        int changed = bmp.remapImagePalette(newPalette);
+
+        assertEquals(2, changed);
+        assertSame(newPalette, bmp.getImagePalette());
+        assertEquals(0xFFAA5500, bmp.getPixel(0, 0));
+        assertEquals(0xFF66CC22, bmp.getPixel(1, 0));
+    }
+
+    @Test
+    void remapImagePaletteUsesPreservedIndicesWhenSourceRgbCollides() {
+        Palette oldPalette = new Palette(new int[]{0xFFFFFF, 0x222222, 0x222222}, "old-colliding");
+        Palette newPalette = new Palette(new int[]{0xFFFFFF, 0xAA5500, 0x33AA77}, "new-diverged");
+
+        Bitmap bmp = new Bitmap(2, 1, 8);
+        bmp.setImagePalette(oldPalette);
+        bmp.setPixel(0, 0, 0xFF222222);
+        bmp.setPixel(1, 0, 0xFF222222);
+        bmp.setPaletteIndices(new byte[]{1, 2});
+
+        Bitmap duplicate = bmp.copy();
+        int changed = duplicate.remapImagePalette(newPalette);
+
+        assertEquals(2, changed);
+        assertSame(newPalette, duplicate.getImagePalette());
+        assertEquals(0xFFAA5500, duplicate.getPixel(0, 0),
+                "Index 1 should map to the first divergent target shade");
+        assertEquals(0xFF33AA77, duplicate.getPixel(1, 0),
+                "Index 2 must not collapse onto index 1 just because the old RGB matched");
+    }
+
+    @Test
+    void copyPixelsCarriesPaletteMetadataIntoBlankDynamicWrapperImages() {
+        Palette sourcePalette = new Palette(new int[]{0xFFFFFF, 0x6C5230}, "room-floor");
+        Bitmap src = new Bitmap(1, 1, 8);
+        src.setImagePalette(sourcePalette);
+        src.setPaletteRefCastMember(2, 77);
+        src.setPixel(0, 0, 0xFF6C5230);
+
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1)));
+
+        assertSame(sourcePalette, dest.getImagePalette(),
+                "Blank wrapper images should inherit the source palette provenance");
+        assertEquals(2, dest.getPaletteRefCastLib());
+        assertEquals(77, dest.getPaletteRefMemberNum());
+        assertEquals(0xFF6C5230, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void quadCopiedPalettedWrapperKeepsIndicesAndDynamicMatteRemap() {
+        Palette sourcePalette = new Palette(new int[]{0xFFFFFF, 0xFF808080, 0xFF000000}, "furni-ramp");
+        Bitmap src = new Bitmap(2, 3, 8, new int[]{
+                0xFFFFFFFF, 0xFF000000,
+                0xFF808080, 0xFF000000,
+                0xFFFFFFFF, 0xFF808080
+        });
+        src.setImagePalette(sourcePalette);
+        src.setPaletteRefCastMember(4, 12);
+        src.setPaletteIndices(new byte[]{
+                0, (byte) 255,
+                (byte) 128, (byte) 255,
+                0, (byte) 128
+        });
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2),
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0)
+        )));
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 2, 3)));
+
+        assertSame(sourcePalette, dest.getImagePalette(),
+                "Rotated wrapper images must keep the source palette for later sprite recoloring");
+        assertEquals(4, dest.getPaletteRefCastLib());
+        assertEquals(12, dest.getPaletteRefMemberNum());
+        assertArrayEquals(new byte[]{
+                0, (byte) 128, 0,
+                (byte) 128, (byte) 255, (byte) 255
+        }, dest.getPaletteIndices(),
+                "copyPixels quad rotation should preserve per-pixel palette ramp information");
+
+        CastMember member = new CastMember(1, 10005, MemberType.BITMAP);
+        member.setBitmapDirectly(dest);
+
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, 3, 2, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0x000000, 0x33CC66, true, true,
+                8, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
+        assertEquals(0xFF196633, baked.getBakedBitmap().getPixel(1, 0));
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
+        assertEquals(0xFF196633, baked.getBakedBitmap().getPixel(0, 1));
+        assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(1, 1));
+        assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(2, 1));
+    }
+
+    @Test
+    void imageMutationCallbackFiresForScriptImageOps() {
+        Bitmap bmp = new Bitmap(2, 2, 32);
+        AtomicInteger callbackCount = new AtomicInteger();
+        ImageMethodDispatcher.setImageMutationCallback(callbackCount::incrementAndGet);
+        try {
+            ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                    List.of(new Datum.Rect(0, 0, 2, 2), new Datum.Color(255, 0, 0)));
+            assertEquals(1, callbackCount.get());
+
+            Bitmap src = new Bitmap(1, 1, 32);
+            src.fill(0xFF00FF00);
+            ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "copyPixels",
+                    List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                            new Datum.Rect(0, 0, 1, 1)));
+            assertEquals(2, callbackCount.get());
+        } finally {
+            ImageMethodDispatcher.setImageMutationCallback(null);
+        }
+    }
+
+    @Test
+    void copyPixelsTransfersAnchorMetadataIntoBlankDestination() {
+        Bitmap src = new Bitmap(4, 4, 32);
+        src.setAnchorPoint(2, 3);
+        src.fill(0xFF00FF00);
+
+        Bitmap dest = new Bitmap(8, 8, 32);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(1, 2, 5, 6),
+                        new Datum.Rect(0, 0, 4, 4)));
+
+        assertTrue(dest.hasAnchorPoint());
+        assertEquals(3, dest.getAnchorX());
+        assertEquals(5, dest.getAnchorY());
+    }
+
+    @Test
+    void memberImageAssignmentPreservesMemberRegPoint() {
+        CastMember member = new CastMember(1, 10001, MemberType.BITMAP);
+        assertTrue(member.setProp("regPoint", new Datum.Point(9, 11)));
+        Bitmap preview = new Bitmap(10, 12, 32);
+        preview.setAnchorPoint(4, 7);
+        preview.fill(0xFF123456);
+
+        assertTrue(member.setProp("image", new Datum.ImageRef(preview)));
+
+        assertEquals(9, member.getRegPointX());
+        assertEquals(11, member.getRegPointY());
+        assertTrue(member.getBitmap().hasAnchorPoint());
+        assertEquals(9, member.getBitmap().getAnchorX());
+        assertEquals(11, member.getBitmap().getAnchorY());
+    }
+
+    @Test
+    void dynamicMemberImageAssignmentAdoptsImageAnchorWhenRegPointIsNotPinned() {
+        CastMember member = new CastMember(1, 10002, MemberType.BITMAP);
+        Bitmap preview = new Bitmap(10, 12, 32);
+        preview.setAnchorPoint(4, 7);
+        preview.fill(0xFF123456);
+
+        assertTrue(member.setProp("image", new Datum.ImageRef(preview)));
+
+        assertEquals(4, member.getRegPointX());
+        assertEquals(7, member.getRegPointY());
+        assertTrue(member.getBitmap().hasAnchorPoint());
+        assertEquals(4, member.getBitmap().getAnchorX());
+        assertEquals(7, member.getBitmap().getAnchorY());
+    }
+
+    @Test
+    void liveDynamicMemberImageCopyPixelsAdoptsTransferredAnchor() {
+        CastMember member = new CastMember(1, 10003, MemberType.BITMAP);
+        member.setBitmapDirectly(new Bitmap(8, 8, 32));
+
+        Datum.ImageRef liveImage = (Datum.ImageRef) member.getProp("image");
+        Bitmap source = new Bitmap(4, 4, 32);
+        source.setAnchorPoint(2, 3);
+        source.fill(0xFF00FF00);
+
+        ImageMethodDispatcher.dispatch(liveImage, "copyPixels",
+                List.of(new Datum.ImageRef(source), new Datum.Rect(1, 2, 5, 6),
+                        new Datum.Rect(0, 0, 4, 4)));
+
+        Bitmap memberBitmap = member.getBitmap();
+        assertTrue(memberBitmap.hasAnchorPoint());
+        assertEquals(3, memberBitmap.getAnchorX());
+        assertEquals(5, memberBitmap.getAnchorY());
+        assertEquals(3, member.getRegPointX());
+        assertEquals(5, member.getRegPointY());
+    }
+
+    @Test
+    void livePinnedMemberImageCopyPixelsKeepsExplicitMemberRegPoint() {
+        CastMember member = new CastMember(1, 10004, MemberType.BITMAP);
+        member.setBitmapDirectly(new Bitmap(8, 8, 32));
+        assertTrue(member.setProp("regPoint", new Datum.Point(9, 11)));
+
+        Datum.ImageRef liveImage = (Datum.ImageRef) member.getProp("image");
+        Bitmap source = new Bitmap(4, 4, 32);
+        source.setAnchorPoint(2, 3);
+        source.fill(0xFF00FF00);
+
+        ImageMethodDispatcher.dispatch(liveImage, "copyPixels",
+                List.of(new Datum.ImageRef(source), new Datum.Rect(1, 2, 5, 6),
+                        new Datum.Rect(0, 0, 4, 4)));
+
+        Bitmap memberBitmap = member.getBitmap();
+        assertTrue(memberBitmap.hasAnchorPoint());
+        assertEquals(9, memberBitmap.getAnchorX());
+        assertEquals(11, memberBitmap.getAnchorY());
+        assertEquals(9, member.getRegPointX());
+        assertEquals(11, member.getRegPointY());
     }
 }

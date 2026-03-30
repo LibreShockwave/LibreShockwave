@@ -228,6 +228,16 @@ class DatumTest {
 
         assertEquals("sprite(5)", sprite.toString());
         assertEquals("member(10, 1)", member.toString());
+        assertEquals(5.0, sprite.toDouble(), 0.001);
+    }
+
+    @Test
+    void testCastLibAndColorDoubleCoercion() {
+        Datum castLib = Datum.CastLibRef.of(7);
+        Datum color = new Datum.Color(0x12, 0x34, 0x56);
+
+        assertEquals(7.0, castLib.toDouble(), 0.001);
+        assertEquals(0x123456, color.toDouble(), 0.001);
     }
 
     @Test

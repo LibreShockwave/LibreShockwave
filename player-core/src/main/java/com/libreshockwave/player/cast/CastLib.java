@@ -31,6 +31,7 @@ public class CastLib {
     private final CastLibId castLibId;  // 1-based cast library number
     private String name;
     private String fileName;
+    private final String authoredFileName;
     private State state = State.NONE;
     private int preloadMode = 0;
     private Datum selection = Datum.list(); // Selected members as [[start, end], ...]
@@ -49,6 +50,7 @@ public class CastLib {
 
     // Reference to the source file
     private DirectorFile sourceFile;
+    private byte[] fetchedExternalData;
     private final CastChunk castChunk;
 
     public CastLib(int number, CastChunk castChunk, CastListChunk.CastListEntry listEntry) {
@@ -59,9 +61,11 @@ public class CastLib {
         if (listEntry != null) {
             this.name = listEntry.name() != null ? listEntry.name() : "";
             this.fileName = listEntry.path() != null ? listEntry.path() : "";
+            this.authoredFileName = this.fileName;
         } else {
             this.name = "";
             this.fileName = "";
+            this.authoredFileName = "";
         }
 
         // Default name for internal cast
@@ -88,7 +92,7 @@ public class CastLib {
      * Check if the external cast data has been fetched (via preloadNetThing).
      */
     public boolean isFetched() {
-        return sourceFile != null || !isExternal();
+        return sourceFile != null || fetchedExternalData != null || !isExternal();
     }
 
     /**
@@ -106,6 +110,11 @@ public class CastLib {
         // External casts must be fetched first via preloadNetThing
         // Don't auto-load them here
         if (sourceFile == null) {
+            if (fetchedExternalData != null) {
+                if (setExternalData(fetchedExternalData)) {
+                    return;
+                }
+            }
             if (isExternal()) {
                 // External cast not yet fetched - stay in LOADING state but don't block
                 // It will be loaded when preloadNetThing completes
@@ -262,6 +271,113 @@ public class CastLib {
         this.fileName = fileName;
     }
 
+    public boolean hasAuthoredExternalBinding() {
+        return authoredFileName != null && !authoredFileName.isEmpty();
+    }
+
+    public boolean matchesAuthoredExternalFile(String baseName) {
+        if (!hasAuthoredExternalBinding() || baseName == null || baseName.isEmpty()) {
+            return false;
+        }
+        String authoredBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(authoredFileName));
+        return authoredBaseName.equalsIgnoreCase(baseName);
+    }
+
+    /**
+     * True when this cast currently points at the same external source that the
+     * movie authored into the cast list. Runtime-retargeted cast slots are still
+     * live Director casts, but their contents only enter movie-level registries
+     * once authored code explicitly indexes or aliases them.
+     */
+    public boolean usesAuthoredExternalBinding() {
+        if (!hasAuthoredExternalBinding()) {
+            return true;
+        }
+        if (fileName == null || fileName.isEmpty()) {
+            return false;
+        }
+        String currentBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(fileName));
+        return matchesAuthoredExternalFile(currentBaseName);
+    }
+
+    /**
+     * Whether this cast still belongs to the movie's stable registry namespace.
+     * Runtime-retargeted casts become registry-visible once the movie assigns
+     * them a stable cast name. Placeholder slots and direct file/URL-bound
+     * scratch imports remain usable as casts, but they should not leak their
+     * members into broad movie-level registry fallback.
+     */
+    public boolean usesStableRegistryBinding() {
+        if (!hasAuthoredExternalBinding()) {
+            return true;
+        }
+        if (usesAuthoredExternalBinding()) {
+            return true;
+        }
+        String runtimeName = name != null ? name.trim() : "";
+        if (runtimeName.isEmpty()) {
+            return false;
+        }
+        if (usesGeneratedPlaceholderName(runtimeName)) {
+            return false;
+        }
+        return !looksLikeDirectFileBindingName(runtimeName);
+    }
+
+    private boolean usesGeneratedPlaceholderName(String candidateName) {
+        if (candidateName == null || candidateName.isEmpty()) {
+            return true;
+        }
+
+        String authoredBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(authoredFileName));
+        if (authoredBaseName == null || authoredBaseName.isEmpty()) {
+            return false;
+        }
+
+        String normalizedName = candidateName.trim().toLowerCase(java.util.Locale.ROOT);
+        String normalizedBase = authoredBaseName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalizedName.equals(normalizedBase)) {
+            return true;
+        }
+        if (!normalizedName.startsWith(normalizedBase + " ")) {
+            return false;
+        }
+
+        String suffix = normalizedName.substring(normalizedBase.length() + 1);
+        if (suffix.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < suffix.length(); i++) {
+            if (!Character.isDigit(suffix.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean looksLikeDirectFileBindingName(String candidateName) {
+        String normalizedName = candidateName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalizedName.isEmpty()) {
+            return true;
+        }
+        if (normalizedName.contains("://")) {
+            return true;
+        }
+        if (normalizedName.contains("/") || normalizedName.contains("\\")
+                || normalizedName.contains("?") || normalizedName.contains("#")) {
+            return true;
+        }
+        if (normalizedName.endsWith(".cct") || normalizedName.endsWith(".cst")
+                || normalizedName.endsWith(".dcr") || normalizedName.endsWith(".dir")) {
+            return true;
+        }
+        String currentFileName = fileName != null ? fileName.trim() : "";
+        return !currentFileName.isEmpty() && normalizedName.equals(currentFileName.toLowerCase(java.util.Locale.ROOT));
+    }
+
     public State getState() {
         return state;
     }
@@ -350,10 +466,14 @@ public class CastLib {
             load();
         }
 
-        for (CastMemberChunk member : memberChunks.values()) {
-            if (member.name() != null && member.name().equalsIgnoreCase(name)) {
-                return member;
-            }
+        CastMemberChunk direct = findMemberChunkByNameExact(name);
+        if (direct != null) {
+            return direct;
+        }
+
+        String sourcePrefixedName = sourcePrefixedLookupName(name);
+        if (sourcePrefixedName != null) {
+            return findMemberChunkByNameExact(sourcePrefixedName);
         }
         return null;
     }
@@ -367,14 +487,41 @@ public class CastLib {
             load();
         }
 
-        // Search file-loaded members first
+        CastMember direct = findMemberByNameExact(name);
+        if (direct != null) {
+            return direct;
+        }
+
+        String sourcePrefixedName = sourcePrefixedLookupName(name);
+        if (sourcePrefixedName != null) {
+            return findMemberByNameExact(sourcePrefixedName);
+        }
+        return null;
+    }
+
+    CastMemberChunk findMemberChunkByNameExact(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        for (CastMemberChunk member : memberChunks.values()) {
+            if (member.name() != null && member.name().equalsIgnoreCase(name)) {
+                return member;
+            }
+        }
+        return null;
+    }
+
+    CastMember findMemberByNameExact(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
         for (Map.Entry<Integer, CastMemberChunk> entry : memberChunks.entrySet()) {
             if (entry.getValue().name() != null && entry.getValue().name().equalsIgnoreCase(name)) {
                 return getMember(entry.getKey());
             }
         }
 
-        // Search dynamic members (created at runtime via new(#field, castLib))
         for (CastMember member : members.values()) {
             if (member.getName() != null && member.getName().equalsIgnoreCase(name)) {
                 return member;
@@ -383,8 +530,24 @@ public class CastLib {
         return null;
     }
 
+    boolean hasMemberNamedExact(String name) {
+        return findMemberChunkByNameExact(name) != null || findMemberByNameExact(name) != null;
+    }
+
+    private static String sourcePrefixedLookupName(String requestedName) {
+        if (requestedName == null || requestedName.isEmpty()) {
+            return null;
+        }
+        return requestedName.regionMatches(true, 0, "s_", 0, 2) ? null : "s_" + requestedName;
+    }
+
     /**
-     * Get the member number for a member found by name.
+     * Resolve the cast slot number for an authored member chunk.
+     *
+     * Renderer code can receive CastMemberChunk instances from different lookup
+     * paths (for example DirectorFile score lookup vs CastLib member maps). Those
+     * chunks still represent the same authored member, so matching must not rely
+     * on Java object identity alone.
      */
     public int getMemberNumber(CastMemberChunk member) {
         if (!isLoaded()) {
@@ -392,11 +555,21 @@ public class CastLib {
         }
 
         for (Map.Entry<Integer, CastMemberChunk> entry : memberChunks.entrySet()) {
-            if (entry.getValue() == member) {
+            if (sameAuthoredMember(entry.getValue(), member)) {
                 return entry.getKey();
             }
         }
         return -1;
+    }
+
+    private static boolean sameAuthoredMember(CastMemberChunk left, CastMemberChunk right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        return left.file() == right.file() && left.id().equals(right.id());
     }
 
     /**
@@ -488,8 +661,11 @@ public class CastLib {
                 return true;
             }
             case "filename" -> {
-                this.fileName = value.toStr();
-                // TODO: trigger reload if fileName changes
+                String newFileName = value.toStr();
+                if (!sameFileBinding(this.fileName, newFileName)) {
+                    invalidateFileBackedBinding();
+                }
+                this.fileName = newFileName;
                 return true;
             }
             case "preloadmode" -> {
@@ -509,6 +685,33 @@ public class CastLib {
                 return false;
             }
         }
+    }
+
+    private boolean sameFileBinding(String currentFileName, String newFileName) {
+        if (currentFileName == null) {
+            return newFileName == null || newFileName.isEmpty();
+        }
+        return currentFileName.equals(newFileName);
+    }
+
+    private void invalidateFileBackedBinding() {
+        Map<Integer, CastMember> dynamicMembers = new HashMap<>();
+        for (Map.Entry<Integer, CastMember> entry : members.entrySet()) {
+            if (entry.getKey() >= 10000) {
+                dynamicMembers.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        // Swapping castLib.fileName should immediately retire the old external cast contents
+        // while preserving runtime-created members that live in high-numbered dynamic slots.
+        sourceFile = null;
+        fetchedExternalData = null;
+        state = State.NONE;
+        totalSlotCount = 0;
+        memberChunks.clear();
+        scripts.clear();
+        members.clear();
+        members.putAll(dynamicMembers);
     }
 
     /**
@@ -541,8 +744,8 @@ public class CastLib {
         String prop = propName.toLowerCase();
         return switch (prop) {
             case "name" -> Datum.EMPTY_STRING;
-            case "number", "castlibnum", "membernum" -> Datum.of(-1);
-            case "type" -> Datum.of("empty");
+            case "number", "membernum" -> Datum.ZERO;
+            case "type" -> Datum.symbol("empty");
             default -> Datum.VOID;
         };
     }
@@ -599,9 +802,27 @@ public class CastLib {
         }
 
         try {
+            fetchedExternalData = data.clone();
             DirectorFile file = DirectorFile.load(data);
             if (file != null) {
                 this.sourceFile = file;
+
+                // Preserve any externally assigned castLib.name across the load.
+                // Movies may set castLib.name before castLib.fileName and expect the
+                // chosen name to survive if the loaded external cast provides no name.
+                // Only replace it when the loaded file explicitly supplies one.
+                String nameBeforeLoad = this.name;
+                CastListChunk externalCastList = file.getCastList();
+                if (externalCastList != null && !externalCastList.entries().isEmpty()) {
+                    String internalName = externalCastList.entries().get(0).name();
+                    if (internalName != null && !internalName.isEmpty()) {
+                        this.name = internalName;
+                    }
+                }
+                if (this.name == null || this.name.isEmpty()) {
+                    this.name = nameBeforeLoad;
+                }
+
                 // Preserve dynamically created members (memberNum >= nextDynamicMember start).
                 // These are runtime-created by Lingo via new(#type, castLib) and must survive
                 // cast reloads — otherwise window system buffers lose their bitmap data.
@@ -631,6 +852,18 @@ public class CastLib {
         return false;
     }
 
+    /**
+     * Remember bytes from preloadNetThing without forcing an immediate parse.
+     * This keeps external casts generically "fetched" so preloadCasts(mode)
+     * and later castLib.load() calls can consume the already-downloaded data.
+     */
+    public void cacheFetchedExternalData(byte[] data) {
+        if (data == null || data.length == 0) {
+            return;
+        }
+        fetchedExternalData = data.clone();
+    }
+
     // Track next dynamic member number for new members created at runtime
     private int nextDynamicMember = 10000;
 
@@ -645,13 +878,11 @@ public class CastLib {
             load();
         }
 
-        // Find the next available member number
-        int memberNum = nextDynamicMember++;
-
         // Map type name to MemberType
         MemberType type = switch (typeName.toLowerCase()) {
             case "field", "text" -> MemberType.TEXT;
             case "bitmap" -> MemberType.BITMAP;
+            case "palette" -> MemberType.PALETTE;
             case "script" -> MemberType.SCRIPT;
             case "button" -> MemberType.BUTTON;
             case "shape" -> MemberType.SHAPE;
@@ -659,6 +890,15 @@ public class CastLib {
             default -> MemberType.TEXT; // Default to text for unknown types
         };
 
+        for (int memberNum = 10000; memberNum < nextDynamicMember; memberNum++) {
+            CastMember existing = members.get(memberNum);
+            if (existing != null && existing.isReusableDynamicSlot()) {
+                existing.reuseAs(type);
+                return existing;
+            }
+        }
+
+        int memberNum = nextDynamicMember++;
         CastMember member = new CastMember(castLibId.value(), memberNum, type);
         members.put(memberNum, member);
         return member;

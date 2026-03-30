@@ -5,9 +5,12 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.net.NetBuiltins;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Polling-based network provider for WASM.
@@ -21,11 +24,12 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
 
     private final String basePath;
     private final Map<Integer, NetTask> tasks = new HashMap<>();
+    private final Map<String, byte[]> urlCache = new HashMap<>();
     private final List<PendingRequest> pendingRequests = new ArrayList<>();
     private int nextTaskId = 1;
     private int lastTaskId = 0;
 
-    /** Called when a fetch completes with data, allowing Player to cache cast files. */
+    /** Called when a fetch completes with data, allowing Player to cache external cast data. */
     private java.util.function.BiConsumer<String, byte[]> fetchCompleteCallback;
 
     public QueuedNetProvider(String basePath) {
@@ -47,6 +51,17 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         NetTask task = new NetTask(taskId, resolvedUrl);
         task.fallbackUrls = fallbacks;
         tasks.put(taskId, task);
+
+        byte[] cached = findCachedData(url, resolvedUrl);
+        if (cached != null) {
+            task.data = cached;
+            task.byteCount = cached.length;
+            task.done = true;
+            if (fetchCompleteCallback != null) {
+                fetchCompleteCallback.accept(task.url, cached);
+            }
+            return taskId;
+        }
 
         pendingRequests.add(new PendingRequest(taskId, fallbacks[0], "GET", null, fallbacks));
         return taskId;
@@ -169,6 +184,9 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
             task.data = data;
             task.byteCount = data != null ? data.length : 0;
             task.done = true;
+            if (task.url != null && data != null) {
+                cacheData(task.url, data);
+            }
 
             if (fetchCompleteCallback != null && task.url != null && data != null) {
                 fetchCompleteCallback.accept(task.url, data);
@@ -243,6 +261,47 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         }
 
         return fileName;
+    }
+
+    private byte[] findCachedData(String originalUrl, String resolvedUrl) {
+        for (String key : buildCacheKeys(originalUrl, resolvedUrl)) {
+            byte[] cached = urlCache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        return null;
+    }
+
+    private void cacheData(String url, byte[] data) {
+        if (url == null || url.isEmpty() || data == null) {
+            return;
+        }
+        for (String key : buildCacheKeys(url, url)) {
+            urlCache.put(key, data);
+        }
+    }
+
+    private Set<String> buildCacheKeys(String originalUrl, String resolvedUrl) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        addCacheKeys(keys, originalUrl);
+        addCacheKeys(keys, resolvedUrl);
+        return keys;
+    }
+
+    private void addCacheKeys(Set<String> keys, String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+        String fileName = FileUtil.getFileName(url);
+        if (fileName == null || fileName.isEmpty()) {
+            return;
+        }
+        keys.add(fileName.toLowerCase(Locale.ROOT));
+        String baseName = FileUtil.getFileNameWithoutExtension(fileName);
+        if (baseName != null && !baseName.isEmpty()) {
+            keys.add(baseName.toLowerCase(Locale.ROOT));
+        }
     }
 
     /** Extract the origin (scheme + host + port) from an absolute URL. */

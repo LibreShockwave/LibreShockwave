@@ -9,6 +9,7 @@ import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.function.BiConsumer;
 
 /**
  * Provides movie-level property access for Lingo scripts.
@@ -47,6 +48,7 @@ public class MovieProperties implements MoviePropertyProvider {
 
     // Timer start time (in millis)
     private final long startTime;
+    private BiConsumer<String, String> gotoNetPageHandler;
 
     public MovieProperties(Player player, DirectorFile file) {
         this.player = player;
@@ -56,6 +58,10 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public void setInputState(InputState inputState) {
         this.inputState = inputState;
+    }
+
+    public void setGotoNetPageHandler(BiConsumer<String, String> gotoNetPageHandler) {
+        this.gotoNetPageHandler = gotoNetPageHandler;
     }
 
     @Override
@@ -145,6 +151,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 yield new Datum.Point(0, 0);
             }
             case "rightmousedown" -> Datum.of(inputState != null && inputState.isRightMouseDown() ? 1 : 0);
+            case "doubleclick" -> Datum.of(inputState != null && inputState.isDoubleClick() ? 1 : 0);
             case "rollover" -> Datum.of(inputState != null ? inputState.getRolloverSprite() : 0);
 
             // Key state
@@ -162,8 +169,20 @@ public class MovieProperties implements MoviePropertyProvider {
             case "selstart" -> Datum.of(inputState != null ? inputState.getSelStart() : 0);
             case "selend" -> Datum.of(inputState != null ? inputState.getSelEnd() : 0);
 
-            // Color depth
-            case "colordepth" -> Datum.of(32);
+            // Color depth.
+            // Director window scripts allocate intermediate buffers with
+            // image(w, h, the colorDepth), so this must reflect the movie's
+            // authored stage depth rather than a hardcoded modern 32-bit value.
+            case "colordepth" -> {
+                if (file != null && file.getConfig() != null) {
+                    int depth = file.getConfig().bgColor();
+                    if (depth == 1 || depth == 2 || depth == 4
+                            || depth == 8 || depth == 16 || depth == 32) {
+                        yield Datum.of(depth);
+                    }
+                }
+                yield Datum.of(32);
+            }
 
             // Anim2 properties
             case "perframehook" -> Datum.VOID;
@@ -240,7 +259,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 return true;
             }
             case "puppettempo" -> {
-                puppetTempo = value.toInt();
+                setPuppetTempo(value.toInt());
                 return true;
             }
             case "tracescript" -> {
@@ -357,6 +376,26 @@ public class MovieProperties implements MoviePropertyProvider {
         player.goToLabel(label);
     }
 
+    @Override
+    public void gotoNetPage(String url, String target) {
+        String safeUrl = url != null ? url : "";
+        String safeTarget = target != null ? target : "";
+        String recentError = player.getRecentScriptErrorMessage(10000);
+        String recentStack = player.getRecentScriptErrorStack(10000);
+
+        System.err.println("[NavigationRequest] url=" + safeUrl
+                + " target=" + safeTarget
+                + " frame=" + player.getCurrentFrame()
+                + " recentError=" + (recentError.isEmpty() ? "<none>" : recentError));
+        if (!recentStack.isEmpty()) {
+            System.err.println("[NavigationRequest] recentLingoStack:\n" + recentStack);
+        }
+
+        if (gotoNetPageHandler != null) {
+            gotoNetPageHandler.accept(safeUrl, safeTarget);
+        }
+    }
+
     private String getMovieName() {
         if (file != null && file.getBasePath() != null) {
             String path = file.getBasePath();
@@ -401,6 +440,13 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public int getPuppetTempo() {
         return puppetTempo;
+    }
+
+    public void setPuppetTempo(int puppetTempo) {
+        this.puppetTempo = Math.max(0, puppetTempo);
+        if (inputState != null) {
+            inputState.setCaretBlinkRate(player.getTempo());
+        }
     }
 
     public Datum getActorList() {

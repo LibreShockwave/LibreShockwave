@@ -77,6 +77,18 @@ public interface TextRenderer {
     }
 
     /**
+     * Split text into logical lines while preserving empty lines and treating CRLF
+     * as a single line break. Director field/text members use classic Mac-style
+     * returns heavily, but imported/external text may also contain CRLF/LF.
+     */
+    static String[] splitLines(String text) {
+        if (text == null || text.isEmpty()) {
+            return new String[]{""};
+        }
+        return text.split("\\r\\n|\\r|\\n", -1);
+    }
+
+    /**
      * Word-wrap a single line of text into multiple lines that fit within maxWidth.
      * Shared by all TextRenderer implementations.
      *
@@ -94,21 +106,62 @@ public interface TextRenderer {
      * @return int array {lineNum, charsOnLine} (0-based lineNum, clamped charsOnLine)
      */
     static int[] findCharLine(String text, int charIndex) {
-        int idx = Math.min(charIndex, text.length());
-        String[] lines = text.split("[\r\n]");
-        int lineNum = 0;
-        int charsSoFar = 0;
-        for (int i = 0; i < lines.length; i++) {
-            int lineLen = lines[i].length() + 1; // +1 for line break
-            if (charsSoFar + lineLen >= idx) {
-                lineNum = i;
-                break;
-            }
-            charsSoFar += lineLen;
+        if (text == null || text.isEmpty()) {
+            return new int[]{0, 0};
         }
-        int charsOnLine = Math.min(idx - charsSoFar,
-                lineNum < lines.length ? lines[lineNum].length() : 0);
-        return new int[]{ lineNum, charsOnLine };
+
+        int idx = Math.max(0, Math.min(charIndex, text.length()));
+        int lineNum = 0;
+        int charsOnLine = 0;
+
+        for (int pos = 0; pos < idx; pos++) {
+            char ch = text.charAt(pos);
+            if (ch == '\r') {
+                if ((pos + 1) < idx && (pos + 1) < text.length() && text.charAt(pos + 1) == '\n') {
+                    pos++;
+                }
+                lineNum++;
+                charsOnLine = 0;
+            } else if (ch == '\n') {
+                lineNum++;
+                charsOnLine = 0;
+            } else {
+                charsOnLine++;
+            }
+        }
+
+        return new int[]{lineNum, charsOnLine};
+    }
+
+    /**
+     * Return the 0-based character index at the start of the requested logical line.
+     * Treats CRLF as a single break while preserving the underlying string indices.
+     */
+    static int lineStartIndex(String text, int targetLine) {
+        if (text == null || text.isEmpty() || targetLine <= 0) {
+            return 0;
+        }
+
+        int lineNum = 0;
+        for (int pos = 0; pos < text.length(); pos++) {
+            char ch = text.charAt(pos);
+            if (ch == '\r') {
+                if ((pos + 1) < text.length() && text.charAt(pos + 1) == '\n') {
+                    pos++;
+                }
+                lineNum++;
+                if (lineNum == targetLine) {
+                    return pos + 1;
+                }
+            } else if (ch == '\n') {
+                lineNum++;
+                if (lineNum == targetLine) {
+                    return pos + 1;
+                }
+            }
+        }
+
+        return text.length();
     }
 
     static void wrapLine(String text, ToIntFunction<String> measureWidth, int maxWidth, List<String> out) {

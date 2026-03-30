@@ -185,10 +185,17 @@ public class BehaviorManager {
      */
     public List<BehaviorInstance> getSpriteInstances() {
         List<BehaviorInstance> result = new ArrayList<>();
-        for (BehaviorInstance instance : instancesById.values()) {
-            if (!instance.isFrameBehavior()) {
-                result.add(instance);
+        List<Integer> channels = new ArrayList<>(instancesByChannel.keySet());
+        Collections.sort(channels);
+        for (Integer channel : channels) {
+            if (channel == null || channel <= 0) {
+                continue;
             }
+            List<BehaviorInstance> instances = instancesByChannel.get(channel);
+            if (instances == null || instances.isEmpty()) {
+                continue;
+            }
+            result.addAll(instances);
         }
         return result;
     }
