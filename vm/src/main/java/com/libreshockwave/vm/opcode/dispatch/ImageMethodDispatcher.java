@@ -3,6 +3,7 @@ package com.libreshockwave.vm.opcode.dispatch;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 
@@ -327,8 +328,9 @@ public final class ImageMethodDispatcher {
         if (args.size() >= 4 && args.get(3) instanceof Datum.PropList pl) {
             // Check for #ink property
             Datum inkDatum = getPropIgnoreCase(pl, "ink", "Ink");
-            if (inkDatum instanceof Datum.Int inkInt) {
-                ink = inkFromInt(inkInt.value());
+            Palette.InkMode parsedInk = inkFromDatum(inkDatum);
+            if (parsedInk != null) {
+                ink = parsedInk;
             }
             // Check for #blend property
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
@@ -375,7 +377,7 @@ public final class ImageMethodDispatcher {
                     destRect.top() + src.getAnchorY() - srcRect.top());
         }
         Integer backgroundKeyRgb = ink == Palette.InkMode.BACKGROUND_TRANSPARENT
-                ? Integer.valueOf(bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF)
+                ? Integer.valueOf(resolveBackgroundTransparentKey(bgColorRemap))
                 : null;
         // Apply #color/#bgColor remapping only for grayscale source bitmaps.
         // Director's copyPixels remap is designed for default black/white text bitmaps
@@ -389,20 +391,7 @@ public final class ImageMethodDispatcher {
         boolean grayscaleColorized = false;
         if ((colorRemap >= 0 || bgColorRemap >= 0) && ink != Palette.InkMode.BACKGROUND_TRANSPARENT) {
             // Sample source pixels to check if they're grayscale (safe to remap)
-            boolean isGrayscale = true;
-            int sampleStep = Math.max(1, (srcW * srcH) / 64);
-            for (int i = 0; i < srcW * srcH && isGrayscale; i += sampleStep) {
-                int sx = srcRect.left() + (i % srcW);
-                int sy = srcRect.top() + (i / srcW);
-                int p = src.getPixel(sx, sy);
-                if ((p >>> 24) == 0) continue; // skip transparent
-                int r = (p >> 16) & 0xFF;
-                int g = (p >> 8) & 0xFF;
-                int b = p & 0xFF;
-                if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
-                    isGrayscale = false;
-                }
-            }
+            boolean isGrayscale = isMostlyGrayscale(src, srcRect);
 
             if (isGrayscale) {
                 int fgR = colorRemap >= 0 ? (colorRemap >> 16) & 0xFF : 0;
@@ -468,6 +457,11 @@ public final class ImageMethodDispatcher {
                     destRect.left(), destRect.top(),
                     effectiveSrcX, effectiveSrcY,
                     srcW, srcH, effectiveInk, blend, mask, backgroundKeyRgb);
+            preservePaletteIndicesOnCopy(dest, effectiveSrc,
+                    destRect.left(), destRect.top(),
+                    effectiveSrcX, effectiveSrcY,
+                    srcW, srcH, srcW, srcH,
+                    effectiveInk, blend, mask, colorRemap, bgColorRemap);
         } else {
             // Scaling needed - create scaled intermediate, applying mask at source coordinates
             Bitmap scaled = new Bitmap(destW, destH, effectiveSrc.getBitDepth());
@@ -493,6 +487,11 @@ public final class ImageMethodDispatcher {
             Drawing.copyPixels(dest, scaled,
                     destRect.left(), destRect.top(),
                     0, 0, destW, destH, effectiveInk, blend, null, backgroundKeyRgb);
+            preservePaletteIndicesOnCopy(dest, scaled,
+                    destRect.left(), destRect.top(),
+                    0, 0,
+                    destW, destH, destW, destH,
+                    effectiveInk, blend, null, colorRemap, bgColorRemap);
         }
 
         return Datum.VOID;
@@ -539,8 +538,9 @@ public final class ImageMethodDispatcher {
         int blend = 255;
         if (args.size() > 3 && args.get(3) instanceof Datum.PropList pl) {
             Datum inkDatum = getPropIgnoreCase(pl, "ink", "Ink");
-            if (inkDatum instanceof Datum.Int inkInt) {
-                ink = inkFromInt(inkInt.value());
+            Palette.InkMode parsedInk = inkFromDatum(inkDatum);
+            if (parsedInk != null) {
+                ink = parsedInk;
             }
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
             if (!blendDatum.isVoid()) {
@@ -552,6 +552,8 @@ public final class ImageMethodDispatcher {
         // This covers identity, flips, and 90-degree rotations.
         Bitmap transformed = new Bitmap(destW, destH, src.getBitDepth());
         transformed.copyPaletteMetadataFrom(src);
+        byte[] srcPaletteIndices = src.getPaletteIndices();
+        byte[] transformedIndices = srcPaletteIndices != null ? new byte[destW * destH] : null;
         boolean axisAligned =
                 (px[0] == minX || px[0] == maxX) && (py[0] == minY || py[0] == maxY)
                         && (px[1] == minX || px[1] == maxX) && (py[1] == minY || py[1] == maxY)
@@ -580,6 +582,9 @@ public final class ImageMethodDispatcher {
                     int srcY = srcRect.top() + clamp((int) Math.floor(srcV * srcH), 0, srcH - 1);
                     if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
                         transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                        if (transformedIndices != null) {
+                            transformedIndices[y * destW + x] = srcPaletteIndices[srcY * src.getWidth() + srcX];
+                        }
                     }
                 }
             }
@@ -596,17 +601,131 @@ public final class ImageMethodDispatcher {
                     srcY += srcRect.top();
                     if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
                         transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                        if (transformedIndices != null) {
+                            transformedIndices[y * destW + x] = srcPaletteIndices[srcY * src.getWidth() + srcX];
+                        }
                     }
                 }
             }
         }
+        if (transformedIndices != null) {
+            transformed.setPaletteIndices(transformedIndices);
+        }
         Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, ink, blend);
+        preservePaletteIndicesOnCopy(dest, transformed,
+                minX, minY,
+                0, 0,
+                destW, destH, destW, destH,
+                ink, blend, null, -1, -1);
 
         return Datum.VOID;
     }
 
+    private static void preservePaletteIndicesOnCopy(Bitmap dest, Bitmap src,
+                                                     int destX, int destY,
+                                                     int srcX, int srcY,
+                                                     int srcW, int srcH,
+                                                     int destW, int destH,
+                                                     Palette.InkMode ink, int blend,
+                                                     Bitmap mask,
+                                                     int colorRemap, int bgColorRemap) {
+        if (!canPreservePaletteIndices(dest, src, ink, blend, mask, colorRemap, bgColorRemap)) {
+            return;
+        }
+
+        byte[] srcIndices = src.getPaletteIndices();
+        if (srcIndices == null || srcIndices.length < src.getWidth() * src.getHeight()) {
+            return;
+        }
+
+        if (dest.getImagePalette() == null && src.getImagePalette() != null) {
+            dest.setImagePalette(src.getImagePalette());
+            if (src.getPaletteRefCastLib() >= 1 && src.getPaletteRefMemberNum() >= 1) {
+                dest.setPaletteRefCastMember(src.getPaletteRefCastLib(), src.getPaletteRefMemberNum());
+            } else if (src.getPaletteRefSystemName() != null && !src.getPaletteRefSystemName().isEmpty()) {
+                dest.setPaletteRefSystemName(src.getPaletteRefSystemName());
+            }
+        }
+
+        byte[] destIndices = dest.getPaletteIndices();
+        if (destIndices == null || destIndices.length < dest.getWidth() * dest.getHeight()) {
+            destIndices = new byte[dest.getWidth() * dest.getHeight()];
+        }
+
+        for (int y = 0; y < destH; y++) {
+            int sy = srcY + (y * srcH / destH);
+            int dy = destY + y;
+            if (sy < 0 || sy >= src.getHeight() || dy < 0 || dy >= dest.getHeight()) {
+                continue;
+            }
+            for (int x = 0; x < destW; x++) {
+                int sx = srcX + (x * srcW / destW);
+                int dx = destX + x;
+                if (sx < 0 || sx >= src.getWidth() || dx < 0 || dx >= dest.getWidth()) {
+                    continue;
+                }
+                destIndices[dy * dest.getWidth() + dx] = srcIndices[sy * src.getWidth() + sx];
+            }
+        }
+
+        dest.setPaletteIndices(destIndices);
+    }
+
+    private static boolean canPreservePaletteIndices(Bitmap dest, Bitmap src,
+                                                     Palette.InkMode ink, int blend,
+                                                     Bitmap mask,
+                                                     int colorRemap, int bgColorRemap) {
+        return dest != null
+                && src != null
+                && src.getBitDepth() <= 8
+                && dest.getBitDepth() >= src.getBitDepth()
+                && src.getPaletteIndices() != null
+                && ink == Palette.InkMode.COPY
+                && blend >= 255
+                && mask == null
+                && colorRemap < 0
+                && bgColorRemap < 0;
+    }
+
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static int resolveBackgroundTransparentKey(int explicitBgColorRemap) {
+        if (explicitBgColorRemap >= 0) {
+            return explicitBgColorRemap;
+        }
+        // Director's copyPixels defaults #bgColor to white for ink 36.
+        return 0xFFFFFF;
+    }
+
+    private static boolean isMostlyGrayscale(Bitmap src, Datum.Rect srcRect) {
+        if (src == null || srcRect == null) {
+            return false;
+        }
+
+        int srcW = srcRect.right() - srcRect.left();
+        int srcH = srcRect.bottom() - srcRect.top();
+        if (srcW <= 0 || srcH <= 0) {
+            return false;
+        }
+
+        int sampleStep = Math.max(1, (srcW * srcH) / 64);
+        for (int i = 0; i < srcW * srcH; i += sampleStep) {
+            int sx = srcRect.left() + (i % srcW);
+            int sy = srcRect.top() + (i / srcW);
+            int p = src.getPixel(sx, sy);
+            if ((p >>> 24) == 0) {
+                continue;
+            }
+            int r = (p >> 16) & 0xFF;
+            int g = (p >> 8) & 0xFF;
+            int b = p & 0xFF;
+            if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Bitmap multiplyBitmapColor(Bitmap src, int tintRgb) {
@@ -691,5 +810,23 @@ public final class ImageMethodDispatcher {
             case 41 -> Palette.InkMode.DARKEN;
             default -> Palette.InkMode.COPY;
         };
+    }
+
+    private static Palette.InkMode inkFromDatum(Datum inkDatum) {
+        if (inkDatum instanceof Datum.Int inkInt) {
+            return inkFromInt(inkInt.value());
+        }
+        if (inkDatum instanceof Datum.Symbol sym) {
+            return inkFromName(sym.name());
+        }
+        if (inkDatum instanceof Datum.Str str) {
+            return inkFromName(str.value());
+        }
+        return null;
+    }
+
+    private static Palette.InkMode inkFromName(String inkName) {
+        InkMode inkMode = InkMode.fromNameOrNull(inkName);
+        return inkMode != null ? inkFromInt(inkMode.code()) : null;
     }
 }
