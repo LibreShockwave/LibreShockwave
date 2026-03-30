@@ -8,6 +8,7 @@ import com.libreshockwave.vm.DebugConfig;
 import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
+import com.libreshockwave.vm.builtin.sprite.SpriteEventBrokerSupport;
 import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
 import com.libreshockwave.vm.builtin.timeout.TimeoutBuiltins;
 import com.libreshockwave.vm.builtin.xtra.XtraBuiltins;
@@ -103,22 +104,20 @@ public final class CallOpcodes {
         List<Datum> args = getArgs(argListDatum);
 
         Datum result;
-        if (ctx.isBuiltin(handlerName)) {
+        HandlerRef ref = ctx.findHandler(handlerName);
+        if (ref != null) {
+            result = safeExecuteHandler(ctx, ref.script(), ref.handler(), args, null);
+        } else if (ctx.isBuiltin(handlerName)) {
             result = ctx.invokeBuiltin(handlerName, args);
         } else {
-            HandlerRef ref = ctx.findHandler(handlerName);
-            if (ref != null) {
-                result = safeExecuteHandler(ctx, ref.script(), ref.handler(), args, null);
+            // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
+            // Director compiles these as EXT_CALL with 0 args when used without "the"
+            if (args.isEmpty()) {
+                result = PropertyOpcodes.getBuiltinConstant(handlerName);
             } else {
-                // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
-                // Director compiles these as EXT_CALL with 0 args when used without "the"
-                if (args.isEmpty()) {
-                    result = PropertyOpcodes.getBuiltinConstant(handlerName);
-                } else {
-                    System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
-                    System.err.println(ctx.formatCallStack());
-                    result = Datum.VOID;
-                }
+                System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                System.err.println(ctx.formatCallStack());
+                result = Datum.VOID;
             }
         }
         if (!noRet) {
@@ -156,6 +155,7 @@ public final class CallOpcodes {
             case Datum.Point point -> handlePointMethod(point, methodName, args);
             case Datum.Rect rect -> handleRectMethod(rect, methodName, args);
             case Datum.Str str -> StringMethodDispatcher.dispatch(str, methodName, args);
+            case Datum.FieldText fieldText -> StringMethodDispatcher.dispatch(fieldText, methodName, args);
             case Datum.TimeoutRef ref -> TimeoutBuiltins.handleMethod(ref, methodName, args);
             case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.dispatch(sc, methodName, args);
             case Datum.XtraInstance xi -> XtraBuiltins.callHandler(xi, methodName, args);
@@ -175,6 +175,11 @@ public final class CallOpcodes {
                                 }
                             }
                         }
+                    }
+                    Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(
+                            sr.channelNum(), methodName, args);
+                    if (!brokerResult.isVoid()) {
+                        yield brokerResult;
                     }
                 }
                 yield Datum.VOID;
@@ -294,8 +299,8 @@ public final class CallOpcodes {
             int end = args.size() >= 3 ? args.get(2).toInt() : start;
             return Datum.of(getStringChunk(str, chunkType, start, end));
         } else {
-            if (value instanceof Datum.Str s) {
-                return StringMethodDispatcher.dispatch(s, methodName, args);
+            if (value.isString()) {
+                return StringMethodDispatcher.dispatch(value, methodName, args);
             }
             return Datum.VOID;
         }
@@ -376,7 +381,7 @@ public final class CallOpcodes {
         if (str.isEmpty() || start < 1) return "";
         if ("char".equalsIgnoreCase(chunkType)) {
             int s = Math.max(0, start - 1);
-            int e = Math.min(str.length(), end);
+            int e = Math.max(s, Math.min(str.length(), end));
             if (s >= str.length() || s >= e) return "";
             return str.substring(s, e);
         }
@@ -387,8 +392,8 @@ public final class CallOpcodes {
         if (str.isEmpty() || start < 1) return str;
         if ("char".equalsIgnoreCase(chunkType)) {
             int s = Math.max(0, start - 1);
-            int e = Math.min(str.length(), end);
-            if (s >= str.length()) return str;
+            int e = Math.max(s, Math.min(str.length(), end));
+            if (s >= str.length() || s >= e) return str;
             return str.substring(0, s) + str.substring(e);
         }
         return str;

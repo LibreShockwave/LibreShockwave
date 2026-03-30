@@ -80,8 +80,7 @@ public class AwtTextRenderer implements TextRenderer {
         int ascent = fm.getAscent();
 
         // Split text into lines
-        String[] rawLines = text.split("[\r\n]+");
-        if (rawLines.length == 0) rawLines = new String[]{""};
+        String[] rawLines = TextRenderer.splitLines(text);
 
         // Word wrap if enabled
         List<String> lines = new ArrayList<>();
@@ -159,7 +158,7 @@ public class AwtTextRenderer implements TextRenderer {
 
         if (text == null || text.isEmpty() || charIndex <= 0) {
             int alignX = alignmentOffset(alignment, fieldWidth, text == null || text.isEmpty() ? 0 :
-                    fm.stringWidth(text.split("[\r\n]")[0]));
+                    fm.stringWidth(TextRenderer.splitLines(text)[0]));
             g2d.dispose();
             return new int[]{alignX, 0};
         }
@@ -168,7 +167,7 @@ public class AwtTextRenderer implements TextRenderer {
         int lineNum = lineInfo[0];
         int charsOnLine = lineInfo[1];
 
-        String[] lines = text.split("[\r\n]");
+        String[] lines = TextRenderer.splitLines(text);
         String fullLine = (lineNum < lines.length) ? lines[lineNum] : "";
         String lineSubstr = (lineNum < lines.length) ? fullLine.substring(0, charsOnLine) : "";
         int x = fm.stringWidth(lineSubstr);
@@ -216,13 +215,10 @@ public class AwtTextRenderer implements TextRenderer {
         FontMetrics fm = g2d.getFontMetrics();
 
         int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : fm.getHeight();
-        String[] lines = text.split("\r", -1);
+        String[] lines = TextRenderer.splitLines(text);
         int lineIndex = Math.max(0, Math.min(y / Math.max(1, lineHeight), lines.length - 1));
 
-        int charsBefore = 0;
-        for (int i = 0; i < lineIndex; i++) {
-            charsBefore += lines[i].length() + 1;
-        }
+        int charsBefore = TextRenderer.lineStartIndex(text, lineIndex);
 
         String line = lines[lineIndex];
         int alignX = alignmentOffset(alignment, fieldWidth, fm.stringWidth(line));

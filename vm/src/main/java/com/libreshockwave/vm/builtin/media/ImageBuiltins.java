@@ -54,13 +54,18 @@ public final class ImageBuiltins {
             if (pal != null) {
                 bmp.setImagePalette(pal);
             }
+            if (paletteArg instanceof Datum.CastMemberRef ref) {
+                bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
+            }
             // Also handle #systemMac symbol
             if (paletteArg instanceof Datum.Symbol sym) {
                 String name = sym.name().toLowerCase();
                 if (name.equals("systemmac")) {
                     bmp.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+                    bmp.setPaletteRefSystemName("systemMac");
                 } else if (name.equals("systemwin") || name.equals("systemwindows")) {
                     bmp.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                    bmp.setPaletteRefSystemName("systemWin");
                 }
             }
         }

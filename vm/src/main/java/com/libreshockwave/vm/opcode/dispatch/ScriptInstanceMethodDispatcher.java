@@ -1,8 +1,10 @@
 package com.libreshockwave.vm.opcode.dispatch;
 
 import com.libreshockwave.chunks.ScriptChunk;
-import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.DebugConfig;
+import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
+import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.opcode.ExecutionContext;
@@ -24,6 +26,15 @@ public final class ScriptInstanceMethodDispatcher {
         // FIRST: Handle built-in property access/modification methods
         // This matches dirplayer-rs ScriptInstanceHandlers.call()
         String method = methodName.toLowerCase();
+        LingoVM currentVm = LingoVM.getCurrentVM();
+        if (shouldDeferNumericCloseThread(currentVm, method, args)) {
+            currentVm.deferTask(() -> ControlFlowBuiltins.callHandlerOnInstance(
+                    currentVm,
+                    instance,
+                    methodName,
+                    args));
+            return Datum.TRUE;
+        }
         switch (method) {
             case "setat" -> {
                 // setAt on ScriptInstance: only "ancestor" key is allowed (dirplayer-rs)
@@ -201,7 +212,16 @@ public final class ScriptInstanceMethodDispatcher {
             }
         }
 
-        // SECOND: Check for Lingo handlers in the script (and ancestor chain)
+        // SECOND: For registry-owner script instances, prefill stable entries
+        // before their authored handlers run. This mirrors Director's member
+        // registry semantics without forcing movie-specific reindex hooks.
+        MemberRegistryMethodDispatcher.DispatchResult prefillResult =
+                MemberRegistryMethodDispatcher.prefill(instance, methodName, args);
+        if (prefillResult.handled()) {
+            return prefillResult.value();
+        }
+
+        // THIRD: Check for Lingo handlers in the script (and ancestor chain)
         // This is for non-built-in methods like create(), dump(), etc.
         CastLibProvider provider = CastLibProvider.getProvider();
         if (provider != null) {
@@ -234,7 +254,16 @@ public final class ScriptInstanceMethodDispatcher {
             // Director doesn't fall back to global handlers for OBJ_CALL on instances
         }
 
-        // THIRD: Check if the method is getting a property (walk ancestor chain)
+        // FOURTH: Registry-style lookups are a compatibility fallback for script
+        // instances that expose pAllMemNumList but do not implement their own
+        // getmemnum/exists/getmember handlers in Lingo.
+        MemberRegistryMethodDispatcher.DispatchResult bridgeResult =
+                MemberRegistryMethodDispatcher.dispatch(instance, methodName, args);
+        if (bridgeResult.handled()) {
+            return bridgeResult.value();
+        }
+
+        // FIFTH: Check if the method is getting a property (walk ancestor chain)
         String prop = methodName.toLowerCase();
         Datum propValue = AncestorChainWalker.getProperty(instance, prop);
         if (propValue != null && !propValue.isVoid()) {
@@ -242,6 +271,23 @@ public final class ScriptInstanceMethodDispatcher {
         }
 
         return Datum.VOID;
+    }
+
+    static boolean shouldDeferNumericCloseThread(
+            LingoVM vm,
+            String methodName,
+            List<Datum> args) {
+        if (vm == null
+                || vm.isFlushingDeferredScriptInstanceCalls()
+                || vm.isFlushingDeferredTasks()
+                || !vm.hasActiveCallStack()) {
+            return false;
+        }
+        if (!"closethread".equals(methodName) || args.size() != 1) {
+            return false;
+        }
+        Datum target = args.get(0);
+        return target.isInt() || target.isFloat();
     }
 
     private static String getPropertyName(Datum datum) {

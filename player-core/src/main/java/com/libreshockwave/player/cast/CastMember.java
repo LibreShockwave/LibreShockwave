@@ -13,7 +13,14 @@ import com.libreshockwave.id.CastLibId;
 import com.libreshockwave.id.MemberId;
 import com.libreshockwave.player.render.RenderConfig;
 import com.libreshockwave.player.render.output.TextRenderer;
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.util.LingoValueParser;
+
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 
 /**
  * Represents a loaded cast member with lazy loading of media data.
@@ -27,8 +34,10 @@ public class CastMember {
     /** Platform-specific text renderer. Set by Player on startup. */
     private static TextRenderer textRenderer;
 
-    /** Callback to signal that a member's visual state changed (e.g. paletteRef). */
     private static Runnable memberVisualChangedCallback;
+    private static BiConsumer<Integer, Integer> memberSlotRetiredCallback;
+    private static BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> paletteResolver;
+    private static BiFunction<Integer, Integer, CastMember> memberResolver;
 
     public static void setTextRenderer(TextRenderer renderer) {
         textRenderer = renderer;
@@ -41,6 +50,18 @@ public class CastMember {
 
     public static void setMemberVisualChangedCallback(Runnable callback) {
         memberVisualChangedCallback = callback;
+    }
+
+    public static void setMemberSlotRetiredCallback(BiConsumer<Integer, Integer> callback) {
+        memberSlotRetiredCallback = callback;
+    }
+
+    public static void setPaletteResolver(BiFunction<Integer, Integer, com.libreshockwave.bitmap.Palette> resolver) {
+        paletteResolver = resolver;
+    }
+
+    public static void setMemberResolver(BiFunction<Integer, Integer, CastMember> resolver) {
+        memberResolver = resolver;
     }
 
     public enum State {
@@ -60,15 +81,21 @@ public class CastMember {
     private Bitmap bitmap;
     private ScriptChunk script;
     private String textContent;
+    private com.libreshockwave.bitmap.Palette dynamicPalette;
 
     // Cached properties
     private String name;
     private MemberType memberType;
     private int regPointX;
     private int regPointY;
+    private boolean regPointPinnedToMember = true;
+    private int bitmapAlphaThreshold = 0;
 
     // Dynamic text content (for dynamically created field/text members)
     private String dynamicText;
+    private String parsedTextSource;
+    private Datum parsedTextValue = Datum.VOID;
+    private boolean parsedTextValid;
 
     // Runtime palette override (for palette swap animation)
     // Stores the castLib and memberNum of the palette cast member to use instead of the embedded one.
@@ -95,6 +122,9 @@ public class CastMember {
     private int textTopSpacing = 0;
     private boolean textImageDirty = true; // Re-render when properties change
     private Bitmap textRenderedImage; // Cached rendered text image
+    private int textRenderedWidth = -1;
+    private int textRenderedHeight = -1;
+    private int textRenderedBgColor = Integer.MIN_VALUE;
     private boolean editable = false; // Whether this field/text member accepts keyboard input
 
     public CastMember(int castLibNumber, int memberNumber, CastMemberChunk chunk, DirectorFile sourceFile) {
@@ -129,6 +159,10 @@ public class CastMember {
             BitmapInfo bi = BitmapInfo.parse(chunk.specificData());
             regPointX = bi.regX();
             regPointY = bi.regY();
+            bitmapAlphaThreshold = bi.alphaThreshold();
+        } else if (chunk != null && chunk.isBitmap()
+                && chunk.specificData() != null && chunk.specificData().length >= 10) {
+            bitmapAlphaThreshold = BitmapInfo.parse(chunk.specificData()).alphaThreshold();
         }
     }
 
@@ -143,6 +177,7 @@ public class CastMember {
         this.name = "";
         this.memberType = memberType;
         this.state = State.LOADED; // Dynamic members are immediately ready
+        this.regPointPinnedToMember = false;
     }
 
     /**
@@ -188,10 +223,16 @@ public class CastMember {
         if (sourceFile == null || chunk == null) return;
 
         try {
-            // Resolve the palette from the paletteRef member number.
-            // First try the member's own source file (common case: palette is in the same CCT).
-            com.libreshockwave.bitmap.Palette palette =
-                    sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
+            com.libreshockwave.bitmap.Palette palette = null;
+
+            if (paletteResolver != null && paletteRefCastLib >= 1 && paletteRefMemberNum >= 1) {
+                palette = paletteResolver.apply(paletteRefCastLib, paletteRefMemberNum);
+            }
+
+            // Fallback for same-file palettes when no cross-cast resolver is installed.
+            if (palette == null) {
+                palette = sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
+            }
 
             if (palette != null) {
                 sourceFile.decodeBitmap(chunk, palette).ifPresent(b -> bitmap = b);
@@ -200,6 +241,61 @@ public class CastMember {
         } catch (Exception e) {
             // Fall back to the existing bitmap on error
         }
+    }
+
+    private com.libreshockwave.bitmap.Palette resolvePaletteDatum(Datum value) {
+        if (value instanceof Datum.CastMemberRef cmr) {
+            if (paletteResolver != null) {
+                com.libreshockwave.bitmap.Palette resolved =
+                        paletteResolver.apply(cmr.castLibNum(), cmr.memberNum());
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
+            if (sourceFile != null) {
+                return sourceFile.resolvePaletteByMemberNumber(cmr.memberNum());
+            }
+        }
+        if (value instanceof Datum.Symbol sym) {
+            String name = sym.name().toLowerCase();
+            if ("systemmac".equals(name)) {
+                return com.libreshockwave.bitmap.Palette.SYSTEM_MAC_PALETTE;
+            }
+            if ("systemwin".equals(name) || "systemwindows".equals(name)) {
+                return com.libreshockwave.bitmap.Palette.SYSTEM_WIN_PALETTE;
+            }
+        }
+        return null;
+    }
+
+    private boolean applyRuntimePaletteOverride(Datum value) {
+        int newCastLib = -1;
+        int newMemberNum = -1;
+        if (value instanceof Datum.CastMemberRef cmr) {
+            newCastLib = cmr.castLibNum();
+            newMemberNum = cmr.memberNum();
+        } else if (!(value instanceof Datum.Symbol)) {
+            return false;
+        }
+
+        com.libreshockwave.bitmap.Palette palette = resolvePaletteDatum(value);
+        if (palette == null) {
+            return false;
+        }
+
+        boolean changed = newCastLib != paletteRefCastLib || newMemberNum != paletteRefMemberNum;
+        paletteRefCastLib = newCastLib;
+        paletteRefMemberNum = newMemberNum;
+
+        if (bitmap != null && (sourceFile == null || chunk == null || bitmap.isScriptModified())) {
+            bitmap.remapImagePalette(palette);
+        }
+
+        if (changed) {
+            paletteVersion++;
+            notifyMemberVisualChanged();
+        }
+        return true;
     }
 
     private void loadBitmap() {
@@ -225,58 +321,33 @@ public class CastMember {
 
     /**
      * Read text content eagerly (during construction) without full member load.
-     * Returns the text if an STXT chunk was found, or null if no text data exists.
+     * Returns the text if a text chunk was found, or an empty string if no text data exists.
      */
     private String loadTextEagerly() {
         if (sourceFile == null || chunk == null) return "";
-        KeyTableChunk keyTable = sourceFile.getKeyTable();
-        if (keyTable != null) {
-            var entry = keyTable.findEntry(chunk.id(), ChunkType.STXT.getFourCC());
-            if (entry != null) {
-                var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
-                if (textChunk.isPresent()) {
-                    return textChunk.get().text();
-                }
-            }
+        TextChunk textChunk = sourceFile.getTextForMember(chunk);
+        if (textChunk != null) {
+            return textChunk.text();
         }
-        var textChunk = sourceFile.getChunk(chunk.id(), TextChunk.class);
-        return textChunk.map(TextChunk::text).orElse("");
+        return "";
     }
 
     private void loadText() {
         if (sourceFile == null || chunk == null) {
             textContent = "";
+            invalidateParsedTextCache();
             return;
         }
 
-        // Text content is stored in an STXT chunk associated with this member.
-        // Use the KeyTableChunk to find the associated STXT chunk.
-        KeyTableChunk keyTable = sourceFile.getKeyTable();
-        if (keyTable != null) {
-            // The fourcc for STXT in the key table
-            int stxtFourcc = ChunkType.STXT.getFourCC();
-            var entry = keyTable.findEntry(chunk.id(), stxtFourcc);
-            if (entry != null) {
-                var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
-                if (textChunk.isPresent()) {
-                    textContent = textChunk.get().text();
-                    return;
-                }
-            }
-        }
-
-        // Fallback: Try to find a text chunk with the same ID as the member
-        var textChunk = sourceFile.getChunk(chunk.id(), TextChunk.class);
-        if (textChunk.isPresent()) {
-            textContent = textChunk.get().text();
-        } else {
-                textContent = "";
-        }
+        TextChunk textChunk = sourceFile.getTextForMember(chunk);
+        textContent = textChunk != null ? textChunk.text() : "";
+        invalidateParsedTextCache();
     }
 
     private void loadXmedText() {
         if (sourceFile == null || chunk == null) {
             textContent = "";
+            invalidateParsedTextCache();
             return;
         }
 
@@ -291,6 +362,7 @@ public class CastMember {
         } else {
             textContent = "";
         }
+        invalidateParsedTextCache();
     }
 
     /**
@@ -317,6 +389,17 @@ public class CastMember {
             }
         }
         return textContent != null ? textContent : "";
+    }
+
+    public Datum getParsedTextValue(LingoVM vm) {
+        String text = getTextContent();
+        if (parsedTextValid && Objects.equals(parsedTextSource, text)) {
+            return parsedTextValue;
+        }
+        parsedTextSource = text;
+        parsedTextValue = LingoValueParser.parseWithPartial(text, vm);
+        parsedTextValid = true;
+        return parsedTextValue;
     }
 
     // Accessors
@@ -346,7 +429,44 @@ public class CastMember {
     }
 
     public void setName(String name) {
-        this.name = name;
+        updateName(name);
+    }
+
+    private void updateName(String newName) {
+        String nextName = newName != null ? newName : "";
+        this.name = nextName;
+    }
+
+    private boolean isRuntimeDynamicMember() {
+        return chunk == null && sourceFile == null;
+    }
+
+    public boolean isRuntimeDynamic() {
+        return isRuntimeDynamicMember();
+    }
+
+    public boolean isReusableDynamicSlot() {
+        return isRuntimeDynamicMember()
+                && memberType == MemberType.NULL
+                && (name == null || name.isEmpty());
+    }
+
+    public void reuseAs(MemberType newType) {
+        resetRuntimePayload();
+        memberType = newType != null ? newType : MemberType.NULL;
+        state = State.LOADED;
+    }
+
+    private void notifyMemberSlotRetired() {
+        if (memberSlotRetiredCallback != null) {
+            memberSlotRetiredCallback.accept(castLibId.value(), memberId.value());
+        }
+    }
+
+    private void notifyMemberVisualChanged() {
+        if (memberVisualChangedCallback != null) {
+            memberVisualChangedCallback.run();
+        }
     }
 
     public MemberType getMemberType() {
@@ -367,6 +487,14 @@ public class CastMember {
     public void setDynamicText(String text) {
         this.dynamicText = text;
         this.textImageDirty = true;
+        invalidateParsedTextCache();
+        notifyMemberVisualChanged();
+    }
+
+    private void invalidateParsedTextCache() {
+        parsedTextSource = null;
+        parsedTextValue = Datum.VOID;
+        parsedTextValid = false;
     }
 
     public TextRenderer getTextRenderer() { return textRenderer; }
@@ -405,12 +533,14 @@ public class CastMember {
                 && paletteVersion > lastDecodedPaletteVersion) {
             redecodeBitmapWithPaletteRef();
         }
+        syncBitmapAnchorState();
         return bitmap;
     }
 
     /** Set bitmap directly (for initial load, not Lingo assignment). Does NOT mark as script-modified. */
     public void setBitmapDirectly(Bitmap bmp) {
         this.bitmap = bmp;
+        syncBitmapAnchorState();
     }
 
     public ScriptChunk getScript() {
@@ -428,9 +558,33 @@ public class CastMember {
         return regPointY;
     }
 
+    public int getBitmapAlphaThreshold() {
+        return bitmapAlphaThreshold;
+    }
+
+    public void setBitmapAlphaThreshold(int alphaThreshold) {
+        this.bitmapAlphaThreshold = Math.max(0, Math.min(255, alphaThreshold));
+    }
+
     public void setRegPoint(int x, int y) {
         this.regPointX = x;
         this.regPointY = y;
+        this.regPointPinnedToMember = true;
+        syncBitmapAnchorState();
+    }
+
+    private void syncBitmapAnchorState() {
+        if (bitmap == null) {
+            return;
+        }
+        if (regPointPinnedToMember) {
+            bitmap.setAnchorPoint(regPointX, regPointY);
+            return;
+        }
+        if (bitmap.hasAnchorPoint()) {
+            regPointX = bitmap.getAnchorX();
+            regPointY = bitmap.getAnchorY();
+        }
     }
 
     /** Returns true if this member has a runtime palette override (from paletteRef). */
@@ -453,12 +607,29 @@ public class CastMember {
             case "name" -> Datum.of(name);
             case "number" -> Datum.of(getSlotNumber());
             case "membernum" -> Datum.of(memberId.value());
-            case "type" -> Datum.of(memberType.getName());
+            case "type" -> Datum.symbol(getDirectorTypeName());
             case "castlibnum" -> Datum.of(castLibId.value());
             case "castlib" -> Datum.CastLibRef.of(castLibId.value());
+            case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
             case "mediaready" -> Datum.of(1); // Always ready for now
             default -> getTypeProp(prop);
         };
+    }
+
+    private String getDirectorTypeName() {
+        if (memberType == MemberType.NULL) {
+            return "empty";
+        }
+        if (isTextLike()) {
+            return "field";
+        }
+        return memberType.getName();
+    }
+
+    private boolean isTextLike() {
+        return memberType == MemberType.TEXT
+                || memberType == MemberType.BUTTON
+                || (memberType == MemberType.XTRA && chunk != null && chunk.isTextXtra());
     }
 
     /**
@@ -486,11 +657,7 @@ public class CastMember {
      */
     private Datum getPaletteProp(String prop) {
         if ("color".equals(prop)) {
-            // Resolve the palette data from the source file
-            com.libreshockwave.bitmap.Palette pal = null;
-            if (sourceFile != null && chunk != null) {
-                pal = sourceFile.resolvePalette(chunk.id().value());
-            }
+            com.libreshockwave.bitmap.Palette pal = getPaletteData();
             if (pal != null) {
                 // Build a list of Color datums for each palette entry
                 java.util.List<Datum> colors = new java.util.ArrayList<>(pal.size());
@@ -505,6 +672,20 @@ public class CastMember {
         return Datum.VOID;
     }
 
+    public com.libreshockwave.bitmap.Palette getPaletteData() {
+        if (dynamicPalette != null) {
+            return dynamicPalette;
+        }
+        if (sourceFile != null && memberType == MemberType.PALETTE) {
+            return sourceFile.resolvePaletteByMemberNumber(memberId.value());
+        }
+        return null;
+    }
+
+    public void setPaletteData(com.libreshockwave.bitmap.Palette palette) {
+        this.dynamicPalette = palette;
+    }
+
     private Datum getBitmapProp(String prop) {
         // Ensure bitmap is loaded
         Bitmap bmp = getBitmap();
@@ -513,6 +694,7 @@ public class CastMember {
             case "width" -> Datum.of(bmp != null ? bmp.getWidth() : 0);
             case "height" -> Datum.of(bmp != null ? bmp.getHeight() : 0);
             case "depth" -> Datum.of(bmp != null ? bmp.getBitDepth() : 0);
+            case "alphathreshold" -> Datum.of(bitmapAlphaThreshold);
             case "regpoint" -> new Datum.Point(regPointX, regPointY);
             case "paletteref" -> {
                 // Return the palette override if set, otherwise the embedded palette reference
@@ -529,6 +711,7 @@ public class CastMember {
                 }
                 yield Datum.VOID;
             }
+            case "palette" -> getBitmapProp("paletteref");
             case "rect" -> {
                 int w = bmp != null ? bmp.getWidth() : 0;
                 int h = bmp != null ? bmp.getHeight() : 0;
@@ -623,14 +806,10 @@ public class CastMember {
         // the text content. Director auto-adjusts the rect height when text is set,
         // so the stored rectBottom may not reflect the actual content height.
         int height = textBoxType == 0 ? 0 : (textRectBottom - textRectTop);
-        // Text members in Director use Background Transparent behavior when the
-        // background is white (default): white pixels become transparent so text
-        // can be composited over other content without a white rectangle.
-        // Use alpha=0 with white RGB (0x00FFFFFF) so COPY ink skips background
-        // pixels while #color/#bgColor remapping still sees white for colorization.
-        // Non-white backgrounds (e.g., black bg for white text) must stay opaque.
-        int bgColor = (textBgColor == 0xFFFFFFFF) ? 0x00FFFFFF : textBgColor;
-        return renderTextToImage(width, height, bgColor);
+        // Director's text-member .image behaves like transparent text artwork.
+        // UI wrappers then paint their own background and composite the text with
+        // MATTE or TRANSPARENT ink as needed.
+        return renderTextToImage(width, height, 0x00FFFFFF);
     }
 
     /**
@@ -641,8 +820,9 @@ public class CastMember {
     public Bitmap renderTextToImage(int width, int height, int bgColor) {
         // Return cached image if still valid and dimensions match
         if (textRenderedImage != null && !textImageDirty
-                && textRenderedImage.getWidth() == width
-                && textRenderedImage.getHeight() == height) {
+                && textRenderedWidth == width
+                && textRenderedHeight == height
+                && textRenderedBgColor == bgColor) {
             return textRenderedImage;
         }
 
@@ -657,6 +837,13 @@ public class CastMember {
                 textAlignment, textColor, bgColor,
                 textWordWrap, textAntialias,
                 textFixedLineSpace, textTopSpacing);
+        if (textRenderedImage != null && ((((bgColor >>> 24) & 0xFF) < 0xFF)
+                || textRenderedImage.hasTransparentPixels())) {
+            textRenderedImage.setNativeAlpha(true);
+        }
+        textRenderedWidth = width;
+        textRenderedHeight = height;
+        textRenderedBgColor = bgColor;
         textImageDirty = false;
 
         return textRenderedImage;
@@ -692,13 +879,19 @@ public class CastMember {
 
         switch (prop) {
             case "name" -> {
-                this.name = value.toStr();
+                updateName(value.toStr());
                 return true;
+            }
+            case "media" -> {
+                return setMediaProp(value);
             }
             case "regpoint" -> {
                 if (value instanceof Datum.Point p) {
                     this.regPointX = p.x();
                     this.regPointY = p.y();
+                    this.regPointPinnedToMember = true;
+                    syncBitmapAnchorState();
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -709,12 +902,129 @@ public class CastMember {
         }
     }
 
-    private boolean setTypeProp(String prop, Datum value) {
-        if (memberType == MemberType.TEXT || memberType == MemberType.BUTTON) {
-            return setTextProp(prop, value);
+    private boolean setMediaProp(Datum value) {
+        if (value instanceof Datum.CastMemberRef ref) {
+            if (memberResolver == null) {
+                return false;
+            }
+            CastMember source = memberResolver.apply(ref.castLibNum(), ref.memberNum());
+            if (source == null) {
+                return false;
+            }
+            boolean copied = copyMediaFrom(source);
+            if (copied) {
+                syncBitmapAnchorState();
+                notifyMemberVisualChanged();
+            }
+            return copied;
         }
-        // XTRA "text" sub-type members behave like TEXT for property access
-        if (memberType == MemberType.XTRA && chunk != null && chunk.isTextXtra()) {
+        if (memberType == MemberType.BITMAP && value instanceof Datum.ImageRef ir) {
+            Bitmap sourceBitmap = ir.bitmap();
+            Bitmap newBmp = sourceBitmap.copy();
+            newBmp.markScriptModified();
+            this.bitmap = newBmp;
+            if (!regPointPinnedToMember) {
+                if (sourceBitmap.hasAnchorPoint()) {
+                    this.regPointX = sourceBitmap.getAnchorX();
+                    this.regPointY = sourceBitmap.getAnchorY();
+                } else {
+                    this.regPointX = 0;
+                    this.regPointY = 0;
+                }
+            }
+            this.state = State.LOADED;
+            syncBitmapAnchorState();
+            notifyMemberVisualChanged();
+            return true;
+        }
+        if (isTextLike()
+                && (value instanceof Datum.Str || value instanceof Datum.Symbol)) {
+            this.dynamicText = value.toStr();
+            this.textImageDirty = true;
+            invalidateParsedTextCache();
+            this.state = State.LOADED;
+            notifyMemberVisualChanged();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean copyMediaFrom(CastMember source) {
+        if (source == null) {
+            return false;
+        }
+        if (source.isTextLike()) {
+            this.dynamicText = source.getTextContent();
+            this.textContent = source.getTextContent();
+            invalidateParsedTextCache();
+            this.textFont = source.textFont;
+            this.textFontSize = source.textFontSize;
+            this.textFontStyle = source.textFontStyle;
+            this.textAlignment = source.textAlignment;
+            this.textColor = source.textColor;
+            this.textBgColor = source.textBgColor;
+            this.textWordWrap = source.textWordWrap;
+            this.textAntialias = source.textAntialias;
+            this.textBoxType = source.textBoxType;
+            this.textRectLeft = source.textRectLeft;
+            this.textRectTop = source.textRectTop;
+            this.textRectRight = source.textRectRight;
+            this.textRectBottom = source.textRectBottom;
+            this.textFixedLineSpace = source.textFixedLineSpace;
+            this.textTopSpacing = source.textTopSpacing;
+            this.editable = source.editable;
+            this.textImageDirty = true;
+            this.state = State.LOADED;
+            return true;
+        }
+        switch (source.getMemberType()) {
+            case BITMAP -> {
+                Bitmap srcBitmap = source.getBitmap();
+                if (srcBitmap == null) {
+                    return false;
+                }
+                Bitmap copy = srcBitmap.copy();
+                copy.markScriptModified();
+                this.bitmap = copy;
+                this.regPointX = source.getRegPointX();
+                this.regPointY = source.getRegPointY();
+                this.regPointPinnedToMember = source.regPointPinnedToMember;
+                this.bitmapAlphaThreshold = source.bitmapAlphaThreshold;
+                this.paletteRefCastLib = source.paletteRefCastLib;
+                this.paletteRefMemberNum = source.paletteRefMemberNum;
+                this.paletteVersion = source.paletteVersion;
+                this.lastDecodedPaletteVersion = source.lastDecodedPaletteVersion;
+                this.state = State.LOADED;
+                syncBitmapAnchorState();
+                return true;
+            }
+            case PALETTE -> {
+                com.libreshockwave.bitmap.Palette palette = source.getPaletteData();
+                if (palette == null) {
+                    return false;
+                }
+                int[] colors = new int[palette.size()];
+                for (int i = 0; i < colors.length; i++) {
+                    colors[i] = palette.getColor(i);
+                }
+                this.dynamicPalette = new com.libreshockwave.bitmap.Palette(
+                        Arrays.copyOf(colors, colors.length), palette.getName());
+                this.state = State.LOADED;
+                return true;
+            }
+            case SCRIPT -> {
+                this.script = source.getScript();
+                this.state = State.LOADED;
+                return this.script != null;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    private boolean setTypeProp(String prop, Datum value) {
+        if (isTextLike()) {
             return setTextProp(prop, value);
         }
         if (memberType == MemberType.BITMAP) {
@@ -732,6 +1042,8 @@ public class CastMember {
             case "text" -> {
                 this.dynamicText = value.toStr();
                 textImageDirty = true;
+                invalidateParsedTextCache();
+                notifyMemberVisualChanged();
                 return true;
             }
             case "html" -> {
@@ -739,16 +1051,20 @@ public class CastMember {
                 String html = value.toStr();
                 this.dynamicText = html.replaceAll("<[^>]*>", "");
                 textImageDirty = true;
+                invalidateParsedTextCache();
+                notifyMemberVisualChanged();
                 return true;
             }
             case "font" -> {
                 this.textFont = value.toStr();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fontsize" -> {
                 this.textFontSize = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fontstyle" -> {
@@ -764,6 +1080,7 @@ public class CastMember {
                     this.textFontStyle = value.toStr();
                 }
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "alignment" -> {
@@ -773,6 +1090,7 @@ public class CastMember {
                     this.textAlignment = value.toStr().toLowerCase();
                 }
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "color" -> {
@@ -780,6 +1098,7 @@ public class CastMember {
                 if (!value.isVoid()) {
                     this.textColor = Datum.datumToArgb(value);
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                 }
                 return true;
             }
@@ -788,22 +1107,26 @@ public class CastMember {
                 if (!value.isVoid()) {
                     this.textBgColor = Datum.datumToArgb(value);
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                 }
                 return true;
             }
             case "wordwrap" -> {
                 this.textWordWrap = value.toInt() != 0;
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "antialias" -> {
                 this.textAntialias = value.toInt() != 0;
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "boxtype" -> {
                 this.textBoxType = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "rect" -> {
@@ -813,6 +1136,7 @@ public class CastMember {
                     this.textRectRight = r.right();
                     this.textRectBottom = r.bottom();
                     textImageDirty = true;
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -820,21 +1144,25 @@ public class CastMember {
             case "width" -> {
                 this.textRectRight = this.textRectLeft + value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "height" -> {
                 this.textRectBottom = this.textRectTop + value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "fixedlinespace" -> {
                 this.textFixedLineSpace = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "topspacing" -> {
                 this.textTopSpacing = value.toInt();
                 textImageDirty = true;
+                notifyMemberVisualChanged();
                 return true;
             }
             case "editable" -> {
@@ -846,12 +1174,11 @@ public class CastMember {
                 if (value instanceof Datum.ImageRef ir) {
                     this.bitmap = ir.bitmap().copy();
                     this.textRenderedImage = this.bitmap;
+                    this.textRenderedWidth = this.bitmap.getWidth();
+                    this.textRenderedHeight = this.bitmap.getHeight();
+                    this.textRenderedBgColor = Integer.MIN_VALUE;
                     this.textImageDirty = false;
-                    Bitmap nb = this.bitmap;
-                    if (nb.getWidth() > 50 || nb.getHeight() > 50) {
-                        System.out.println("[TXT-IMG] cl=" + castLibId.value() + " cm=" + getMemberNumber()
-                                + " " + nb.getWidth() + "x" + nb.getHeight());
-                    }
+                    notifyMemberVisualChanged();
                     return true;
                 }
                 return false;
@@ -864,27 +1191,24 @@ public class CastMember {
 
     private boolean setBitmapProp(String prop, Datum value) {
         return switch (prop) {
-            case "paletteref" -> {
-                if (value instanceof Datum.CastMemberRef cmr) {
-                    int newCastLib = cmr.castLibNum();
-                    int newMemberNum = cmr.memberNum();
-                    if (newCastLib != paletteRefCastLib || newMemberNum != paletteRefMemberNum) {
-                        paletteRefCastLib = newCastLib;
-                        paletteRefMemberNum = newMemberNum;
-                        paletteVersion++;
-                        if (memberVisualChangedCallback != null) {
-                            memberVisualChangedCallback.run();
-                        }
-                    }
-                    yield true;
-                }
-                yield false;
-            }
+            case "paletteref", "palette" -> applyRuntimePaletteOverride(value);
             case "image" -> {
                 if (value instanceof Datum.ImageRef ir) {
-                    Bitmap newBmp = ir.bitmap().copy();
+                    Bitmap sourceBitmap = ir.bitmap();
+                    Bitmap newBmp = sourceBitmap.copy();
                     newBmp.markScriptModified();
                     this.bitmap = newBmp;
+                    if (!regPointPinnedToMember) {
+                        if (sourceBitmap.hasAnchorPoint()) {
+                            this.regPointX = sourceBitmap.getAnchorX();
+                            this.regPointY = sourceBitmap.getAnchorY();
+                        } else {
+                            this.regPointX = 0;
+                            this.regPointY = 0;
+                        }
+                    }
+                    syncBitmapAnchorState();
+                    notifyMemberVisualChanged();
                     yield true;
                 }
                 yield false;
@@ -897,7 +1221,12 @@ public class CastMember {
                     this.bitmap = new Bitmap(newW, h, bitmap != null ? bitmap.getBitDepth() : 32);
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
+                    notifyMemberVisualChanged();
                 }
+                yield true;
+            }
+            case "alphathreshold" -> {
+                setBitmapAlphaThreshold(value.toInt());
                 yield true;
             }
             case "height" -> {
@@ -907,6 +1236,7 @@ public class CastMember {
                     this.bitmap = new Bitmap(w, newH, bitmap != null ? bitmap.getBitDepth() : 32);
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
+                    notifyMemberVisualChanged();
                 }
                 yield true;
             }
@@ -919,6 +1249,64 @@ public class CastMember {
      */
     public int getSlotNumber() {
         return (castLibId.value() << 16) | (memberId.value() & 0xFFFF);
+    }
+
+    /**
+     * Erase runtime data from this member while keeping the slot alive.
+     * Director uses this for dynamic non-bitmap members that are deleted from
+     * app-level registries but still occupy a cast slot.
+     */
+    public void erase() {
+        boolean retiredDynamicSlot = isRuntimeDynamicMember();
+        resetRuntimePayload();
+        memberType = MemberType.NULL;
+        state = State.LOADED;
+
+        if (retiredDynamicSlot) {
+            notifyMemberSlotRetired();
+        }
+        notifyMemberVisualChanged();
+    }
+
+    private void resetRuntimePayload() {
+        name = "";
+        bitmap = null;
+        script = null;
+        textContent = "";
+        dynamicText = null;
+        invalidateParsedTextCache();
+        dynamicPalette = null;
+        regPointX = 0;
+        regPointY = 0;
+        regPointPinnedToMember = false;
+        bitmapAlphaThreshold = 0;
+        editable = false;
+
+        textFont = "Arial";
+        textFontSize = 12;
+        textFontStyle = "plain";
+        textAlignment = "left";
+        textColor = 0xFF000000;
+        textBgColor = 0xFFFFFFFF;
+        textWordWrap = false;
+        textAntialias = false;
+        textBoxType = 0;
+        textRectLeft = 0;
+        textRectTop = 0;
+        textRectRight = 480;
+        textRectBottom = 480;
+        textFixedLineSpace = 0;
+        textTopSpacing = 0;
+        textImageDirty = true;
+        textRenderedImage = null;
+        textRenderedWidth = -1;
+        textRenderedHeight = -1;
+        textRenderedBgColor = Integer.MIN_VALUE;
+
+        paletteRefCastLib = -1;
+        paletteRefMemberNum = -1;
+        paletteVersion++;
+        lastDecodedPaletteVersion = 0;
     }
 
     /**
@@ -996,6 +1384,10 @@ public class CastMember {
                 } else {
                     yield Datum.ZERO;
                 }
+            }
+            case "erase" -> {
+                erase();
+                yield Datum.of(1);
             }
             default -> Datum.VOID;
         };

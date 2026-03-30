@@ -162,11 +162,11 @@ public class SimpleTextRenderer implements TextRenderer {
             int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : pfrFont.getLineHeight();
             if (text == null || text.isEmpty() || charIndex <= 0) {
                 int alignX = alignmentOffset(alignment, fieldWidth, text == null || text.isEmpty() ? 0 :
-                        pfrFont.getStringWidth(text.split("[\r\n]")[0]));
+                        pfrFont.getStringWidth(TextRenderer.splitLines(text)[0]));
                 return new int[]{alignX, 0};
             }
             int[] lineInfo = TextRenderer.findCharLine(text, charIndex);
-            String[] lines = text.split("[\r\n]");
+            String[] lines = TextRenderer.splitLines(text);
             String fullLine = (lineInfo[0] < lines.length) ? lines[lineInfo[0]] : "";
             String lineSubstr = (lineInfo[0] < lines.length) ? fullLine.substring(0, lineInfo[1]) : "";
             int x = pfrFont.getStringWidth(lineSubstr);
@@ -185,7 +185,7 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         int[] lineInfo = TextRenderer.findCharLine(text, charIndex);
-        String[] lines = text.split("[\r\n]");
+        String[] lines = TextRenderer.splitLines(text);
         String fullLine = (lineInfo[0] < lines.length) ? lines[lineInfo[0]] : "";
         int x = lineInfo[1] * charWidth;
         int alignX = alignmentOffset(alignment, fieldWidth, fullLine.length() * charWidth);
@@ -209,15 +209,12 @@ public class SimpleTextRenderer implements TextRenderer {
         if (text == null || text.isEmpty()) return 0;
 
         BitmapFont pfrFont = resolveBitmapFont(fontName, fontSize);
-        String[] lines = text.split("\r", -1);
+        String[] lines = TextRenderer.splitLines(text);
 
         if (pfrFont != null) {
             int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : pfrFont.getLineHeight();
             int lineIndex = Math.max(0, Math.min(y / Math.max(1, lineHeight), lines.length - 1));
-            int charsBefore = 0;
-            for (int i = 0; i < lineIndex; i++) {
-                charsBefore += lines[i].length() + 1;
-            }
+            int charsBefore = TextRenderer.lineStartIndex(text, lineIndex);
             String line = lines[lineIndex];
             // Subtract alignment offset to convert field-relative x to text-relative x
             int alignX = alignmentOffset(alignment, fieldWidth, pfrFont.getStringWidth(line));
@@ -235,10 +232,7 @@ public class SimpleTextRenderer implements TextRenderer {
         int charWidth = builtinCharWidth(fontSize);
         int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : builtinLineHeight(fontSize);
         int lineIndex = Math.max(0, Math.min(y / Math.max(1, lineHeight), lines.length - 1));
-        int charsBefore = 0;
-        for (int i = 0; i < lineIndex; i++) {
-            charsBefore += lines[i].length() + 1;
-        }
+        int charsBefore = TextRenderer.lineStartIndex(text, lineIndex);
         String line = lines[lineIndex];
         int alignX = alignmentOffset(alignment, fieldWidth, line.length() * charWidth);
         int localX = x - alignX;
@@ -317,8 +311,7 @@ public class SimpleTextRenderer implements TextRenderer {
                                          boolean syntheticBold, boolean underline) {
         int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : font.getLineHeight();
 
-        String[] rawLines = text.split("[\r\n]+");
-        if (rawLines.length == 0) rawLines = new String[]{""};
+        String[] rawLines = TextRenderer.splitLines(text);
 
         List<String> lines = new ArrayList<>();
         if (wordWrap) {
@@ -391,8 +384,7 @@ public class SimpleTextRenderer implements TextRenderer {
         int ascent = builtinAscent(fontSize);
         int scale = builtinScale(fontSize);
 
-        String[] rawLines = text.split("[\r\n]+");
-        if (rawLines.length == 0) rawLines = new String[]{""};
+        String[] rawLines = TextRenderer.splitLines(text);
 
         List<String> lines = new ArrayList<>();
         if (wordWrap) {

@@ -2,11 +2,9 @@ package com.libreshockwave.vm.builtin.data;
 
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
-import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.util.LingoValueParser;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -44,14 +42,10 @@ public final class TypeBuiltins {
             return Datum.FALSE;
         }
         Datum value = args.get(0);
-        boolean isObject = switch (value) {
-            case Datum.Void v -> false;
-            case Datum.Int i -> false;
-            case Datum.Float f -> false;
-            case Datum.Symbol s -> false;
-            case Datum.Str s -> false;
-            default -> true;
-        };
+        boolean isObject = !(value.isVoid()
+                || value.isNumber()
+                || value.isSymbol()
+                || value.isString());
         return isObject ? Datum.TRUE : Datum.FALSE;
     }
 
@@ -88,483 +82,45 @@ public final class TypeBuiltins {
         }
         Datum arg = args.get(0);
 
+        if (arg instanceof Datum.FieldText fieldText) {
+            CastLibProvider provider = CastLibProvider.getProvider();
+            if (provider != null) {
+                Datum parsed = provider.getFieldParsedValue(fieldText.castLibNum(), fieldText.memberNum(), vm);
+                if (!parsed.isVoid()) {
+                    return parsed;
+                }
+            }
+            return LingoValueParser.parseWithPartial(fieldText.value(), vm);
+        }
+
         // For non-strings, return as-is
-        if (!(arg instanceof Datum.Str str)) {
+        if (!arg.isString()) {
             return arg;
         }
 
-        // For strings, try to evaluate as a Lingo expression
-        String expr = str.value().trim();
-
-        // Empty string -> VOID
-        if (expr.isEmpty()) {
-            return Datum.VOID;
+        String raw = arg.toStr();
+        Datum parsed = LingoValueParser.parseWithPartial(raw, vm);
+        if (!parsed.isVoid()) {
+            return parsed;
         }
 
-        // Use partial parsing - returns the value of the initial valid portion
-        return parseLingoExpressionWithPartial(expr, vm);
-    }
-
-    /**
-     * Parse a Lingo expression string into a Datum with partial parsing support.
-     * Per Director docs: returns the value of the initial valid portion on syntax error.
-     * Handles: integers, floats, symbols, quoted strings, lists, and proplists.
-     */
-    private static Datum parseLingoExpressionWithPartial(String expr, LingoVM vm) {
-        expr = expr.trim();
-
-        if (expr.isEmpty()) {
-            return Datum.VOID;
-        }
-
-        // Try complete expression first (most common case)
-        Datum completeResult = tryParseComplete(expr, vm);
-        if (completeResult != null) {
-            return completeResult;
-        }
-
-        // Partial parsing: extract and evaluate the first valid token/expression
-        return parseFirstValidExpression(expr, vm);
-    }
-
-    /**
-     * Try to parse the complete expression as a single value.
-     * Returns null if the complete string cannot be parsed as-is.
-     */
-    private static Datum tryParseComplete(String expr, LingoVM vm) {
-        // Try to parse as integer (complete match)
-        if (expr.matches("-?\\d+")) {
-            try {
-                return Datum.of(Integer.parseInt(expr));
-            } catch (NumberFormatException ignored) {}
-        }
-
-        // Try to parse as float (complete match)
-        if (expr.matches("-?\\d+\\.\\d+")) {
-            try {
-                return Datum.of(Double.parseDouble(expr));
-            } catch (NumberFormatException ignored) {}
-        }
-
-        // Try to parse as symbol (#symbol) - complete match
-        if (expr.startsWith("#") && expr.length() > 1) {
-            String symName = expr.substring(1);
-            if (symName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
-                return Datum.symbol(symName);
-            }
-        }
-
-        // Try to parse as quoted string - must have matching quotes
-        if (expr.startsWith("\"") && expr.endsWith("\"") && expr.length() >= 2) {
-            return Datum.of(unescapeString(expr.substring(1, expr.length() - 1)));
-        }
-
-        // Try to parse color(r, g, b) function call — produced by string(colorDatum) in Director
-        if (expr.startsWith("color(") && expr.endsWith(")")) {
-            String inner = expr.substring(6, expr.length() - 1).trim();
-            String[] parts = inner.split(",");
-            if (parts.length == 3) {
-                try {
-                    int r = Integer.parseInt(parts[0].trim());
-                    int g = Integer.parseInt(parts[1].trim());
-                    int b = Integer.parseInt(parts[2].trim());
-                    return new Datum.Color(r, g, b);
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-
-        // Try to parse rgb(r, g, b) function call
-        if (expr.startsWith("rgb(") && expr.endsWith(")")) {
-            String inner = expr.substring(4, expr.length() - 1).trim();
-            // Handle rgb("#RRGGBB") form
-            if (inner.startsWith("\"") && inner.endsWith("\"")) {
-                String hex = inner.substring(1, inner.length() - 1).trim();
-                if (hex.startsWith("#")) hex = hex.substring(1);
-                try {
-                    int colorVal = Integer.parseInt(hex, 16);
-                    return new Datum.Color((colorVal >> 16) & 0xFF, (colorVal >> 8) & 0xFF, colorVal & 0xFF);
-                } catch (NumberFormatException ignored) {}
-            }
-            // Handle rgb(r, g, b) form
-            String[] parts = inner.split(",");
-            if (parts.length == 3) {
-                try {
-                    int r = Integer.parseInt(parts[0].trim());
-                    int g = Integer.parseInt(parts[1].trim());
-                    int b = Integer.parseInt(parts[2].trim());
-                    return new Datum.Color(r, g, b);
-                } catch (NumberFormatException ignored) {}
-            }
-            // Handle rgb(packed) form
-            if (parts.length == 1) {
-                try {
-                    int val = Integer.parseInt(parts[0].trim());
-                    return new Datum.Color((val >> 16) & 0xFF, (val >> 8) & 0xFF, val & 0xFF);
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-
-        // Try to parse rect(l, t, r, b) function call
-        if (expr.startsWith("rect(") && expr.endsWith(")")) {
-            String inner = expr.substring(5, expr.length() - 1).trim();
-            String[] parts = inner.split(",");
-            if (parts.length == 4) {
-                try {
-                    return new Datum.Rect(
-                            Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()),
-                            Integer.parseInt(parts[2].trim()), Integer.parseInt(parts[3].trim()));
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-
-        // Try to parse point(x, y) function call
-        if (expr.startsWith("point(") && expr.endsWith(")")) {
-            String inner = expr.substring(6, expr.length() - 1).trim();
-            String[] parts = inner.split(",");
-            if (parts.length == 2) {
-                try {
-                    return new Datum.Point(
-                            Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()));
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-
-        // Try to parse as list or proplist: [...]
-        if (expr.startsWith("[") && expr.endsWith("]")) {
-            try {
-                return parseListOrPropList(expr.substring(1, expr.length() - 1).trim(), vm);
-            } catch (Exception ignored) {
-                // If list parsing fails, fall through to partial parsing
-            }
-        }
-
-        // Try to evaluate as a simple identifier (handler call or global variable)
-        if (expr.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
-            // Director built-in constants
-            if (expr.equalsIgnoreCase("TRUE")) return Datum.of(1);
-            if (expr.equalsIgnoreCase("FALSE")) return Datum.of(0);
-            if (expr.equalsIgnoreCase("VOID")) return Datum.VOID;
-            if (expr.equalsIgnoreCase("EMPTY")) return Datum.of("");
-
-            // Check global variable first
-            Datum globalValue = vm.getGlobal(expr);
-            if (!globalValue.isVoid()) {
-                return globalValue;
-            }
-            // Try to find and call a handler with no arguments
-            HandlerRef ref = vm.findHandler(expr);
-            if (ref != null) {
-                return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
-            }
-            // Unknown identifier - return VOID (like "penny" in the docs)
-            return Datum.VOID;
-        }
-
-        // Couldn't parse as a complete simple expression
-        return null;
-    }
-
-    /**
-     * Extract and evaluate the first valid expression from the string.
-     * This handles cases like "3 5" where we should return 3.
-     */
-    private static Datum parseFirstValidExpression(String expr, LingoVM vm) {
-        int pos = 0;
-        int len = expr.length();
-
-        // Skip leading whitespace
-        while (pos < len && Character.isWhitespace(expr.charAt(pos))) {
-            pos++;
-        }
-
-        if (pos >= len) {
-            return Datum.VOID;
-        }
-
-        char first = expr.charAt(pos);
-
-        // Try to parse a number (integer or float)
-        if (Character.isDigit(first) || (first == '-' && pos + 1 < len && Character.isDigit(expr.charAt(pos + 1)))) {
-            int start = pos;
-            if (first == '-') pos++;
-
-            // Parse integer part
-            while (pos < len && Character.isDigit(expr.charAt(pos))) {
-                pos++;
-            }
-
-            // Check for decimal point
-            if (pos < len && expr.charAt(pos) == '.' && pos + 1 < len && Character.isDigit(expr.charAt(pos + 1))) {
-                pos++; // consume '.'
-                while (pos < len && Character.isDigit(expr.charAt(pos))) {
-                    pos++;
-                }
-                // Parsed a float
-                String numStr = expr.substring(start, pos);
-                try {
-                    return Datum.of(Double.parseDouble(numStr));
-                } catch (NumberFormatException e) {
-                    return Datum.VOID;
-                }
-            } else {
-                // Parsed an integer
-                String numStr = expr.substring(start, pos);
-                try {
-                    return Datum.of(Integer.parseInt(numStr));
-                } catch (NumberFormatException e) {
-                    return Datum.VOID;
+        // Director movies often store class names in variables as bare multi-word strings
+        // (for example "Broker Manager Class") and then resolve them through value(...).
+        // If the expression parser cannot evaluate the string, but a member with the exact
+        // name exists, preserve the original string so downstream script()/createObject()
+        // calls can still resolve it.
+        String trimmed = raw.trim();
+        if (trimmed.indexOf(' ') >= 0) {
+            CastLibProvider provider = CastLibProvider.getProvider();
+            if (provider != null) {
+                Datum memberRef = provider.getMemberByName(0, trimmed);
+                if (memberRef instanceof Datum.CastMemberRef) {
+                    return Datum.of(trimmed);
                 }
             }
         }
 
-        // Try to parse a quoted string
-        if (first == '"') {
-            int start = pos;
-            pos++; // skip opening quote
-            StringBuilder sb = new StringBuilder();
-            while (pos < len && expr.charAt(pos) != '"') {
-                if (expr.charAt(pos) == '\\' && pos + 1 < len) {
-                    pos++; // skip backslash
-                    sb.append(expr.charAt(pos));
-                } else {
-                    sb.append(expr.charAt(pos));
-                }
-                pos++;
-            }
-            if (pos < len && expr.charAt(pos) == '"') {
-                return Datum.of(sb.toString());
-            }
-            // Unterminated string - return VOID
-            return Datum.VOID;
-        }
-
-        // Try to parse a symbol
-        if (first == '#') {
-            pos++; // skip #
-            int start = pos;
-            while (pos < len && (Character.isLetterOrDigit(expr.charAt(pos)) || expr.charAt(pos) == '_')) {
-                pos++;
-            }
-            if (pos > start) {
-                return Datum.symbol(expr.substring(start, pos));
-            }
-            return Datum.VOID;
-        }
-
-        // Try to parse a list/proplist - need matching brackets
-        if (first == '[') {
-            int bracketDepth = 1;
-            int start = pos;
-            pos++; // skip opening bracket
-            while (pos < len && bracketDepth > 0) {
-                char c = expr.charAt(pos);
-                if (c == '[') bracketDepth++;
-                else if (c == ']') bracketDepth--;
-                else if (c == '"') {
-                    // Skip quoted strings within the list
-                    pos++;
-                    while (pos < len && expr.charAt(pos) != '"') {
-                        if (expr.charAt(pos) == '\\' && pos + 1 < len) pos++;
-                        pos++;
-                    }
-                }
-                pos++;
-            }
-            if (bracketDepth == 0) {
-                String listExpr = expr.substring(start, pos);
-                try {
-                    return parseListOrPropList(listExpr.substring(1, listExpr.length() - 1).trim(), vm);
-                } catch (Exception ignored) {
-                    return Datum.VOID;
-                }
-            }
-            return Datum.VOID;
-        }
-
-        // Try to parse an identifier
-        if (Character.isLetter(first) || first == '_') {
-            int start = pos;
-            while (pos < len && (Character.isLetterOrDigit(expr.charAt(pos)) || expr.charAt(pos) == '_')) {
-                pos++;
-            }
-            String identifier = expr.substring(start, pos);
-
-            // Director built-in constants
-            if (identifier.equalsIgnoreCase("TRUE")) return Datum.of(1);
-            if (identifier.equalsIgnoreCase("FALSE")) return Datum.of(0);
-            if (identifier.equalsIgnoreCase("VOID")) return Datum.VOID;
-            if (identifier.equalsIgnoreCase("EMPTY")) return Datum.of("");
-
-            // Check global variable
-            Datum globalValue = vm.getGlobal(identifier);
-            if (!globalValue.isVoid()) {
-                return globalValue;
-            }
-
-            // Try to find and call a handler
-            HandlerRef ref = vm.findHandler(identifier);
-            if (ref != null) {
-                return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
-            }
-
-            // Unknown identifier - return VOID
-            return Datum.VOID;
-        }
-
-        // Couldn't parse anything valid
-        return Datum.VOID;
-    }
-
-    /**
-     * Unescape a string (handle backslash escape sequences).
-     */
-    private static String unescapeString(String s) {
-        if (!s.contains("\\")) {
-            return s;
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char next = s.charAt(++i);
-                switch (next) {
-                    case 'n' -> sb.append('\n');
-                    case 'r' -> sb.append('\r');
-                    case 't' -> sb.append('\t');
-                    case '"' -> sb.append('"');
-                    case '\\' -> sb.append('\\');
-                    default -> sb.append(next);
-                }
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Parse list or proplist content (without the surrounding brackets).
-     * Determines if it's a proplist (has #key: value pairs) or a linear list.
-     */
-    private static Datum parseListOrPropList(String content, LingoVM vm) {
-        if (content.isEmpty()) {
-            // Empty brackets -> empty list
-            return Datum.list();
-        }
-
-        // Split by commas (respecting nested brackets and quoted strings)
-        List<String> elements = splitListElements(content);
-
-        if (elements.isEmpty()) {
-            return Datum.list();
-        }
-
-        // Check if first element looks like a proplist entry:
-        //   #key: value  (symbol key)
-        //   "key": value (string key, e.g. figuredata ["M": [...], "F": [...]])
-        String first = elements.get(0).trim();
-        boolean isPropList = (first.startsWith("#") && first.contains(":"))
-                || (first.startsWith("\"") && first.contains(":"));
-        if (isPropList) {
-            // Parse as proplist
-            Map<String, Datum> props = new LinkedHashMap<>();
-            for (String element : elements) {
-                element = element.trim();
-                int colonIdx = findPropListColon(element);
-                if (colonIdx > 0) {
-                    String rawKey = element.substring(0, colonIdx).trim();
-                    String key;
-                    if (rawKey.startsWith("#")) {
-                        key = rawKey.substring(1).trim();
-                    } else if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
-                        key = rawKey.substring(1, rawKey.length() - 1);
-                    } else {
-                        key = rawKey;
-                    }
-                    String valueStr = element.substring(colonIdx + 1).trim();
-                    Datum value = parseLingoExpressionWithPartial(valueStr, vm);
-                    props.put(key, value);
-                }
-            }
-            return Datum.propList(props);
-        } else {
-            // Parse as linear list
-            List<Datum> items = new ArrayList<>();
-            for (String element : elements) {
-                items.add(parseLingoExpressionWithPartial(element.trim(), vm));
-            }
-            return Datum.list(items);
-        }
-    }
-
-    /**
-     * Split list content by commas, respecting nested brackets and quoted strings.
-     */
-    private static List<String> splitListElements(String content) {
-        List<String> elements = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        int bracketDepth = 0;
-        int parenDepth = 0;
-        boolean inQuote = false;
-
-        for (int i = 0; i < content.length(); i++) {
-            char c = content.charAt(i);
-
-            if (c == '"' && (i == 0 || content.charAt(i - 1) != '\\')) {
-                inQuote = !inQuote;
-                current.append(c);
-            } else if (inQuote) {
-                current.append(c);
-            } else if (c == '[') {
-                bracketDepth++;
-                current.append(c);
-            } else if (c == ']') {
-                bracketDepth--;
-                current.append(c);
-            } else if (c == '(') {
-                parenDepth++;
-                current.append(c);
-            } else if (c == ')') {
-                parenDepth--;
-                current.append(c);
-            } else if (c == ',' && bracketDepth == 0 && parenDepth == 0) {
-                elements.add(current.toString());
-                current = new StringBuilder();
-            } else {
-                current.append(c);
-            }
-        }
-
-        if (current.length() > 0) {
-            elements.add(current.toString());
-        }
-
-        return elements;
-    }
-
-    /**
-     * Find the colon in a proplist entry (#key: value), respecting nested structures.
-     */
-    private static int findPropListColon(String element) {
-        int bracketDepth = 0;
-        boolean inQuote = false;
-
-        for (int i = 0; i < element.length(); i++) {
-            char c = element.charAt(i);
-
-            if (c == '"' && (i == 0 || element.charAt(i - 1) != '\\')) {
-                inQuote = !inQuote;
-            } else if (!inQuote) {
-                if (c == '[') {
-                    bracketDepth++;
-                } else if (c == ']') {
-                    bracketDepth--;
-                } else if (c == ':' && bracketDepth == 0) {
-                    return i;
-                }
-            }
-        }
-        return -1;
+        return parsed;
     }
 
     /**
@@ -677,6 +233,7 @@ public final class TypeBuiltins {
             case Datum.Int i -> "integer";
             case Datum.Float f -> "float";
             case Datum.Str s -> "string";
+            case Datum.FieldText ft -> "string";
             case Datum.Symbol s -> "symbol";
             case Datum.List l -> "list";
             case Datum.PropList p -> "propList";
@@ -718,7 +275,7 @@ public final class TypeBuiltins {
         if (args.isEmpty()) {
             return Datum.FALSE;
         }
-        return args.get(0) instanceof Datum.Str ? Datum.TRUE : Datum.FALSE;
+        return args.get(0).isString() ? Datum.TRUE : Datum.FALSE;
     }
 
     /**

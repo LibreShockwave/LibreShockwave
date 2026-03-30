@@ -24,6 +24,7 @@ public class BitmapFont {
     private final int cellWidth;
     private final int cellHeight;
     private final int[] charWidths;   // per-character advance width in pixels (for grid chars 0-127)
+    private final int[] charOffsetsX; // per-character draw offset relative to the pen position
     private final String fontName;
     private final int fontSize;       // target rendering size
     private final int metricsAscent;  // baseline distance from top (for text positioning)
@@ -32,6 +33,7 @@ public class BitmapFont {
     // Overflow storage for chars > 127 (Unicode extended)
     private final Map<Integer, int[]> overflowGlyphs; // charCode -> ARGB pixels (cellWidth x cellHeight)
     private final Map<Integer, Integer> overflowWidths; // charCode -> advance width
+    private final Map<Integer, Integer> overflowOffsetsX; // charCode -> draw offset
 
     /**
      * Factory for constructing a BitmapFont from external rasterizers.
@@ -42,30 +44,46 @@ public class BitmapFont {
                               int metricsAscent, int metricsLineHeight,
                               Map<Integer, int[]> overflowGlyphs,
                               Map<Integer, Integer> overflowWidths) {
+        return create(bitmap, bitmapWidth, bitmapHeight,
+                cellWidth, cellHeight, charWidths, new int[NUM_CHARS],
+                fontName, fontSize, metricsAscent, metricsLineHeight,
+                overflowGlyphs, overflowWidths, new HashMap<>());
+    }
+
+    public static BitmapFont create(int[] bitmap, int bitmapWidth, int bitmapHeight,
+                              int cellWidth, int cellHeight, int[] charWidths, int[] charOffsetsX,
+                              String fontName, int fontSize,
+                              int metricsAscent, int metricsLineHeight,
+                              Map<Integer, int[]> overflowGlyphs,
+                              Map<Integer, Integer> overflowWidths,
+                              Map<Integer, Integer> overflowOffsetsX) {
         return new BitmapFont(bitmap, bitmapWidth, bitmapHeight,
-                cellWidth, cellHeight, charWidths, fontName, fontSize,
+                cellWidth, cellHeight, charWidths, charOffsetsX, fontName, fontSize,
                 metricsAscent, metricsLineHeight,
-                overflowGlyphs, overflowWidths);
+                overflowGlyphs, overflowWidths, overflowOffsetsX);
     }
 
     private BitmapFont(int[] bitmap, int bitmapWidth, int bitmapHeight,
-                       int cellWidth, int cellHeight, int[] charWidths,
+                       int cellWidth, int cellHeight, int[] charWidths, int[] charOffsetsX,
                        String fontName, int fontSize,
                        int metricsAscent, int metricsLineHeight,
                        Map<Integer, int[]> overflowGlyphs,
-                       Map<Integer, Integer> overflowWidths) {
+                       Map<Integer, Integer> overflowWidths,
+                       Map<Integer, Integer> overflowOffsetsX) {
         this.bitmap = bitmap;
         this.bitmapWidth = bitmapWidth;
         this.bitmapHeight = bitmapHeight;
         this.cellWidth = cellWidth;
         this.cellHeight = cellHeight;
         this.charWidths = charWidths;
+        this.charOffsetsX = charOffsetsX != null ? charOffsetsX : new int[NUM_CHARS];
         this.fontName = fontName;
         this.fontSize = fontSize;
         this.metricsAscent = metricsAscent;
         this.metricsLineHeight = metricsLineHeight;
         this.overflowGlyphs = overflowGlyphs;
         this.overflowWidths = overflowWidths;
+        this.overflowOffsetsX = overflowOffsetsX != null ? overflowOffsetsX : new HashMap<>();
     }
 
     /** Get advance width for a character (in pixels). */
@@ -73,6 +91,12 @@ public class BitmapFont {
         if (charCode >= 0 && charCode < charWidths.length) return charWidths[charCode];
         Integer ow = overflowWidths.get(charCode);
         return ow != null ? ow : cellWidth;
+    }
+
+    public int getCharOffsetX(int charCode) {
+        if (charCode >= 0 && charCode < charOffsetsX.length) return charOffsetsX[charCode];
+        Integer offset = overflowOffsetsX.get(charCode);
+        return offset != null ? offset : 0;
     }
 
     /** Get total string width in pixels. */
@@ -103,6 +127,7 @@ public class BitmapFont {
      */
     public void drawChar(char ch, int[] dst, int dstW, int dstH, int dstX, int dstY, int color) {
         int charCode = (int) ch;
+        int drawX = dstX + getCharOffsetX(charCode);
 
         int r = (color >> 16) & 0xFF;
         int g = (color >> 8) & 0xFF;
@@ -119,7 +144,7 @@ public class BitmapFont {
                 int py = dstY + cy;
                 if (py < 0 || py >= dstH) continue;
                 for (int cx = 0; cx < cellWidth; cx++) {
-                    int px = dstX + cx;
+                    int px = drawX + cx;
                     if (px < 0 || px >= dstW) continue;
 
                     int srcIdx = (cellY + cy) * bitmapWidth + (cellX + cx);
@@ -137,7 +162,7 @@ public class BitmapFont {
                 int py = dstY + cy;
                 if (py < 0 || py >= dstH) continue;
                 for (int cx = 0; cx < cellWidth; cx++) {
-                    int px = dstX + cx;
+                    int px = drawX + cx;
                     if (px < 0 || px >= dstW) continue;
 
                     int srcIdx = cy * cellWidth + cx;
@@ -365,9 +390,9 @@ public class BitmapFont {
         }
 
         return new BitmapFont(argb, bitmapWidth, bitmapHeight,
-                cellWidth, cellHeight, charWidths, font.fontName, targetHeight,
+                cellWidth, cellHeight, charWidths, new int[NUM_CHARS], font.fontName, targetHeight,
                 pfrAscPx, pfrLineHeight,
-                overflowGlyphs, overflowWidths);
+                overflowGlyphs, overflowWidths, new HashMap<>());
     }
 
     private static boolean cellHasInk(int[] argb, int bitmapWidth,

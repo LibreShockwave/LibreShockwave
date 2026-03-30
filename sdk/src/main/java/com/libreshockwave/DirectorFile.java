@@ -308,17 +308,45 @@ public class DirectorFile {
     }
 
     /**
+     * Look up all STXT (styled text) chunks for a cast member via KEY* table.
+     * Some external casts expose more than one STXT association for the same owner;
+     * callers that need a single text payload should prefer the first non-empty chunk.
+     */
+    public java.util.List<com.libreshockwave.chunks.TextChunk> getTextChunksForMember(CastMemberChunk member) {
+        if (keyTable == null) return java.util.List.of();
+
+        java.util.List<com.libreshockwave.chunks.TextChunk> result = new java.util.ArrayList<>();
+        for (KeyTableChunk.KeyTableEntry entry : keyTable.getEntriesForOwner(member.id())) {
+            if (!entry.fourccString().equals("STXT")) {
+                continue;
+            }
+            Chunk chunk = getChunk(entry.sectionId());
+            if (chunk instanceof com.libreshockwave.chunks.TextChunk tc) {
+                result.add(tc);
+            }
+        }
+        return result;
+    }
+
+    /**
      * Look up STXT (styled text) chunk for a cast member via KEY* table.
      */
     public com.libreshockwave.chunks.TextChunk getTextForMember(CastMemberChunk member) {
-        if (keyTable == null) return null;
-        for (KeyTableChunk.KeyTableEntry entry : keyTable.getEntriesForOwner(member.id())) {
-            if (entry.fourccString().equals("STXT")) {
-                Chunk chunk = getChunk(entry.sectionId());
-                if (chunk instanceof com.libreshockwave.chunks.TextChunk tc) {
-                    return tc;
-                }
+        com.libreshockwave.chunks.TextChunk firstMatch = null;
+        for (com.libreshockwave.chunks.TextChunk tc : getTextChunksForMember(member)) {
+            if (firstMatch == null) {
+                firstMatch = tc;
             }
+            if (tc.text() != null && !tc.text().isEmpty()) {
+                return tc;
+            }
+        }
+        if (firstMatch != null) {
+            return firstMatch;
+        }
+        Chunk directChunk = getChunk(member.id());
+        if (directChunk instanceof com.libreshockwave.chunks.TextChunk tc) {
+            return tc;
         }
         return null;
     }
@@ -471,6 +499,10 @@ public class DirectorFile {
                 info.width(), info.height(), info.bitDepth(),
                 palette, bigEndian, directorVersion, info.pitch()
             );
+            bitmap.setNativeAlpha(info.useAlpha());
+            if (palette != null) {
+                bitmap.setImagePalette(palette);
+            }
 
             return Optional.of(bitmap);
         } catch (Exception e) {
@@ -538,6 +570,8 @@ public class DirectorFile {
                     }
                 }
             }
+
+            bitmap.setNativeAlpha(info.useAlpha() || (alfaData != null && alfaData.length > 0));
 
             return Optional.of(bitmap);
         } catch (Exception e) {

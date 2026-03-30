@@ -24,8 +24,6 @@ import java.util.Locale;
  * Follows Director's event propagation: sprite behaviors → frame behaviors → movie scripts.
  */
 public class EventDispatcher {
-    public static String lastDispatchInfo = "";
-
     private final DirectorFile file;
     private final LingoVM vm;
     private final BehaviorManager behaviorManager;
@@ -131,7 +129,7 @@ public class EventDispatcher {
 
         // Frame behavior first
         BehaviorInstance frameInstance = behaviorManager.getFrameScriptInstance();
-        if (frameInstance != null) {
+        if (frameInstance != null && behaviorHasHandler(frameInstance, handlerName)) {
             invokeHandler(frameInstance, handlerName, args);
         }
 
@@ -160,6 +158,9 @@ public class EventDispatcher {
         // 1. Score-based behaviors
         List<BehaviorInstance> instances = behaviorManager.getInstancesForChannel(channel);
         for (BehaviorInstance instance : instances) {
+            if (!behaviorHasHandler(instance, handlerName)) {
+                continue;
+            }
             invokeHandler(instance, handlerName, args);
         }
 
@@ -174,13 +175,9 @@ public class EventDispatcher {
                     for (Datum target : snapshot) {
                         if (target instanceof Datum.ScriptInstance si) {
                             try {
-                                // Dispatch directly to the script instance's handler
-                                // (e.g. Event_Broker_Behavior's on mouseDown/mouseUp).
-                                // The handler itself routes the event through the
-                                // Habbo event system via redirectEvent → call.
                                 vm.resetErrorState();
-                                if (AncestorChainWalker.hasHandler(si, handlerName)) {
-                                    ControlFlowBuiltins.callHandlerOnInstance(vm, si, handlerName, args);
+                                if (scriptInstanceRespondsToEvent(si, handlerName)) {
+                                    invokeScriptInstanceEvent(si, handlerName, args);
                                 }
                             } catch (Exception e) {
                                 System.err.println("[EventDispatcher] Error in scriptInstanceList handler "
@@ -214,8 +211,7 @@ public class EventDispatcher {
                 if (scriptInstances != null) {
                     for (Datum target : scriptInstances) {
                         if (target instanceof Datum.ScriptInstance si
-                                && (scriptInstanceHasProc(si, handlerName)
-                                || AncestorChainWalker.hasHandler(si, handlerName))) {
+                                && scriptInstanceRespondsToEvent(si, handlerName)) {
                             return true;
                         }
                     }
@@ -344,34 +340,74 @@ public class EventDispatcher {
         return script.findHandler(handlerName, names) != null;
     }
 
-    private boolean dispatchScriptInstanceEvent(Datum.ScriptInstance instance, String handlerName, List<Datum> args) {
+    private Datum invokeScriptInstanceEvent(Datum.ScriptInstance instance, String handlerName, List<Datum> args) {
+        if (AncestorChainWalker.hasHandler(instance, handlerName)) {
+            return ControlFlowBuiltins.callHandlerOnInstance(vm, instance, handlerName, args);
+        }
+        return dispatchScriptInstanceProc(instance, handlerName);
+    }
+
+    private Datum dispatchScriptInstanceProc(Datum.ScriptInstance instance, String handlerName) {
         if (!isMouseHandler(handlerName)) {
-            return false;
+            return Datum.VOID;
         }
         Datum procEntry = getScriptInstanceProcEntry(instance, handlerName);
-        if (!(procEntry instanceof Datum.List procList) || procList.items().isEmpty()) {
-            return false;
+        if (!(procEntry instanceof Datum.List procList) || procList.items().size() < 2) {
+            return Datum.VOID;
         }
 
-        List<Datum> callbackArgs = new ArrayList<>(procList.items());
-        callbackArgs.addAll(args);
         try {
-            vm.callHandler("executeMessage", callbackArgs);
+            Datum targetId = procList.items().get(1);
+            if (!isTruthy(targetId)) {
+                return Datum.ZERO;
+            }
+            Datum targetObject = resolveObjectTarget(targetId);
+            if (targetObject.isVoid()) {
+                return Datum.ZERO;
+            }
+
+            Datum brokerId = AncestorChainWalker.getProperty(instance, "id");
+            List<Datum> callbackArgs = new ArrayList<>();
+            callbackArgs.add(procList.items().get(0));
+            callbackArgs.add(targetObject);
+            callbackArgs.add(new Datum.Symbol(handlerName));
+            callbackArgs.add(brokerId.isVoid() ? Datum.VOID : brokerId);
+            return vm.callHandler("call", callbackArgs);
         } catch (Exception e) {
             System.err.println("[EventDispatcher] Error executing broker proc "
                     + handlerName + " on " + instance + ": " + e.getMessage());
             if (debugEnabled) {
                 e.printStackTrace();
             }
+            return Datum.VOID;
         }
-        return true;
     }
 
     private boolean scriptInstanceHasProc(Datum.ScriptInstance instance, String handlerName) {
         if (!isMouseHandler(handlerName)) {
             return false;
         }
-        return !getScriptInstanceProcEntry(instance, handlerName).isVoid();
+        Datum procEntry = getScriptInstanceProcEntry(instance, handlerName);
+        if (!(procEntry instanceof Datum.List procList) || procList.items().size() < 2) {
+            return false;
+        }
+        return isTruthy(procList.items().get(1));
+    }
+
+    private boolean scriptInstanceRespondsToEvent(Datum.ScriptInstance instance, String handlerName) {
+        if (instance == null) {
+            return false;
+        }
+        if (!isMouseHandler(handlerName)) {
+            return AncestorChainWalker.hasHandler(instance, handlerName);
+        }
+        if (scriptInstanceHasProc(instance, handlerName)) {
+            return true;
+        }
+        if (isEventBrokerLike(instance)) {
+            return PlayerEvent.MOUSE_UP.getHandlerName().equals(handlerName) && scriptInstanceHasLink(instance);
+        }
+        return AncestorChainWalker.hasHandler(instance, handlerName);
     }
 
     private boolean isMouseHandler(String handlerName) {
@@ -407,6 +443,40 @@ public class EventDispatcher {
                 return value != null ? value : Datum.VOID;
             }
         }
+        return Datum.VOID;
+    }
+
+    private boolean isEventBrokerLike(Datum.ScriptInstance instance) {
+        return AncestorChainWalker.hasHandler(instance, "redirectEvent")
+                && AncestorChainWalker.hasHandler(instance, "registerProcedure")
+                && AncestorChainWalker.hasHandler(instance, "createProcListTemplate");
+    }
+
+    private boolean scriptInstanceHasLink(Datum.ScriptInstance instance) {
+        Datum link = AncestorChainWalker.getProperty(instance, "pLink");
+        return link instanceof Datum.Str str && !str.value().isEmpty();
+    }
+
+    private boolean isTruthy(Datum datum) {
+        return switch (datum) {
+            case Datum.Void ignored -> false;
+            case Datum.Int i -> i.value() != 0;
+            case Datum.Float f -> f.value() != 0.0;
+            case Datum.Str s -> !s.value().isEmpty();
+            default -> true;
+        };
+    }
+
+    private Datum resolveObjectTarget(Datum targetId) {
+        try {
+            Datum result = vm.callHandler("getObject", List.of(targetId));
+            if (!result.isVoid() && !(result instanceof Datum.Int i && i.value() == 0)) {
+                return result;
+            }
+        } catch (Exception ignored) {
+            // Ignore lookup failures and fall through to VOID.
+        }
+        vm.resetErrorState();
         return Datum.VOID;
     }
 

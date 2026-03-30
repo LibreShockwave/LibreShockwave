@@ -103,6 +103,7 @@ public class BitmapResolver {
         }
         BitmapInfo info = BitmapInfo.parse(member.specificData(), dirVer);
         int paletteId = info.paletteId();
+        int paletteCastLib = info.paletteCastLib();
 
         // Built-in palettes (negative IDs) don't need cross-file resolution
         if (paletteId < 0) {
@@ -113,6 +114,16 @@ public class BitmapResolver {
         Palette pal = memberFile.resolvePaletteExact(paletteId);
         if (pal != null) {
             return null; // Found in own file — no override needed
+        }
+
+        // Director bitmaps can explicitly reference a palette member in another castLib.
+        // External room/library casts rely on this for authored palette sharing, so honor
+        // the castLib hint before falling back to opportunistic cross-file scans.
+        if (paletteCastLib > 0 && castLibManager != null) {
+            pal = castLibManager.resolvePaletteByMember(paletteCastLib, paletteId + 1);
+            if (pal != null) {
+                return pal;
+            }
         }
 
         // Not found in own file — try main movie file
@@ -219,14 +230,14 @@ public class BitmapResolver {
 
     private Palette resolvePaletteByMember(int castLib, int memberNum) {
         if (castLibManager != null) {
-            CastMemberChunk palChunk = castLibManager.getCastMember(
-                castLib > 0 ? castLib : 1, memberNum);
-            if (palChunk != null && palChunk.file() != null) {
-                return palChunk.file().resolvePalette(memberNum - 1);
+            Palette dynamicOrFilePalette = castLibManager.resolvePaletteByMember(
+                    castLib > 0 ? castLib : 1, memberNum);
+            if (dynamicOrFilePalette != null) {
+                return dynamicOrFilePalette;
             }
         }
         if (file != null) {
-            return file.resolvePalette(memberNum - 1);
+            return file.resolvePaletteByMemberNumber(memberNum);
         }
         return null;
     }

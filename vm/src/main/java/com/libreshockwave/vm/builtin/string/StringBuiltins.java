@@ -21,6 +21,8 @@ public final class StringBuiltins {
         builtins.put("chartonum", StringBuiltins::charToNum);
         builtins.put("numtochar", StringBuiltins::numToChar);
         builtins.put("offset", StringBuiltins::offset);
+        builtins.put("getpref", StringBuiltins::getPref);
+        builtins.put("setpref", StringBuiltins::setPref);
     }
 
     private static Datum string(LingoVM vm, List<Datum> args) {
@@ -87,5 +89,19 @@ public final class StringBuiltins {
             }
         }
         return Datum.ZERO;
+    }
+
+    private static Datum getPref(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+        String key = args.get(0).toStr();
+        if (key.isEmpty()) return Datum.VOID;
+        return vm.getPref(key);
+    }
+
+    private static Datum setPref(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) return Datum.VOID;
+        String key = args.get(0).toStr();
+        if (key.isEmpty()) return Datum.VOID;
+        return vm.setPref(key, args.get(1));
     }
 }

@@ -26,6 +26,8 @@ public class SpriteRegistry {
         if (state == null) {
             state = new SpriteState(channel, data);
             sprites.put(channel, state);
+        } else if (!state.isPuppet() && !state.hasDynamicMember() && !state.matchesScoreIdentity(data)) {
+            state.rebindToScorePreservingScriptInstances(data);
         }
         return state;
     }
@@ -56,7 +58,12 @@ public class SpriteRegistry {
     public void updateFromScore(int channel, ScoreChunk.ChannelData data) {
         SpriteState state = sprites.get(channel);
         if (state != null && !state.isPuppet() && !state.hasDynamicMember()) {
-            state.syncFromScore(data);
+            if (state.matchesScoreIdentity(data)) {
+                state.syncFromScore(data);
+            } else {
+                state.rebindToScorePreservingScriptInstances(data);
+                bumpRevision();
+            }
         }
     }
 
@@ -72,6 +79,27 @@ public class SpriteRegistry {
      */
     public void clear() {
         sprites.clear();
+    }
+
+    /**
+     * Clear dynamic sprite bindings that still reference a retired member slot.
+     * This prevents recycled Habbo bitmap-bin members from leaking into stale sprites.
+     */
+    public boolean clearDynamicMemberBindings(int castLib, int memberNum) {
+        boolean changed = false;
+        for (SpriteState state : sprites.values()) {
+            if (!state.hasDynamicMember()) {
+                continue;
+            }
+            if (state.getEffectiveCastLib() == castLib && state.getEffectiveCastMember() == memberNum) {
+                resetRetiredDynamicBinding(state);
+                changed = true;
+            }
+        }
+        if (changed) {
+            bumpRevision();
+        }
+        return changed;
     }
 
     /**
@@ -99,6 +127,27 @@ public class SpriteRegistry {
      */
     public Map<Integer, SpriteState> getAll() {
         return sprites;
+    }
+
+    private static void resetRetiredDynamicBinding(SpriteState state) {
+        if (state == null) {
+            return;
+        }
+        if (state.isDynamic()) {
+            state.clearDynamicMember();
+            state.resetReleasedChannelGeometry();
+            state.resetReleasedSpriteTransforms();
+            return;
+        }
+
+        ScoreChunk.ChannelData initialData = state.getInitialData();
+        if (initialData != null) {
+            state.rebindToScorePreservingScriptInstances(initialData);
+            return;
+        }
+
+        state.clearDynamicMember();
+        state.resetReleasedSpriteTransforms();
     }
 
     /**

@@ -10,6 +10,22 @@ import java.util.Queue;
  * Implements Director's copyPixels with various ink effects.
  */
 public class Drawing {
+    private static final int DEFAULT_RGB_MATTE = 0xFFFFFF;
+
+    /**
+     * A border-connected matte inferred from authored bitmap content.
+     * Indexed Director art commonly uses palette slot 0 as the matte/background
+     * entry; direct-RGB art falls back to a white flood-fill matte.
+     */
+    public record FloodFillMatte(Integer mattePaletteIndex, int matteColorRgb, int tolerance) {
+        public FloodFillMatte(int matteColorRgb, int tolerance) {
+            this(null, matteColorRgb, tolerance);
+        }
+
+        public boolean usesPaletteIndex() {
+            return mattePaletteIndex != null;
+        }
+    }
 
     /**
      * Copy pixels from source to destination with ink mode blending.
@@ -19,7 +35,7 @@ public class Drawing {
                                    int srcX, int srcY,
                                    int width, int height,
                                    InkMode ink, int blend) {
-        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null);
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, null, null);
     }
 
     /**
@@ -43,6 +59,16 @@ public class Drawing {
                                    int width, int height,
                                    InkMode ink, int blend,
                                    Bitmap mask) {
+        copyPixels(dest, src, destX, destY, srcX, srcY, width, height, ink, blend, mask, null);
+    }
+
+    public static void copyPixels(Bitmap dest, Bitmap src,
+                                   int destX, int destY,
+                                   int srcX, int srcY,
+                                   int width, int height,
+                                   InkMode ink, int blend,
+                                   Bitmap mask,
+                                   Integer backgroundKeyRgb) {
         if (width <= 0 || height <= 0) return;
         // For MATTE ink, pre-process the FULL source image with flood-fill matte.
         // Director applies matte to the entire source member, then extracts the
@@ -57,7 +83,6 @@ public class Drawing {
             effectiveSrcX = srcX;
             effectiveSrcY = srcY;
         }
-
         for (int y = 0; y < height; y++) {
             int sy = effectiveSrcY + y;
             int dy = destY + y;
@@ -87,7 +112,7 @@ public class Drawing {
                 int srcPixel = effectiveSrc.getPixel(sx, sy);
                 int destPixel = dest.getPixel(dx, dy);
 
-                int resultPixel = applyInk(srcPixel, destPixel, ink, blend);
+                int resultPixel = applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
                 dest.setPixel(dx, dy, resultPixel);
             }
         }
@@ -106,6 +131,18 @@ public class Drawing {
     }
 
     /**
+     * Director's MASK ink derives opacity from the source pixel brightness.
+     * Use luma instead of a single channel so colored masks behave consistently
+     * across copyPixels and sprite-stage rendering.
+     */
+    public static int maskAlphaFromPixel(int pixel) {
+        int r = (pixel >> 16) & 0xFF;
+        int g = (pixel >> 8) & 0xFF;
+        int b = pixel & 0xFF;
+        return ((77 * r) + (150 * g) + (29 * b) + 128) >> 8;
+    }
+
+    /**
      * Apply ink mode to blend source and destination pixels.
      *
      * @param src Source pixel (ARGB)
@@ -115,6 +152,10 @@ public class Drawing {
      * @return Blended pixel (ARGB)
      */
     public static int applyInk(int src, int dest, InkMode ink, int blend) {
+        return applyInk(src, dest, ink, blend, null);
+    }
+
+    public static int applyInk(int src, int dest, InkMode ink, int blend, Integer backgroundKeyRgb) {
         int srcA = (src >> 24) & 0xFF;
         int srcR = (src >> 16) & 0xFF;
         int srcG = (src >> 8) & 0xFF;
@@ -203,13 +244,22 @@ public class Drawing {
                 return alphaBlend(src, dest, srcA);
 
             case MASK:
-                // Source acts as mask, revealing destination
-                a = srcR; // Use red channel as alpha
-                return alphaBlend(dest, src, a);
+                // Director MASK copies the source over the destination with an
+                // opacity derived from the source brightness. Black mask pixels
+                // contribute nothing; white pixels are fully opaque.
+                a = combineAlpha(srcA, maskAlphaFromPixel(src));
+                if (a == 0) {
+                    return dest;
+                }
+                return alphaBlend(src, dest, a);
 
             case BLEND:
-                // Blend based on blend parameter
-                return alphaBlend(src, dest, blend);
+                // Director's image.copyPixels blend factor applies on top of any
+                // per-pixel source alpha. Effective opacity is the product.
+                if (srcA == 0 || blend <= 0) {
+                    return dest;
+                }
+                return alphaBlend(src, dest, combineAlpha(srcA, blend));
 
             case ADD_PIN:
                 r = Math.min(255, srcR + destR);
@@ -230,12 +280,16 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case BACKGROUND_TRANSPARENT:
-                // Background color (palette index 0, typically white) is transparent.
-                // Director uses exact color matching, not a threshold.
-                // Skip pixels with alpha=0 (already transparent from prior processing).
+                // Director's Background Transparent is exact-match keying against the
+                // chosen background color for this copy operation. When copyPixels
+                // does not pass #bgColor, the default key remains white.
                 if (srcA == 0) return dest;
-                if (srcR == 255 && srcG == 255 && srcB == 255) {
+                int keyRgb = backgroundKeyRgb != null ? (backgroundKeyRgb & 0xFFFFFF) : 0xFFFFFF;
+                if (((srcR << 16) | (srcG << 8) | srcB) == keyRgb) {
                     return dest;
+                }
+                if (blend < 255 || srcA < 255) {
+                    return alphaBlend(src, dest, combineAlpha(srcA, blend));
                 }
                 return src;
 
@@ -260,18 +314,9 @@ public class Drawing {
                 return packOpaqueRgb(r, g, b);
 
             case LIGHTEN:
-                if (srcA == 0) return dest;
-                r = Math.max(srcR, destR);
-                g = Math.max(srcG, destG);
-                b = Math.max(srcB, destB);
-                return packOpaqueRgb(r, g, b);
-
             case DARKEN:
                 if (srcA == 0) return dest;
-                r = Math.min(srcR, destR);
-                g = Math.min(srcG, destG);
-                b = Math.min(srcB, destB);
-                return packOpaqueRgb(r, g, b);
+                return alphaBlend(src, dest, combineAlpha(srcA, blend));
 
             default:
                 return src;
@@ -300,6 +345,19 @@ public class Drawing {
         int b = (fgB * alpha + bgB * invAlpha) / 255;
 
         return packOpaqueRgb(r, g, b);
+    }
+
+    private static int combineAlpha(int srcAlpha, int blendAlpha) {
+        if (srcAlpha <= 0 || blendAlpha <= 0) {
+            return 0;
+        }
+        if (srcAlpha >= 255) {
+            return blendAlpha;
+        }
+        if (blendAlpha >= 255) {
+            return srcAlpha;
+        }
+        return (srcAlpha * blendAlpha) / 255;
     }
 
     /**
@@ -372,19 +430,80 @@ public class Drawing {
     }
 
     /**
-     * Create a matte mask from a source bitmap using flood-fill from edges.
-     * Returns a new bitmap where edge-connected white pixels are fully transparent (alpha=0)
-     * and all other pixels are fully opaque white (0xFFFFFFFF).
-     * This implements Director's image.createMatte() Lingo method.
+     * Director's image.createMatte() uses authored/native alpha when present.
+     * Otherwise it falls back to flood-fill matte extraction:
+     * indexed art prefers palette slot 0 when it is edge-connected, and RGB art
+     * falls back to the classic white-border matte.
      */
     public static Bitmap createMatte(Bitmap src) {
+        return createMatte(src, 0);
+    }
+
+    /**
+     * alphaThreshold excludes pixels below the threshold.
+     */
+    public static Bitmap createMatte(Bitmap src, int alphaThreshold) {
         int w = src.getWidth();
         int h = src.getHeight();
         if (w <= 0 || h <= 0) {
             return new Bitmap(1, 1, 32);
         }
 
-        // Copy source pixels
+        if (src.hasNativeMatteAlpha()) {
+            return createAlphaMatte(src, alphaThreshold);
+        }
+
+        return createFloodFillMatte(src);
+    }
+
+    private static Bitmap createAlphaMatte(Bitmap src, int alphaThreshold) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int threshold = Math.max(0, Math.min(255, alphaThreshold));
+        int[] mask = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int alpha = (src.getPixel(x, y) >>> 24) & 0xFF;
+                if (alpha < threshold) {
+                    alpha = 0;
+                }
+                mask[y * w + x] = (alpha << 24) | 0x00FFFFFF;
+            }
+        }
+
+        Bitmap matte = new Bitmap(w, h, 32, mask);
+        matte.setNativeAlpha(true);
+        return matte;
+    }
+
+    public static FloodFillMatte resolveFloodFillMatte(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) {
+            return new FloodFillMatte(0xFFFFFF, 0);
+        }
+
+        int[] pixels = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                pixels[y * w + x] = src.getPixel(x, y);
+            }
+        }
+        byte[] paletteIndices = src.getPaletteIndices();
+        return resolveFloodFillMatte(pixels, paletteIndices, w, h);
+    }
+
+    /**
+     * Remove the edge-connected matte/background from the bitmap while preserving
+     * the original pixel colors for the remaining content.
+     */
+    public static Bitmap applyFloodFillTransparency(Bitmap src) {
+        return applyMatteToRegion(src, 0, 0, src.getWidth(), src.getHeight());
+    }
+
+    private static Bitmap createFloodFillMatte(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
         int[] pixels = new int[w * h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -392,45 +511,26 @@ public class Drawing {
             }
         }
 
-        // Director's createMatte always uses white as the background color.
-        // "Matte removes the white bounding rectangle around a sprite." — Director docs.
-        int matteRgb = 0xFFFFFF;
+        byte[] paletteIndices = src.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
 
-        // BFS flood-fill from edges
-        boolean[] transparent = new boolean[w * h];
-        Queue<Integer> queue = new ArrayDeque<>();
-
-        for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteRgb);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteRgb);
-        }
-        for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteRgb);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteRgb);
-        }
-
-        while (!queue.isEmpty()) {
-            int idx = queue.poll();
-            int px = idx % w;
-            int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
-        }
-
-        // Build mask: opaque where content, alpha-recovered on fringe, transparent where edge-connected
         int[] mask = new int[w * h];
         for (int i = 0; i < pixels.length; i++) {
             if (transparent[i]) {
-                mask[i] = 0x00000000;
+                mask[i] = 0x00FFFFFF;
             } else {
                 int alpha = (pixels[i] >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    alpha = 0xFF;
+                }
                 mask[i] = (alpha << 24) | 0x00FFFFFF;
             }
         }
 
-        return new Bitmap(w, h, 32, mask);
+        Bitmap matteBitmap = new Bitmap(w, h, 32, mask);
+        matteBitmap.setNativeAlpha(true);
+        return matteBitmap;
     }
 
     /**
@@ -442,88 +542,203 @@ public class Drawing {
         if (w <= 0 || h <= 0) {
             return new Bitmap(Math.max(w, 1), Math.max(h, 1), src.getBitDepth());
         }
-        int[] pixels = new int[w * h];
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int sx = srcX + x;
-                int sy = srcY + y;
-                if (sx >= 0 && sx < src.getWidth() && sy >= 0 && sy < src.getHeight()) {
-                    pixels[y * w + x] = src.getPixel(sx, sy);
-                } else {
-                    pixels[y * w + x] = 0xFFFFFFFF;
-                }
+        if (src.hasNativeMatteAlpha()) {
+            Bitmap region = src.getRegion(srcX, srcY, w, h);
+            region.setNativeAlpha(true);
+            return region;
+        }
+        Bitmap region = src.getRegion(srcX, srcY, w, h);
+        int[] pixels = region.getPixels();
+        byte[] paletteIndices = region.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+
+        for (int i = 0; i < pixels.length; i++) {
+            if (transparent[i]) {
+                pixels[i] &= 0x00FFFFFF;
             }
         }
 
-        int matteRgb = resolveMatteColor(pixels, pixels.length > 0 ? (pixels[0] & 0xFFFFFF) : 0xFFFFFF);
+        return region;
+    }
 
-        // BFS flood-fill from edges
+    private static FloodFillMatte resolveFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        FloodFillMatte indexedMatte = resolveIndexedFloodFillMatte(pixels, paletteIndices, w, h);
+        if (indexedMatte != null) {
+            return indexedMatte;
+        }
+        return resolveRgbFloodFillMatte(pixels, w, h);
+    }
+
+    private static FloodFillMatte resolveIndexedFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        if (paletteIndices == null || paletteIndices.length < w * h) {
+            return null;
+        }
+        Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
+        if (matteIndex == null) {
+            return null;
+        }
+        return new FloodFillMatte(matteIndex, resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex), 0);
+    }
+
+    private static Integer inferDominantEdgePaletteIndex(int[] pixels, byte[] paletteIndices, int w, int h) {
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+
+        int[] counts = new int[256];
+        int opaqueEdgeCount = 0;
+        int dominantIndex = -1;
+        int dominantCount = 0;
+
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+
+        for (int index : iterateEdgeIndices(w, h)) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int paletteIndex = paletteIndices[index] & 0xFF;
+            int count = ++counts[paletteIndex];
+            opaqueEdgeCount++;
+            if (count > dominantCount) {
+                dominantCount = count;
+                dominantIndex = paletteIndex;
+            }
+        }
+
+        if (opaqueEdgeCount == 0 || dominantIndex < 0) {
+            return null;
+        }
+
+        // Avoid treating uniformly filled indexed bitmaps as pure matte.
+        if (isUniformPaletteIndex(paletteIndices, dominantIndex)) {
+            return null;
+        }
+
+        int opaqueCornerCount = 0;
+        for (int index : cornerIndices) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            opaqueCornerCount++;
+            if ((paletteIndices[index] & 0xFF) != dominantIndex) {
+                return null;
+            }
+        }
+
+        if (opaqueCornerCount == 0) {
+            return null;
+        }
+
+        // Require a clearly dominant authored matte on the outer edge.
+        if (dominantCount * 4 < opaqueEdgeCount * 3) {
+            return null;
+        }
+
+        return dominantIndex;
+    }
+
+    private static Iterable<Integer> iterateEdgeIndices(int w, int h) {
+        java.util.List<Integer> indices = new java.util.ArrayList<>(Math.max(1, (w * 2) + Math.max(0, h - 2) * 2));
+        for (int x = 0; x < w; x++) {
+            indices.add(x);
+            if (h > 1) {
+                indices.add((h - 1) * w + x);
+            }
+        }
+        for (int y = 1; y < h - 1; y++) {
+            indices.add(y * w);
+            if (w > 1) {
+                indices.add(y * w + (w - 1));
+            }
+        }
+        return indices;
+    }
+
+    private static boolean isUniformPaletteIndex(byte[] paletteIndices, int paletteIndex) {
+        for (byte paletteEntry : paletteIndices) {
+            if ((paletteEntry & 0xFF) != paletteIndex) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int resolvePaletteIndexRgb(int[] pixels, byte[] paletteIndices, int paletteIndex) {
+        for (int i = 0; i < pixels.length && i < paletteIndices.length; i++) {
+            if ((paletteIndices[i] & 0xFF) == paletteIndex) {
+                return pixels[i] & 0xFFFFFF;
+            }
+        }
+        return 0xFFFFFF;
+    }
+
+    private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
+        return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
+    }
+
+    private static boolean[] computeFloodFillTransparency(int[] pixels, byte[] paletteIndices, int w, int h,
+                                                          FloodFillMatte matte) {
         boolean[] transparent = new boolean[w * h];
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteRgb);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteRgb);
+            seedMatte(pixels, paletteIndices, transparent, queue, x, 0, w, matte);
+            seedMatte(pixels, paletteIndices, transparent, queue, x, h - 1, w, matte);
         }
         for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteRgb);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteRgb);
+            seedMatte(pixels, paletteIndices, transparent, queue, 0, y, w, matte);
+            seedMatte(pixels, paletteIndices, transparent, queue, w - 1, y, w, matte);
         }
 
         while (!queue.isEmpty()) {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteRgb);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteRgb);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteRgb);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteRgb);
+            if (px > 0)     seedMatte(pixels, paletteIndices, transparent, queue, px - 1, py, w, matte);
+            if (px < w - 1) seedMatte(pixels, paletteIndices, transparent, queue, px + 1, py, w, matte);
+            if (py > 0)     seedMatte(pixels, paletteIndices, transparent, queue, px, py - 1, w, matte);
+            if (py < h - 1) seedMatte(pixels, paletteIndices, transparent, queue, px, py + 1, w, matte);
         }
 
-        int[] result = new int[w * h];
-        for (int i = 0; i < pixels.length; i++) {
-            if (transparent[i]) {
-                result[i] = 0x00000000;
-            } else {
-                result[i] = pixels[i];
-            }
-        }
-
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return transparent;
     }
 
-    private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
-                                   int x, int y, int w, int matteRgb) {
+    private static void seedMatte(int[] pixels, byte[] paletteIndices, boolean[] transparent,
+                                  Queue<Integer> queue, int x, int y, int w, FloodFillMatte matte) {
         int idx = y * w + x;
-        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb)) {
+        if (!transparent[idx] && isTransparentOrMatte(pixels, paletteIndices, idx, matte)) {
             transparent[idx] = true;
             queue.add(idx);
         }
     }
 
-    private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
-        return ((pixel >>> 24) & 0xFF) == 0 || (pixel & 0xFFFFFF) == matteRgb;
+    private static boolean isTransparentOrMatte(int[] pixels, byte[] paletteIndices, int index, FloodFillMatte matte) {
+        int pixel = pixels[index];
+        if (((pixel >>> 24) & 0xFF) == 0) {
+            return true;
+        }
+        if (matte.usesPaletteIndex() && paletteIndices != null && index < paletteIndices.length) {
+            return (paletteIndices[index] & 0xFF) == matte.mattePaletteIndex();
+        }
+        return matchesRgb(pixel, matte.matteColorRgb(), matte.tolerance());
     }
 
-    private static int resolveMatteColor(int[] pixels, int topLeftRgb) {
-        int firstOpaque = -1;
-        boolean hasWhite = false;
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            int rgb = pixel & 0xFFFFFF;
-            if (rgb == 0xFFFFFF) {
-                hasWhite = true;
-            }
-            if (firstOpaque < 0) {
-                firstOpaque = rgb;
-            }
-        }
-        if (hasWhite && topLeftRgb != 0xFFFFFF) {
-            return topLeftRgb;
-        }
-        return 0xFFFFFF;
+    private static boolean matchesRgb(int pixel, int matteRgb, int tolerance) {
+        int pr = (pixel >> 16) & 0xFF;
+        int pg = (pixel >> 8) & 0xFF;
+        int pb = pixel & 0xFF;
+        int mr = (matteRgb >> 16) & 0xFF;
+        int mg = (matteRgb >> 8) & 0xFF;
+        int mb = matteRgb & 0xFF;
+        return Math.abs(pr - mr) <= tolerance
+                && Math.abs(pg - mg) <= tolerance
+                && Math.abs(pb - mb) <= tolerance;
     }
 
     /**

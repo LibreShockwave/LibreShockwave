@@ -1,6 +1,7 @@
 package com.libreshockwave.player.render.pipeline;
 
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.id.InkMode;
 
@@ -28,7 +29,7 @@ public final class InkProcessor {
     public static boolean shouldProcessInk(InkMode ink) {
         return ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE || ink == InkMode.GHOST
             || ink == InkMode.NOT_COPY || ink == InkMode.NOT_TRANSPARENT || ink == InkMode.NOT_REVERSE
-            || ink == InkMode.NOT_GHOST || ink == InkMode.MATTE || ink == InkMode.ADD_PIN
+            || ink == InkMode.NOT_GHOST || ink == InkMode.MATTE || ink == InkMode.MASK || ink == InkMode.ADD_PIN
             || ink == InkMode.ADD || ink == InkMode.SUBTRACT_PIN || ink == InkMode.SUBTRACT
             || ink == InkMode.BACKGROUND_TRANSPARENT || ink == InkMode.BLEND
             || ink == InkMode.LIGHTEN || ink == InkMode.DARKEN;
@@ -75,23 +76,21 @@ public final class InkProcessor {
             return src;
         }
 
+        if (needsFloodFillIsolation(ink, src)) {
+            src = Drawing.applyFloodFillTransparency(src);
+        }
+
         if (ink == InkMode.MATTE) {
             // Matte ink: flood-fill from edges
-            int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
-            if (matteColor < 0) {
-                return src; // 32-bit with useAlpha — skip processing
+            Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+            if (matteSpec == null) {
+                return src;
             }
-            // Director: sprite bgColor replaces matte color (typically white) before
-            // transparency processing. A white bitmap with bgColor=someColor appears
-            // as a solid colored rectangle — all white becomes bgColor, matte finds
-            // nothing to remove. When bgColor is default white, this is a no-op.
-            if (backColor > 255) {
-                int bgRgb = backColor & 0xFFFFFF;
-                if (bgRgb != matteColor) {
-                    src = remapExactColor(src, matteColor, bgRgb);
-                }
-            }
-            return applyMatte(src, matteColor);
+            return applyMatte(src, matteSpec.matteColorRgb(), matteSpec.tolerance());
+        } else if (ink == InkMode.MASK) {
+            // Mask ink derives sprite opacity from source brightness. Convert the
+            // source luma into alpha so colored masks render consistently.
+            return applyMask(src);
         } else if (ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE
                 || ink == InkMode.GHOST || ink == InkMode.NOT_COPY
                 || ink == InkMode.NOT_TRANSPARENT || ink == InkMode.NOT_REVERSE) {
@@ -109,7 +108,12 @@ public final class InkProcessor {
             // >=16-bit: color-key instead of matte (matte leaks through 1px gaps in composite images).
             Bitmap masked;
             int matteColor;
-            if (src.getBitDepth() >= 16) {
+            if (src.getBitDepth() == 32 && !useAlpha) {
+                // Director preserves opaque white pixels in 32-bit non-alpha buffers for
+                // DARKEN/LIGHTEN. The sprite bgColor acts as the tint/filter color; it does
+                // not first key out white background content.
+                masked = src;
+            } else if (src.getBitDepth() >= 16) {
                 matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
                 if (matteColor >= 0) {
                     masked = applyBackgroundTransparent(src, matteColor, skipGraduatedAlpha);
@@ -151,58 +155,30 @@ public final class InkProcessor {
         return src;
     }
 
+    private static boolean needsFloodFillIsolation(InkMode ink, Bitmap src) {
+        if (src.getPaletteIndices() == null) {
+            return false;
+        }
+        return ink == InkMode.ADD_PIN || ink == InkMode.ADD;
+    }
+
     /**
      * Resolve the matte color for ink 8 (Matte).
      * Returns -1 if the bitmap has native alpha and should skip processing.
      */
     static int resolveMatteColor(Bitmap src, InkMode ink, int backColor,
                                   boolean useAlpha, Palette palette) {
-        int bitDepth = src.getBitDepth();
-
-        // 32-bit with native alpha: skip matte entirely
-        if (bitDepth == 32 && useAlpha) {
-            return -1;
-        }
-
-        // Paletted (bitDepth <= 8): use palette index 0
-        if (bitDepth <= 8 && palette != null) {
-            return palette.getColor(0) & 0xFFFFFF;
-        }
-
-        // Director-authored 32-bit MATTE assets fall into two buckets:
-        // text/icons on a matte-colored backing, and solid-color swatches used
-        // to build panels. Mixed-color assets should matte out their edge color
-        // (typically the top-left background), while solid swatches must not be
-        // erased entirely just because their top-left pixel matches the fill.
-        if (bitDepth == 32) {
-            return resolve32BitMatteColor(src);
-        }
-
-        // 16-bit or other: white
-        return 0xFFFFFF;
+        Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+        return matteSpec != null ? matteSpec.matteColorRgb() : -1;
     }
 
-    private static int resolve32BitMatteColor(Bitmap src) {
-        int[] pixels = src.getPixels();
-        int firstOpaque = -1;
-        boolean hasWhite = false;
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            int rgb = pixel & 0xFFFFFF;
-            if (rgb == 0xFFFFFF) {
-                hasWhite = true;
-            }
-            if (firstOpaque < 0) {
-                firstOpaque = rgb;
-            }
+    private static Drawing.FloodFillMatte resolveMatteSpec(Bitmap src, InkMode ink, int backColor,
+                                              boolean useAlpha, Palette palette) {
+        // Native 32-bit alpha drives matte directly; no white-border extraction.
+        if (src.hasNativeMatteAlpha() && useAlpha) {
+            return null;
         }
-        int topLeft = src.getPixel(0, 0) & 0xFFFFFF;
-        if (hasWhite && topLeft != 0xFFFFFF) {
-            return topLeft;
-        }
-        return 0xFFFFFF;
+        return Drawing.resolveFloodFillMatte(src);
     }
 
     /**
@@ -213,8 +189,8 @@ public final class InkProcessor {
                                  boolean useAlpha, Palette palette) {
         int bitDepth = src.getBitDepth();
 
-        // 32-bit with native alpha: skip processing
-        if (bitDepth == 32 && useAlpha) {
+        // Native 32-bit alpha already defines transparency when the sprite uses alpha.
+        if (src.hasNativeMatteAlpha() && useAlpha) {
             return -1;
         }
 
@@ -223,7 +199,9 @@ public final class InkProcessor {
             return backColor & 0xFFFFFF;
         }
 
-        // 32-bit without alpha and ink is not Copy: force white
+        // 32-bit without alpha and non-Copy inks historically key against white.
+        // Using authored-content heuristics here can erase real black outlines and
+        // other UI pixels that Director preserves.
         if (bitDepth == 32 && !useAlpha && ink != InkMode.COPY) {
             return 0xFFFFFF;
         }
@@ -243,10 +221,6 @@ public final class InkProcessor {
 
     /**
      * Apply Background Transparent ink: pixels matching bgColorRGB become fully transparent.
-     * <p>
-     * For 32-bit bitmaps, uses graduated alpha for pixels near the background color.
-     * This converts AWT's RGB-domain anti-aliasing into proper alpha-domain anti-aliasing,
-     * avoiding white halo artifacts around anti-aliased text glyphs.
      */
     static Bitmap applyBackgroundTransparent(Bitmap src, int bgColorRGB) {
         return applyBackgroundTransparent(src, bgColorRGB, false);
@@ -257,9 +231,6 @@ public final class InkProcessor {
         int h = src.getHeight();
         int[] srcPixels = src.getPixels();
         int[] result = new int[w * h];
-        int bgR = (bgColorRGB >> 16) & 0xFF;
-        int bgG = (bgColorRGB >> 8) & 0xFF;
-        int bgB = bgColorRGB & 0xFF;
 
         for (int i = 0; i < srcPixels.length; i++) {
             int pixel = srcPixels[i];
@@ -275,53 +246,34 @@ public final class InkProcessor {
                 continue;
             }
 
-            // 32-bit text buffers often arrive as fully opaque grayscale RGB that was
-            // anti-aliased against the background color. Recover proper alpha by
-            // unblending those near-gray pixels from that background so faint halos
-            // don't stay as opaque pixels behind glyphs.
-            //
-            // Already-colored UI pixels are typically authored as real opaque colors,
-            // not grayscale anti-aliased blends. Preserving them as opaque avoids
-            // washing solid row strips and panel parts into translucent bars.
-            if (src.getBitDepth() == 32) {
-                if (!skipGraduatedAlpha) {
-                    int r = (pixel >> 16) & 0xFF;
-                    int g = (pixel >> 8) & 0xFF;
-                    int b = pixel & 0xFF;
-                    if (isApproximatelyGray(r, g, b)) {
-                        int recoveredAlpha = Math.max(Math.abs(r - bgR),
-                                Math.max(Math.abs(g - bgG), Math.abs(b - bgB)));
-
-                        if (recoveredAlpha > 0 && recoveredAlpha < 255) {
-                            int fgR = unblendChannel(r, bgR, recoveredAlpha);
-                            int fgG = unblendChannel(g, bgG, recoveredAlpha);
-                            int fgB = unblendChannel(b, bgB, recoveredAlpha);
-                            result[i] = (recoveredAlpha << 24) | (fgR << 16) | (fgG << 8) | fgB;
-                            continue;
-                        }
-                    }
-                }
-
-                result[i] = 0xFF000000 | rgb;
-            } else {
-                // Director uses palette-index matching for non-32-bit background
-                // transparent ink, which reduces to exact color-key transparency here.
-                result[i] = pixel | 0xFF000000;
-            }
+            // Director uses exact-match keying here. Anti-aliased near-colors remain
+            // opaque and can create halos unless the source uses real alpha.
+            result[i] = pixel | 0xFF000000;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
-    private static int unblendChannel(int observed, int background, int alpha) {
-        int value = (observed * 255 - background * (255 - alpha)) / alpha;
-        if (value < 0) return 0;
-        if (value > 255) return 255;
-        return value;
-    }
+    static Bitmap applyMask(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] srcPixels = src.getPixels();
+        int[] result = new int[w * h];
 
-    private static boolean isApproximatelyGray(int r, int g, int b) {
-        return Math.abs(r - g) <= 2 && Math.abs(g - b) <= 2 && Math.abs(r - b) <= 2;
+        for (int i = 0; i < srcPixels.length; i++) {
+            int pixel = srcPixels[i];
+            int srcAlpha = (pixel >>> 24) & 0xFF;
+            if (srcAlpha == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
+
+            int maskAlpha = Drawing.maskAlphaFromPixel(pixel);
+            int combinedAlpha = (srcAlpha * maskAlpha) / 255;
+            result[i] = (combinedAlpha << 24) | (pixel & 0xFFFFFF);
+        }
+
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -329,6 +281,10 @@ public final class InkProcessor {
      * pixels matching matteColorRGB. Interior pixels of the same color are preserved.
      */
     static Bitmap applyMatte(Bitmap src, int matteColorRGB) {
+        return applyMatte(src, matteColorRGB, 0);
+    }
+
+    static Bitmap applyMatte(Bitmap src, int matteColorRGB, int tolerance) {
         int w = src.getWidth();
         int h = src.getHeight();
         int[] pixels = src.getPixels();
@@ -337,12 +293,12 @@ public final class InkProcessor {
 
         // Seed border pixels matching matte color
         for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteColorRGB);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteColorRGB);
+            seedMatte(pixels, transparent, queue, x, 0, w, matteColorRGB, tolerance);
+            seedMatte(pixels, transparent, queue, x, h - 1, w, matteColorRGB, tolerance);
         }
         for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteColorRGB);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteColorRGB);
+            seedMatte(pixels, transparent, queue, 0, y, w, matteColorRGB, tolerance);
+            seedMatte(pixels, transparent, queue, w - 1, y, w, matteColorRGB, tolerance);
         }
 
         // Flood-fill from seeds
@@ -350,10 +306,10 @@ public final class InkProcessor {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteColorRGB);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteColorRGB);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteColorRGB);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteColorRGB);
+            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteColorRGB, tolerance);
+            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteColorRGB, tolerance);
+            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteColorRGB, tolerance);
+            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteColorRGB, tolerance);
         }
 
         int[] result = new int[w * h];
@@ -365,20 +321,32 @@ public final class InkProcessor {
             }
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
-                                   int x, int y, int w, int matteRgb) {
+                                   int x, int y, int w, int matteRgb, int tolerance) {
         int idx = y * w + x;
-        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb)) {
+        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb, tolerance)) {
             transparent[idx] = true;
             queue.add(idx);
         }
     }
 
-    private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
-        return ((pixel >>> 24) & 0xFF) == 0 || (pixel & 0xFFFFFF) == matteRgb;
+    private static boolean isTransparentOrMatte(int pixel, int matteRgb, int tolerance) {
+        return ((pixel >>> 24) & 0xFF) == 0 || matchesRgb(pixel, matteRgb, tolerance);
+    }
+
+    private static boolean matchesRgb(int pixel, int matteRgb, int tolerance) {
+        int pr = (pixel >> 16) & 0xFF;
+        int pg = (pixel >> 8) & 0xFF;
+        int pb = pixel & 0xFF;
+        int mr = (matteRgb >> 16) & 0xFF;
+        int mg = (matteRgb >> 8) & 0xFF;
+        int mb = matteRgb & 0xFF;
+        return Math.abs(pr - mr) <= tolerance
+                && Math.abs(pg - mg) <= tolerance
+                && Math.abs(pb - mb) <= tolerance;
     }
 
     /**
@@ -400,7 +368,7 @@ public final class InkProcessor {
             }
         }
         if (!changed) return src;
-        return new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -432,7 +400,7 @@ public final class InkProcessor {
             result[i] = (alpha << 24) | (r << 16) | (g << 8) | b;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -450,7 +418,7 @@ public final class InkProcessor {
                 result[i] = pixels[i];
             }
         }
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
     }
 
     /**
@@ -520,7 +488,62 @@ public final class InkProcessor {
             result[i] = (alpha << 24) | (nr << 16) | (ng << 8) | nb;
         }
 
-        return new Bitmap(w, h, src.getBitDepth(), result);
+        return newDerivedBitmap(src, result);
+    }
+
+    /**
+     * Apply sprite-level color remapping using the source bitmap's preserved palette indices.
+     * This is used after MATTE masking so indexed furni layers can keep Director's edge
+     * transparency while still tinting the remaining pixels from black→foreColor / white→backColor.
+     */
+    static Bitmap applyIndexedColorRemap(Bitmap indexedSource, Bitmap maskedSource,
+                                         int foreColor, int backColor) {
+        if (indexedSource == null || maskedSource == null
+                || indexedSource.getWidth() != maskedSource.getWidth()
+                || indexedSource.getHeight() != maskedSource.getHeight()) {
+            return maskedSource;
+        }
+        byte[] paletteIndices = indexedSource.getPaletteIndices();
+        if (paletteIndices == null || paletteIndices.length != maskedSource.getPixels().length) {
+            return maskedSource;
+        }
+
+        int fr = (foreColor >> 16) & 0xFF;
+        int fg = (foreColor >> 8) & 0xFF;
+        int fb = foreColor & 0xFF;
+        int br = (backColor >> 16) & 0xFF;
+        int bg = (backColor >> 8) & 0xFF;
+        int bb = backColor & 0xFF;
+
+        int[] maskPixels = maskedSource.getPixels();
+        int[] result = new int[maskPixels.length];
+
+        for (int i = 0; i < maskPixels.length; i++) {
+            int alpha = (maskPixels[i] >>> 24) & 0xFF;
+            if (alpha == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
+
+            int paletteIndex = paletteIndices[i] & 0xFF;
+            float t = (255 - paletteIndex) / 255.0f;
+            int nr = Math.round((1 - t) * fr + t * br);
+            int ng = Math.round((1 - t) * fg + t * bg);
+            int nb = Math.round((1 - t) * fb + t * bb);
+
+            result[i] = (alpha << 24) | (nr << 16) | (ng << 8) | nb;
+        }
+
+        Bitmap remapped = new Bitmap(maskedSource.getWidth(), maskedSource.getHeight(),
+                maskedSource.getBitDepth(), result);
+        remapped.copyPaletteMetadataFrom(maskedSource);
+        return remapped;
+    }
+
+    private static Bitmap newDerivedBitmap(Bitmap src, int[] pixels) {
+        Bitmap derived = new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth(), pixels);
+        derived.copyPaletteMetadataFrom(src);
+        return derived;
     }
 
     /**

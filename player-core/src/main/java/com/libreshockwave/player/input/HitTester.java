@@ -1,7 +1,8 @@
 package com.libreshockwave.player.input;
 
+import com.libreshockwave.cast.BitmapInfo;
 import com.libreshockwave.bitmap.Bitmap;
-import com.libreshockwave.id.InkMode;
+import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 
@@ -12,8 +13,9 @@ import java.util.function.IntPredicate;
 /**
  * Determines which sprite is under a given stage coordinate.
  * Tests from front-to-back (highest locZ/channel first).
- * Supports ink-aware hit testing: sprites with non-Copy ink modes
- * are click-through at transparent pixels (Director behavior).
+ * Director-style hit testing is bounds-based by default.
+ * Per-pixel alpha hit testing is reserved for true 32-bit bitmap members with
+ * native alpha, using the member's alphaThreshold.
  */
 public final class HitTester {
 
@@ -21,7 +23,6 @@ public final class HitTester {
 
     /**
      * Find the front-most visible sprite containing the given point.
-     * Transparent pixels in sprites with non-Copy ink are click-through.
      * @return the sprite's channel number, or 0 if no sprite hit
      */
     public static int hitTest(StageRenderer renderer, int frame, int stageX, int stageY) {
@@ -30,8 +31,7 @@ public final class HitTester {
 
     /**
      * Find the front-most visible sprite containing the given point.
-     * The predicate can force specific channels to use bounding-box hits even
-     * when their ink would normally make transparent pixels click-through.
+     * The predicate is retained for API compatibility.
      * @return the sprite's channel number, or 0 if no sprite hit
      */
     public static int hitTest(StageRenderer renderer, int frame, int stageX, int stageY,
@@ -50,8 +50,7 @@ public final class HitTester {
 
     /**
      * Find the front-most visible sprite containing the given point and return its type.
-     * The predicate can force specific channels to use bounding-box hits even
-     * when their ink would normally make transparent pixels click-through.
+     * The predicate is retained for API compatibility.
      * @return the sprite's SpriteType, or null if no sprite hit
      */
     public static RenderSprite.SpriteType hitTestType(StageRenderer renderer, int frame, int stageX, int stageY,
@@ -82,11 +81,8 @@ public final class HitTester {
             int right = left + sprite.getWidth();
             int bottom = top + sprite.getHeight();
 
-            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom) {
-                if (isPixelTransparent(sprite, stageX - left, stageY - top,
-                        filter.test(sprite.getChannel()))) {
-                    continue;
-                }
+            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom
+                    && hitTestSpritePixel(sprite, stageX, stageY)) {
                 result.add(sprite.getChannel());
             }
         }
@@ -95,7 +91,8 @@ public final class HitTester {
 
     /**
      * Find the front-most visible sprite at the given stage coordinate.
-     * Iterates back-to-front, skipping transparent pixels for non-Copy ink sprites.
+     * Iterates back-to-front using sprite bounds and Director-style alpha hit
+     * testing only for true 32-bit native-alpha bitmap members.
      */
     private static RenderSprite findHitSprite(StageRenderer renderer, int frame, int stageX, int stageY,
                                               IntPredicate forceBoundingBox) {
@@ -114,11 +111,8 @@ public final class HitTester {
             int right = left + sprite.getWidth();
             int bottom = top + sprite.getHeight();
 
-            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom) {
-                if (isPixelTransparent(sprite, stageX - left, stageY - top,
-                        forceBoundingBox.test(sprite.getChannel()))) {
-                    continue;
-                }
+            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom
+                    && hitTestSpritePixel(sprite, stageX, stageY)) {
                 return sprite;
             }
         }
@@ -126,45 +120,82 @@ public final class HitTester {
         return null;
     }
 
-    /**
-     * Check if the pixel at (localX, localY) within the sprite's baked bitmap is transparent.
-     * In Director, sprites with non-Copy ink modes use pixel-level hit testing -
-     * transparent areas are click-through. Copy ink (0) always uses bounding-box.
-     */
-    private static boolean isPixelTransparent(RenderSprite sprite, int localX, int localY,
-                                             boolean forceBoundingBox) {
-        if (forceBoundingBox) return false;
+    private static boolean hitTestSpritePixel(RenderSprite sprite, int stageX, int stageY) {
+        if (sprite == null) {
+            return false;
+        }
 
-        InkMode ink = sprite.getInkMode();
-        // Copy ink: always bounding-box hit (opaque rect)
-        if (ink == InkMode.COPY) return false;
+        var baked = sprite.getBakedBitmap();
+        if (baked == null) {
+            return true;
+        }
 
-        // Text and button sprites always use bounding-box hit testing.
-        // Their baked bitmaps have transparent backgrounds (due to BACKGROUND_TRANSPARENT ink),
-        // but clicking anywhere within the field/button bounds should register.
-        RenderSprite.SpriteType type = sprite.getType();
-        if (type == RenderSprite.SpriteType.TEXT || type == RenderSprite.SpriteType.BUTTON) return false;
+        int spriteWidth = sprite.getWidth() > 0 ? sprite.getWidth() : baked.getWidth();
+        int spriteHeight = sprite.getHeight() > 0 ? sprite.getHeight() : baked.getHeight();
+        if (spriteWidth <= 0 || spriteHeight <= 0 || baked.getWidth() <= 0 || baked.getHeight() <= 0) {
+            return true;
+        }
 
-        Bitmap baked = sprite.getBakedBitmap();
-        if (baked == null) return false;
+        int localX = stageX - sprite.getX();
+        int localY = stageY - sprite.getY();
+        if (localX < 0 || localY < 0 || localX >= spriteWidth || localY >= spriteHeight) {
+            return false;
+        }
 
-        int[] pixels = baked.getPixels();
-        if (pixels == null) return false;
+        AlphaHitRule alphaHitRule = getAlphaHitRule(sprite, baked);
+        if (!alphaHitRule.enabled()) {
+            return true;
+        }
+        if (alphaHitRule.threshold() <= 0) {
+            return true;
+        }
 
-        // Scale local coordinates to bitmap coordinates if sprite is stretched
-        int bw = baked.getWidth();
-        int bh = baked.getHeight();
-        int sw = sprite.getWidth();
-        int sh = sprite.getHeight();
-        int bx = (sw > 0 && sw != bw) ? (localX * bw / sw) : localX;
-        int by = (sh > 0 && sh != bh) ? (localY * bh / sh) : localY;
+        int srcX = (localX * baked.getWidth()) / spriteWidth;
+        int srcY = (localY * baked.getHeight()) / spriteHeight;
 
-        if (bx < 0 || bx >= bw || by < 0 || by >= bh) return true;
+        if (sprite.isFlipH() ^ sprite.hasDirectorHorizontalMirror()) {
+            srcX = baked.getWidth() - 1 - srcX;
+        }
+        if (sprite.isFlipV()) {
+            srcY = baked.getHeight() - 1 - srcY;
+        }
 
-        int idx = by * bw + bx;
-        if (idx < 0 || idx >= pixels.length) return true;
+        int alpha = (baked.getPixel(srcX, srcY) >>> 24) & 0xFF;
+        return alpha >= alphaHitRule.threshold();
+    }
 
-        int alpha = (pixels[idx] >> 24) & 0xFF;
-        return alpha < 128; // Treat <50% alpha as transparent for hit testing
+    private static AlphaHitRule getAlphaHitRule(RenderSprite sprite, com.libreshockwave.bitmap.Bitmap baked) {
+        CastMember dynamicMember = sprite.getDynamicMember();
+        if (dynamicMember != null) {
+            Bitmap memberBitmap = dynamicMember.getBitmap();
+            if (memberBitmap == null) {
+                return AlphaHitRule.DISABLED;
+            }
+            if (memberBitmap.getBitDepth() == 32 && memberBitmap.isNativeAlpha()) {
+                return new AlphaHitRule(true, dynamicMember.getBitmapAlphaThreshold());
+            }
+            return AlphaHitRule.DISABLED;
+        }
+
+        if (baked == null || !baked.isNativeAlpha() || baked.getBitDepth() != 32) {
+            return AlphaHitRule.DISABLED;
+        }
+
+        var castMember = sprite.getCastMember();
+        if (castMember == null || !castMember.isBitmap()
+                || castMember.specificData() == null || castMember.specificData().length < 10) {
+            return AlphaHitRule.DISABLED;
+        }
+
+        BitmapInfo info = BitmapInfo.parse(castMember.specificData());
+        if (info.bitDepth() != 32) {
+            return AlphaHitRule.DISABLED;
+        }
+
+        return new AlphaHitRule(true, info.alphaThreshold());
+    }
+
+    private record AlphaHitRule(boolean enabled, int threshold) {
+        private static final AlphaHitRule DISABLED = new AlphaHitRule(false, 0);
     }
 }

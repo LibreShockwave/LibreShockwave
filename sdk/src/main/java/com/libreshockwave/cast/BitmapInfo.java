@@ -19,6 +19,7 @@ public record BitmapInfo(
     int paletteId,
     int paletteCastLib,
     int pitch,
+    int alphaThreshold,
     boolean useAlpha
 ) implements Dimensioned {
 
@@ -42,7 +43,7 @@ public record BitmapInfo(
      */
     public static BitmapInfo parse(byte[] data, int directorVersion) {
         if (data == null || data.length < 10) {
-            return new BitmapInfo(0, 0, 0, 0, 0, 0, 1, 0, 0, 0, false);
+            return new BitmapInfo(0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, false);
         }
 
         BinaryReader reader = new BinaryReader(data, ByteOrder.BIG_ENDIAN);
@@ -64,6 +65,7 @@ public record BitmapInfo(
         int paletteId = 0;
         int paletteCastLib = 0;
         int pitch = 0;
+        int alphaThreshold = 0;
         boolean useAlpha = false;
 
         if (directorVersion < 1200) {
@@ -98,8 +100,11 @@ public record BitmapInfo(
             if (bitDepth == 0) bitDepth = 1;
         } else {
             // D6+ format
-            // Bytes 10-17: alphaThreshold+padding, editVersion, scrollPoint
-            if (reader.bytesLeft() >= 8) reader.skip(8);
+            // Byte 10: alphaThreshold (0-255). Bytes 11-17 are padding/editVersion/scrollPoint.
+            if (reader.bytesLeft() >= 1) {
+                alphaThreshold = reader.readU8();
+            }
+            if (reader.bytesLeft() >= 7) reader.skip(7);
 
             // Bytes 18-19: regY, bytes 20-21: regX
             if (reader.bytesLeft() >= 2) regY = reader.readI16();
@@ -140,7 +145,7 @@ public record BitmapInfo(
         // Store raw canvas-space regPoint values.
         // Director's member.regPoint returns canvas-space coordinates.
         // Only rendering code should convert to bitmap-local (regX - left, regY - top).
-        return new BitmapInfo(width, height, regX, regY, left, top, bitDepth, paletteId, paletteCastLib, pitch, useAlpha);
+        return new BitmapInfo(width, height, regX, regY, left, top, bitDepth, paletteId, paletteCastLib, pitch, alphaThreshold, useAlpha);
     }
 
     public int bytesPerPixel() {

@@ -3,6 +3,7 @@ package com.libreshockwave.vm.opcode.dispatch;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 
@@ -14,17 +15,33 @@ import java.util.List;
  */
 public final class ImageMethodDispatcher {
 
+    private static Runnable imageMutationCallback;
+
     private ImageMethodDispatcher() {}
+
+    public static void setImageMutationCallback(Runnable callback) {
+        imageMutationCallback = callback;
+    }
+
+    private static void notifyImageMutation(Bitmap bmp) {
+        if (bmp == null) {
+            return;
+        }
+        bmp.markScriptModified();
+        if (imageMutationCallback != null) {
+            imageMutationCallback.run();
+        }
+    }
 
     public static Datum dispatch(Datum.ImageRef imageRef, String methodName, List<Datum> args) {
         String method = methodName.toLowerCase();
         Bitmap bmp = imageRef.bitmap();
 
         return switch (method) {
-            case "fill" -> { bmp.markScriptModified(); yield fill(bmp, args); }
-            case "draw" -> { bmp.markScriptModified(); yield draw(bmp, args); }
+            case "fill" -> { notifyImageMutation(bmp); yield fill(bmp, args); }
+            case "draw" -> { notifyImageMutation(bmp); yield draw(bmp, args); }
             case "copypixels" -> {
-                bmp.markScriptModified();
+                notifyImageMutation(bmp);
                 yield copyPixels(bmp, args);
             }
             case "duplicate" -> new Datum.ImageRef(bmp.copy());
@@ -37,7 +54,7 @@ public final class ImageMethodDispatcher {
                     int color = Datum.datumToArgb(args.get(2));
                     if (px >= 0 && px < bmp.getWidth() && py >= 0 && py < bmp.getHeight()) {
                         bmp.setPixel(px, py, color);
-                        bmp.markScriptModified();
+                        notifyImageMutation(bmp);
                     }
                 }
                 yield Datum.VOID;
@@ -71,9 +88,11 @@ public final class ImageMethodDispatcher {
                         bounds[2] - bounds[0], bounds[3] - bounds[1]));
             }
             case "creatematte" -> {
-                // Director's image.createMatte() creates a matte mask via flood-fill from edges.
-                // Returns a mask image where edge-connected white pixels are transparent.
-                yield new Datum.ImageRef(Drawing.createMatte(bmp));
+                int alphaThreshold = 0;
+                if (!args.isEmpty() && !args.get(0).isVoid()) {
+                    alphaThreshold = args.get(0).toInt();
+                }
+                yield new Datum.ImageRef(Drawing.createMatte(bmp, alphaThreshold));
             }
             case "getat" -> {
                 // getAt(index) on image - some scripts use this
@@ -104,13 +123,23 @@ public final class ImageMethodDispatcher {
                     CastLibProvider provider = CastLibProvider.getProvider();
                     if (provider != null) {
                         Palette pal = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
-                        if (pal != null) bmp.setImagePalette(pal);
+                        if (pal != null) {
+                            bmp.remapImagePalette(pal);
+                            bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
+                            notifyImageMutation(bmp);
+                        }
                     }
                 } else if (value instanceof Datum.Symbol sym) {
                     String name = sym.name().toLowerCase();
-                    if ("systemmac".equals(name)) bmp.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
-                    else if ("systemwin".equals(name) || "systemwindows".equals(name))
-                        bmp.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                    if ("systemmac".equals(name)) {
+                        bmp.remapImagePalette(Palette.SYSTEM_MAC_PALETTE);
+                        bmp.setPaletteRefSystemName("systemMac");
+                        notifyImageMutation(bmp);
+                    } else if ("systemwin".equals(name) || "systemwindows".equals(name)) {
+                        bmp.remapImagePalette(Palette.SYSTEM_WIN_PALETTE);
+                        bmp.setPaletteRefSystemName("systemWin");
+                        notifyImageMutation(bmp);
+                    }
                 }
             }
             default -> System.err.println("[LingoVM] Unhandled ImageRef set: " + propName);
@@ -126,7 +155,15 @@ public final class ImageMethodDispatcher {
             case "depth" -> Datum.of(bmp.getBitDepth());
             case "ilk" -> Datum.symbol("image");
             case "image" -> imageRef; // Self-reference for .image on an image
-            case "paletteref" -> Datum.VOID; // No palette tracking in our implementation
+            case "paletteref" -> {
+                if (bmp.getPaletteRefCastLib() >= 1 && bmp.getPaletteRefMemberNum() >= 1) {
+                    yield Datum.CastMemberRef.of(bmp.getPaletteRefCastLib(), bmp.getPaletteRefMemberNum());
+                }
+                if (bmp.getPaletteRefSystemName() != null) {
+                    yield Datum.symbol(bmp.getPaletteRefSystemName());
+                }
+                yield Datum.VOID;
+            }
             default -> Datum.VOID;
         };
     }
@@ -291,8 +328,9 @@ public final class ImageMethodDispatcher {
         if (args.size() >= 4 && args.get(3) instanceof Datum.PropList pl) {
             // Check for #ink property
             Datum inkDatum = getPropIgnoreCase(pl, "ink", "Ink");
-            if (inkDatum instanceof Datum.Int inkInt) {
-                ink = inkFromInt(inkInt.value());
+            Palette.InkMode parsedInk = inkFromDatum(inkDatum);
+            if (parsedInk != null) {
+                ink = parsedInk;
             }
             // Check for #blend property
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
@@ -321,10 +359,26 @@ public final class ImageMethodDispatcher {
             }
         }
 
+        // Director ignores #maskImage when the source image already has native alpha in use.
+        if (src.getBitDepth() == 32 && src.isNativeAlpha()) {
+            mask = null;
+        }
+
         int srcW = srcRect.right() - srcRect.left();
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
         int destH = destRect.bottom() - destRect.top();
+        if (dest.getImagePalette() == null && src.getImagePalette() != null) {
+            dest.copyPaletteMetadataFrom(src);
+        }
+        if (!dest.hasAnchorPoint() && src.hasAnchorPoint()) {
+            dest.setAnchorPoint(
+                    destRect.left() + src.getAnchorX() - srcRect.left(),
+                    destRect.top() + src.getAnchorY() - srcRect.top());
+        }
+        Integer backgroundKeyRgb = ink == Palette.InkMode.BACKGROUND_TRANSPARENT
+                ? Integer.valueOf(resolveBackgroundTransparentKey(bgColorRemap))
+                : null;
         // Apply #color/#bgColor remapping only for grayscale source bitmaps.
         // Director's copyPixels remap is designed for default black/white text bitmaps
         // (e.g., title text rendered as black-on-white, remapped to white-on-teal).
@@ -334,26 +388,10 @@ public final class ImageMethodDispatcher {
         int effectiveSrcX = srcRect.left();
         int effectiveSrcY = srcRect.top();
         boolean remapToAlphaMask = false;
-        if (colorRemap >= 0 || bgColorRemap >= 0) {
+        boolean grayscaleColorized = false;
+        if ((colorRemap >= 0 || bgColorRemap >= 0) && ink != Palette.InkMode.BACKGROUND_TRANSPARENT) {
             // Sample source pixels to check if they're grayscale (safe to remap)
-            boolean isGrayscale = true;
-            boolean hasTransparency = false;
-                int sampleStep = Math.max(1, (srcW * srcH) / 64);
-                for (int i = 0; i < srcW * srcH && isGrayscale; i += sampleStep) {
-                int sx = srcRect.left() + (i % srcW);
-                int sy = srcRect.top() + (i / srcW);
-                int p = src.getPixel(sx, sy);
-                if (((p >>> 24) & 0xFF) < 255) {
-                    hasTransparency = true;
-                }
-                if ((p >>> 24) == 0) continue; // skip transparent
-                int r = (p >> 16) & 0xFF;
-                int g = (p >> 8) & 0xFF;
-                int b = p & 0xFF;
-                if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
-                    isGrayscale = false;
-                }
-            }
+            boolean isGrayscale = isMostlyGrayscale(src, srcRect);
 
             if (isGrayscale) {
                 int fgR = colorRemap >= 0 ? (colorRemap >> 16) & 0xFF : 0;
@@ -363,11 +401,6 @@ public final class ImageMethodDispatcher {
                 int bgG = bgColorRemap >= 0 ? (bgColorRemap >> 8) & 0xFF : 255;
                 int bgB = bgColorRemap >= 0 ? bgColorRemap & 0xFF : 255;
                 boolean transparentBackground = colorRemap >= 0 && bgColorRemap < 0;
-                boolean preserveTransparentTextBackground =
-                        ink == Palette.InkMode.BACKGROUND_TRANSPARENT
-                        && colorRemap < 0
-                        && bgColorRemap >= 0
-                        && hasTransparency;
 
                 effectiveSrc = new Bitmap(srcW, srcH, src.getBitDepth());
                 for (int y = 0; y < srcH; y++) {
@@ -378,7 +411,7 @@ public final class ImageMethodDispatcher {
                         int g = (pixel >> 8) & 0xFF;
                         int b = pixel & 0xFF;
                         int gray = (r + g + b) / 3;
-                        if (transparentBackground || preserveTransparentTextBackground) {
+                        if (transparentBackground) {
                             int maskAlpha = (255 - gray) * alpha / 255;
                             int outR = colorRemap >= 0 ? fgR : 0;
                             int outG = colorRemap >= 0 ? fgG : 0;
@@ -395,19 +428,27 @@ public final class ImageMethodDispatcher {
                 }
                 effectiveSrcX = 0;
                 effectiveSrcY = 0;
-                remapToAlphaMask = transparentBackground || preserveTransparentTextBackground;
+                remapToAlphaMask = transparentBackground;
+                grayscaleColorized = true;
             }
         }
 
-        // DARKEN/LIGHTEN ink in copyPixels with bgColor: the grayscale remap above already
-        // colorizes the source (white→bgColor). Using DARKEN min(src,dst) would cause black
-        // outline contamination at body part overlaps. Switch to COPY so later parts overwrite.
         Palette.InkMode effectiveInk = ink;
-        if ((ink == Palette.InkMode.DARKEN || ink == Palette.InkMode.LIGHTEN) && bgColorRemap >= 0) {
-            effectiveInk = Palette.InkMode.COPY;
-        }
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
+        }
+        if (effectiveInk == Palette.InkMode.DARKEN) {
+            if (!grayscaleColorized) {
+                effectiveSrc = multiplyBitmapColor(effectiveSrc, bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF);
+                effectiveSrcX = 0;
+                effectiveSrcY = 0;
+            }
+        }
+        // Director's copyPixels applies a global blend factor to the copied pixels.
+        // With the default COPY ink, blend<100 behaves like a blend operation over
+        // the current destination instead of a straight overwrite.
+        if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
+            effectiveInk = Palette.InkMode.BLEND;
         }
 
         if (srcW == destW && srcH == destH) {
@@ -415,10 +456,16 @@ public final class ImageMethodDispatcher {
             Drawing.copyPixels(dest, effectiveSrc,
                     destRect.left(), destRect.top(),
                     effectiveSrcX, effectiveSrcY,
-                    srcW, srcH, effectiveInk, blend, mask);
+                    srcW, srcH, effectiveInk, blend, mask, backgroundKeyRgb);
+            preservePaletteIndicesOnCopy(dest, effectiveSrc,
+                    destRect.left(), destRect.top(),
+                    effectiveSrcX, effectiveSrcY,
+                    srcW, srcH, srcW, srcH,
+                    effectiveInk, blend, mask, colorRemap, bgColorRemap);
         } else {
             // Scaling needed - create scaled intermediate, applying mask at source coordinates
             Bitmap scaled = new Bitmap(destW, destH, effectiveSrc.getBitDepth());
+            scaled.copyPaletteMetadataFrom(effectiveSrc);
             for (int y = 0; y < destH; y++) {
                 int sy = effectiveSrcY + (y * srcH / destH);
                 for (int x = 0; x < destW; x++) {
@@ -439,7 +486,12 @@ public final class ImageMethodDispatcher {
             // Mask already applied during scaling, so pass null to Drawing
             Drawing.copyPixels(dest, scaled,
                     destRect.left(), destRect.top(),
-                    0, 0, destW, destH, effectiveInk, blend);
+                    0, 0, destW, destH, effectiveInk, blend, null, backgroundKeyRgb);
+            preservePaletteIndicesOnCopy(dest, scaled,
+                    destRect.left(), destRect.top(),
+                    0, 0,
+                    destW, destH, destW, destH,
+                    effectiveInk, blend, null, colorRemap, bgColorRemap);
         }
 
         return Datum.VOID;
@@ -447,8 +499,8 @@ public final class ImageMethodDispatcher {
 
     /**
      * copyPixels with quad destination (list of 4 points).
-     * Used by Director for flipH/flipV operations.
-     * Detects horizontal and vertical flips from the quad corners.
+     * Director uses this for image-space transforms such as flipH/flipV and
+     * 90-degree rotations (used heavily by the Habbo window/dropdown system).
      */
     private static Datum copyPixelsQuad(Bitmap dest, Bitmap src, Datum.List quad,
                                          Datum.Rect srcRect, List<Datum> args) {
@@ -481,19 +533,14 @@ public final class ImageMethodDispatcher {
         int destH = maxY - minY;
         if (destW <= 0 || destH <= 0) return Datum.VOID;
 
-        // Detect flip from quad corners: [topLeft=0, topRight=1, bottomRight=2, bottomLeft=3]
-        // flipH: topLeft.x > topRight.x (x-coords swapped horizontally)
-        boolean flipH = px[0] > px[1];
-        // flipV: topLeft.y > bottomLeft.y (y-coords swapped vertically)
-        boolean flipV = py[0] > py[3];
-
         // Parse optional ink/blend from propList (4th argument)
         Palette.InkMode ink = Palette.InkMode.COPY;
         int blend = 255;
         if (args.size() > 3 && args.get(3) instanceof Datum.PropList pl) {
             Datum inkDatum = getPropIgnoreCase(pl, "ink", "Ink");
-            if (inkDatum instanceof Datum.Int inkInt) {
-                ink = inkFromInt(inkInt.value());
+            Palette.InkMode parsedInk = inkFromDatum(inkDatum);
+            if (parsedInk != null) {
+                ink = parsedInk;
             }
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
             if (!blendDatum.isVoid()) {
@@ -501,22 +548,212 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        // Build flipped intermediate bitmap, then use Drawing.copyPixels for ink support
-        Bitmap flipped = new Bitmap(destW, destH, src.getBitDepth());
-        for (int y = 0; y < destH; y++) {
-            for (int x = 0; x < destW; x++) {
-                int srcX = flipH ? (srcW - 1 - (x * srcW / destW)) : (x * srcW / destW);
-                int srcY = flipV ? (srcH - 1 - (y * srcH / destH)) : (y * srcH / destH);
-                srcX += srcRect.left();
-                srcY += srcRect.top();
-                if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
-                    flipped.setPixel(x, y, src.getPixel(srcX, srcY));
+        // Map Director's quad orientation back into source-space coordinates.
+        // This covers identity, flips, and 90-degree rotations.
+        Bitmap transformed = new Bitmap(destW, destH, src.getBitDepth());
+        transformed.copyPaletteMetadataFrom(src);
+        byte[] srcPaletteIndices = src.getPaletteIndices();
+        byte[] transformedIndices = srcPaletteIndices != null ? new byte[destW * destH] : null;
+        boolean axisAligned =
+                (px[0] == minX || px[0] == maxX) && (py[0] == minY || py[0] == maxY)
+                        && (px[1] == minX || px[1] == maxX) && (py[1] == minY || py[1] == maxY)
+                        && (px[2] == minX || px[2] == maxX) && (py[2] == minY || py[2] == maxY)
+                        && (px[3] == minX || px[3] == maxX) && (py[3] == minY || py[3] == maxY);
+
+        if (axisAligned) {
+            double c0x = px[0] == minX ? 0.0 : 1.0;
+            double c0y = py[0] == minY ? 0.0 : 1.0;
+            double axisXX = (px[1] == minX ? 0.0 : 1.0) - c0x;
+            double axisXY = (py[1] == minY ? 0.0 : 1.0) - c0y;
+            double axisYX = (px[3] == minX ? 0.0 : 1.0) - c0x;
+            double axisYY = (py[3] == minY ? 0.0 : 1.0) - c0y;
+
+            for (int y = 0; y < destH; y++) {
+                double dv = ((double) y + 0.5) / destH;
+                for (int x = 0; x < destW; x++) {
+                    double du = ((double) x + 0.5) / destW;
+                    double relX = du - c0x;
+                    double relY = dv - c0y;
+
+                    double srcU = relX * axisXX + relY * axisXY;
+                    double srcV = relX * axisYX + relY * axisYY;
+
+                    int srcX = srcRect.left() + clamp((int) Math.floor(srcU * srcW), 0, srcW - 1);
+                    int srcY = srcRect.top() + clamp((int) Math.floor(srcV * srcH), 0, srcH - 1);
+                    if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
+                        transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                        if (transformedIndices != null) {
+                            transformedIndices[y * destW + x] = srcPaletteIndices[srcY * src.getWidth() + srcX];
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback to the previous behaviour for quads that are not simple
+            // axis-aligned rectangle transforms.
+            boolean flipH = px[0] > px[1];
+            boolean flipV = py[0] > py[3];
+            for (int y = 0; y < destH; y++) {
+                for (int x = 0; x < destW; x++) {
+                    int srcX = flipH ? (srcW - 1 - (x * srcW / destW)) : (x * srcW / destW);
+                    int srcY = flipV ? (srcH - 1 - (y * srcH / destH)) : (y * srcH / destH);
+                    srcX += srcRect.left();
+                    srcY += srcRect.top();
+                    if (srcX >= 0 && srcX < src.getWidth() && srcY >= 0 && srcY < src.getHeight()) {
+                        transformed.setPixel(x, y, src.getPixel(srcX, srcY));
+                        if (transformedIndices != null) {
+                            transformedIndices[y * destW + x] = srcPaletteIndices[srcY * src.getWidth() + srcX];
+                        }
+                    }
                 }
             }
         }
-        Drawing.copyPixels(dest, flipped, minX, minY, 0, 0, destW, destH, ink, blend);
+        if (transformedIndices != null) {
+            transformed.setPaletteIndices(transformedIndices);
+        }
+        Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, ink, blend);
+        preservePaletteIndicesOnCopy(dest, transformed,
+                minX, minY,
+                0, 0,
+                destW, destH, destW, destH,
+                ink, blend, null, -1, -1);
 
         return Datum.VOID;
+    }
+
+    private static void preservePaletteIndicesOnCopy(Bitmap dest, Bitmap src,
+                                                     int destX, int destY,
+                                                     int srcX, int srcY,
+                                                     int srcW, int srcH,
+                                                     int destW, int destH,
+                                                     Palette.InkMode ink, int blend,
+                                                     Bitmap mask,
+                                                     int colorRemap, int bgColorRemap) {
+        if (!canPreservePaletteIndices(dest, src, ink, blend, mask, colorRemap, bgColorRemap)) {
+            return;
+        }
+
+        byte[] srcIndices = src.getPaletteIndices();
+        if (srcIndices == null || srcIndices.length < src.getWidth() * src.getHeight()) {
+            return;
+        }
+
+        if (dest.getImagePalette() == null && src.getImagePalette() != null) {
+            dest.setImagePalette(src.getImagePalette());
+            if (src.getPaletteRefCastLib() >= 1 && src.getPaletteRefMemberNum() >= 1) {
+                dest.setPaletteRefCastMember(src.getPaletteRefCastLib(), src.getPaletteRefMemberNum());
+            } else if (src.getPaletteRefSystemName() != null && !src.getPaletteRefSystemName().isEmpty()) {
+                dest.setPaletteRefSystemName(src.getPaletteRefSystemName());
+            }
+        }
+
+        byte[] destIndices = dest.getPaletteIndices();
+        if (destIndices == null || destIndices.length < dest.getWidth() * dest.getHeight()) {
+            destIndices = new byte[dest.getWidth() * dest.getHeight()];
+        }
+
+        for (int y = 0; y < destH; y++) {
+            int sy = srcY + (y * srcH / destH);
+            int dy = destY + y;
+            if (sy < 0 || sy >= src.getHeight() || dy < 0 || dy >= dest.getHeight()) {
+                continue;
+            }
+            for (int x = 0; x < destW; x++) {
+                int sx = srcX + (x * srcW / destW);
+                int dx = destX + x;
+                if (sx < 0 || sx >= src.getWidth() || dx < 0 || dx >= dest.getWidth()) {
+                    continue;
+                }
+                destIndices[dy * dest.getWidth() + dx] = srcIndices[sy * src.getWidth() + sx];
+            }
+        }
+
+        dest.setPaletteIndices(destIndices);
+    }
+
+    private static boolean canPreservePaletteIndices(Bitmap dest, Bitmap src,
+                                                     Palette.InkMode ink, int blend,
+                                                     Bitmap mask,
+                                                     int colorRemap, int bgColorRemap) {
+        return dest != null
+                && src != null
+                && src.getBitDepth() <= 8
+                && dest.getBitDepth() >= src.getBitDepth()
+                && src.getPaletteIndices() != null
+                && ink == Palette.InkMode.COPY
+                && blend >= 255
+                && mask == null
+                && colorRemap < 0
+                && bgColorRemap < 0;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static int resolveBackgroundTransparentKey(int explicitBgColorRemap) {
+        if (explicitBgColorRemap >= 0) {
+            return explicitBgColorRemap;
+        }
+        // Director's copyPixels defaults #bgColor to white for ink 36.
+        return 0xFFFFFF;
+    }
+
+    private static boolean isMostlyGrayscale(Bitmap src, Datum.Rect srcRect) {
+        if (src == null || srcRect == null) {
+            return false;
+        }
+
+        int srcW = srcRect.right() - srcRect.left();
+        int srcH = srcRect.bottom() - srcRect.top();
+        if (srcW <= 0 || srcH <= 0) {
+            return false;
+        }
+
+        int sampleStep = Math.max(1, (srcW * srcH) / 64);
+        for (int i = 0; i < srcW * srcH; i += sampleStep) {
+            int sx = srcRect.left() + (i % srcW);
+            int sy = srcRect.top() + (i / srcW);
+            int p = src.getPixel(sx, sy);
+            if ((p >>> 24) == 0) {
+                continue;
+            }
+            int r = (p >> 16) & 0xFF;
+            int g = (p >> 8) & 0xFF;
+            int b = p & 0xFF;
+            if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Bitmap multiplyBitmapColor(Bitmap src, int tintRgb) {
+        if (tintRgb == 0xFFFFFF) {
+            return src;
+        }
+
+        int tintR = (tintRgb >> 16) & 0xFF;
+        int tintG = (tintRgb >> 8) & 0xFF;
+        int tintB = tintRgb & 0xFF;
+
+        Bitmap tinted = new Bitmap(src.getWidth(), src.getHeight(), src.getBitDepth());
+        tinted.copyPaletteMetadataFrom(src);
+
+        for (int y = 0; y < src.getHeight(); y++) {
+            for (int x = 0; x < src.getWidth(); x++) {
+                int pixel = src.getPixel(x, y);
+                int alpha = (pixel >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                int r = ((pixel >> 16) & 0xFF) * tintR / 255;
+                int g = ((pixel >> 8) & 0xFF) * tintG / 255;
+                int b = (pixel & 0xFF) * tintB / 255;
+                tinted.setPixel(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        return tinted;
     }
 
     /**
@@ -573,5 +810,23 @@ public final class ImageMethodDispatcher {
             case 41 -> Palette.InkMode.DARKEN;
             default -> Palette.InkMode.COPY;
         };
+    }
+
+    private static Palette.InkMode inkFromDatum(Datum inkDatum) {
+        if (inkDatum instanceof Datum.Int inkInt) {
+            return inkFromInt(inkInt.value());
+        }
+        if (inkDatum instanceof Datum.Symbol sym) {
+            return inkFromName(sym.name());
+        }
+        if (inkDatum instanceof Datum.Str str) {
+            return inkFromName(str.value());
+        }
+        return null;
+    }
+
+    private static Palette.InkMode inkFromName(String inkName) {
+        InkMode inkMode = InkMode.fromNameOrNull(inkName);
+        return inkMode != null ? inkFromInt(inkMode.code()) : null;
     }
 }

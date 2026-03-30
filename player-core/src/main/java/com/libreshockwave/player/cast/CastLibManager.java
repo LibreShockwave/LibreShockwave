@@ -6,11 +6,13 @@ import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastChunk;
 import com.libreshockwave.chunks.CastListChunk;
 import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.SlotId;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -23,7 +25,7 @@ import java.util.function.BiConsumer;
 public class CastLibManager implements CastLibProvider {
 
     private final DirectorFile file;
-    private final Map<Integer, CastLib> castLibs = new HashMap<>();
+    private final Map<Integer, CastLib> castLibs = new LinkedHashMap<>();
     private boolean initialized = false;
 
     // Callback for cast data loading: when Lingo sets castLib.fileName, this is called
@@ -168,32 +170,15 @@ public class CastLibManager implements CastLibProvider {
         return result;
     }
 
-    /**
-     * Called when Lingo sets castLib.fileName, triggering a cast reload.
-     * Delegates to castDataRequestCallback for data delivery.
-     * Falls back to castDataCache (populated by onNetFetchComplete) if the
-     * callback doesn't load the data.
-     */
     private void tryLoadCastFromCache(int castLibNumber, String newFileName) {
         if (newFileName == null || newFileName.isEmpty()) return;
 
-        CastLib target = getCastLib(castLibNumber);
-        if (target == null) return;
+        markPendingExternalLoad(castLibNumber, newFileName);
 
-        // Try the primary callback first (JVM: netManager cache, WASM: JS cache)
-        castDataRequestCallback.accept(castLibNumber, newFileName);
-
-        // If the cast still has no actual members after the callback, try our own castDataCache.
-        // This handles the WASM path where the primary callback (JS) may not deliver data
-        // synchronously, but onNetFetchComplete already cached it by baseName.
-        // Note: getMemberCount() returns total SLOT count (including empties), so we check
-        // getMemberChunks() which only contains actually populated member entries.
-        if (!target.isLoaded() || target.getMemberChunks().isEmpty()) {
-            String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(newFileName));
-            byte[] cached = castDataCache.get(baseName);
-            if (cached != null) {
-                setExternalCastData(castLibNumber, cached);
-            }
+        // Player provides a callback that checks its internal caches safely
+        // before delegating to system-specific async logic.
+        if (castDataRequestCallback != null) {
+            castDataRequestCallback.accept(castLibNumber, newFileName);
         }
     }
 
@@ -211,7 +196,6 @@ public class CastLibManager implements CastLibProvider {
             // Return reference anyway - member may not exist but reference is valid syntax
             return Datum.CastMemberRef.of(castLibNumber, memberNumber);
         }
-
         return Datum.CastMemberRef.of(castLibNumber, memberNumber);
     }
 
@@ -225,47 +209,70 @@ public class CastLibManager implements CastLibProvider {
     }
 
     @Override
+    public boolean isRegistryVisibleMember(int castLibNumber, int memberNumber) {
+        if (memberNumber <= 0) {
+            return false;
+        }
+        CastLib castLib = getCastLib(castLibNumber);
+        if (!isRegistryFallbackEligibleCast(castLib)) {
+            return false;
+        }
+        return castLib.getMember(memberNumber) != null;
+    }
+
+    @Override
     public Datum getMemberByName(int castLibNumber, String memberName) {
         ensureInitialized();
-
         if (castLibNumber > 0) {
-            // Search in specific cast
-            CastLib castLib = getCastLib(castLibNumber);
-            if (castLib != null) {
-                // Search file members first
-                CastMemberChunk member = castLib.findMemberByName(memberName);
-                if (member != null) {
-                    int memberNumber = castLib.getMemberNumber(member);
-                    return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-                }
-                // Search dynamic members (created at runtime via new(#type, castLib))
-                CastMember dynamic = castLib.getMemberByName(memberName);
-                if (dynamic != null) {
-                    return Datum.CastMemberRef.of(castLibNumber, dynamic.getMemberNumber());
-                }
-            }
+            return getMemberByNameInCast(getCastLib(castLibNumber), memberName);
         } else {
-            // Search in all casts
+            // Prefer the movie's stable/authored namespace first. Runtime-retargeted
+            // scratch casts may legitimately contain members with colliding names,
+            // but they should not hijack broad member("name") lookups while a
+            // stable cast already exposes the same member.
             for (CastLib castLib : castLibs.values()) {
-                if (!castLib.isLoaded()) {
-                    castLib.load();
+                CastLib loadedCast = getCastLib(castLib.getNumber());
+                if (!isRegistryFallbackEligibleCast(loadedCast)) {
+                    continue;
                 }
-                CastMemberChunk member = castLib.findMemberByName(memberName);
-                if (member != null) {
-                    int memberNumber = castLib.getMemberNumber(member);
-                    return Datum.CastMemberRef.of(castLib.getNumber(), memberNumber);
+                Datum found = getMemberByNameInCast(loadedCast, memberName);
+                if (!found.isVoid()) {
+                    return found;
                 }
             }
-            // If not found in file members, search dynamic members in all casts
+
             for (CastLib castLib : castLibs.values()) {
-                if (!castLib.isLoaded()) continue;
-                CastMember dynamic = castLib.getMemberByName(memberName);
-                if (dynamic != null) {
-                    return Datum.CastMemberRef.of(castLib.getNumber(), dynamic.getMemberNumber());
+                Datum found = getMemberByNameInCast(getCastLib(castLib.getNumber()), memberName);
+                if (!found.isVoid()) {
+                    return found;
                 }
             }
         }
 
+        return Datum.VOID;
+    }
+
+    @Override
+    public Datum getRegistryMemberByName(int castLibNumber, String memberName) {
+        ensureInitialized();
+        if (castLibNumber > 0) {
+            CastLib castLib = getCastLib(castLibNumber);
+            if (!isRegistryFallbackEligibleCast(castLib)) {
+                return Datum.VOID;
+            }
+            return getMemberByNameInCast(castLib, memberName);
+        }
+
+        for (CastLib castLib : castLibs.values()) {
+            CastLib loadedCast = getCastLib(castLib.getNumber());
+            if (!isRegistryFallbackEligibleCast(loadedCast)) {
+                continue;
+            }
+            Datum found = getMemberByNameInCast(loadedCast, memberName);
+            if (!found.isVoid()) {
+                return found;
+            }
+        }
         return Datum.VOID;
     }
 
@@ -314,6 +321,47 @@ public class CastLibManager implements CastLibProvider {
         if (member == null) {
             return Datum.VOID;
         }
+        if ("duplicate".equalsIgnoreCase(methodName) && !args.isEmpty()) {
+            Datum targetArg = args.get(0);
+            Datum.CastMemberRef targetRef = null;
+
+            if (targetArg instanceof Datum.CastMemberRef cmr) {
+                targetRef = cmr;
+            } else if (targetArg.isInt() || targetArg.isFloat()) {
+                int slotValue = targetArg.toInt();
+                SlotId slotId = new SlotId(slotValue);
+                if (slotId.castLib() >= 1 && slotId.member() >= 1) {
+                    Datum decodedRef = Datum.CastMemberRef.of(slotId.castLib(), slotId.member());
+                    if (decodedRef instanceof Datum.CastMemberRef cmr) {
+                        targetRef = cmr;
+                    }
+                } else if (castLibNumber >= 1 && slotValue >= 1) {
+                    // Fallback for callers that pass a raw member number instead of member.number.
+                    Datum fallbackRef = Datum.CastMemberRef.of(castLibNumber, slotValue);
+                    if (fallbackRef instanceof Datum.CastMemberRef cmr) {
+                        targetRef = cmr;
+                    }
+                }
+            }
+
+            if (targetRef == null) {
+                return member.callMethod(methodName, args);
+            }
+
+            CastLib targetCastLib = getCastLib(targetRef.castLibNum());
+            if (targetCastLib == null) {
+                return Datum.VOID;
+            }
+            CastMember targetMember = targetCastLib.getMember(targetRef.memberNum());
+            if (targetMember == null) {
+                return Datum.VOID;
+            }
+            Palette sourcePalette = member.getPaletteData();
+            if (sourcePalette != null) {
+                targetMember.setPaletteData(sourcePalette);
+                return targetArg;
+            }
+        }
         return member.callMethod(methodName, args);
     }
 
@@ -341,18 +389,31 @@ public class CastLibManager implements CastLibProvider {
         // Try specified cast lib first
         CastLib castLib = getCastLib(castLibNumber);
         if (castLib != null && castLib.isLoaded()) {
+            CastMember dynamicMember = castLib.getMember(memberNumber);
+            if (dynamicMember != null) {
+                Palette dynamicPalette = dynamicMember.getPaletteData();
+                if (dynamicPalette != null) {
+                    return dynamicPalette;
+                }
+            }
             CastMemberChunk chunk = castLib.findMemberByNumber(memberNumber);
             if (chunk != null && chunk.file() != null) {
-                // Use the DirectorFile's palette resolver which handles CLUT chunk lookup
-                return chunk.file().resolvePalette(chunk.id().value());
+                return chunk.file().resolvePaletteByMemberNumber(memberNumber);
             }
         }
         // Fallback: search all cast libs
         for (CastLib cl : castLibs.values()) {
             if (!cl.isLoaded()) continue;
+            CastMember dynamicMember = cl.getMember(memberNumber);
+            if (dynamicMember != null) {
+                Palette dynamicPalette = dynamicMember.getPaletteData();
+                if (dynamicPalette != null) {
+                    return dynamicPalette;
+                }
+            }
             CastMemberChunk chunk = cl.findMemberByNumber(memberNumber);
             if (chunk != null && chunk.file() != null) {
-                return chunk.file().resolvePalette(chunk.id().value());
+                return chunk.file().resolvePaletteByMemberNumber(memberNumber);
             }
         }
         return null;
@@ -363,6 +424,18 @@ public class CastLibManager implements CastLibProvider {
      * Used by the renderer when CastMemberChunk lookup fails for dynamically created members.
      */
     public CastMember getDynamicMember(int castLibNumber, int memberNumber) {
+        CastLib castLib = getCastLib(castLibNumber);
+        if (castLib == null) {
+            return null;
+        }
+        return castLib.getMember(memberNumber);
+    }
+
+    /**
+     * Resolve any runtime CastMember wrapper by cast/member number.
+     * Unlike getDynamicMember(), this also works for file-backed members.
+     */
+    public CastMember resolveMember(int castLibNumber, int memberNumber) {
         CastLib castLib = getCastLib(castLibNumber);
         if (castLib == null) {
             return null;
@@ -515,6 +588,7 @@ public class CastLibManager implements CastLibProvider {
     // so that later castLib.fileName assignments can load instantly without
     // a JS round-trip.
     private final Map<String, byte[]> castDataCache = new HashMap<>();
+    private final Map<Integer, String> pendingExternalLoads = new HashMap<>();
 
     /**
      * Cache raw external cast data by base name for later reuse.
@@ -522,6 +596,9 @@ public class CastLibManager implements CastLibProvider {
     public void cacheExternalData(String url, byte[] data) {
         String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
         castDataCache.put(baseName, data);
+        for (CastLib castLib : findCastLibsByUrl(url)) {
+            castLib.cacheFetchedExternalData(data);
+        }
     }
 
     /**
@@ -529,6 +606,15 @@ public class CastLibManager implements CastLibProvider {
      */
     public byte[] getCachedExternalData(String baseName) {
         return castDataCache.get(baseName);
+    }
+
+    public void clearPendingExternalLoad(int castLibNumber) {
+        pendingExternalLoads.remove(castLibNumber);
+    }
+
+    private void markPendingExternalLoad(int castLibNumber, String fileName) {
+        pendingExternalLoads.put(castLibNumber,
+                FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(fileName)));
     }
 
     /**
@@ -543,7 +629,11 @@ public class CastLibManager implements CastLibProvider {
         if (castLib == null) {
             return false;
         }
-        return castLib.setExternalData(data);
+        boolean loaded = castLib.setExternalData(data);
+        if (loaded) {
+            clearPendingExternalLoad(castLibNumber);
+        }
+        return loaded;
     }
 
     /**
@@ -557,7 +647,6 @@ public class CastLibManager implements CastLibProvider {
      */
     public boolean setExternalCastDataByUrl(String url, byte[] data) {
         ensureInitialized();
-
         boolean anyLoaded = false;
         for (CastLib castLib : findCastLibsByUrl(url)) {
             // Skip if already loaded with member data (prevents re-parsing same file)
@@ -585,6 +674,24 @@ public class CastLibManager implements CastLibProvider {
         return result;
     }
 
+    public java.util.List<Integer> getRequestedExternalCastSlots(String url) {
+        ensureInitialized();
+
+        String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
+        java.util.List<Integer> slots = new java.util.ArrayList<>();
+        
+        for (CastLib castLib : findCastLibsByUrl(url)) {
+            int castLibNumber = castLib.getNumber();
+            boolean wasRequested = castLib.isFetching()
+                    || baseName.equalsIgnoreCase(pendingExternalLoads.get(castLibNumber))
+                    || (!castLib.isLoaded() && castLib.matchesAuthoredExternalFile(baseName));
+            if (wasRequested) {
+                slots.add(castLibNumber);
+            }
+        }
+        return slots;
+    }
+
     private java.util.List<CastLib> findCastLibsByUrl(String url) {
         String extractedFileName = FileUtil.getFileName(url);
         String fileNameNoExt = FileUtil.getFileNameWithoutExtension(extractedFileName);
@@ -603,6 +710,26 @@ public class CastLibManager implements CastLibProvider {
         return result;
     }
 
+    private static Datum getMemberByNameInCast(CastLib castLib, String memberName) {
+        if (castLib == null || memberName == null || memberName.isEmpty()) {
+            return Datum.VOID;
+        }
+        CastMemberChunk member = castLib.findMemberByName(memberName);
+        if (member != null) {
+            int memberNumber = castLib.getMemberNumber(member);
+            return Datum.CastMemberRef.of(castLib.getNumber(), memberNumber);
+        }
+        CastMember dynamic = castLib.getMemberByName(memberName);
+        if (dynamic != null) {
+            return Datum.CastMemberRef.of(castLib.getNumber(), dynamic.getMemberNumber());
+        }
+        return Datum.VOID;
+    }
+
+    private static boolean isRegistryFallbackEligibleCast(CastLib castLib) {
+        return castLib != null && castLib.usesStableRegistryBinding();
+    }
+
     @Override
     public Datum createMember(int castLibNumber, String memberType) {
         CastLib castLib = getCastLib(castLibNumber);
@@ -619,24 +746,50 @@ public class CastLibManager implements CastLibProvider {
     @Override
     public com.libreshockwave.bitmap.Palette resolvePaletteByName(String name) {
         ensureInitialized();
-        // Search all cast libraries for a palette member with this name
+        com.libreshockwave.bitmap.Palette firstMatch = null;
+
         for (CastLib castLib : castLibs.values()) {
             com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByName(name);
             if (chunk != null && chunk.file() != null) {
-                com.libreshockwave.bitmap.Palette pal = chunk.file().resolvePalette(chunk.id().value());
-                if (pal != null) return pal;
+                int memberNum = castLib.getMemberNumber(chunk);
+                com.libreshockwave.bitmap.Palette pal =
+                        memberNum > 0 ? chunk.file().resolvePaletteByMemberNumber(memberNum) : null;
+                if (pal != null) {
+                    if (firstMatch == null) {
+                        firstMatch = pal;
+                    }
+                }
+            }
+            CastMember dynamic = castLib.getMemberByName(name);
+            if (dynamic != null) {
+                com.libreshockwave.bitmap.Palette pal = dynamic.getPaletteData();
+                if (pal != null) {
+                    if (firstMatch == null) {
+                        firstMatch = pal;
+                    }
+                }
             }
         }
-        return null;
+        return firstMatch;
     }
 
     @Override
     public com.libreshockwave.bitmap.Palette resolvePaletteByMember(int castLibNum, int memberNum) {
         ensureInitialized();
-        // Use the CastMemberChunk from the cast library manager lookup
-        com.libreshockwave.chunks.CastMemberChunk chunk = getCastMember(castLibNum, memberNum);
+        CastLib castLib = getCastLib(castLibNum);
+        if (castLib == null) {
+            return null;
+        }
+        CastMember dynamicMember = castLib.getMember(memberNum);
+        if (dynamicMember != null) {
+            com.libreshockwave.bitmap.Palette dynamicPalette = dynamicMember.getPaletteData();
+            if (dynamicPalette != null) {
+                return dynamicPalette;
+            }
+        }
+        com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByNumber(memberNum);
         if (chunk != null && chunk.file() != null) {
-            return chunk.file().resolvePalette(chunk.id().value());
+            return chunk.file().resolvePaletteByMemberNumber(memberNum);
         }
         return null;
     }
@@ -644,18 +797,56 @@ public class CastLibManager implements CastLibProvider {
     @Override
     public String getFieldValue(Object memberNameOrNum, int castId) {
         ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member != null) {
+            return resolveFieldText(member);
+        }
+        return "";
+    }
 
+    @Override
+    public Datum getFieldDatum(Object memberNameOrNum, int castId) {
+        ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member == null) {
+            return Datum.EMPTY_STRING;
+        }
+        return new Datum.FieldText(resolveFieldText(member), member.getCastLibNumber(), member.getMemberNumber());
+    }
+
+    @Override
+    public Datum getFieldParsedValue(int castLibNumber, int memberNumber, com.libreshockwave.vm.LingoVM vm) {
+        ensureInitialized();
+        CastLib castLib = getCastLib(castLibNumber);
+        if (castLib == null) {
+            return Datum.VOID;
+        }
+        CastMember member = castLib.getMember(memberNumber);
+        if (member == null) {
+            return Datum.VOID;
+        }
+        return member.getParsedTextValue(vm);
+    }
+
+    @Override
+    public void setFieldValue(Object memberNameOrNum, int castId, String value) {
+        ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member != null) {
+            member.setDynamicText(value);
+        }
+    }
+
+    private CastMember resolveFieldMember(Object memberNameOrNum, int castId) {
         CastMember member = null;
 
         if (memberNameOrNum instanceof String name) {
-            // Find by name
             if (castId > 0) {
                 CastLib castLib = getCastLib(castId);
                 if (castLib != null) {
                     member = castLib.getMemberByName(name);
                 }
             } else {
-                // Search all casts — also check dynamic members in each cast
                 for (CastLib castLib : castLibs.values()) {
                     if (!castLib.isLoaded()) {
                         castLib.load();
@@ -667,8 +858,8 @@ public class CastLibManager implements CastLibProvider {
                 }
             }
         } else if (memberNameOrNum instanceof Integer num) {
-            // Find by number - decode combined slot numbers (castLib << 16 | member)
-            int effectiveCastId, effectiveMemberNum;
+            int effectiveCastId;
+            int effectiveMemberNum;
             if (num > 65535) {
                 effectiveCastId = num >> 16;
                 effectiveMemberNum = num & 0xFFFF;
@@ -682,51 +873,73 @@ public class CastLibManager implements CastLibProvider {
             }
         }
 
-        if (member != null) {
-            String tc = member.getTextContent();
-            return tc;
-        }
-
-        return "";
+        return member;
     }
 
-    @Override
-    public void setFieldValue(Object memberNameOrNum, int castId, String value) {
-        ensureInitialized();
-
-        CastMember member = null;
-
-        if (memberNameOrNum instanceof String name) {
-            if (castId > 0) {
-                CastLib castLib = getCastLib(castId);
-                if (castLib != null) {
-                    member = castLib.getMemberByName(name);
-                }
-            } else {
-                for (CastLib castLib : castLibs.values()) {
-                    if (!castLib.isLoaded()) castLib.load();
-                    member = castLib.getMemberByName(name);
-                    if (member != null) break;
-                }
-            }
-        } else if (memberNameOrNum instanceof Integer num) {
-            int effectiveCastId, effectiveMemberNum;
-            if (num > 65535) {
-                effectiveCastId = num >> 16;
-                effectiveMemberNum = num & 0xFFFF;
-            } else {
-                effectiveCastId = castId > 0 ? castId : 1;
-                effectiveMemberNum = num;
-            }
-            CastLib castLib = getCastLib(effectiveCastId);
-            if (castLib != null) {
-                member = castLib.getMember(effectiveMemberNum);
-            }
+    private String resolveFieldText(CastMember member) {
+        if (member == null) {
+            return "";
         }
 
-        if (member != null) {
-            member.setDynamicText(value);
+        String text = member.getTextContent();
+        if (text.isEmpty() || !"memberalias.index".equalsIgnoreCase(member.getName())) {
+            return text;
         }
+
+        CastLib castLib = getCastLib(member.getCastLibNumber());
+        if (castLib == null) {
+            return text;
+        }
+        // Authored Resource Manager.preIndexMembers() indexes exact member names
+        // before importing memberalias.index. Some public-room casts keep their
+        // actual members under s_-prefixed source names while the alias table
+        // still points at the canonical unprefixed names, so normalize the field
+        // text before legacy scripts consume it.
+        return rewriteAliasIndexTargetsForSourcePrefixedMembers(castLib, text);
+    }
+
+    private static String rewriteAliasIndexTargetsForSourcePrefixedMembers(CastLib castLib, String aliasText) {
+        if (castLib == null || aliasText == null || aliasText.isEmpty()) {
+            return aliasText != null ? aliasText : "";
+        }
+
+        boolean changed = false;
+        StringBuilder rewritten = new StringBuilder(aliasText.length() + 32);
+        String[] lines = aliasText.split("\\r\\n|\\r|\\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String rawLine = lines[i];
+            String normalizedLine = rawLine;
+
+            int delimiter = rawLine.indexOf('=');
+            if (delimiter > 0 && delimiter < rawLine.length() - 1) {
+                String targetName = rawLine.substring(delimiter + 1);
+                boolean mirrored = targetName.charAt(targetName.length() - 1) == '*';
+                String bareTarget = mirrored ? targetName.substring(0, targetName.length() - 1) : targetName;
+                String prefixedTarget = sourcePrefixedLookupName(bareTarget);
+                if (prefixedTarget != null
+                        && !castLib.hasMemberNamedExact(bareTarget)
+                        && castLib.hasMemberNamedExact(prefixedTarget)) {
+                    normalizedLine = rawLine.substring(0, delimiter + 1)
+                            + prefixedTarget
+                            + (mirrored ? "*" : "");
+                    changed = true;
+                }
+            }
+
+            if (i > 0) {
+                rewritten.append('\r');
+            }
+            rewritten.append(normalizedLine);
+        }
+
+        return changed ? rewritten.toString() : aliasText;
+    }
+
+    private static String sourcePrefixedLookupName(String requestedName) {
+        if (requestedName == null || requestedName.isEmpty()) {
+            return null;
+        }
+        return requestedName.regionMatches(true, 0, "s_", 0, 2) ? null : "s_" + requestedName;
     }
 
     /**

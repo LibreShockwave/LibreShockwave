@@ -8,6 +8,7 @@ import com.libreshockwave.player.input.HitTester;
 import com.libreshockwave.player.input.InputEvent;
 import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.player.render.output.TextRenderer;
+import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.StageRenderer;
 import com.libreshockwave.player.sprite.SpriteState;
 import com.libreshockwave.util.IntValueProvider;
@@ -52,7 +53,7 @@ public class InputHandler {
     public void onMouseMove(int stageX, int stageY) {
         inputState.setMousePosition(stageX, stageY);
         // Update rollover sprite
-        int hit = hitTest(stageX, stageY);
+        int hit = hitTestExact(stageX, stageY);
         inputState.setRolloverSprite(hit);
 
         // Drag-selection: extend selection while mouse is down over focused editable field
@@ -88,9 +89,10 @@ public class InputHandler {
             inputState.queueEvent(InputEvent.rightMouseDown(stageX, stageY));
         } else {
             inputState.setMouseDown(true);
-            int hit = hitTest(stageX, stageY);
+            int hit = hitTestExact(stageX, stageY);
             inputState.setClickOnSprite(hit);
             inputState.setClickLoc(stageX, stageY);
+            inputState.updateDoubleClick(stageX, stageY);
             inputState.queueEvent(InputEvent.mouseDown(stageX, stageY));
         }
     }
@@ -107,6 +109,25 @@ public class InputHandler {
             inputState.setMouseDown(false);
             inputState.queueEvent(InputEvent.mouseUp(stageX, stageY));
         }
+    }
+
+    /**
+     * Handle canvas/window focus loss.
+     * Director-style pressed states should not remain latched when the host loses focus,
+     * so synthesize mouse-up for any held buttons and clear rollover state.
+     */
+    public void onBlur() {
+        int stageX = inputState.getMouseH();
+        int stageY = inputState.getMouseV();
+        if (inputState.isMouseDown()) {
+            inputState.setMouseDown(false);
+            inputState.queueEvent(InputEvent.mouseUp(stageX, stageY));
+        }
+        if (inputState.isRightMouseDown()) {
+            inputState.setRightMouseDown(false);
+            inputState.queueEvent(InputEvent.rightMouseUp(stageX, stageY));
+        }
+        inputState.setRolloverSprite(0);
     }
 
     /**
@@ -191,7 +212,7 @@ public class InputHandler {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
         switch (event.type()) {
             case MOUSE_DOWN -> {
-                int hitSprite = hitTest(event.stageX(), event.stageY());
+                int hitSprite = hitTestExact(event.stageX(), event.stageY());
                 // Director D6+: if the previously clicked sprite is different from
                 // the current one, send mouseUpOutSide to the old sprite (ScummVM behavior).
                 int lastClicked = inputState.getClickOnSprite();
@@ -204,40 +225,35 @@ public class InputHandler {
                 // automatically sets keyboardFocusSprite to that sprite's channel.
                 // Clicking elsewhere clears the keyboard focus.
                 autoFocusEditableField(hitSprite, event.stageX(), event.stageY());
-                // Dispatch mouseDown to sprites at the click coordinates.
-                // Stop if a handler calls stopEvent() (e.g. avatar click should not
-                // also trigger floor walk).
                 dispatcher.resetEventStopped();
-                List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
-                for (int ch : hitChannels) {
-                    dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_DOWN, List.of());
-                    if (dispatcher.isEventStopped()) break;
+                if (hitSprite > 0) {
+                    dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_DOWN, List.of());
                 }
-                dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_DOWN, List.of());
+                dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.MOUSE_DOWN, List.of());
             }
             case MOUSE_UP -> {
-                // Dispatch mouseUp to sprites at the release coordinates.
-                dispatcher.resetEventStopped();
                 int pressedSprite = inputState.getClickOnSprite();
-                List<Integer> hitChannels = hitTestAll(event.stageX(), event.stageY());
-                for (int ch : hitChannels) {
-                    dispatcher.dispatchSpriteEvent(ch, PlayerEvent.MOUSE_UP, List.of());
-                    if (dispatcher.isEventStopped()) break;
-                }
-                // If the originally-pressed sprite isn't in the hit list,
-                // still deliver mouseUp to it (Event Broker / Navigator pattern).
-                if (pressedSprite > 0 && !hitChannels.contains(pressedSprite)
+                int releaseSprite = hitTestExact(event.stageX(), event.stageY());
+                dispatcher.resetEventStopped();
+                if (pressedSprite > 0 && releaseSprite == pressedSprite) {
+                    dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
+                } else if (pressedSprite > 0
+                        && dispatcher.spriteHasHandler(pressedSprite, "mouseUpOutSide")) {
+                    dispatcher.dispatchSpriteEvent(pressedSprite, "mouseUpOutSide", List.of());
+                } else if (pressedSprite > 0
                         && dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP.getHandlerName())) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
+                } else if (releaseSprite > 0) {
+                    dispatcher.dispatchSpriteEvent(releaseSprite, PlayerEvent.MOUSE_UP, List.of());
                 }
                 inputState.setClickOnSprite(0);
-                dispatcher.dispatchGlobalEvent(PlayerEvent.MOUSE_UP, List.of());
+                dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.MOUSE_UP, List.of());
             }
             case RIGHT_MOUSE_DOWN -> {
-                dispatcher.dispatchGlobalEvent(PlayerEvent.RIGHT_MOUSE_DOWN, List.of());
+                dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.RIGHT_MOUSE_DOWN, List.of());
             }
             case RIGHT_MOUSE_UP -> {
-                dispatcher.dispatchGlobalEvent(PlayerEvent.RIGHT_MOUSE_UP, List.of());
+                dispatcher.dispatchFrameAndMovieEvent(PlayerEvent.RIGHT_MOUSE_UP, List.of());
             }
             case KEY_DOWN -> {
                 // Restore per-event key state so Lingo's "the key" / "the keyCode" read correctly
@@ -299,15 +315,68 @@ public class InputHandler {
     }
 
     private int hitTest(int stageX, int stageY) {
-        EventDispatcher dispatcher = eventDispatcherSupplier.get();
-        return HitTester.hitTest(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
-                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
+        return hitTestExact(stageX, stageY);
     }
 
     private List<Integer> hitTestAll(int stageX, int stageY) {
+        return hitTestAllInteractive(stageX, stageY, false);
+    }
+
+    private int hitTestExact(int stageX, int stageY) {
+        return hitTestInteractive(stageX, stageY, false);
+    }
+
+    private int hitTestInteractive(int stageX, int stageY, boolean allowBoundingBoxFallback) {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
-        return HitTester.hitTestAll(stageRenderer, currentFrameSupplier.getAsInt(), stageX, stageY,
-                channel -> dispatcher != null && dispatcher.isSpriteMouseInteractive(channel));
+        if (dispatcher == null) {
+            return 0;
+        }
+        List<Integer> exactHits = getInteractiveHits(stageX, stageY, dispatcher, false);
+        if (!exactHits.isEmpty()) {
+            return exactHits.get(0);
+        }
+        if (!allowBoundingBoxFallback) {
+            return 0;
+        }
+        // Bounding-box fallback is retained for callers that want the old helper
+        // semantics, but current stage hit testing is already bounds-based.
+        List<Integer> boundingHits = getInteractiveHits(stageX, stageY, dispatcher, true);
+        return boundingHits.isEmpty() ? 0 : boundingHits.get(0);
+    }
+
+    private List<Integer> hitTestAllInteractive(int stageX, int stageY, boolean allowBoundingBoxFallback) {
+        EventDispatcher dispatcher = eventDispatcherSupplier.get();
+        if (dispatcher == null) {
+            return List.of();
+        }
+        List<Integer> exactHits = getInteractiveHits(stageX, stageY, dispatcher, false);
+        if (!exactHits.isEmpty()) {
+            return exactHits;
+        }
+        if (!allowBoundingBoxFallback) {
+            return List.of();
+        }
+        return getInteractiveHits(stageX, stageY, dispatcher, true);
+    }
+
+    private List<Integer> getInteractiveHits(int stageX, int stageY, EventDispatcher dispatcher,
+                                             boolean forceBoundingBox) {
+        List<Integer> hitChannels = HitTester.hitTestAll(
+                stageRenderer,
+                currentFrameSupplier.getAsInt(),
+                stageX,
+                stageY,
+                forceBoundingBox ? dispatcher::isSpriteMouseInteractive : channel -> false);
+        if (hitChannels.isEmpty()) {
+            return hitChannels;
+        }
+        List<Integer> interactive = new ArrayList<>(hitChannels.size());
+        for (int channel : hitChannels) {
+            if (dispatcher.isSpriteMouseInteractive(channel)) {
+                interactive.add(channel);
+            }
+        }
+        return interactive;
     }
 
     // --- Text editing ---

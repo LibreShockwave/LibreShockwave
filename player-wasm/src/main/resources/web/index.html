@@ -41,12 +41,17 @@
                     <button id="play-btn" class="btn transport-btn" disabled>&#9654; Play</button>
                     <button id="pause-btn" class="btn transport-btn" disabled>&#9646;&#9646; Pause</button>
                     <button id="stop-btn" class="btn transport-btn" disabled>&#9632; Stop</button>
+                    <label class="transport-tempo-label" for="tempo-input">Tempo</label>
+                    <input type="number" id="tempo-input" class="tempo-input" min="0" step="1" value="15">
                     <span id="frame-info" class="frame-info"></span>
                 </div>
 
                 <!-- Status bar -->
                 <div class="statusbar">
                     <span id="status">Ready</span>
+                    <button id="clear-cache-btn" class="btn btn-sm btn-clear-cache">
+                        <span class="icon-reload">&#10227;</span> Clean cache
+                    </button>
                 </div>
 
                 <!-- Footer -->
@@ -114,6 +119,7 @@
             params: habboParams,
             onLoad: function(info) {
                 status.textContent = 'Loaded (' + info.width + 'x' + info.height + ', ' + info.frameCount + ' frames)';
+                document.getElementById('tempo-input').value = player._tempoOverride > 0 ? player._tempoOverride : (info.tempo || 15);
                 enableControls();
             },
             onError: function(msg) {
@@ -132,11 +138,7 @@
         if (tempoParam) {
             var tempoVal = parseInt(tempoParam, 10);
             if (tempoVal > 0) {
-                Object.defineProperty(player, '_lastTempo', {
-                    get: function() { return tempoVal; },
-                    set: function() {},
-                    configurable: true
-                });
+                player.setTempo(tempoVal);
             }
         }
 
@@ -155,6 +157,7 @@
         var status = document.getElementById('status');
         var urlInput = document.getElementById('url-input');
         var frameInfo = document.getElementById('frame-info');
+        var tempoInput = document.getElementById('tempo-input');
 
         // Restore saved URL
         try { var s = localStorage.getItem('ls_urlInput'); if (s) urlInput.value = s; } catch(e) {}
@@ -191,6 +194,15 @@
         document.getElementById('play-btn').addEventListener('click', function() { player.play(); status.textContent = 'Playing'; });
         document.getElementById('pause-btn').addEventListener('click', function() { player.pause(); status.textContent = 'Paused'; });
         document.getElementById('stop-btn').addEventListener('click', function() { player.stop(); status.textContent = 'Stopped'; });
+        tempoInput.addEventListener('change', function() {
+            var tempo = parseInt(tempoInput.value, 10);
+            if (!(tempo >= 0)) {
+                tempo = 15;
+                tempoInput.value = '15';
+            }
+            player.setTempo(tempo);
+            status.textContent = tempo > 0 ? ('Tempo set to ' + tempo + ' fps') : 'Tempo reset to movie/score';
+        });
 
         // === External Params Dialog ===
 
@@ -318,6 +330,16 @@
         debugCb.addEventListener('change', function() {
             player.setDebugPlayback(this.checked);
             try { localStorage.setItem('ls_debugPlayback', this.checked ? '1' : '0'); } catch(e) {}
+        });
+
+        // Clean cache button
+        document.getElementById('clear-cache-btn').addEventListener('click', function() {
+            if (!confirm('This will clear all saved preferences and reset the player. Continue?')) return;
+            try { localStorage.setItem('ls_urlInput', urlInput.value.trim()); } catch(e) {}
+            status.textContent = 'Clearing cache...';
+            player.clearCache().then(function() {
+                location.reload();
+            });
         });
 
         // Keyboard shortcuts
