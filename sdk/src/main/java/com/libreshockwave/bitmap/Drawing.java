@@ -12,6 +12,7 @@ import java.util.Queue;
  * Implements Director's copyPixels with various ink effects.
  */
 public class Drawing {
+    private static final int DEFAULT_RGB_MATTE = 0xFFFFFF;
 
     /**
      * A border-connected matte inferred from authored bitmap content.
@@ -679,10 +680,14 @@ public class Drawing {
         // Fuse text wrappers render grayscale glyphs onto a solid RGB background, then
         // copy the result with MATTE ink. Preserve that authored background as matte
         // when the edge color is coherent; otherwise keep Director's white fallback.
-        if (matteRgb != null && matteRgb != 0xFFFFFF && isMostlyGrayscale(pixels)) {
+        if (shouldUseDominantEdgeRgbMatte(matteRgb, pixels)) {
             return new FloodFillMatte(matteRgb, 0);
         }
-        return new FloodFillMatte(0xFFFFFF, 0);
+        return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
+    }
+
+    private static boolean shouldUseDominantEdgeRgbMatte(Integer matteRgb, int[] pixels) {
+        return matteRgb != null && matteRgb != DEFAULT_RGB_MATTE && isMostlyGrayscale(pixels);
     }
 
     private static Integer inferDominantEdgeRgb(int[] pixels, int w, int h) {
