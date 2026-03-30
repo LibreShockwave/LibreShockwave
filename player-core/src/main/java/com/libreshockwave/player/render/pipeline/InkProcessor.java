@@ -1,6 +1,7 @@
 package com.libreshockwave.player.render.pipeline;
 
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.id.InkMode;
 
@@ -75,13 +76,17 @@ public final class InkProcessor {
             return src;
         }
 
+        if (needsFloodFillIsolation(ink, src)) {
+            src = Drawing.applyFloodFillTransparency(src);
+        }
+
         if (ink == InkMode.MATTE) {
             // Matte ink: flood-fill from edges
-            int matteColor = resolveMatteColor(src, ink, backColor, useAlpha, palette);
-            if (matteColor < 0) {
+            Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+            if (matteSpec == null) {
                 return src;
             }
-            return applyMatte(src, matteColor);
+            return applyMatte(src, matteSpec.matteColorRgb(), matteSpec.tolerance());
         } else if (ink == InkMode.TRANSPARENT || ink == InkMode.REVERSE
                 || ink == InkMode.GHOST || ink == InkMode.NOT_COPY
                 || ink == InkMode.NOT_TRANSPARENT || ink == InkMode.NOT_REVERSE) {
@@ -146,23 +151,30 @@ public final class InkProcessor {
         return src;
     }
 
+    private static boolean needsFloodFillIsolation(InkMode ink, Bitmap src) {
+        if (src.getPaletteIndices() == null) {
+            return false;
+        }
+        return ink == InkMode.ADD_PIN || ink == InkMode.ADD;
+    }
+
     /**
      * Resolve the matte color for ink 8 (Matte).
      * Returns -1 if the bitmap has native alpha and should skip processing.
      */
     static int resolveMatteColor(Bitmap src, InkMode ink, int backColor,
                                   boolean useAlpha, Palette palette) {
+        Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+        return matteSpec != null ? matteSpec.matteColorRgb() : -1;
+    }
+
+    private static Drawing.FloodFillMatte resolveMatteSpec(Bitmap src, InkMode ink, int backColor,
+                                              boolean useAlpha, Palette palette) {
         // Native 32-bit alpha drives matte directly; no white-border extraction.
         if (src.hasNativeMatteAlpha() && useAlpha) {
-            return -1;
+            return null;
         }
-
-        // Director matte removes the white bounding rectangle around the sprite.
-        // Even for paletted content, matching against palette slot 0 is too loose once
-        // the effective palette has been recolored, because the decoded bitmap pixels are
-        // already concrete RGB values at this point. Use white consistently here so stage
-        // MATTE matches copyPixels/createMatte behavior.
-        return 0xFFFFFF;
+        return Drawing.resolveFloodFillMatte(src);
     }
 
     /**
@@ -243,6 +255,10 @@ public final class InkProcessor {
      * pixels matching matteColorRGB. Interior pixels of the same color are preserved.
      */
     static Bitmap applyMatte(Bitmap src, int matteColorRGB) {
+        return applyMatte(src, matteColorRGB, 0);
+    }
+
+    static Bitmap applyMatte(Bitmap src, int matteColorRGB, int tolerance) {
         int w = src.getWidth();
         int h = src.getHeight();
         int[] pixels = src.getPixels();
@@ -251,12 +267,12 @@ public final class InkProcessor {
 
         // Seed border pixels matching matte color
         for (int x = 0; x < w; x++) {
-            seedMatte(pixels, transparent, queue, x, 0, w, matteColorRGB);
-            seedMatte(pixels, transparent, queue, x, h - 1, w, matteColorRGB);
+            seedMatte(pixels, transparent, queue, x, 0, w, matteColorRGB, tolerance);
+            seedMatte(pixels, transparent, queue, x, h - 1, w, matteColorRGB, tolerance);
         }
         for (int y = 1; y < h - 1; y++) {
-            seedMatte(pixels, transparent, queue, 0, y, w, matteColorRGB);
-            seedMatte(pixels, transparent, queue, w - 1, y, w, matteColorRGB);
+            seedMatte(pixels, transparent, queue, 0, y, w, matteColorRGB, tolerance);
+            seedMatte(pixels, transparent, queue, w - 1, y, w, matteColorRGB, tolerance);
         }
 
         // Flood-fill from seeds
@@ -264,10 +280,10 @@ public final class InkProcessor {
             int idx = queue.poll();
             int px = idx % w;
             int py = idx / w;
-            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteColorRGB);
-            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteColorRGB);
-            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteColorRGB);
-            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteColorRGB);
+            if (px > 0)     seedMatte(pixels, transparent, queue, px - 1, py, w, matteColorRGB, tolerance);
+            if (px < w - 1) seedMatte(pixels, transparent, queue, px + 1, py, w, matteColorRGB, tolerance);
+            if (py > 0)     seedMatte(pixels, transparent, queue, px, py - 1, w, matteColorRGB, tolerance);
+            if (py < h - 1) seedMatte(pixels, transparent, queue, px, py + 1, w, matteColorRGB, tolerance);
         }
 
         int[] result = new int[w * h];
@@ -283,16 +299,28 @@ public final class InkProcessor {
     }
 
     private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,
-                                   int x, int y, int w, int matteRgb) {
+                                   int x, int y, int w, int matteRgb, int tolerance) {
         int idx = y * w + x;
-        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb)) {
+        if (!transparent[idx] && isTransparentOrMatte(pixels[idx], matteRgb, tolerance)) {
             transparent[idx] = true;
             queue.add(idx);
         }
     }
 
-    private static boolean isTransparentOrMatte(int pixel, int matteRgb) {
-        return ((pixel >>> 24) & 0xFF) == 0 || (pixel & 0xFFFFFF) == matteRgb;
+    private static boolean isTransparentOrMatte(int pixel, int matteRgb, int tolerance) {
+        return ((pixel >>> 24) & 0xFF) == 0 || matchesRgb(pixel, matteRgb, tolerance);
+    }
+
+    private static boolean matchesRgb(int pixel, int matteRgb, int tolerance) {
+        int pr = (pixel >> 16) & 0xFF;
+        int pg = (pixel >> 8) & 0xFF;
+        int pb = pixel & 0xFF;
+        int mr = (matteRgb >> 16) & 0xFF;
+        int mg = (matteRgb >> 8) & 0xFF;
+        int mb = matteRgb & 0xFF;
+        return Math.abs(pr - mr) <= tolerance
+                && Math.abs(pg - mg) <= tolerance
+                && Math.abs(pb - mb) <= tolerance;
     }
 
     /**

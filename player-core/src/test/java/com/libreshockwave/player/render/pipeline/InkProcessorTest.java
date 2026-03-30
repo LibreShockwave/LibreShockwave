@@ -127,6 +127,22 @@ class InkProcessorTest {
     }
 
     @Test
+    void matteKeepsSolidUniformDarkBitmapOpaque() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+            0xFF020304, 0xFF020304, 0xFF020304,
+            0xFF020304, 0xFF020304, 0xFF020304,
+            0xFF020304, 0xFF020304, 0xFF020304
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, false, null);
+
+        assertEquals(0xFF020304, result.getPixel(0, 0));
+        assertEquals(0xFF020304, result.getPixel(1, 1));
+        assertEquals(0xFF020304, result.getPixel(2, 2));
+    }
+
+
+    @Test
     void matteOnlyRemovesWhiteBoundingPixelsForMixed32BitBitmap() {
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
             0xFF2A6883, 0xFF2A6883, 0xFF2A6883,
@@ -190,5 +206,62 @@ class InkProcessorTest {
         assertEquals(0x00000000, result.getPixel(0, 0));
         assertEquals(0xFF00AA00, result.getPixel(1, 1));
         assertEquals(0x00000000, result.getPixel(2, 2));
+    }
+
+    @Test
+    void addPinTreatsEdgeConnectedPaletteZeroAsBackgroundForIndexedBitmaps() {
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+            0xFF000000, 0xFF000000, 0xFF000000,
+            0xFF000000, 0xFF6E6E6E, 0xFF000000,
+            0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 0, 0,
+            0, (byte) 145, 0,
+            0, 0, 0
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.ADD_PIN, 0, false, null);
+
+        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFF6E6E6E, result.getPixel(1, 1));
+        assertEquals(0x00000000, result.getPixel(2, 2));
+    }
+
+    @Test
+    void addPinKeepsInteriorPaletteZeroIslandsOpaque() {
+        Bitmap src = new Bitmap(5, 5, 8, new int[] {
+            0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
+            0xFF000000, 0xFF202020, 0xFF202020, 0xFF202020, 0xFF000000,
+            0xFF000000, 0xFF202020, 0xFF000000, 0xFF202020, 0xFF000000,
+            0xFF000000, 0xFF202020, 0xFF202020, 0xFF202020, 0xFF000000,
+            0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 0, 0, 0, 0,
+            0, 7, 7, 7, 0,
+            0, 7, 0, 7, 0,
+            0, 7, 7, 7, 0,
+            0, 0, 0, 0, 0
+        });
+
+        Bitmap isolated = InkProcessor.applyInk(src, InkMode.ADD_PIN, 0, false, null);
+
+        assertEquals(0x00000000, isolated.getPixel(0, 0));
+        assertEquals(0xFF000000, isolated.getPixel(2, 2));
+        assertEquals(0xFF202020, isolated.getPixel(1, 1));
+    }
+
+    @Test
+    void addPinLeavesRgbBlackBackgroundPixelsOpaque() {
+        Bitmap src = new Bitmap(2, 1, 32, new int[] {
+            0xFF000000,
+            0xFF6E6E6E
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.ADD_PIN, 0, false, null);
+
+        assertEquals(0xFF000000, result.getPixel(0, 0));
+        assertEquals(0xFF6E6E6E, result.getPixel(1, 0));
     }
 }

@@ -55,6 +55,7 @@ class DrawingMatteTest {
         assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
     }
 
+
     @Test
     void createMatteKeepsNearWhiteBorderPixelsOpaque() {
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
@@ -83,6 +84,61 @@ class DrawingMatteTest {
         assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
         assertEquals(0x40FFFFFF, matte.getPixel(1, 1));
         assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
+    void createMatteUsesPaletteZeroForIndexedFloodFill() {
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+            0xFF000000, 0xFF000000, 0xFF000000,
+            0xFF000000, 0xFF33CCFF, 0xFF000000,
+            0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 0, 0,
+            0, 7, 0,
+            0, 0, 0
+        });
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
+        assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
+    void applyFloodFillTransparencyUsesSameIndexedMatteRule() {
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+            0xFF000000, 0xFF000000, 0xFF000000,
+            0xFF000000, 0xFF33CCFF, 0xFF000000,
+            0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 0, 0,
+            0, 7, 0,
+            0, 0, 0
+        });
+
+        Bitmap stripped = Drawing.applyFloodFillTransparency(src);
+
+        assertEquals(0x00000000, stripped.getPixel(0, 0));
+        assertEquals(0xFF33CCFF, stripped.getPixel(1, 1));
+        assertEquals(0x00000000, stripped.getPixel(2, 2));
+    }
+
+    @Test
+    void createMatteKeepsSolidUniformBitmapOpaque() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+            0xFF020304, 0xFF020304, 0xFF020304,
+            0xFF020304, 0xFF020304, 0xFF020304,
+            0xFF020304, 0xFF020304, 0xFF020304
+        });
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0xFFFFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, matte.getPixel(2, 2));
     }
 
     @Test
