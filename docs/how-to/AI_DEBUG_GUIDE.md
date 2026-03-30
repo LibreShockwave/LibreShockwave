@@ -397,6 +397,55 @@ Left wall rendered as pink (0xEFBBF0), right wall correct yellow (0xFFCC00). Byt
 
 7. **Trace the Lingo call stack** when a sprite property has a wrong value. The value may come from score data, from `applyScoreDefaults`, from Lingo's `SET` opcode (property by ID), or from `SET_OBJ_PROP` (property by name). These are DIFFERENT code paths.
 
+## Worked Example 4: Oasis Spa Water Animation Uses The Wrong Bitmap
+
+### Symptom
+
+In `Lounges and Clubs > Oasis Spa`, the pool water shows the authored placeholder pattern instead of the live teal ripple buffer that the room script draws every frame.
+
+### Investigation
+
+The extracted room scripts for `hh_room_pool` showed that `pool_b Class` creates `Water Ripple Effects Class` and initializes it with `vesi2`. That helper does not swap the sprite member. Instead, it does:
+
+1. `tSpr = ...getSprById("vesi2")`
+2. `pMemberImg = tSpr.member.image`
+3. `pMemberImg.fill(..., rgb(0, 153, 153))`
+4. `pMemberImg.draw(...)` for each ripple oval
+
+That means the authored score sprite stays bound to the same member slot, but the runtime `CastMember` wrapper owns a mutated live bitmap buffer.
+
+### Root Cause
+
+`SpriteBaker.bakeBitmap()` only used the runtime member path for explicitly dynamic sprites. For a score-placed bitmap sprite, it baked from the authored `CastMemberChunk` unless the sprite itself had a dynamic member override. Oasis Spa water is not a dynamic sprite override; it is an authored score sprite whose `member.image` is mutated at runtime.
+
+So the renderer kept decoding the original cast asset for `vesi2` instead of using the runtime member's script-modified bitmap.
+
+### Fix
+
+Resolve the runtime `CastMember` wrapper for score-backed bitmap sprites before falling back to the authored `CastMemberChunk`. If that runtime member's bitmap is script-modified, bake from the live bitmap buffer and then apply the sprite's ink/blend rules.
+
+This is a generic rendering rule, not an Oasis Spa special case:
+
+- authored score sprites can still depend on runtime member state
+- `member.image` mutation does not imply a dynamic sprite binding
+- the bake stage must choose between authored media and live runtime media
+
+### Validation
+
+Add a regression that:
+
+1. loads `hh_room_pool.cst`
+2. mutates `vesi2` through the runtime `CastMember`
+3. renders it through the normal score-sprite `CastMemberChunk` path
+4. asserts the baked output matches the live `MASK`-ink water buffer
+
+Run:
+
+```bash
+./gradlew :player-core:test --tests "com.libreshockwave.player.render.pipeline.PublicRoomInkRegressionTest"
+./gradlew :player-core:test --tests "com.libreshockwave.player.ScriptModifiedBitmapTest"
+```
+
 ## Useful Commands
 
 Run visual tests:

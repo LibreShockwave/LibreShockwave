@@ -88,10 +88,13 @@ Important current behaviors include:
 
 - score-backed defaults establish the authored member relationship
 - dynamic member overrides can replace the effective member without rewriting authored score data
+- score-backed sprites may still need the runtime `CastMember` wrapper when scripts mutate `member.image`
 - sprite state can be rebound when the score identity changes
 - cleanup paths clear stale bindings when a dynamic member slot is retired
 
 This separation is why a sprite can preserve some runtime state while still following timeline ownership rules.
+
+That third point matters in rendering: an authored score sprite can still depend on a live runtime bitmap buffer even when its cast/member numbers never change. In those cases the score still identifies the sprite, but the bake stage must read visual state from the runtime wrapper rather than blindly re-decoding the authored cast chunk.
 
 ## 7. Item Metadata And `.props`
 
