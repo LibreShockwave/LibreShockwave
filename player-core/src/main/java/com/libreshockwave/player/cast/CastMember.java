@@ -122,6 +122,9 @@ public class CastMember {
     private int textTopSpacing = 0;
     private boolean textImageDirty = true; // Re-render when properties change
     private Bitmap textRenderedImage; // Cached rendered text image
+    private int textRenderedWidth = -1;
+    private int textRenderedHeight = -1;
+    private int textRenderedBgColor = Integer.MIN_VALUE;
     private boolean editable = false; // Whether this field/text member accepts keyboard input
 
     public CastMember(int castLibNumber, int memberNumber, CastMemberChunk chunk, DirectorFile sourceFile) {
@@ -803,14 +806,10 @@ public class CastMember {
         // the text content. Director auto-adjusts the rect height when text is set,
         // so the stored rectBottom may not reflect the actual content height.
         int height = textBoxType == 0 ? 0 : (textRectBottom - textRectTop);
-        // Text members in Director use Background Transparent behavior when the
-        // background is white (default): white pixels become transparent so text
-        // can be composited over other content without a white rectangle.
-        // Use alpha=0 with white RGB (0x00FFFFFF) so COPY ink skips background
-        // pixels while #color/#bgColor remapping still sees white for colorization.
-        // Non-white backgrounds (e.g., black bg for white text) must stay opaque.
-        int bgColor = (textBgColor == 0xFFFFFFFF) ? 0x00FFFFFF : textBgColor;
-        return renderTextToImage(width, height, bgColor);
+        // Director's text-member .image behaves like transparent text artwork.
+        // UI wrappers then paint their own background and composite the text with
+        // MATTE or TRANSPARENT ink as needed.
+        return renderTextToImage(width, height, 0x00FFFFFF);
     }
 
     /**
@@ -821,8 +820,9 @@ public class CastMember {
     public Bitmap renderTextToImage(int width, int height, int bgColor) {
         // Return cached image if still valid and dimensions match
         if (textRenderedImage != null && !textImageDirty
-                && textRenderedImage.getWidth() == width
-                && textRenderedImage.getHeight() == height) {
+                && textRenderedWidth == width
+                && textRenderedHeight == height
+                && textRenderedBgColor == bgColor) {
             return textRenderedImage;
         }
 
@@ -837,6 +837,13 @@ public class CastMember {
                 textAlignment, textColor, bgColor,
                 textWordWrap, textAntialias,
                 textFixedLineSpace, textTopSpacing);
+        if (textRenderedImage != null && ((((bgColor >>> 24) & 0xFF) < 0xFF)
+                || textRenderedImage.hasTransparentPixels())) {
+            textRenderedImage.setNativeAlpha(true);
+        }
+        textRenderedWidth = width;
+        textRenderedHeight = height;
+        textRenderedBgColor = bgColor;
         textImageDirty = false;
 
         return textRenderedImage;
@@ -1167,6 +1174,9 @@ public class CastMember {
                 if (value instanceof Datum.ImageRef ir) {
                     this.bitmap = ir.bitmap().copy();
                     this.textRenderedImage = this.bitmap;
+                    this.textRenderedWidth = this.bitmap.getWidth();
+                    this.textRenderedHeight = this.bitmap.getHeight();
+                    this.textRenderedBgColor = Integer.MIN_VALUE;
                     this.textImageDirty = false;
                     notifyMemberVisualChanged();
                     return true;
@@ -1289,6 +1299,9 @@ public class CastMember {
         textTopSpacing = 0;
         textImageDirty = true;
         textRenderedImage = null;
+        textRenderedWidth = -1;
+        textRenderedHeight = -1;
+        textRenderedBgColor = Integer.MIN_VALUE;
 
         paletteRefCastLib = -1;
         paletteRefMemberNum = -1;

@@ -13,6 +13,7 @@ The current rendering stack is best understood as:
 - ◆ Rendering depends on runtime sprite ownership, not just authored score data.
 - ✓ `SpriteRegistry` is a real state container with rebinding and revision tracking, not a passive map.
 - → Render caching is viable because palette versioning and sprite revisions give the renderer explicit invalidation signals.
+- → Text-wrapper correctness depends on two separate contracts: text-member `.image` must render as transparent text art, and `MATTE` composition must honor native alpha before any RGB flood-fill fallback.
 - ⚠ Matte, text background, and 32-bit bitmap behavior remain the most compatibility-sensitive visual areas.
 
 ## 2. Pipeline Stages
@@ -83,10 +84,15 @@ Current behavior includes:
 - fall back to file-backed STXT or XMED data when runtime text is absent
 - support transparent text backgrounds for `BACKGROUND_TRANSPARENT`
 - reuse rendered text images through cast-member-level caching where valid
+- preserve bitmap-font glyph bearings and real advance widths so left-aligned text does not collapse into the image border before later ink processing
+- render text-member `.image` as transparent text artwork even when the member's `bgColor` is non-white
+- keep explicit sprite-text renders separate from text-member `.image` caching so opaque score sprites do not inherit transparent member-image buffers
 
 `SimpleTextRenderer` is installed into the player and acts as the active text rasterizer. That means text output is part of the emulator's deterministic software path, not delegated to a random platform text widget.
 
 There is more structure here than the name suggests. The current text path has an explicit resolution chain across PFR fonts, Mac bitmap fonts, Windows fonts, and a builtin pixel fallback. That makes text rendering a compatibility subsystem in its own right rather than a cosmetic helper.
+
+One concrete consequence is that text rasterization cannot be treated independently from later wrapper composition. Fuse-style wrappers commonly render a text member image, fill their own destination background, and then re-copy the text with `MATTE` or `TRANSPARENT` ink. That only works if the text member image itself exposes alpha-backed text pixels rather than an opaque background, and if the compositor respects native alpha instead of forcing those images back through white-RGB matte extraction. The current runtime now models that split explicitly while still preserving the bitmap-font bearings that keep glyph ink away from the left edge.
 
 ### 4.3 Shape Sprites
 
@@ -161,7 +167,9 @@ The most compatibility-sensitive rendering areas in the current codebase are:
 - script-modified 32-bit bitmaps
 - runtime-member resolution for score-placed mutable bitmaps
 - palette invalidation
+- text-member `.image` background semantics and native-alpha `MATTE`
 - text background and anti-alias recovery
+- bitmap-font bearings and advance-width preservation before matte composition
 - film loop nesting
 
 These are the places where visual regressions are most likely to surface if the emulator diverges from Director's historical assumptions.
