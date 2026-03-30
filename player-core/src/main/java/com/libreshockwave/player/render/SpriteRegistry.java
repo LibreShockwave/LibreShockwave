@@ -92,8 +92,7 @@ public class SpriteRegistry {
                 continue;
             }
             if (state.getEffectiveCastLib() == castLib && state.getEffectiveCastMember() == memberNum) {
-                state.clearDynamicMember();
-                state.resetReleasedSpriteTransforms();
+                resetRetiredDynamicBinding(state);
                 changed = true;
             }
         }
@@ -128,6 +127,27 @@ public class SpriteRegistry {
      */
     public Map<Integer, SpriteState> getAll() {
         return sprites;
+    }
+
+    private static void resetRetiredDynamicBinding(SpriteState state) {
+        if (state == null) {
+            return;
+        }
+        if (state.isDynamic()) {
+            state.clearDynamicMember();
+            state.resetReleasedChannelGeometry();
+            state.resetReleasedSpriteTransforms();
+            return;
+        }
+
+        ScoreChunk.ChannelData initialData = state.getInitialData();
+        if (initialData != null) {
+            state.rebindToScore(initialData);
+            return;
+        }
+
+        state.clearDynamicMember();
+        state.resetReleasedSpriteTransforms();
     }
 
     /**

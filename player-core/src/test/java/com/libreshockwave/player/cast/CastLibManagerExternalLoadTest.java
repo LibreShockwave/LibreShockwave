@@ -20,8 +20,11 @@ class CastLibManagerExternalLoadTest {
             "https://example.invalid/dcr/external/other-widget.cct";
 
     @Test
-    void setCastLibFileNameConsumesCachedDataForRequestedSlotOnly() throws Exception {
-        RecordingCastLibManager manager = new RecordingCastLibManager();
+    void setCastLibFileNameTriggersCallbackForRequestedSlotOnly() throws Exception {
+        List<String> requestedFiles = new ArrayList<>();
+        CastLibManager manager = new CastLibManager(null, (castLibNum, fileName) -> {
+            requestedFiles.add(castLibNum + ":" + fileName);
+        });
         CastLib requested = new CastLib(11, null, null);
         requested.setName("empty 9");
         CastLib unrelated = new CastLib(12, null, null);
@@ -34,11 +37,11 @@ class CastLibManagerExternalLoadTest {
 
         manager.setCastLibProp(11, "fileName", Datum.of(EXTERNAL_CAST_URL));
 
-        assertEquals(List.of(11), manager.loadedCastNums);
+        assertEquals(List.of("11:" + EXTERNAL_CAST_URL), requestedFiles);
     }
 
     @Test
-    void fulfillRequestedExternalCastDataSkipsMatchingUnrequestedSlots() throws Exception {
+    void getRequestedExternalCastSlotsSkipsMatchingUnrequestedSlots() throws Exception {
         RecordingCastLibManager manager = new RecordingCastLibManager();
         CastLib requested = new CastLib(11, null, null);
         requested.setName("empty 9");
@@ -53,10 +56,9 @@ class CastLibManagerExternalLoadTest {
         manager.loadedCastNums.clear();
         manager.cacheExternalData(EXTERNAL_CAST_URL, new byte[]{4, 5, 6});
 
-        List<Integer> loaded = manager.fulfillRequestedExternalCastData(EXTERNAL_CAST_URL);
+        List<Integer> slots = manager.getRequestedExternalCastSlots(EXTERNAL_CAST_URL);
 
-        assertEquals(List.of(11), loaded);
-        assertEquals(List.of(11), manager.loadedCastNums);
+        assertEquals(List.of(11), slots);
     }
 
     @Test
@@ -72,7 +74,7 @@ class CastLibManagerExternalLoadTest {
     }
 
     @Test
-    void fulfillRequestedExternalCastDataLoadsAuthoredExternalSlotWithoutPendingRuntimeRequest() throws Exception {
+    void getRequestedExternalCastSlotsFindsAuthoredExternalSlotWithoutPendingRuntimeRequest() throws Exception {
         RecordingCastLibManager manager = new RecordingCastLibManager();
         CastLib authored = new CastLib(2, null, new CastListChunk.CastListEntry(
                 "External Widget",
@@ -86,14 +88,13 @@ class CastLibManagerExternalLoadTest {
 
         manager.cacheExternalData(EXTERNAL_CAST_URL, new byte[]{7, 8, 9});
 
-        List<Integer> loaded = manager.fulfillRequestedExternalCastData(EXTERNAL_CAST_URL);
+        List<Integer> slots = manager.getRequestedExternalCastSlots(EXTERNAL_CAST_URL);
 
-        assertEquals(List.of(2), loaded);
-        assertEquals(List.of(2), manager.loadedCastNums);
+        assertEquals(List.of(2), slots);
     }
 
     @Test
-    void fulfillRequestedExternalCastDataDoesNotLoadDifferentBasename() throws Exception {
+    void getRequestedExternalCastSlotsDoesNotFindDifferentBasename() throws Exception {
         RecordingCastLibManager manager = new RecordingCastLibManager();
         CastLib authored = new CastLib(2, null, new CastListChunk.CastListEntry(
                 "External Widget",
@@ -107,10 +108,139 @@ class CastLibManagerExternalLoadTest {
 
         manager.cacheExternalData(OTHER_EXTERNAL_CAST_URL, new byte[]{7, 8, 9});
 
-        List<Integer> loaded = manager.fulfillRequestedExternalCastData(OTHER_EXTERNAL_CAST_URL);
+        List<Integer> slots = manager.getRequestedExternalCastSlots(OTHER_EXTERNAL_CAST_URL);
 
-        assertTrue(loaded.isEmpty());
-        assertTrue(manager.loadedCastNums.isEmpty());
+        assertTrue(slots.isEmpty());
+    }
+
+    @Test
+    void registryLookupIgnoresRuntimeRetargetedExternalCastSlots() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+        CastLib transientCast = new CastLib(11, null, new CastListChunk.CastListEntry(
+                "empty 9",
+                "https://example.invalid/dcr/external/empty.cct",
+                2,
+                1,
+                1,
+                0,
+                0));
+        transientCast.setFileName(EXTERNAL_CAST_URL);
+        CastMember transientMember = transientCast.createDynamicMember("bitmap");
+        transientMember.setName("grunge_barrel_a_0_1_1_0_0");
+        installCastLib(manager, transientCast);
+
+        assertEquals(Datum.VOID, manager.getRegistryMemberByName(0, "grunge_barrel_a_0_1_1_0_0"));
+        Datum found = manager.getMemberByName(0, "grunge_barrel_a_0_1_1_0_0");
+        assertTrue(found instanceof Datum.CastMemberRef);
+        Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
+        assertEquals(11, ref.castLibNum());
+        assertEquals(transientMember.getMemberNumber(), ref.memberNum());
+    }
+
+    @Test
+    void registryLookupKeepsDirectFileBoundScratchCastHidden() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+        CastLib transientCast = new CastLib(11, null, new CastListChunk.CastListEntry(
+                "empty 9",
+                "https://example.invalid/dcr/external/empty.cct",
+                2,
+                1,
+                1,
+                0,
+                0));
+        transientCast.setFileName(EXTERNAL_CAST_URL);
+        transientCast.setName("https://example.invalid/dcr/external/hh_furni_xx_grunge_barrel.cct");
+        CastMember transientMember = transientCast.createDynamicMember("bitmap");
+        transientMember.setName("grunge_barrel_a_0_1_1_0_0");
+        installCastLib(manager, transientCast);
+
+        assertEquals(Datum.VOID, manager.getRegistryMemberByName(0, "grunge_barrel_a_0_1_1_0_0"));
+    }
+
+    @Test
+    void registryLookupStillFindsAuthoredExternalCastMembers() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+        CastLib authoredCast = new CastLib(2, null, new CastListChunk.CastListEntry(
+                "External Widget",
+                EXTERNAL_CAST_URL,
+                2,
+                1,
+                1,
+                0,
+                0));
+        authoredCast.setFileName(EXTERNAL_CAST_URL);
+        CastMember authoredMember = authoredCast.createDynamicMember("bitmap");
+        authoredMember.setName("Core Thread Class");
+        installCastLib(manager, authoredCast);
+
+        Datum found = manager.getRegistryMemberByName(0, "Core Thread Class");
+        assertTrue(found instanceof Datum.CastMemberRef);
+        Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
+        assertEquals(2, ref.castLibNum());
+        assertEquals(authoredMember.getMemberNumber(), ref.memberNum());
+    }
+
+    @Test
+    void registryLookupFindsRetargetedNamedStartupCastMembersInStableNamespace() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+        CastLib startupCast = new CastLib(36, null, new CastListChunk.CastListEntry(
+                "empty 34",
+                "https://example.invalid/dcr/external/empty.cct",
+                2,
+                1,
+                1,
+                0,
+                0));
+        startupCast.setFileName("https://example.invalid/dcr/external/hh_interface.cct");
+        startupCast.setName("hh_interface");
+        CastMember startupMember = startupCast.createDynamicMember("bitmap");
+        startupMember.setName("Interface Root Class");
+        installCastLib(manager, startupCast);
+
+        Datum found = manager.getRegistryMemberByName(0, "Interface Root Class");
+        assertTrue(found instanceof Datum.CastMemberRef);
+        Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
+        assertEquals(36, ref.castLibNum());
+        assertEquals(startupMember.getMemberNumber(), ref.memberNum());
+    }
+
+    @Test
+    void broadMemberLookupPrefersStableNamespaceOverScratchCastCollisions() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+
+        CastLib scratchCast = new CastLib(11, null, new CastListChunk.CastListEntry(
+                "empty 9",
+                "https://example.invalid/dcr/external/empty.cct",
+                2,
+                1,
+                1,
+                0,
+                0));
+        scratchCast.setFileName(EXTERNAL_CAST_URL);
+        CastMember scratchMember = scratchCast.createDynamicMember("bitmap");
+        scratchMember.setName("shared_preview_piece");
+        installCastLib(manager, scratchCast);
+
+        CastLib stableCast = new CastLib(36, null, new CastListChunk.CastListEntry(
+                "empty 34",
+                "https://example.invalid/dcr/external/empty.cct",
+                2,
+                1,
+                1,
+                0,
+                0));
+        stableCast.setFileName("https://example.invalid/dcr/external/hh_interface.cct");
+        stableCast.setName("hh_interface");
+        CastMember stableMember = stableCast.createDynamicMember("bitmap");
+        stableMember.setName("shared_preview_piece");
+        installCastLib(manager, stableCast);
+
+        Datum found = manager.getMemberByName(0, "shared_preview_piece");
+
+        assertTrue(found instanceof Datum.CastMemberRef);
+        Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
+        assertEquals(36, ref.castLibNum());
+        assertEquals(stableMember.getMemberNumber(), ref.memberNum());
     }
 
     private static final class RecordingCastLibManager extends CastLibManager {

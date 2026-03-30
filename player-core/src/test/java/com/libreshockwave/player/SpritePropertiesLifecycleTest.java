@@ -18,6 +18,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpritePropertiesLifecycleTest {
@@ -146,6 +147,17 @@ class SpritePropertiesLifecycleTest {
     }
 
     @Test
+    void symbolicInkNameSetsNamedInkMode() {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+
+        assertTrue(props.setSpriteProp(17, "ink", Datum.symbol("addPin")));
+
+        SpriteState state = registry.get(17);
+        assertEquals(33, state.getInk());
+    }
+
+    @Test
     void clearDynamicMemberBindingsDetachesOnlyMatchingSprites() {
         SpriteRegistry registry = new SpriteRegistry();
 
@@ -173,6 +185,64 @@ class SpritePropertiesLifecycleTest {
         assertEquals(180.0, other.getRotation());
         assertEquals(180.0, other.getSkew());
         assertEquals(1, registry.getRevision());
+    }
+
+    @Test
+    void retiredScoreBackedRuntimeMemberRestoresAuthoredGeometryBeforeReuse() throws Exception {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+        CastLibManager castLibManager = new CastLibManager(null, (castLib, fileName) -> {});
+        CastLib castLib = new CastLib(7, null, null);
+        injectCastLib(castLibManager, castLib);
+        props.setCastLibManager(castLibManager);
+
+        SpriteState state = registry.getOrCreate(9, new ScoreChunk.ChannelData(
+                1, 0, 0, 0, 0, 0,
+                3, 40,
+                0, 0, 10, 20, 30, 40,
+                0, 0, 0, 0, 0, 0
+        ));
+
+        CastMember first = castLib.createDynamicMember("bitmap");
+        Bitmap firstBitmap = new Bitmap(24, 18, 32);
+        firstBitmap.fill(0xFFFFFFFF);
+        assertTrue(first.setProp("image", new Datum.ImageRef(firstBitmap)));
+
+        CastMember second = castLib.createDynamicMember("bitmap");
+        Bitmap secondBitmap = new Bitmap(36, 22, 32);
+        secondBitmap.fill(0xFFFFFFFF);
+        assertTrue(second.setProp("image", new Datum.ImageRef(secondBitmap)));
+
+        assertTrue(props.setSpriteProp(9, "member",
+                Datum.CastMemberRef.of(7, first.getMemberNumber())));
+
+        state.setWidth(160);
+        state.setHeight(120);
+        assertTrue(state.hasSizeChanged());
+
+        CastMember.setMemberSlotRetiredCallback(registry::clearDynamicMemberBindings);
+        try {
+            first.erase();
+        } finally {
+            CastMember.setMemberSlotRetiredCallback(null);
+        }
+
+        assertFalse(state.hasDynamicMember());
+        assertEquals(40, state.getWidth());
+        assertEquals(30, state.getHeight());
+        assertFalse(state.hasSizeChanged());
+
+        CastMember reused = castLib.createDynamicMember("bitmap");
+        assertSame(first, reused);
+        assertEquals(first.getMemberNumber(), reused.getMemberNumber());
+        reused.setBitmapDirectly(secondBitmap);
+
+        assertTrue(props.setSpriteProp(9, "member",
+                Datum.CastMemberRef.of(7, reused.getMemberNumber())));
+
+        assertEquals(36, state.getWidth());
+        assertEquals(22, state.getHeight());
+        assertFalse(state.hasSizeChanged());
     }
 
     @Test

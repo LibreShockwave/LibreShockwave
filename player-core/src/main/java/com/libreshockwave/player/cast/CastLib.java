@@ -284,6 +284,100 @@ public class CastLib {
         return authoredBaseName.equalsIgnoreCase(baseName);
     }
 
+    /**
+     * True when this cast currently points at the same external source that the
+     * movie authored into the cast list. Runtime-retargeted cast slots are still
+     * live Director casts, but their contents only enter movie-level registries
+     * once authored code explicitly indexes or aliases them.
+     */
+    public boolean usesAuthoredExternalBinding() {
+        if (!hasAuthoredExternalBinding()) {
+            return true;
+        }
+        if (fileName == null || fileName.isEmpty()) {
+            return false;
+        }
+        String currentBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(fileName));
+        return matchesAuthoredExternalFile(currentBaseName);
+    }
+
+    /**
+     * Whether this cast still belongs to the movie's stable registry namespace.
+     * Runtime-retargeted casts become registry-visible once the movie assigns
+     * them a stable cast name. Placeholder slots and direct file/URL-bound
+     * scratch imports remain usable as casts, but they should not leak their
+     * members into broad movie-level registry fallback.
+     */
+    public boolean usesStableRegistryBinding() {
+        if (!hasAuthoredExternalBinding()) {
+            return true;
+        }
+        if (usesAuthoredExternalBinding()) {
+            return true;
+        }
+        String runtimeName = name != null ? name.trim() : "";
+        if (runtimeName.isEmpty()) {
+            return false;
+        }
+        if (usesGeneratedPlaceholderName(runtimeName)) {
+            return false;
+        }
+        return !looksLikeDirectFileBindingName(runtimeName);
+    }
+
+    private boolean usesGeneratedPlaceholderName(String candidateName) {
+        if (candidateName == null || candidateName.isEmpty()) {
+            return true;
+        }
+
+        String authoredBaseName = com.libreshockwave.util.FileUtil.getFileNameWithoutExtension(
+                com.libreshockwave.util.FileUtil.getFileName(authoredFileName));
+        if (authoredBaseName == null || authoredBaseName.isEmpty()) {
+            return false;
+        }
+
+        String normalizedName = candidateName.trim().toLowerCase(java.util.Locale.ROOT);
+        String normalizedBase = authoredBaseName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalizedName.equals(normalizedBase)) {
+            return true;
+        }
+        if (!normalizedName.startsWith(normalizedBase + " ")) {
+            return false;
+        }
+
+        String suffix = normalizedName.substring(normalizedBase.length() + 1);
+        if (suffix.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < suffix.length(); i++) {
+            if (!Character.isDigit(suffix.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean looksLikeDirectFileBindingName(String candidateName) {
+        String normalizedName = candidateName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalizedName.isEmpty()) {
+            return true;
+        }
+        if (normalizedName.contains("://")) {
+            return true;
+        }
+        if (normalizedName.contains("/") || normalizedName.contains("\\")
+                || normalizedName.contains("?") || normalizedName.contains("#")) {
+            return true;
+        }
+        if (normalizedName.endsWith(".cct") || normalizedName.endsWith(".cst")
+                || normalizedName.endsWith(".dcr") || normalizedName.endsWith(".dir")) {
+            return true;
+        }
+        String currentFileName = fileName != null ? fileName.trim() : "";
+        return !currentFileName.isEmpty() && normalizedName.equals(currentFileName.toLowerCase(java.util.Locale.ROOT));
+    }
+
     public State getState() {
         return state;
     }
@@ -563,7 +657,7 @@ public class CastLib {
         String prop = propName.toLowerCase();
         return switch (prop) {
             case "name" -> Datum.EMPTY_STRING;
-            case "number", "castlibnum", "membernum" -> Datum.of(-1);
+            case "number", "membernum" -> Datum.ZERO;
             case "type" -> Datum.symbol("empty");
             default -> Datum.VOID;
         };
