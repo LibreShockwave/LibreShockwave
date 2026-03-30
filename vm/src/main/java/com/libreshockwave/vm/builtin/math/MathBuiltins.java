@@ -79,6 +79,13 @@ public final class MathBuiltins {
         if (arg instanceof Datum.Str str) {
             String trimmed = str.value().trim();
             if (trimmed.isEmpty()) return Datum.ZERO;
+            if (trimmed.startsWith("*") && trimmed.length() > 1) {
+                try {
+                    return Datum.of((int) Long.parseLong(trimmed.substring(1), 16));
+                } catch (NumberFormatException ignored) {
+                    // Fall through to the standard numeric parsing below.
+                }
+            }
             try {
                 return Datum.of(Integer.parseInt(trimmed));
             } catch (NumberFormatException e) {

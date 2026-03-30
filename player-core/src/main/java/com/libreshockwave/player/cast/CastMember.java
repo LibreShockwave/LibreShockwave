@@ -88,6 +88,7 @@ public class CastMember {
     private MemberType memberType;
     private int regPointX;
     private int regPointY;
+    private boolean regPointPinnedToMember = true;
     private int bitmapAlphaThreshold = 0;
 
     // Dynamic text content (for dynamically created field/text members)
@@ -173,6 +174,7 @@ public class CastMember {
         this.name = "";
         this.memberType = memberType;
         this.state = State.LOADED; // Dynamic members are immediately ready
+        this.regPointPinnedToMember = false;
     }
 
     /**
@@ -528,18 +530,14 @@ public class CastMember {
                 && paletteVersion > lastDecodedPaletteVersion) {
             redecodeBitmapWithPaletteRef();
         }
-        if (bitmap != null) {
-            bitmap.setAnchorPoint(regPointX, regPointY);
-        }
+        syncBitmapAnchorState();
         return bitmap;
     }
 
     /** Set bitmap directly (for initial load, not Lingo assignment). Does NOT mark as script-modified. */
     public void setBitmapDirectly(Bitmap bmp) {
         this.bitmap = bmp;
-        if (this.bitmap != null) {
-            this.bitmap.setAnchorPoint(regPointX, regPointY);
-        }
+        syncBitmapAnchorState();
     }
 
     public ScriptChunk getScript() {
@@ -568,6 +566,22 @@ public class CastMember {
     public void setRegPoint(int x, int y) {
         this.regPointX = x;
         this.regPointY = y;
+        this.regPointPinnedToMember = true;
+        syncBitmapAnchorState();
+    }
+
+    private void syncBitmapAnchorState() {
+        if (bitmap == null) {
+            return;
+        }
+        if (regPointPinnedToMember) {
+            bitmap.setAnchorPoint(regPointX, regPointY);
+            return;
+        }
+        if (bitmap.hasAnchorPoint()) {
+            regPointX = bitmap.getAnchorX();
+            regPointY = bitmap.getAnchorY();
+        }
     }
 
     /** Returns true if this member has a runtime palette override (from paletteRef). */
@@ -868,6 +882,8 @@ public class CastMember {
                 if (value instanceof Datum.Point p) {
                     this.regPointX = p.x();
                     this.regPointY = p.y();
+                    this.regPointPinnedToMember = true;
+                    syncBitmapAnchorState();
                     notifyMemberVisualChanged();
                     return true;
                 }
@@ -890,15 +906,27 @@ public class CastMember {
             }
             boolean copied = copyMediaFrom(source);
             if (copied) {
+                syncBitmapAnchorState();
                 notifyMemberVisualChanged();
             }
             return copied;
         }
         if (memberType == MemberType.BITMAP && value instanceof Datum.ImageRef ir) {
-            Bitmap newBmp = ir.bitmap().copy();
+            Bitmap sourceBitmap = ir.bitmap();
+            Bitmap newBmp = sourceBitmap.copy();
             newBmp.markScriptModified();
             this.bitmap = newBmp;
+            if (!regPointPinnedToMember) {
+                if (sourceBitmap.hasAnchorPoint()) {
+                    this.regPointX = sourceBitmap.getAnchorX();
+                    this.regPointY = sourceBitmap.getAnchorY();
+                } else {
+                    this.regPointX = 0;
+                    this.regPointY = 0;
+                }
+            }
             this.state = State.LOADED;
+            syncBitmapAnchorState();
             notifyMemberVisualChanged();
             return true;
         }
@@ -953,12 +981,14 @@ public class CastMember {
                 this.bitmap = copy;
                 this.regPointX = source.getRegPointX();
                 this.regPointY = source.getRegPointY();
+                this.regPointPinnedToMember = source.regPointPinnedToMember;
                 this.bitmapAlphaThreshold = source.bitmapAlphaThreshold;
                 this.paletteRefCastLib = source.paletteRefCastLib;
                 this.paletteRefMemberNum = source.paletteRefMemberNum;
                 this.paletteVersion = source.paletteVersion;
                 this.lastDecodedPaletteVersion = source.lastDecodedPaletteVersion;
                 this.state = State.LOADED;
+                syncBitmapAnchorState();
                 return true;
             }
             case PALETTE -> {
@@ -1154,9 +1184,20 @@ public class CastMember {
             case "paletteref", "palette" -> applyRuntimePaletteOverride(value);
             case "image" -> {
                 if (value instanceof Datum.ImageRef ir) {
-                    Bitmap newBmp = ir.bitmap().copy();
+                    Bitmap sourceBitmap = ir.bitmap();
+                    Bitmap newBmp = sourceBitmap.copy();
                     newBmp.markScriptModified();
                     this.bitmap = newBmp;
+                    if (!regPointPinnedToMember) {
+                        if (sourceBitmap.hasAnchorPoint()) {
+                            this.regPointX = sourceBitmap.getAnchorX();
+                            this.regPointY = sourceBitmap.getAnchorY();
+                        } else {
+                            this.regPointX = 0;
+                            this.regPointY = 0;
+                        }
+                    }
+                    syncBitmapAnchorState();
                     notifyMemberVisualChanged();
                     yield true;
                 }
@@ -1227,6 +1268,7 @@ public class CastMember {
         dynamicPalette = null;
         regPointX = 0;
         regPointY = 0;
+        regPointPinnedToMember = false;
         bitmapAlphaThreshold = 0;
         editable = false;
 

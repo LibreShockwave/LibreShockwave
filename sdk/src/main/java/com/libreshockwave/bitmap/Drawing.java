@@ -548,26 +548,102 @@ public class Drawing {
     }
 
     private static FloodFillMatte resolveIndexedFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
-        if (paletteIndices == null || paletteIndices.length < w * h || !hasEdgePaletteIndex(paletteIndices, w, h, 0)) {
+        if (paletteIndices == null || paletteIndices.length < w * h) {
             return null;
         }
-        return new FloodFillMatte(0, resolvePaletteIndexRgb(pixels, paletteIndices, 0), 0);
+        Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
+        if (matteIndex == null) {
+            return null;
+        }
+        return new FloodFillMatte(matteIndex, resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex), 0);
     }
 
-    private static boolean hasEdgePaletteIndex(byte[] paletteIndices, int w, int h, int paletteIndex) {
+    private static Integer inferDominantEdgePaletteIndex(int[] pixels, byte[] paletteIndices, int w, int h) {
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+
+        int[] counts = new int[256];
+        int opaqueEdgeCount = 0;
+        int dominantIndex = -1;
+        int dominantCount = 0;
+
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+
+        for (int index : iterateEdgeIndices(w, h)) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int paletteIndex = paletteIndices[index] & 0xFF;
+            int count = ++counts[paletteIndex];
+            opaqueEdgeCount++;
+            if (count > dominantCount) {
+                dominantCount = count;
+                dominantIndex = paletteIndex;
+            }
+        }
+
+        if (opaqueEdgeCount == 0 || dominantIndex < 0) {
+            return null;
+        }
+
+        // Avoid treating uniformly filled indexed bitmaps as pure matte.
+        if (isUniformPaletteIndex(paletteIndices, dominantIndex)) {
+            return null;
+        }
+
+        int opaqueCornerCount = 0;
+        for (int index : cornerIndices) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            opaqueCornerCount++;
+            if ((paletteIndices[index] & 0xFF) != dominantIndex) {
+                return null;
+            }
+        }
+
+        if (opaqueCornerCount == 0) {
+            return null;
+        }
+
+        // Require a clearly dominant authored matte on the outer edge.
+        if (dominantCount * 4 < opaqueEdgeCount * 3) {
+            return null;
+        }
+
+        return dominantIndex;
+    }
+
+    private static Iterable<Integer> iterateEdgeIndices(int w, int h) {
+        java.util.List<Integer> indices = new java.util.ArrayList<>(Math.max(1, (w * 2) + Math.max(0, h - 2) * 2));
         for (int x = 0; x < w; x++) {
-            if ((paletteIndices[x] & 0xFF) == paletteIndex
-                    || (paletteIndices[(h - 1) * w + x] & 0xFF) == paletteIndex) {
-                return true;
+            indices.add(x);
+            if (h > 1) {
+                indices.add((h - 1) * w + x);
             }
         }
         for (int y = 1; y < h - 1; y++) {
-            if ((paletteIndices[y * w] & 0xFF) == paletteIndex
-                    || (paletteIndices[y * w + (w - 1)] & 0xFF) == paletteIndex) {
-                return true;
+            indices.add(y * w);
+            if (w > 1) {
+                indices.add(y * w + (w - 1));
             }
         }
-        return false;
+        return indices;
+    }
+
+    private static boolean isUniformPaletteIndex(byte[] paletteIndices, int paletteIndex) {
+        for (byte paletteEntry : paletteIndices) {
+            if ((paletteEntry & 0xFF) != paletteIndex) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int resolvePaletteIndexRgb(int[] pixels, byte[] paletteIndices, int paletteIndex) {

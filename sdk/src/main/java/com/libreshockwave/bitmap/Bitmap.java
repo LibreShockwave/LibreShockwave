@@ -49,16 +49,23 @@ public class Bitmap {
         return bitDepth;
     }
 
-    /** Returns true if this bitmap was modified by Lingo image API (fill, copyPixels, etc.). */
+    /**
+     * Returns true if this bitmap was modified by Lingo image API (fill,
+     * copyPixels, etc.).
+     */
     public boolean isScriptModified() {
         return scriptModified;
     }
 
-    /** Returns true if this bitmap contains any fully transparent pixels (alpha=0). */
+    /**
+     * Returns true if this bitmap contains any fully transparent pixels (alpha=0).
+     */
     public boolean hasTransparentPixels() {
-        if (pixels == null || bitDepth < 32) return false;
+        if (pixels == null || bitDepth < 32)
+            return false;
         for (int pixel : pixels) {
-            if ((pixel >>> 24) == 0) return true;
+            if ((pixel >>> 24) == 0)
+                return true;
         }
         return false;
     }
@@ -81,7 +88,10 @@ public class Bitmap {
         this.nativeAlpha = nativeAlpha;
     }
 
-    /** Set the palette for this bitmap (for 8-bit images created with a palette member). */
+    /**
+     * Set the palette for this bitmap (for 8-bit images created with a palette
+     * member).
+     */
     public void setImagePalette(Palette palette) {
         this.imagePalette = palette;
     }
@@ -347,10 +357,12 @@ public class Bitmap {
         byte[] regionIndices = paletteIndices != null ? new byte[w * h] : null;
         for (int dy = 0; dy < h; dy++) {
             int srcY = y + dy;
-            if (srcY < 0 || srcY >= height) continue;
+            if (srcY < 0 || srcY >= height)
+                continue;
             for (int dx = 0; dx < w; dx++) {
                 int srcX = x + dx;
-                if (srcX < 0 || srcX >= width) continue;
+                if (srcX < 0 || srcX >= width)
+                    continue;
                 result.pixels[dy * w + dx] = pixels[srcY * width + srcX];
                 if (regionIndices != null) {
                     regionIndices[dy * w + dx] = paletteIndices[srcY * width + srcX];
@@ -377,17 +389,24 @@ public class Bitmap {
             for (int x = 0; x < width; x++) {
                 int pixel = pixels[y * width + x];
                 int a = (pixel >>> 24);
-                if (a == 0) continue; // transparent = white
+                if (a == 0)
+                    continue; // transparent = white
                 int rgb = pixel & 0xFFFFFF;
-                if (rgb == 0xFFFFFF) continue; // white
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
+                if (rgb == 0xFFFFFF)
+                    continue; // white
+                if (x < minX)
+                    minX = x;
+                if (x > maxX)
+                    maxX = x;
+                if (y < minY)
+                    minY = y;
+                if (y > maxY)
+                    maxY = y;
             }
         }
-        if (maxX < 0) return new int[]{0, 0, 0, 0};
-        return new int[]{minX, minY, maxX + 1, maxY + 1};
+        if (maxX < 0)
+            return new int[] { 0, 0, 0, 0 };
+        return new int[] { minX, minY, maxX + 1, maxY + 1 };
     }
 
     @Override
@@ -399,9 +418,9 @@ public class Bitmap {
      * Create a swatch image from an array of colors.
      * Each color is rendered as a small square in a grid.
      *
-     * @param colors Array of RGB colors (0xRRGGBB format)
+     * @param colors     Array of RGB colors (0xRRGGBB format)
      * @param swatchSize Size of each color swatch in pixels
-     * @param columns Number of columns in the grid (0 = auto)
+     * @param columns    Number of columns in the grid (0 = auto)
      * @return A Bitmap containing the color swatches
      */
     public static Bitmap createPaletteSwatch(int[] colors, int swatchSize, int columns) {
@@ -436,7 +455,7 @@ public class Bitmap {
     /**
      * Create a swatch image from a Palette.
      *
-     * @param palette The palette to visualize
+     * @param palette    The palette to visualize
      * @param swatchSize Size of each color swatch in pixels
      * @return A Bitmap containing the color swatches
      */
