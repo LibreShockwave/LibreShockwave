@@ -230,10 +230,26 @@ public class SpriteBaker {
                         inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(inkSrc);
                     }
                     boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.isNativeAlpha();
-                    return InkProcessor.applyInk(inkSrc, sprite.getInk(),
-                            sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true);
+                    return BitmapCache.applyIndexedMatteColorRemapIfNeeded(
+                            liveBmp,
+                            InkProcessor.applyInk(inkSrc, sprite.getInk(),
+                                    sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true),
+                            sprite.getInk(),
+                            sprite.getForeColor(),
+                            sprite.getBackColor(),
+                            sprite.hasForeColor(),
+                            sprite.hasBackColor(),
+                            liveBmp.getImagePalette());
                 }
-                return liveBmp;
+                return BitmapCache.applyIndexedMatteColorRemapIfNeeded(
+                        liveBmp,
+                        liveBmp,
+                        sprite.getInk(),
+                        sprite.getForeColor(),
+                        sprite.getBackColor(),
+                        sprite.hasForeColor(),
+                        sprite.hasBackColor(),
+                        liveBmp.getImagePalette());
             }
         }
 
@@ -248,12 +264,13 @@ public class SpriteBaker {
             }
             b = bitmapCache.getProcessed(sprite.getCastMember(), sprite.getInk(),
                     sprite.getBackColor(),
-                    sprite.getForeColor(), sprite.hasForeColor(),
+                    sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor(),
                     player, paletteOverride);
         }
         if (b == null && sprite.getDynamicMember() != null) {
             b = bitmapCache.getProcessedDynamic(sprite.getDynamicMember(),
-                    sprite.getInk(), sprite.getBackColor());
+                    sprite.getInk(), sprite.getBackColor(),
+                    sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor());
         }
         return b;
     }
