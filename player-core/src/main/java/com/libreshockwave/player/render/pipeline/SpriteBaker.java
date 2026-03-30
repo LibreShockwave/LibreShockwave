@@ -2,7 +2,9 @@ package com.libreshockwave.player.render.pipeline;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.cast.ShapeInfo;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
@@ -677,18 +679,19 @@ public class SpriteBaker {
     }
 
     /**
-     * Bake a SHAPE sprite: create a solid-color bitmap filled with the sprite's foreColor.
+     * Bake a SHAPE sprite. Authored shape members use their Director outline/fill
+     * metadata; synthetic no-member shapes still behave as solid color fills.
      */
     private Bitmap bakeShape(RenderSprite sprite) {
         int w = sprite.getWidth() > 0 ? sprite.getWidth() : 50;
         int h = sprite.getHeight() > 0 ? sprite.getHeight() : 50;
-        int fc = sprite.getForeColor();
-
         Bitmap shape = new Bitmap(w, h, 32);
-        int argb = 0xFF000000 | (fc & 0xFFFFFF);
-        int[] pixels = shape.getPixels();
-        for (int i = 0; i < pixels.length; i++) {
-            pixels[i] = argb;
+        ShapeInfo shapeInfo = resolveShapeInfo(sprite);
+
+        if (shapeInfo == null) {
+            fillSolidShape(shape, sprite.getForeColor());
+        } else {
+            drawAuthoredShape(shape, sprite, shapeInfo);
         }
 
         // Apply ink processing — shapes respect ink modes just like bitmaps.
@@ -700,6 +703,93 @@ public class SpriteBaker {
         }
 
         return shape;
+    }
+
+    private ShapeInfo resolveShapeInfo(RenderSprite sprite) {
+        if (sprite.getCastMember() != null && sprite.getCastMember().memberType() == com.libreshockwave.cast.MemberType.SHAPE) {
+            return ShapeInfo.parse(sprite.getCastMember().specificData());
+        }
+        if (sprite.getDynamicMember() != null
+                && sprite.getDynamicMember().getChunk() != null
+                && sprite.getDynamicMember().getMemberType() == com.libreshockwave.cast.MemberType.SHAPE) {
+            return ShapeInfo.parse(sprite.getDynamicMember().getChunk().specificData());
+        }
+        return null;
+    }
+
+    private void drawAuthoredShape(Bitmap shape, RenderSprite sprite, ShapeInfo shapeInfo) {
+        int argb = 0xFF000000 | (sprite.getForeColor() & 0xFFFFFF);
+        if (shapeInfo.isOutlineInvisible() && shapeInfo.shapeType() != ShapeInfo.ShapeType.LINE) {
+            return;
+        }
+
+        switch (shapeInfo.shapeType()) {
+            case RECT, OVAL_RECT -> drawRectShape(shape, shapeInfo, argb);
+            case OVAL -> drawOvalShape(shape, shapeInfo, argb);
+            case LINE -> drawLineShape(shape, shapeInfo, argb);
+            case UNKNOWN -> fillSolidShape(shape, sprite.getForeColor());
+        }
+    }
+
+    private void drawRectShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        if (shapeInfo.isFilled()) {
+            Drawing.fillRect(shape, 0, 0, shape.getWidth(), shape.getHeight(), argb);
+            return;
+        }
+        int strokes = Math.max(0, shapeInfo.lineThickness() - 1);
+        for (int i = 0; i < strokes; i++) {
+            int x = i;
+            int y = i;
+            int w = shape.getWidth() - (i * 2);
+            int h = shape.getHeight() - (i * 2);
+            if (w <= 0 || h <= 0) {
+                break;
+            }
+            Drawing.drawRect(shape, x, y, w, h, argb);
+        }
+    }
+
+    private void drawOvalShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        int cx = shape.getWidth() / 2;
+        int cy = shape.getHeight() / 2;
+        int rx = Math.max(0, shape.getWidth() / 2);
+        int ry = Math.max(0, shape.getHeight() / 2);
+
+        if (shapeInfo.isFilled()) {
+            Drawing.fillEllipse(shape, cx, cy, rx, ry, argb);
+            return;
+        }
+
+        int strokes = Math.max(0, shapeInfo.lineThickness() - 1);
+        for (int i = 0; i < strokes; i++) {
+            int strokeRx = rx - i;
+            int strokeRy = ry - i;
+            if (strokeRx < 0 || strokeRy < 0) {
+                break;
+            }
+            Drawing.drawEllipse(shape, cx, cy, strokeRx, strokeRy, argb);
+        }
+    }
+
+    private void drawLineShape(Bitmap shape, ShapeInfo shapeInfo, int argb) {
+        int strokes = Math.max(1, shapeInfo.lineThickness());
+        boolean bottomToTop = shapeInfo.lineDirection() == 6;
+        int startY = bottomToTop ? shape.getHeight() - 1 : 0;
+        int endY = bottomToTop ? 0 : shape.getHeight() - 1;
+
+        for (int i = 0; i < strokes; i++) {
+            int y0 = Math.max(0, startY - i);
+            int y1 = Math.max(0, endY - i);
+            Drawing.drawLine(shape, 0, y0, Math.max(0, shape.getWidth() - 1), y1, argb);
+        }
+    }
+
+    private void fillSolidShape(Bitmap shape, int rgb) {
+        int argb = 0xFF000000 | (rgb & 0xFFFFFF);
+        int[] pixels = shape.getPixels();
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = argb;
+        }
     }
 
 }

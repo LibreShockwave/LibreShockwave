@@ -3,6 +3,8 @@ package com.libreshockwave.player.render.pipeline;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
+import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.ChunkId;
 import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.vm.datum.Datum;
@@ -19,6 +21,20 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class BitmapCacheTest {
+
+    private static final byte[] EXIT_SHAPE_SPECIFIC_DATA = new byte[] {
+            0x00, 0x01,
+            0x00, 0x00,
+            0x00, 0x00,
+            0x00, 0x39,
+            0x00, 0x39,
+            0x00, 0x01,
+            (byte) 0xF9,
+            0x00,
+            0x00,
+            0x01,
+            0x05
+    };
 
     @Test
     void indexedMatteRemapSkipsDefaultBlackToWhiteRamp() {
@@ -112,5 +128,57 @@ class BitmapCacheTest {
         assertEquals(0xFF196633, baked.getBakedBitmap().getPixel(0, 1));
         assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(1, 1));
         assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(2, 1));
+    }
+
+    @Test
+    void authoredOutlineShapeWithThicknessOneBakesTransparent() {
+        CastMemberChunk exitShape = new CastMemberChunk(
+                null,
+                new ChunkId(1),
+                MemberType.SHAPE,
+                0,
+                EXIT_SHAPE_SPECIFIC_DATA.length,
+                new byte[0],
+                EXIT_SHAPE_SPECIFIC_DATA,
+                "exitshape",
+                0,
+                0,
+                0
+        );
+
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, 57, 57, 0, true,
+                RenderSprite.SpriteType.SHAPE,
+                exitShape, null,
+                0x888888, 0xFFFFFF, true, true,
+                0, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(28, 28));
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(56, 56));
+    }
+
+    @Test
+    void syntheticShapeWithoutMemberStillBakesSolidFill() {
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, 4, 3, 0, true,
+                RenderSprite.SpriteType.SHAPE,
+                null, null,
+                0x336699, 0xFFFFFF, true, true,
+                0, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0xFF336699, baked.getBakedBitmap().getPixel(0, 0));
+        assertEquals(0xFF336699, baked.getBakedBitmap().getPixel(2, 1));
+        assertEquals(0xFF336699, baked.getBakedBitmap().getPixel(3, 2));
     }
 }

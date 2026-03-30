@@ -13,7 +13,11 @@ public record ShapeInfo(
     int regY,
     int width,
     int height,
-    int color
+    int color,
+    int backColor,
+    int fillType,
+    int lineThickness,
+    int lineDirection
 ) implements Dimensioned {
 
     public enum ShapeType {
@@ -39,7 +43,7 @@ public record ShapeInfo(
 
     public static ShapeInfo parse(byte[] data) {
         if (data == null || data.length < 14) {
-            return new ShapeInfo(ShapeType.UNKNOWN, 0, 0, 0, 0, 0);
+            return new ShapeInfo(ShapeType.UNKNOWN, 0, 0, 0, 0, 0, 0, 0, 1, 0);
         }
 
         BinaryReader reader = new BinaryReader(data, ByteOrder.BIG_ENDIAN);
@@ -51,12 +55,28 @@ public record ShapeInfo(
         int width = reader.readU16();
         reader.skip(2); // unknown
         int color = reader.readU8();
+        int backColor = data.length >= 14 ? data[13] & 0xFF : 0;
+        int fillType = data.length >= 15 ? data[14] & 0xFF : 1;
+        int lineThickness = data.length >= 16 ? data[15] & 0xFF : 1;
+        int lineDirection = data.length >= 17 ? data[16] & 0xFF : 0;
 
         return new ShapeInfo(
             ShapeType.fromCode(shapeTypeRaw),
             regX, regY,
             width, height,
-            color
+            color,
+            backColor,
+            fillType,
+            lineThickness,
+            lineDirection
         );
+    }
+
+    public boolean isFilled() {
+        return fillType != 0;
+    }
+
+    public boolean isOutlineInvisible() {
+        return !isFilled() && lineThickness <= 1;
     }
 }
