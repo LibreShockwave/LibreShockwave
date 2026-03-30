@@ -7,14 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TtfBitmapRasterizerTest {
 
     @Test
-    void rasterizedGlyphsDoNotKeepLargeLeftBearingPadding() {
+    void rasterizedGlyphsPreserveLeftSideBearingAndAdvanceWidth() {
         BitmapFont font = TtfBitmapRasterizer.rasterize(
                 com.libreshockwave.fonts.windows.Verdana.getData(), 9, "Verdana");
 
         int canvasW = 32;
         int canvasH = 32;
         int[] pixels = new int[canvasW * canvasH];
-        font.drawChar('S', pixels, canvasW, canvasH, 0, 0, 0xFF000000);
+        font.drawChar('H', pixels, canvasW, canvasH, 0, 0, 0xFF000000);
 
         int minX = canvasW;
         int maxX = -1;
@@ -29,8 +29,8 @@ class TtfBitmapRasterizerTest {
 
         int inkWidth = maxX - minX + 1;
         assertTrue(maxX >= 0, "glyph should render visible pixels");
-        assertTrue(minX <= 1, "glyph should not keep a large left-side bearing");
-        assertTrue(font.getCharWidth('S') <= inkWidth + 1,
-                "advance width should stay close to the actual ink width");
+        assertTrue(minX > 0, "glyph should preserve its left-side bearing");
+        assertTrue(font.getCharWidth('H') > inkWidth,
+                "advance width should preserve the font metrics, not collapse to the ink bounds");
     }
 }

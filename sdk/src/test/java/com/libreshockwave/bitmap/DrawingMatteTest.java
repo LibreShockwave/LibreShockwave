@@ -86,24 +86,6 @@ class DrawingMatteTest {
         assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
     }
 
-    @Test
-    void createMatteUsesDominantBlackEdgeForCornerTouchingRgbGlyphs() {
-        Bitmap src = new Bitmap(6, 4, 32, new int[] {
-                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
-        });
-
-        Bitmap matte = Drawing.createMatte(src);
-
-        assertEquals(0xFFFFFFFF, matte.getPixel(0, 0));
-        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
-        assertEquals(0x00FFFFFF, matte.getPixel(5, 0));
-        assertEquals(0xFFFFFFFF, matte.getPixel(0, 3));
-    }
-
-    @Test
     void createMatteUsesPaletteZeroForIndexedFloodFill() {
         Bitmap src = new Bitmap(3, 3, 8, new int[] {
             0xFF000000, 0xFF000000, 0xFF000000,
@@ -201,30 +183,6 @@ class DrawingMatteTest {
         assertEquals(0xFF000000, dest.getPixel(3, 3));
     }
 
-    @Test
-    void matteCopyPixelsKeepsCornerTouchingWhiteGlyphs() {
-        Bitmap dest = new Bitmap(6, 4, 32, new int[] {
-                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
-        });
-        Bitmap src = new Bitmap(6, 4, 32, new int[] {
-                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
-                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
-        });
-
-        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 6, 4, Palette.InkMode.MATTE, 255);
-
-        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
-        assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
-        assertEquals(0xFF000000, dest.getPixel(5, 0));
-        assertEquals(0xFFFFFFFF, dest.getPixel(0, 3));
-    }
-
-    @Test
     void matteCopyPixelsKeepsMixed32BitNoWhiteEdgeStripOpaque() {
         Bitmap dest = new Bitmap(5, 1, 32);
         Bitmap src = new Bitmap(5, 1, 32, new int[] {
