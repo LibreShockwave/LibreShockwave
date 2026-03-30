@@ -718,6 +718,13 @@ public sealed interface Datum {
                     yield 0.0;
                 }
             }
+            case CastLibRef cl -> cl.castLibNum();
+            case SpriteRef sr -> sr.channelNum();
+            case Color c -> (c.r() << 16) | (c.g() << 8) | c.b();
+            case PaletteIndexColor pic -> {
+                Palette pal = getActivePalette();
+                yield pal.getColor(pic.index()) & 0xFFFFFF;
+            }
             default -> 0.0;
         };
     }
