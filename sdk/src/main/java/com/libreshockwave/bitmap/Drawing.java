@@ -3,6 +3,8 @@ package com.libreshockwave.bitmap;
 import com.libreshockwave.bitmap.Palette.InkMode;
 
 import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Queue;
 
 /**
@@ -130,6 +132,18 @@ public class Drawing {
     }
 
     /**
+     * Director's MASK ink derives opacity from the source pixel brightness.
+     * Use luma instead of a single channel so colored masks behave consistently
+     * across copyPixels and sprite-stage rendering.
+     */
+    public static int maskAlphaFromPixel(int pixel) {
+        int r = (pixel >> 16) & 0xFF;
+        int g = (pixel >> 8) & 0xFF;
+        int b = pixel & 0xFF;
+        return ((77 * r) + (150 * g) + (29 * b) + 128) >> 8;
+    }
+
+    /**
      * Apply ink mode to blend source and destination pixels.
      *
      * @param src Source pixel (ARGB)
@@ -231,9 +245,14 @@ public class Drawing {
                 return alphaBlend(src, dest, srcA);
 
             case MASK:
-                // Source acts as mask, revealing destination
-                a = srcR; // Use red channel as alpha
-                return alphaBlend(dest, src, a);
+                // Director MASK copies the source over the destination with an
+                // opacity derived from the source brightness. Black mask pixels
+                // contribute nothing; white pixels are fully opaque.
+                a = combineAlpha(srcA, maskAlphaFromPixel(src));
+                if (a == 0) {
+                    return dest;
+                }
+                return alphaBlend(src, dest, a);
 
             case BLEND:
                 // Director's image.copyPixels blend factor applies on top of any
@@ -656,7 +675,105 @@ public class Drawing {
     }
 
     private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
+        Integer matteRgb = inferDominantEdgeRgb(pixels, w, h);
+        // Fuse text wrappers render grayscale glyphs onto a solid RGB background, then
+        // copy the result with MATTE ink. Preserve that authored background as matte
+        // when the edge color is coherent; otherwise keep Director's white fallback.
+        if (matteRgb != null && matteRgb != 0xFFFFFF && isMostlyGrayscale(pixels)) {
+            return new FloodFillMatte(matteRgb, 0);
+        }
         return new FloodFillMatte(0xFFFFFF, 0);
+    }
+
+    private static Integer inferDominantEdgeRgb(int[] pixels, int w, int h) {
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+
+        Map<Integer, Integer> counts = new HashMap<>();
+        int opaqueEdgeCount = 0;
+        int dominantRgb = -1;
+        int dominantCount = 0;
+
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+
+        for (int index : iterateEdgeIndices(w, h)) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int rgb = pixels[index] & 0xFFFFFF;
+            int count = counts.merge(rgb, 1, Integer::sum);
+            opaqueEdgeCount++;
+            if (count > dominantCount) {
+                dominantCount = count;
+                dominantRgb = rgb;
+            }
+        }
+
+        if (opaqueEdgeCount == 0 || dominantRgb < 0) {
+            return null;
+        }
+
+        // Avoid treating uniformly filled RGB images as pure matte.
+        if (isUniformRgb(pixels, dominantRgb)) {
+            return null;
+        }
+
+        int opaqueCornerCount = 0;
+        for (int index : cornerIndices) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            opaqueCornerCount++;
+            if ((pixels[index] & 0xFFFFFF) != dominantRgb) {
+                return null;
+            }
+        }
+
+        if (opaqueCornerCount == 0) {
+            return null;
+        }
+
+        // Require a clearly dominant matte color on the outer edge.
+        if (dominantCount * 4 < opaqueEdgeCount * 3) {
+            return null;
+        }
+
+        return dominantRgb;
+    }
+
+    private static boolean isUniformRgb(int[] pixels, int rgb) {
+        for (int pixel : pixels) {
+            if (((pixel >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            if ((pixel & 0xFFFFFF) != rgb) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isMostlyGrayscale(int[] pixels) {
+        boolean sawOpaque = false;
+        for (int pixel : pixels) {
+            if (((pixel >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            sawOpaque = true;
+            int r = (pixel >> 16) & 0xFF;
+            int g = (pixel >> 8) & 0xFF;
+            int b = pixel & 0xFF;
+            if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
+                return false;
+            }
+        }
+        return sawOpaque;
     }
 
     private static boolean[] computeFloodFillTransparency(int[] pixels, byte[] paletteIndices, int w, int h,
