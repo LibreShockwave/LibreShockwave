@@ -307,9 +307,26 @@ canvas {
 .statusbar {
     background: #f0f0f0;
     border-top: 1px solid #cccccc;
-    padding: 4px 8px;
+    padding: 2px 8px;
     font-size: 11px;
     color: #666666;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 28px;
+}
+
+.btn-clear-cache {
+    padding: 1px 6px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.icon-reload {
+    font-size: 12px;
+    font-weight: bold;
 }
 
 /* === Footer === */

@@ -42,8 +42,22 @@ public class WasmEntry {
     // Debug log: accumulates messages; read via getDebugLog() export
     static final StringBuilder debugLog = new StringBuilder(1024);
 
+    private static boolean isDebugLoggingEnabled() {
+        return DebugConfig.isDebugPlaybackEnabled();
+    }
+
+    private static void appendDebug(String msg) {
+        if (!isDebugLoggingEnabled() || msg == null || msg.isEmpty()) {
+            return;
+        }
+        debugLog.append(msg);
+    }
+
     /** Append a timestamped debug message (accessible from player-wasm package). */
     static void log(String msg) {
+        if (!isDebugLoggingEnabled() || msg == null || msg.isEmpty()) {
+            return;
+        }
         debugLog.append(msg).append('\n');
     }
 
@@ -65,9 +79,9 @@ public class WasmEntry {
             @Override public void write(byte[] b, int off, int len) { }
         }) {
             @Override public void println(String x) { log(x); }
-            @Override public void print(String x) { debugLog.append(x); }
+            @Override public void print(String x) { appendDebug(x); }
             @Override public void println(Object x) { log(String.valueOf(x)); }
-            @Override public void println() { debugLog.append('\n'); }
+            @Override public void println() { appendDebug("\n"); }
         };
         System.setOut(unsync);
         System.setErr(unsync);
@@ -143,9 +157,10 @@ public class WasmEntry {
                     byte[] cached = castLibManager.getCachedExternalData(baseName);
                     if (cached != null) {
                         try {
-                            if (castLibManager.setExternalCastData(castLibNumber, cached)) {
-                                wasmPlayer.getPlayer().getBitmapCache().clear();
-                                wasmPlayer.bumpCastRevision();
+                            if (wasmPlayer.getPlayer().loadExternalCastFromCachedData(
+                                    castLibNumber,
+                                    cached,
+                                    wasmPlayer::bumpCastRevision)) {
                                 log("castDataRequestCallback: loaded " + baseName + " from cache (cast#" + castLibNumber + ")");
                                 return;
                             }
@@ -769,6 +784,7 @@ public class WasmEntry {
         byte[] bytes = lastError.getBytes();
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        lastError = null;
         return len;
     }
 
@@ -780,7 +796,7 @@ public class WasmEntry {
     @Export(name = "getDebugLog")
     public static int getDebugLog() {
         if (debugLog.length() == 0) return 0;
-        byte[] bytes = debugLog.toString().getBytes();
+        byte[] bytes = debugLog.toString().getBytes(StandardCharsets.UTF_8);
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         debugLog.setLength(0);
@@ -797,238 +813,6 @@ public class WasmEntry {
     public static void mouseMove(int stageX, int stageY) {
         if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return;
         wasmPlayer.getPlayer().getInputHandler().onMouseMove(stageX, stageY);
-    }
-
-    private static String lastDebugHitInfo = "";
-    private static String lastDebugSpriteInfo = "";
-
-    /**
-     * Debug: dump star sprite state (channels 33-49).
-     * Logs behavior instances, sprite state, and render sprite info.
-     */
-    @Export(name = "debugStarState")
-    public static void debugStarState() {
-        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) { log("debugStarState: no player"); return; }
-        var player = wasmPlayer.getPlayer();
-        var registry = player.getStageRenderer().getSpriteRegistry();
-        var behMgr = player.getFrameContext().getBehaviorManager();
-        int frame = player.getCurrentFrame();
-        StringBuilder sb = new StringBuilder();
-        sb.append("STAR STATE frame=").append(frame).append('\n');
-        int totalBeh = 0;
-        for (int ch = 33; ch <= 49; ch++) {
-            var state = registry.get(ch);
-            var instances = behMgr.getInstancesForChannel(ch);
-            totalBeh += instances.size();
-            if (state != null || !instances.isEmpty()) {
-                sb.append("  ch=").append(ch);
-                if (state != null) {
-                    sb.append(" loc=(").append(state.getLocH()).append(',').append(state.getLocV()).append(')')
-                      .append(' ').append(state.getWidth()).append('x').append(state.getHeight())
-                      .append(" puppet=").append(state.isPuppet())
-                      .append(" dynMem=").append(state.hasDynamicMember())
-                      .append(" eCL=").append(state.getEffectiveCastLib())
-                      .append("/M").append(state.getEffectiveCastMember());
-                } else {
-                    sb.append(" NO_STATE");
-                }
-                if (!instances.isEmpty()) {
-                    for (var inst : instances) {
-                        sb.append(" beh=").append(inst.getProperties());
-                    }
-                }
-                sb.append('\n');
-            }
-        }
-        sb.append("  totalBehaviors=").append(totalBeh).append(" spriteRev=").append(registry.getRevision());
-        log(sb.toString());
-    }
-
-    /**
-     * Debug: dump info about sprites at the given stage coordinates.
-     * Returns the hit sprite channel, or 0 if no hit.
-     * Stores detailed info in lastDebugHitInfo (readable via getDebugHitInfo).
-     */
-    @Export(name = "debugHitTest")
-    public static int debugHitTest(int stageX, int stageY) {
-        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) { lastDebugHitInfo = "no player"; return -1; }
-        var renderer = wasmPlayer.getPlayer().getStageRenderer();
-        if (renderer == null) { lastDebugHitInfo = "no renderer"; return -2; }
-        int frame = wasmPlayer.getPlayer().getCurrentFrame();
-
-        var sprites = renderer.getLastBakedSprites();
-        if (sprites == null || sprites.isEmpty()) {
-            sprites = renderer.getSpritesForFrame(frame);
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("(").append(stageX).append(",").append(stageY)
-          .append(") total=").append(sprites.size());
-
-        // If stageX < 0, dump ALL sprites; otherwise only those at the point
-        boolean dumpAll = (stageX < 0);
-
-        int hitChannel = 0;
-        for (int i = sprites.size() - 1; i >= 0; i--) {
-            var sprite = sprites.get(i);
-            if (!sprite.isVisible()) continue;
-            if (sprite.getChannel() <= 0) continue;
-
-            int left = sprite.getX();
-            int top = sprite.getY();
-            int right = left + sprite.getWidth();
-            int bottom = top + sprite.getHeight();
-
-            boolean overlaps = stageX >= left && stageX < right && stageY >= top && stageY < bottom;
-
-            if (dumpAll || overlaps) {
-                sb.append("|ch").append(sprite.getChannel())
-                  .append(",i").append(sprite.getInkMode().code())
-                  .append(",t").append(sprite.getType())
-                  .append(",b").append(sprite.hasBehaviors() ? 1 : 0)
-                  .append(",r").append(left).append(":").append(top)
-                  .append(":").append(right).append(":").append(bottom);
-
-                if (overlaps) {
-                    // Check pixel transparency at click point
-                    var baked = sprite.getBakedBitmap();
-                    if (baked != null && baked.getPixels() != null) {
-                        int localX = stageX - left;
-                        int localY = stageY - top;
-                        int bw = baked.getWidth(), bh = baked.getHeight();
-                        int sw = sprite.getWidth(), sh = sprite.getHeight();
-                        int bx = (sw > 0 && sw != bw) ? (localX * bw / sw) : localX;
-                        int by = (sh > 0 && sh != bh) ? (localY * bh / sh) : localY;
-                        if (bx >= 0 && bx < bw && by >= 0 && by < bh) {
-                            int idx = by * bw + bx;
-                            if (idx >= 0 && idx < baked.getPixels().length) {
-                                int alpha = (baked.getPixels()[idx] >> 24) & 0xFF;
-                                sb.append(",a").append(alpha);
-                            }
-                        }
-                    } else {
-                        sb.append(",noBmp");
-                    }
-
-                    if (hitChannel == 0) {
-                        var ink = sprite.getInkMode();
-                        if (ink == com.libreshockwave.id.InkMode.COPY
-                            || sprite.getType() == com.libreshockwave.player.render.pipeline.RenderSprite.SpriteType.TEXT
-                            || sprite.getType() == com.libreshockwave.player.render.pipeline.RenderSprite.SpriteType.BUTTON
-                            || sprite.hasBehaviors()) {
-                            hitChannel = sprite.getChannel();
-                        }
-                    }
-                }
-            }
-        }
-        sb.append("|hit=").append(hitChannel);
-        lastDebugHitInfo = sb.toString();
-        return hitChannel;
-    }
-
-    /**
-     * Debug: dump sprite + member edit info for a specific channel.
-     * Returns number of bytes written to stringBuffer.
-     */
-    @Export(name = "debugSpriteInfo")
-    public static int debugSpriteInfo(int channel) {
-        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) {
-            return writeToStringBuffer("debugSpriteInfo: no player");
-        }
-
-        var player = wasmPlayer.getPlayer();
-        var sprite = player.getStageRenderer().getSpriteRegistry().get(channel);
-        if (sprite == null) {
-            return writeToStringBuffer("debugSpriteInfo: no sprite at channel " + channel);
-        }
-
-        int castLib = sprite.getEffectiveCastLib();
-        int memberNum = sprite.getEffectiveCastMember();
-        var member = player.getCastLibManager().getDynamicMember(castLib, memberNum);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("ch=").append(channel)
-          .append(" castLib=").append(castLib)
-          .append(" member=").append(memberNum)
-          .append(" visible=").append(sprite.isVisible())
-          .append(" ink=").append(sprite.getInk())
-          .append(" blend=").append(sprite.getBlend());
-
-        if (member == null) {
-            sb.append(" member=null");
-            lastDebugSpriteInfo = sb.toString();
-            return writeToStringBuffer(lastDebugSpriteInfo);
-        }
-
-        sb.append(" type=").append(member.getMemberType())
-          .append(" editable=").append(member.isEditable())
-          .append(" name=").append(member.getName());
-
-        String text = member.getTextContent();
-        if (text != null) {
-            String sample = text.length() > 64 ? text.substring(0, 64) + "..." : text;
-            sb.append(" text=\"").append(sample.replace('\n', ' ')).append("\"");
-        }
-
-        Datum color = member.getProp("color");
-        sb.append(" color=").append(color);
-
-        var bmp = member.renderTextToImage();
-        if (bmp != null && bmp.getPixels() != null) {
-            int nonTransparent = 0;
-            int[] pixels = bmp.getPixels();
-            for (int p : pixels) {
-                if (((p >>> 24) & 0xFF) != 0) nonTransparent++;
-            }
-            sb.append(" bmp=").append(bmp.getWidth()).append("x").append(bmp.getHeight())
-              .append(" nonTransparent=").append(nonTransparent).append("/").append(pixels.length);
-        } else {
-            sb.append(" bmp=null");
-        }
-
-        lastDebugSpriteInfo = sb.toString();
-        return writeToStringBuffer(lastDebugSpriteInfo);
-    }
-
-    /**
-     * Get the length of the last debug hit test info string.
-     */
-    @Export(name = "getDebugHitInfoLen")
-    public static int getDebugHitInfoLen() {
-        return lastDebugHitInfo.length();
-    }
-
-    /**
-     * Copy the last debug hit test info to the string buffer.
-     * Returns length of the string.
-     */
-    @Export(name = "getDebugHitInfo")
-    public static int getDebugHitInfo() {
-        byte[] bytes = lastDebugHitInfo.getBytes();
-        int bufAddr = getStringBufferAddress();
-        org.teavm.interop.Address addr = org.teavm.interop.Address.fromInt(bufAddr);
-        for (int i = 0; i < bytes.length && i < 4096; i++) {
-            addr.add(i).putByte(bytes[i]);
-        }
-        return bytes.length;
-    }
-
-    /**
-     * Get the last event dispatch info (for debugging).
-     * Returns the string length written to the string buffer.
-     */
-    @Export(name = "getLastDispatchInfo")
-    public static int getLastDispatchInfo() {
-        String info = com.libreshockwave.player.event.EventDispatcher.lastDispatchInfo;
-        if (info == null || info.isEmpty()) return 0;
-        byte[] bytes = info.getBytes();
-        int bufAddr = getStringBufferAddress();
-        org.teavm.interop.Address addr = org.teavm.interop.Address.fromInt(bufAddr);
-        for (int i = 0; i < bytes.length && i < 4096; i++) {
-            addr.add(i).putByte(bytes[i]);
-        }
-        return bytes.length;
     }
 
     /**
@@ -1381,6 +1165,26 @@ public class WasmEntry {
             }
             cause = cause.getCause();
             depth++;
+        }
+        lastError = sb.toString();
+    }
+
+    static void reportScriptError(String message, com.libreshockwave.vm.datum.LingoException error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[ScriptError] ");
+        if (message != null && !message.isEmpty()) {
+            sb.append(message);
+        } else if (error != null && error.getMessage() != null && !error.getMessage().isEmpty()) {
+            sb.append(error.getMessage());
+        } else {
+            sb.append("Unhandled script error");
+        }
+
+        if (error != null) {
+            String stack = error.formatLingoCallStack();
+            if (stack != null && !stack.isBlank()) {
+                sb.append('\n').append(stack);
+            }
         }
         lastError = sb.toString();
     }

@@ -39,6 +39,7 @@ public class WasmPlayer {
         player.setInitialBuiltinVariable("connection.room.id", com.libreshockwave.vm.datum.Datum.symbol("room"));
         player.setCompatibilityProfile(new FuseCompatibilityProfile());
         player.getMovieProperties().setGotoNetPageHandler(WasmEntry::enqueueGotoNetPage);
+        player.setErrorListener(WasmEntry::reportScriptError);
 
         // When a fetch completes, cache cast files in CastLibManager so they're
         // available immediately when Lingo sets castLib.fileName.
