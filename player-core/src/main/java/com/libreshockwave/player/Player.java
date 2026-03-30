@@ -30,6 +30,7 @@ import com.libreshockwave.vm.builtin.media.SoundProvider;
 import com.libreshockwave.vm.builtin.timeout.TimeoutProvider;
 import com.libreshockwave.vm.builtin.xtra.XtraBuiltins;
 import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
+import com.libreshockwave.vm.builtin.flow.UpdateProvider;
 import com.libreshockwave.player.audio.AudioBackend;
 import com.libreshockwave.player.audio.SoundManager;
 import com.libreshockwave.player.timeout.TimeoutManager;
@@ -55,7 +56,7 @@ import java.util.function.Consumer;
  * Handles frame playback, event dispatch, and score traversal.
  * Uses modular components for score navigation, behavior management, and event dispatch.
  */
-public class Player {
+public class Player implements UpdateProvider {
 
     private final DirectorFile file;
     private final LingoVM vm;
@@ -114,6 +115,7 @@ public class Player {
     private final java.util.Set<Integer> pendingResourceReindexSet = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
     private final java.util.Queue<Integer> pendingResourceReindexQueue = new java.util.LinkedList<>();
     private PlayerCompatibilityProfile compatibilityProfile = PlayerCompatibilityProfile.NONE;
+    private final List<Datum> updatingObjects = new ArrayList<>();
     private final Map<String, Datum> initialBuiltinVariables = new LinkedHashMap<>();
 
     // External parameters (Shockwave PARAM tags)
@@ -1054,6 +1056,7 @@ public class Player {
             compatibilityProfile.afterFrameExecution(this);
             repairVisualizerSprites();
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
+            processUpdatingObjects();
             frameContext.advanceFrame();
         } finally {
             vm.setTickDeadline(0);
@@ -1098,6 +1101,7 @@ public class Player {
                         xtraManager.tickAll();
                         compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
+                        processUpdatingObjects();
                         frameContext.advanceFrame();
                     } finally {
                         clearProviders();
@@ -1122,6 +1126,7 @@ public class Player {
         SpritePropertyProvider.setProvider(spriteProperties);
         CastLibProvider.setProvider(castLibManager);
         TimeoutProvider.setProvider(timeoutManager);
+        UpdateProvider.setProvider(this);
         ExternalParamProvider.setProvider(externalParamProvider);
         SoundProvider.setProvider(soundManager);
         // Refresh palette each tick so Datum colour resolution uses the current frame's palette.
@@ -1143,6 +1148,7 @@ public class Player {
         SpritePropertyProvider.clearProvider();
         CastLibProvider.clearProvider();
         TimeoutProvider.clearProvider();
+        UpdateProvider.clearProvider();
         ExternalParamProvider.clearProvider();
         SoundProvider.clearProvider();
     }
@@ -1538,5 +1544,33 @@ public class Player {
         }
     }
 
+    // --- UpdateProvider implementation ---
 
+    @Override
+    public void receiveUpdate(Datum target) {
+        if (target != null && !target.isVoid()) {
+            if (!updatingObjects.contains(target)) {
+                updatingObjects.add(target);
+            }
+        }
+    }
+
+    @Override
+    public void removeUpdate(Datum target) {
+        if (target != null) {
+            updatingObjects.remove(target);
+        }
+    }
+
+    private void processUpdatingObjects() {
+        if (updatingObjects.isEmpty()) return;
+
+        // Create a snapshot to allow removeUpdate() during iteration
+        List<Datum> snapshot = new ArrayList<>(updatingObjects);
+        for (Datum target : snapshot) {
+            if (target instanceof Datum.ScriptInstance si) {
+                ControlFlowBuiltins.callHandlerOnInstance(vm, si, "update", List.of());
+            }
+        }
+    }
 }

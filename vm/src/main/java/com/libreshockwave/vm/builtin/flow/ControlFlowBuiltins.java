@@ -30,6 +30,8 @@ public final class ControlFlowBuiltins {
         builtins.put("param", ControlFlowBuiltins::param);
         builtins.put("go", ControlFlowBuiltins::go);
         builtins.put("call", ControlFlowBuiltins::call);
+        builtins.put("receiveupdate", ControlFlowBuiltins::receiveUpdate);
+        builtins.put("removeupdate", ControlFlowBuiltins::removeUpdate);
     }
 
     /**
@@ -232,5 +234,29 @@ public final class ControlFlowBuiltins {
             System.err.println("[callHandlerOnInstance] Exception in '" + handlerName + "': " + e.getMessage());
             return Datum.VOID;
         }
+    }
+
+    /**
+     * receiveUpdate(target)
+     */
+    private static Datum receiveUpdate(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+        UpdateProvider provider = UpdateProvider.getProvider();
+        if (provider != null) {
+            provider.receiveUpdate(args.get(0));
+        }
+        return Datum.VOID;
+    }
+
+    /**
+     * removeUpdate(target)
+     */
+    private static Datum removeUpdate(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) return Datum.VOID;
+        UpdateProvider provider = UpdateProvider.getProvider();
+        if (provider != null) {
+            provider.removeUpdate(args.get(0));
+        }
+        return Datum.VOID;
     }
 }
