@@ -3,6 +3,7 @@ package com.libreshockwave.vm.opcode.dispatch;
 import com.libreshockwave.chunks.ScriptChunk;
 import com.libreshockwave.vm.DebugConfig;
 import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
@@ -27,7 +28,11 @@ public final class ScriptInstanceMethodDispatcher {
         String method = methodName.toLowerCase();
         LingoVM currentVm = LingoVM.getCurrentVM();
         if (shouldDeferNumericCloseThread(currentVm, method, args)) {
-            currentVm.deferScriptInstanceCall(instance, methodName, args);
+            currentVm.deferTask(() -> ControlFlowBuiltins.callHandlerOnInstance(
+                    currentVm,
+                    instance,
+                    methodName,
+                    args));
             return Datum.TRUE;
         }
         switch (method) {
@@ -272,7 +277,10 @@ public final class ScriptInstanceMethodDispatcher {
             LingoVM vm,
             String methodName,
             List<Datum> args) {
-        if (vm == null || vm.isFlushingDeferredScriptInstanceCalls() || !vm.hasActiveCallStack()) {
+        if (vm == null
+                || vm.isFlushingDeferredScriptInstanceCalls()
+                || vm.isFlushingDeferredTasks()
+                || !vm.hasActiveCallStack()) {
             return false;
         }
         if (!"closethread".equals(methodName) || args.size() != 1) {
