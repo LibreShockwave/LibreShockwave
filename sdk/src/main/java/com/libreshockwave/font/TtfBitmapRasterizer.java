@@ -315,45 +315,53 @@ public class TtfBitmapRasterizer {
 
         // Calculate cell dimensions
         int maxAdvPx = 0;
+        int maxGlyphWidthPx = 0;
         for (var entry : ttf.cmap.entrySet()) {
             int gIdx = entry.getValue();
             int advPx = Math.round(ttf.advanceWidths[gIdx] * scale);
             maxAdvPx = Math.max(maxAdvPx, advPx);
+            TtfGlyph glyph = parseGlyph(ttf, gIdx);
+            if (glyph != null) {
+                int glyphWidthPx = Math.max(1, Math.round((glyph.xMax - glyph.xMin) * scale) + 1);
+                maxGlyphWidthPx = Math.max(maxGlyphWidthPx, glyphWidthPx);
+            }
         }
 
         int ascPx = Math.round(Math.abs(ttf.ascender) * scale);
         int descPx = Math.round(Math.abs(ttf.descender) * scale);
         int metricsLineHeight = ascPx + descPx; // matches AWT FontMetrics.getHeight()
         int cellHeight = metricsLineHeight + 1; // +1 for cell storage (avoid clipping)
-        int cellWidth = Math.max(maxAdvPx, 1);
+        int cellWidth = Math.max(Math.max(maxAdvPx, maxGlyphWidthPx), 1);
 
         int bitmapWidth = cellWidth * BitmapFont.GRID_COLUMNS;
         int bitmapHeight = cellHeight * BitmapFont.GRID_ROWS;
 
         int[] argb = new int[bitmapWidth * bitmapHeight];
         int[] charWidths = new int[BitmapFont.NUM_CHARS];
+        int[] charOffsetsX = new int[BitmapFont.NUM_CHARS];
         for (int i = 0; i < BitmapFont.NUM_CHARS; i++) charWidths[i] = cellWidth;
 
         Map<Integer, int[]> overflowGlyphs = new HashMap<>();
         Map<Integer, Integer> overflowWidths = new HashMap<>();
+        Map<Integer, Integer> overflowOffsetsX = new HashMap<>();
 
         // Rasterize each mapped character
         for (var entry : ttf.cmap.entrySet()) {
             int charCode = entry.getKey();
             int glyphIndex = entry.getValue();
 
-            int advancePx = Math.round(ttf.advanceWidths[glyphIndex] * scale);
+            int advancePx = Math.max(1, Math.round(ttf.advanceWidths[glyphIndex] * scale));
             TtfGlyph glyph = parseGlyph(ttf, glyphIndex);
-            int tightAdvancePx = advancePx;
             int glyphOffsetX = 0;
+            int glyphDrawOffsetX = 0;
             if (glyph != null) {
-                int glyphWidthPx = Math.max(1, Math.round((glyph.xMax - glyph.xMin) * scale));
-                tightAdvancePx = Math.max(1, Math.min(advancePx, glyphWidthPx + 1));
+                glyphDrawOffsetX = Math.round(ttf.lsbArray[glyphIndex] * scale);
                 glyphOffsetX = -Math.round(glyph.xMin * scale);
             }
 
             if (charCode < BitmapFont.NUM_CHARS) {
-                charWidths[charCode] = tightAdvancePx;
+                charWidths[charCode] = advancePx;
+                charOffsetsX[charCode] = glyphDrawOffsetX;
 
                 if (glyph != null && !glyph.contours.isEmpty()) {
                     int col = charCode % BitmapFont.GRID_COLUMNS;
@@ -365,7 +373,8 @@ public class TtfBitmapRasterizer {
                             cellX + glyphOffsetX, cellY, cellWidth, cellHeight, scale, ascPx);
                 }
             } else {
-                overflowWidths.put(charCode, tightAdvancePx);
+                overflowWidths.put(charCode, advancePx);
+                overflowOffsetsX.put(charCode, glyphDrawOffsetX);
 
                 if (glyph != null && !glyph.contours.isEmpty()) {
                     int[] cellBuf = new int[cellWidth * cellHeight];
@@ -385,9 +394,9 @@ public class TtfBitmapRasterizer {
         }
 
         return BitmapFont.create(argb, bitmapWidth, bitmapHeight,
-                cellWidth, cellHeight, charWidths, fontName, targetSize,
+                cellWidth, cellHeight, charWidths, charOffsetsX, fontName, targetSize,
                 ascPx, metricsLineHeight,
-                overflowGlyphs, overflowWidths);
+                overflowGlyphs, overflowWidths, overflowOffsetsX);
     }
 
     /**

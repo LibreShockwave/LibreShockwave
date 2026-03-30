@@ -3,8 +3,6 @@ package com.libreshockwave.bitmap;
 import com.libreshockwave.bitmap.Palette.InkMode;
 
 import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Queue;
 
 /**
@@ -676,117 +674,7 @@ public class Drawing {
     }
 
     private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
-        Integer matteRgb = inferDominantEdgeRgb(pixels, w, h);
-        // Fuse text wrappers render grayscale glyphs onto a solid RGB background, then
-        // copy the result with MATTE ink. Preserve that authored background as matte
-        // when the edge color is coherent; otherwise keep Director's white fallback.
-        if (shouldUseDominantEdgeRgbMatte(matteRgb, pixels)) {
-            return new FloodFillMatte(matteRgb, 0);
-        }
         return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
-    }
-
-    private static boolean shouldUseDominantEdgeRgbMatte(Integer matteRgb, int[] pixels) {
-        return matteRgb != null && matteRgb != DEFAULT_RGB_MATTE && isMostlyGrayscale(pixels);
-    }
-
-    private static Integer inferDominantEdgeRgb(int[] pixels, int w, int h) {
-        if (w <= 0 || h <= 0) {
-            return null;
-        }
-
-        Map<Integer, Integer> counts = new HashMap<>();
-        int opaqueEdgeCount = 0;
-        int dominantRgb = -1;
-        int dominantCount = 0;
-
-        int[] cornerIndices = {
-                0,
-                Math.max(0, w - 1),
-                Math.max(0, (h - 1) * w),
-                Math.max(0, (h - 1) * w + (w - 1))
-        };
-
-        for (int index : iterateEdgeIndices(w, h)) {
-            if (((pixels[index] >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            int rgb = pixels[index] & 0xFFFFFF;
-            Integer previousCount = counts.get(rgb);
-            int count = previousCount == null ? 1 : previousCount + 1;
-            counts.put(rgb, count);
-            opaqueEdgeCount++;
-            if (count > dominantCount) {
-                dominantCount = count;
-                dominantRgb = rgb;
-            }
-        }
-
-        if (opaqueEdgeCount == 0 || dominantRgb < 0) {
-            return null;
-        }
-
-        // Avoid treating uniformly filled RGB images as pure matte.
-        if (isUniformRgb(pixels, dominantRgb)) {
-            return null;
-        }
-
-        // Tightly cropped text can legitimately occupy some corners; require only
-        // enough corner support to show the dominant edge color still owns the frame.
-        if (!hasDominantRgbCornerCoverage(pixels, cornerIndices, dominantRgb)) {
-            return null;
-        }
-
-        // Require a clearly dominant matte color on the outer edge.
-        if (dominantCount * 4 < opaqueEdgeCount * 3) {
-            return null;
-        }
-
-        return dominantRgb;
-    }
-
-    private static boolean hasDominantRgbCornerCoverage(int[] pixels, int[] cornerIndices, int dominantRgb) {
-        int opaqueCornerCount = 0;
-        int matchingCornerCount = 0;
-        for (int index : cornerIndices) {
-            if (((pixels[index] >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            opaqueCornerCount++;
-            if ((pixels[index] & 0xFFFFFF) == dominantRgb) {
-                matchingCornerCount++;
-            }
-        }
-        return opaqueCornerCount > 0 && matchingCornerCount * 2 >= opaqueCornerCount;
-    }
-
-    private static boolean isUniformRgb(int[] pixels, int rgb) {
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            if ((pixel & 0xFFFFFF) != rgb) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isMostlyGrayscale(int[] pixels) {
-        boolean sawOpaque = false;
-        for (int pixel : pixels) {
-            if (((pixel >>> 24) & 0xFF) == 0) {
-                continue;
-            }
-            sawOpaque = true;
-            int r = (pixel >> 16) & 0xFF;
-            int g = (pixel >> 8) & 0xFF;
-            int b = pixel & 0xFF;
-            if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
-                return false;
-            }
-        }
-        return sawOpaque;
     }
 
     private static boolean[] computeFloodFillTransparency(int[] pixels, byte[] paletteIndices, int w, int h,

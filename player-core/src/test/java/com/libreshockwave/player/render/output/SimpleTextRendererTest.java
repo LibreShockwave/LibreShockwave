@@ -87,6 +87,19 @@ class SimpleTextRendererTest {
         assertEquals(3, TextRenderer.lineStartIndex("A\r\nB", 1));
     }
 
+    @Test
+    void leftAlignedBitmapFontTextKeepsInkOffTheImageEdge() {
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        Bitmap text = renderer.renderText("How To Get?", 80, 0,
+                "Verdana", 9, "plain",
+                "left", 0xFFFFFFFF, 0xFF000000,
+                false, false, 9, 0);
+
+        assertTrue(findFirstNonBackgroundColumn(text, 0xFF000000) > 0,
+                "expected the first glyph to preserve its font bearing instead of touching the image edge");
+    }
+
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {
         int count = 0;
         for (int x = 0; x < bitmap.getWidth(); x++) {
@@ -110,6 +123,17 @@ class SimpleTextRendererTest {
         for (int y = beforeY - 1; y >= 0; y--) {
             if (countOpaquePixelsOnRow(bitmap, y) > 0) {
                 return y;
+            }
+        }
+        return -1;
+    }
+
+    private static int findFirstNonBackgroundColumn(Bitmap bitmap, int bgColor) {
+        for (int x = 0; x < bitmap.getWidth(); x++) {
+            for (int y = 0; y < bitmap.getHeight(); y++) {
+                if (bitmap.getPixel(x, y) != bgColor) {
+                    return x;
+                }
             }
         }
         return -1;
