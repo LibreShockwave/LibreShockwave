@@ -9,10 +9,10 @@ class DrawingMatteTest {
     @Test
     void createMatteUsesSourceAlphaLayer() {
         Bitmap src = new Bitmap(4, 1, 32, new int[] {
-            0xFFFFFFFF,
-            0x00DDDDDD,
-            0xFF000000,
-            0x80AA0000
+                0xFFFFFFFF,
+                0x00DDDDDD,
+                0xFF000000,
+                0x80AA0000
         });
         src.setNativeAlpha(true);
 
@@ -27,9 +27,9 @@ class DrawingMatteTest {
     @Test
     void createMatteHonorsAlphaThreshold() {
         Bitmap src = new Bitmap(3, 1, 32, new int[] {
-            0x7FFFFFFF,
-            0x80FFFFFF,
-            0xFFFFFFFF
+                0x7FFFFFFF,
+                0x80FFFFFF,
+                0xFFFFFFFF
         });
         src.setNativeAlpha(true);
 
@@ -43,9 +43,9 @@ class DrawingMatteTest {
     @Test
     void createMatteFallsBackToWhiteBorderFloodFillForOpaqueImages() {
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
-            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-            0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
-            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
         });
 
         Bitmap matte = Drawing.createMatte(src);
@@ -59,9 +59,9 @@ class DrawingMatteTest {
     @Test
     void createMatteKeepsNearWhiteBorderPixelsOpaque() {
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
-            0xFFFEFEFE, 0xFFFCFCFC, 0xFFFFFFFF,
-            0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
-            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+                0xFFFEFEFE, 0xFFFCFCFC, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF224466, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
         });
 
         Bitmap matte = Drawing.createMatte(src);
@@ -74,9 +74,9 @@ class DrawingMatteTest {
     @Test
     void createMatteTreatsNonNativeAlpha32BitImagesAsWhiteFloodFill() {
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
-            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-            0xFFFFFFFF, 0x40000000, 0xFFFFFFFF,
-            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0x40000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
         });
 
         Bitmap matte = Drawing.createMatte(src);
@@ -155,9 +155,9 @@ class DrawingMatteTest {
     void matteCopyPixelsOnlyRemovesWhiteBoundingPixels() {
         Bitmap dest = new Bitmap(3, 3, 32);
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
-            0xFF2A6883, 0xFF2A6883, 0xFF2A6883,
-            0xFF2A6883, 0xFFFFFFFF, 0xFF2A6883,
-            0xFF2A6883, 0xFF2A6883, 0xFF2A6883
+                0xFF2A6883, 0xFF2A6883, 0xFF2A6883,
+                0xFF2A6883, 0xFFFFFFFF, 0xFF2A6883,
+                0xFF2A6883, 0xFF2A6883, 0xFF2A6883
         });
 
         Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
@@ -170,7 +170,7 @@ class DrawingMatteTest {
     void matteCopyPixelsKeepsMixed32BitNoWhiteEdgeStripOpaque() {
         Bitmap dest = new Bitmap(5, 1, 32);
         Bitmap src = new Bitmap(5, 1, 32, new int[] {
-            0xFF88ADBD, 0xFF88ADBD, 0xFF88ADBD, 0xFF88ADBD, 0xFF000000
+                0xFF88ADBD, 0xFF88ADBD, 0xFF88ADBD, 0xFF88ADBD, 0xFF000000
         });
 
         Drawing.copyPixels(dest, src, 0, 0, 0, 0, 5, 1, Palette.InkMode.MATTE, 255);

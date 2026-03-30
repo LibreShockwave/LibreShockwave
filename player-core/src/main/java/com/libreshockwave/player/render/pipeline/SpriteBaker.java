@@ -206,6 +206,8 @@ public class SpriteBaker {
         if (sprite.getDynamicMember() != null) {
             Bitmap liveBmp = sprite.getDynamicMember().getBitmap();
             if (liveBmp != null && liveBmp.isScriptModified()) {
+                System.out.println("[Hand] bakeBitmap: using script-modified live bitmap for channel " + sprite.getChannel() +
+                    " (" + liveBmp.getWidth() + "x" + liveBmp.getHeight() + ")");
                 // Director applies foreColor/backColor colorization BEFORE ink for 1-bit bitmaps.
                 // This ensures masks with foreColor=white become all-white before ink removes
                 // the white background, making them fully transparent.
@@ -268,9 +270,14 @@ public class SpriteBaker {
                     player, paletteOverride);
         }
         if (b == null && sprite.getDynamicMember() != null) {
+            System.out.println("[Hand] bakeBitmap: dynamic member present but NOT script-modified or live bitmap NULL for channel " + sprite.getChannel());
             b = bitmapCache.getProcessedDynamic(sprite.getDynamicMember(),
                     sprite.getInk(), sprite.getBackColor(),
                     sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor());
+        }
+        if (b != null && (sprite.getChannel() >= 10 && sprite.getChannel() <= 50)) { // Common channels for Hand UI
+             // Additional log for potential Hand sprites
+             System.out.println("[Hand] bakeBitmap: channel " + sprite.getChannel() + " baked bitmap size: " + b.getWidth() + "x" + b.getHeight());
         }
         return b;
     }
