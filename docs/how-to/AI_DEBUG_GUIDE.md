@@ -418,11 +418,13 @@ That means the authored score sprite stays bound to the same member slot, but th
 
 `SpriteBaker.bakeBitmap()` only used the runtime member path for explicitly dynamic sprites. For a score-placed bitmap sprite, it baked from the authored `CastMemberChunk` unless the sprite itself had a dynamic member override. Oasis Spa water is not a dynamic sprite override; it is an authored score sprite whose `member.image` is mutated at runtime.
 
+The follow-up failure was that score rendering resolves authored members through `DirectorFile`, while runtime wrappers live under `CastLib`. Our lookup helper only matched `CastMemberChunk` by Java object identity, so the score sprite's authored chunk could fail to resolve back to its runtime wrapper even though both represented the same cast slot.
+
 So the renderer kept decoding the original cast asset for `vesi2` instead of using the runtime member's script-modified bitmap.
 
 ### Fix
 
-Resolve the runtime `CastMember` wrapper for score-backed bitmap sprites before falling back to the authored `CastMemberChunk`. If that runtime member's bitmap is script-modified, bake from the live bitmap buffer and then apply the sprite's ink/blend rules.
+Resolve the runtime `CastMember` wrapper for score-backed bitmap sprites before falling back to the authored `CastMemberChunk`. Match authored members by stable cast identity (`source file + chunk id`), not by object identity. If that runtime member's bitmap is script-modified, bake from the live bitmap buffer and then apply the sprite's ink/blend rules.
 
 This is a generic rendering rule, not an Oasis Spa special case:
 

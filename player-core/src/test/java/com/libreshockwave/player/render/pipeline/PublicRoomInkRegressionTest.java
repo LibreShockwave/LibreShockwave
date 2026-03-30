@@ -14,6 +14,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class PublicRoomInkRegressionTest {
 
@@ -95,11 +96,15 @@ class PublicRoomInkRegressionTest {
         CastLib castLib = castLibManager.getCastLib(1);
         assertNotNull(castLib);
 
-        CastMemberChunk waterChunk = castLib.findMemberByName("vesi2");
+        CastMemberChunk waterChunk = file.getCastMembers().stream()
+                .filter(member -> "vesi2".equalsIgnoreCase(member.name()))
+                .findFirst()
+                .orElse(null);
         assertNotNull(waterChunk);
 
         CastMember water = castLib.getMemberByName("vesi2");
         assertNotNull(water);
+        assertSame(water, castLibManager.findRuntimeMember(waterChunk));
 
         Bitmap live = water.getBitmap();
         assertNotNull(live);
