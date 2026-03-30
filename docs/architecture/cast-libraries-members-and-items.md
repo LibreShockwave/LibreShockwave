@@ -143,6 +143,7 @@ Current tests indicate support for behaviors such as:
 - external cast retargeting clearing stale property visibility until reload
 - dynamic member lifecycle cleanup
 - sprite transform and member reset behavior when bindings change
+- authored score sprites resolving back to their runtime member wrappers by stable cast identity
 - public-room ink behavior around room assets and transparency
 
 That makes the cast/item subsystem more trustworthy than a purely theoretical reading would suggest. It also reinforces the architectural conclusion that items are mostly an interaction between cast content, sprite state, and Lingo interpretation rather than a missing Java "item engine".

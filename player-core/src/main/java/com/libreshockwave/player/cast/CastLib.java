@@ -538,7 +538,12 @@ public class CastLib {
     }
 
     /**
-     * Get the member number for a member found by name.
+     * Resolve the cast slot number for an authored member chunk.
+     *
+     * Renderer code can receive CastMemberChunk instances from different lookup
+     * paths (for example DirectorFile score lookup vs CastLib member maps). Those
+     * chunks still represent the same authored member, so matching must not rely
+     * on Java object identity alone.
      */
     public int getMemberNumber(CastMemberChunk member) {
         if (!isLoaded()) {
@@ -546,11 +551,21 @@ public class CastLib {
         }
 
         for (Map.Entry<Integer, CastMemberChunk> entry : memberChunks.entrySet()) {
-            if (entry.getValue() == member) {
+            if (sameAuthoredMember(entry.getValue(), member)) {
                 return entry.getKey();
             }
         }
         return -1;
+    }
+
+    private static boolean sameAuthoredMember(CastMemberChunk left, CastMemberChunk right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        return left.file() == right.file() && left.id().equals(right.id());
     }
 
     /**
