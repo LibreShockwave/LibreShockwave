@@ -8,6 +8,13 @@ The current rendering stack is best understood as:
 
 `score + runtime sprite state -> baked sprite descriptors -> software compositing -> frame snapshot`
 
+## Key Discoveries
+
+- ◆ Rendering depends on runtime sprite ownership, not just authored score data.
+- ✓ `SpriteRegistry` is a real state container with rebinding and revision tracking, not a passive map.
+- → Render caching is viable because palette versioning and sprite revisions give the renderer explicit invalidation signals.
+- ⚠ Matte, text background, and 32-bit bitmap behavior remain the most compatibility-sensitive visual areas.
+
 ## 2. Pipeline Stages
 
 `FrameRenderPipeline` is the high-level coordinator for a frame render. Its work can be summarized in five stages:
@@ -19,6 +26,8 @@ The current rendering stack is best understood as:
 5. Publish the baked set to the stage and produce a `FrameSnapshot`.
 
 This structure is important because it separates state resolution from pixel generation. The player first decides what exists, then decides how each thing should look, then composites the result.
+
+That separation is one of the stronger engineering decisions in the project. It keeps render bugs diagnosable because state mistakes and pixel mistakes live in different layers.
 
 ## 3. Sprite State Resolution
 
@@ -37,6 +46,8 @@ This structure is important because it separates state resolution from pixel gen
 For score-backed sprites, authored channel data remains the baseline. For dynamic and puppeted sprites, runtime state can diverge from authored values. The renderer does not simply reread score data every frame and discard mutations.
 
 When a score identity changes for a non-puppeted sprite, the runtime state can be rebound to the new score definition. When a sprite is still logically the same score occupant, the state is synced rather than recreated.
+
+`SpriteRegistry` also carries a revision counter, which is a small but important discovery. It gives the software renderer a concrete signal that dynamic sprite state changed even in single-frame movies where frame number alone would be insufficient for cache invalidation.
 
 ## 4. Bake Step
 
@@ -74,6 +85,8 @@ Current behavior includes:
 - reuse rendered text images through cast-member-level caching where valid
 
 `SimpleTextRenderer` is installed into the player and acts as the active text rasterizer. That means text output is part of the emulator's deterministic software path, not delegated to a random platform text widget.
+
+There is more structure here than the name suggests. The current text path has an explicit resolution chain across PFR fonts, Mac bitmap fonts, Windows fonts, and a builtin pixel fallback. That makes text rendering a compatibility subsystem in its own right rather than a cosmetic helper.
 
 ### 4.3 Shape Sprites
 

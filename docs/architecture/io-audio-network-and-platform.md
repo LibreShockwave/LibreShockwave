@@ -12,6 +12,13 @@ That gives the runtime a stable contract:
 
 This is the right model for an emulator because it prevents random host timing from tearing apart frame semantics.
 
+## Key Discoveries
+
+- ✓ Input is intentionally frame-bound through queued events and per-tick dispatch.
+- ◆ Cursor behavior is richer than a single integer property; the runtime derives pointer, ibeam, bitmap, and masked cursor output from sprite/member state.
+- → WASM keeps the computation core pure by exporting queues and shared buffers instead of importing browser behavior directly.
+- ⚠ Network, audio, and Multiuser logic are structurally clear, but still depend on asynchronous host participation for full behavior.
+
 ## 2. Mouse State And Keyboard State
 
 `InputState` tracks more than raw cursor position. It currently carries state such as:
@@ -82,6 +89,8 @@ Important current examples:
 
 In WASM, navigation requests are queued back out through `WasmEntry` rather than performed directly inside the core player. That keeps the emulator side pure and lets the host decide how navigation should be handled.
 
+That same pattern appears repeatedly across the browser build: core runtime decides intent, host layer performs the side effect.
+
 ## 7. Networking
 
 Networking is represented through an abstract provider shape with multiple concrete integrations.
@@ -114,6 +123,8 @@ The current WASM network bridge is more detailed than a simple request queue:
 - root-relative URLs can be resolved against the server origin
 - fetched data is cached by filename and basename
 - `bytesSoFar` is advanced during polling so Director-style download scripts do not assume the fetch stalled
+
+That last point is a meaningful discovery. The runtime is not only moving bytes; it is shaping progress reporting so legacy script expectations continue to hold.
 
 ## 8. External Cast Loading
 
@@ -156,6 +167,8 @@ In WASM, audio is explicitly command-queued because the worker-side runtime cann
 
 This division is sensible because movie logic should reason about Director channel semantics while the backend handles host-specific playback details.
 
+That is also why the WASM audio backend tracks playing state locally and accepts stop notifications back from JavaScript. The runtime still needs an authoritative notion of channel state even when playback happens elsewhere.
+
 ## 10. Xtras And Multiuser
 
 Xtras are first-class runtime participants. The player ticks xtras explicitly each frame through `xtraManager.tickAll()`.
@@ -181,6 +194,8 @@ Platform differences are concrete:
 - the WASM bridge queues connect, send, and disconnect requests for JavaScript and receives synthetic connection, error, and message events back into the runtime
 
 This is a good example of the project's general architecture: keep the movie-facing API stable, swap the host adapter underneath.
+
+Another useful discovery is that the desktop bridge is intentionally simple: it treats each currently available UTF-8 chunk as a message payload. That is pragmatic rather than protocol-perfect, but it keeps the frame loop non-blocking.
 
 ## 11. WASM Boundary
 
