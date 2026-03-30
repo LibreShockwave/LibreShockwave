@@ -1,18 +1,31 @@
 'use strict';
 
-// Suppress console.log/warn in the worker. When DevTools is open, Chrome renders
-// every message (including TeaVM's System.out via putwchar) which stalls the
-// message loop and prevents 'frame' responses from being processed in time.
-// Errors are kept since they only fire in exceptional cases.
-// TEMP: relay console.log to main thread for debugging
-var _origLog = console.log;
-console.log = function() {
-    var msg = Array.prototype.slice.call(arguments).join(' ');
-    if (msg.indexOf('[EventDispatcher]') >= 0 || msg.indexOf('[HitTest]') >= 0 || msg.indexOf('[DEBUG') >= 0) {
+// Suppress noisy worker console output by default, but still relay the logs that
+// matter for startup/network failures to the main thread console.
+function _relayWorkerLog(type, args) {
+    var msg = Array.prototype.slice.call(args).join(' ');
+    if (!msg) return;
+    if (type === 'error') {
+        self.postMessage({ type: 'error', msg: msg });
+        return;
+    }
+    if (!_debugLogsEnabled) {
+        return;
+    }
+    if (msg.indexOf('[WORKER]') >= 0
+            || msg.indexOf('[Player]') >= 0
+            || msg.indexOf('[CastLib]') >= 0
+            || msg.indexOf('[NetManager]') >= 0
+            || msg.indexOf('[EH]') >= 0
+            || msg.indexOf('[EventDispatcher]') >= 0
+            || msg.indexOf('[HitTest]') >= 0
+            || msg.indexOf('[DEBUG') >= 0) {
         self.postMessage({ type: 'debugLog', msg: msg });
     }
-};
-console.warn = function() {};
+}
+console.log = function() { _relayWorkerLog('log', arguments); };
+console.warn = function() { _relayWorkerLog('warn', arguments); };
+console.error = function() { _relayWorkerLog('error', arguments); };
 
 /**
  * LibreShockwave Web Worker — runs the WASM engine off the main thread.
@@ -46,6 +59,7 @@ console.warn = function() {};
 var _e = null;          // WasmEngine instance
 var _isTicking = false; // guard against overlapping ticks
 var _pageProtocol = ''; // page protocol from main thread (e.g. 'https:')
+var _debugLogsEnabled = false;
 
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
@@ -78,11 +92,44 @@ function _refreshTempoCache() {
     try {
         _e._lastTempo = _e.exports.getTempo();
         _e._clearEx();
-    } catch (tempoErr) {
-        console.error('[WORKER] tempo refresh error:', tempoErr);
-    }
+    } catch (tempoErr) {}
 }
 
+function _flushWasmDiagnostics() {
+    if (!_e || !_e.exports) return;
+
+    if (_debugLogsEnabled) {
+        try {
+            var logLen = _e.exports.getDebugLog(); _e._clearEx();
+            if (logLen > 0) {
+                var logAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+                var logMsg = _e._readString(logAddr, logLen);
+                if (logMsg) {
+                    self.postMessage({ type: 'debugLog', msg: logMsg });
+                }
+            }
+        } catch (logErr) {}
+    }
+
+    _relayLastError();
+
+    _drainGotoNetPages();
+}
+
+function _relayLastError() {
+    if (!_e || !_e.exports) return;
+    try {
+        var errLen = _e.exports.getLastError(); _e._clearEx();
+        if (errLen <= 0) {
+            return;
+        }
+        var errAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+        var errMsg = _e._readString(errAddr, errLen);
+        if (errMsg) {
+            self.postMessage({ type: 'error', msg: errMsg });
+        }
+    } catch (errRead) {}
+}
 function _drainGotoNetPages() {
     if (!_e || !_e.exports) return;
     try {
@@ -92,13 +139,15 @@ function _drainGotoNetPages() {
             var urlLen = (packed >>> 16) & 0xFFFF;
             var targetLen = packed & 0xFFFF;
             var strAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
-            var url = urlLen > 0 ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr, urlLen)) : '';
-            var target = targetLen > 0 ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr + urlLen, targetLen)) : '';
+            var url = urlLen > 0
+                ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr, urlLen))
+                : '';
+            var target = targetLen > 0
+                ? new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr + urlLen, targetLen))
+                : '';
             self.postMessage({ type: 'gotoNetPage', url: url, target: target });
         }
-    } catch (navErr) {
-        console.error('[WORKER] gotoNetPage drain error:', navErr);
-    }
+    } catch (navErr) {}
 }
 
 // --- External params stored locally for pre-fetch access ---
@@ -228,11 +277,6 @@ WasmEngine.prototype.mouseDown = function(x, y, button) {
     this.exports.mouseDown(x, y, button); this._clearEx();
 };
 
-WasmEngine.prototype.debugHitTest = function(x, y) {
-    var result = this.exports.debugHitTest(x, y); this._clearEx();
-    return result;
-};
-
 WasmEngine.prototype.mouseUp = function(x, y, button) {
     this.exports.mouseUp(x, y, button); this._clearEx();
 };
@@ -323,16 +367,18 @@ WasmEngine.prototype._deliverError = function(taskId, status) {
 WasmEngine.prototype.pumpNetworkCollect = function() {
     var reqs = this._drainRequests();
     if (!reqs) return [];
-    for (var i = 0; i < reqs.length; i++) {
-        var req = reqs[i];
-        var data = _fetchSyncData(req.url, req.fallbacks);
-        if (data) {
-            this._deliverResult(req.taskId, data, req.url);
-        } else {
-            this._deliverError(req.taskId, 0);
-        }
-    }
-    return [];
+    var selfEngine = this;
+    return reqs.map(function(req) {
+        return selfEngine._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || [])
+            .then(function(result) {
+                if (result && result.data) {
+                    selfEngine._deliverResult(req.taskId, result.data, result.url || req.url);
+                } else {
+                    selfEngine._deliverError(req.taskId, result && result.status ? result.status : 0);
+                }
+                _flushWasmDiagnostics();
+            });
+    });
 };
 
 // ============================================================
@@ -344,33 +390,58 @@ WasmEngine.prototype.pumpNetworkCollect = function() {
  * Blocks until the response arrives, giving natural network latency.
  * Result is pushed to _fetchQueue for delivery on the next tick.
  */
-WasmEngine.prototype._doFetchSync = function(taskId, url, method, postData, fallbacks) {
-    console.log('[WORKER] fetch: ' + url + (fallbacks.length ? ' (+' + fallbacks.length + ' fallbacks)' : ''));
+WasmEngine.prototype._relayFetch = function(url, method, postData) {
+    return new Promise(function(resolve, reject) {
+        var relayId = ++_fetchRelayCounter;
+        _fetchRelayMap[relayId] = {
+            url: url,
+            resolve: resolve,
+            reject: reject
+        };
+        self.postMessage({
+            type: 'fetchRelay',
+            relayId: relayId,
+            url: url,
+            method: method || 'GET',
+            postData: postData || null
+        });
+    });
+};
 
-    try {
-        var xhr = new XMLHttpRequest();
-        xhr.open(method || 'GET', url, false); // synchronous
-        xhr.responseType = 'arraybuffer';
-        if (method === 'POST') {
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        }
-        xhr.send(postData || null);
+WasmEngine.prototype._fetchOnce = function(url, method, postData) {
+    if (_isCrossOrigin(url)) {
+        return this._relayFetch(url, method, postData);
+    }
+    var opts = {};
+    if (method === 'POST') {
+        opts.method = 'POST';
+        opts.body = postData || null;
+        opts.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    }
+    return _fetchWithTimeout(url, opts, 30000)
+        .then(function(r) {
+            if (!r.ok) throw { status: r.status };
+            return r.arrayBuffer();
+        });
+};
 
-        if (xhr.status >= 200 && xhr.status < 300) {
-            var buf = xhr.response;
-            console.log('[WORKER] fetch OK: ' + url + ' (' + buf.byteLength + ' bytes)');
-            _fetchQueue.push({ taskId: taskId, data: buf, url: url });
-        } else {
-            throw { status: xhr.status };
-        }
-    } catch (e) {
-        console.log('[WORKER] fetch ERR: ' + url + ' status=' + ((e && e.status) || 'network'));
-        if (fallbacks && fallbacks.length > 0) {
-            return this._doFetchSync(taskId, fallbacks[0], method, postData, fallbacks.slice(1));
-        } else {
-            _fetchQueue.push({ taskId: taskId, error: (e && e.status) || 0 });
+WasmEngine.prototype._fetchWithFallbacks = async function(taskId, url, method, postData, fallbacks) {
+    var urls = [url];
+    if (fallbacks) {
+        for (var i = 0; i < fallbacks.length; i++) urls.push(fallbacks[i]);
+    }
+    for (var j = 0; j < urls.length; j++) {
+        var tryUrl = urls[j];
+        console.log('[WORKER] fetch: ' + tryUrl + (j === 0 && urls.length > 1 ? ' (+' + (urls.length - 1) + ' fallbacks)' : ''));
+        try {
+            var buf = await this._fetchOnce(tryUrl, method, postData);
+            console.log('[WORKER] fetch OK: ' + tryUrl + ' (' + buf.byteLength + ' bytes)');
+            return { data: buf, url: tryUrl, status: 200 };
+        } catch (e) {
+            console.warn('[WORKER] fetch ERR: ' + tryUrl + ' status=' + ((e && e.status) || 'network'));
         }
     }
+    return { error: true, status: 0 };
 };
 
 /**
@@ -400,6 +471,7 @@ WasmEngine.prototype.deliverQueuedResults = function() {
         } else {
             this._deliverError(item.taskId, item.error);
         }
+        _flushWasmDiagnostics();
         delivered++;
     }
     return delivered;
@@ -422,8 +494,15 @@ WasmEngine.prototype.pumpNetworkFire = function() {
     var reqs = this._drainRequests();
     if (!reqs) return 0;
     for (var i = 0; i < reqs.length; i++) {
-        var req = reqs[i];
-        this._doFetchSync(req.taskId, req.url, req.method, req.postData, req.fallbacks || []);
+        let req = reqs[i];
+        this._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || [])
+            .then(function(result) {
+                if (result && result.data) {
+                    _fetchQueue.push({ taskId: req.taskId, data: result.data, url: result.url || req.url });
+                } else {
+                    _fetchQueue.push({ taskId: req.taskId, error: result && result.status ? result.status : 0 });
+                }
+            });
     }
     return reqs.length;
 };
@@ -749,6 +828,7 @@ self.onmessage = async function(e) {
                 _movieBasePath = msg.basePath || '';
                 var info = _e.loadMovie(new Uint8Array(msg.data), msg.basePath);
                 _e.playing  = false;
+                _flushWasmDiagnostics();
                 self.postMessage({ type: 'movieLoaded', info: info });
                 break;
             }
@@ -759,6 +839,7 @@ self.onmessage = async function(e) {
                 break;
 
             case 'setDebugPlayback':
+                _debugLogsEnabled = !!msg.enabled;
                 _e.exports.setDebugPlaybackEnabled(msg.enabled ? 1 : 0);
                 _e._clearEx();
                 break;
@@ -808,13 +889,15 @@ self.onmessage = async function(e) {
                     console.error('[WORKER] prefetch error: ' + prefetchErr);
                 }
 
+                _flushWasmDiagnostics();
                 self.postMessage({ type: 'castsDone' });
                 break;
             }
 
             case 'play':
                 console.log('[WORKER] play() — starting animation');
-                _e.exports.play(); _e._clearEx(); _e.playing = true; _refreshTempoCache(); _drainGotoNetPages();
+                _e.exports.play(); _e._clearEx(); _e.playing = true; _refreshTempoCache();
+                _drainGotoNetPages();
                 break;
             case 'pause':
                 _e.exports.pause(); _e._clearEx(); _e.playing = false;
@@ -845,50 +928,6 @@ self.onmessage = async function(e) {
                     _e.mouseDown(msg.x, msg.y, msg.button); _drainGotoNetPages();
                 } catch(ie) {
                     console.error('[WORKER] mouseDown error:', ie);
-                }
-                break;
-            case 'getDispatchInfo':
-                if (_e && !_e._wasmDead) try {
-                    var diLen = _e.exports.getLastDispatchInfo();
-                    var diStr = '';
-                    if (diLen > 0) {
-                        var sbuf2 = _e.exports.getStringBufferAddress();
-                        var mem2 = new Uint8Array(_e._mem(), sbuf2, diLen);
-                        diStr = new TextDecoder().decode(mem2);
-                    }
-                    self.postMessage({ type: 'dispatchInfoResult', info: diStr });
-                } catch(ie) {
-                    console.error('[WORKER] getDispatchInfo error:', ie);
-                }
-                break;
-            case 'debugHitTest':
-                if (_e && !_e._wasmDead) try {
-                    var hitResult = _e.debugHitTest(msg.x, msg.y);
-                    // Read the debug info string from WASM
-                    var infoLen = _e.exports.getDebugHitInfo();
-                    var infoStr = '';
-                    if (infoLen > 0) {
-                        var sbuf = _e.exports.getStringBufferAddress();
-                        var mem = new Uint8Array(_e._mem(), sbuf, infoLen);
-                        infoStr = new TextDecoder().decode(mem);
-                    }
-                    self.postMessage({ type: 'debugHitTestResult', x: msg.x, y: msg.y, hit: hitResult, info: infoStr });
-                } catch(ie) {
-                    console.error('[WORKER] debugHitTest error:', ie);
-                }
-                break;
-            case 'debugSpriteInfo':
-                if (_e && !_e._wasmDead) try {
-                    var infoLen2 = _e.exports.debugSpriteInfo(msg.channel);
-                    var infoStr2 = '';
-                    if (infoLen2 > 0) {
-                        var sbuf3 = _e.exports.getStringBufferAddress();
-                        var mem3 = new Uint8Array(_e._mem(), sbuf3, infoLen2);
-                        infoStr2 = new TextDecoder().decode(mem3);
-                    }
-                    self.postMessage({ type: 'debugSpriteInfoResult', channel: msg.channel, info: infoStr2 });
-                } catch(ie) {
-                    console.error('[WORKER] debugSpriteInfo error:', ie);
                 }
                 break;
             case 'mouseUp':
@@ -948,16 +987,18 @@ self.onmessage = async function(e) {
                 delete _fetchRelayMap[msg.relayId];
                 if (msg.error) {
                     console.log('[WORKER] relay ERR: ' + relay.url + ' status=' + (msg.status || 0));
-                    if (relay.fallbacks.length > 0) {
-                        relay.engine._doFetchSync(relay.taskId, relay.fallbacks[0],
-                                                   relay.method, relay.postData,
-                                                   relay.fallbacks.slice(1));
+                    if (relay.reject) {
+                        relay.reject({ status: msg.status || 0 });
                     } else {
                         _fetchQueue.push({ taskId: relay.taskId, error: msg.status || 0 });
                     }
                 } else {
                     console.log('[WORKER] relay OK: ' + relay.url + ' (' + msg.data.byteLength + ' bytes)');
-                    _fetchQueue.push({ taskId: relay.taskId, data: msg.data, url: relay.url });
+                    if (relay.resolve) {
+                        relay.resolve(msg.data);
+                    } else {
+                        _fetchQueue.push({ taskId: relay.taskId, data: msg.data, url: relay.url });
+                    }
                 }
                 break;
             }
@@ -1108,16 +1149,18 @@ self.onmessage = async function(e) {
                         }
                     } catch(e7) {}
 
-                    // Drain debug log from WASM
                     var debugLog = null;
-                    try {
-                        var logLen = _e.exports.getDebugLog(); _e._clearEx();
-                        if (logLen > 0) {
-                            var strAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
-                            debugLog = _e._readString(strAddr, logLen);
-                        }
-                    } catch (logErr) {}
+                    if (_debugLogsEnabled) {
+                        try {
+                            var logLen = _e.exports.getDebugLog(); _e._clearEx();
+                            if (logLen > 0) {
+                                var strAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+                                debugLog = _e._readString(strAddr, logLen);
+                            }
+                        } catch (logErr) {}
+                    }
 
+                    _relayLastError();
                     _drainGotoNetPages();
 
                     // Always send a frame response to unblock main thread
@@ -1196,6 +1239,6 @@ self.onmessage = async function(e) {
                 break;
         }
     } catch (err) {
-        self.postMessage({ type: 'error', msg: String(err) });
+                self.postMessage({ type: 'error', msg: String(err) });
     }
 };

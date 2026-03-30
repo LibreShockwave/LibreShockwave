@@ -28,11 +28,6 @@ public final class OutputBuiltins {
             sb.append(arg.toStr()).append(' ');
         }
         String text = sb.toString().trim();
-        // Route Lingo error() messages to the trace listener so they are
-        // visible to Player.setErrorListener() and test harnesses.
-        if (text.startsWith("Error:")) {
-            vm.fireTraceError("[PUT] " + text, null);
-        }
         if (!DebugConfig.isDebugPlaybackEnabled()) {
             return Datum.VOID;
         }

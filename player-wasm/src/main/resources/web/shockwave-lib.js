@@ -90,6 +90,8 @@ var LibreShockwave = (function() {
         this._lastFrameCount = 0;
         this._stageWidth  = 640;
         this._stageHeight = 480;
+        this._blockedGotoNetPages = Object.create(null);
+        this._loadedMovieUrl = null;
 
         // Cursor compositing state (decoupled from game tick for smooth movement)
         this._baseFrame      = null;  // last base frame ImageData (no cursor)
@@ -474,20 +476,6 @@ var LibreShockwave = (function() {
                 this._handleGotoNetPage(msg.url, msg.target);
                 break;
 
-            case 'debugHitTestResult':
-                console.log('[HitTest] at (' + msg.x + ',' + msg.y + ') hit=' + msg.hit + ' info=' + (msg.info||''));
-                if (this._debugHitTestResolve) {
-                    this._debugHitTestResolve({ hit: msg.hit, info: msg.info || '' });
-                    this._debugHitTestResolve = null;
-                }
-                break;
-            case 'debugSpriteInfoResult':
-                if (this._debugSpriteInfoResolve) {
-                    this._debugSpriteInfoResolve({ channel: msg.channel, info: msg.info || '' });
-                    this._debugSpriteInfoResolve = null;
-                }
-                break;
-
             case 'fetchRelay': {
                 // Worker needs a cross-origin fetch; do it from main thread and relay back
                 var worker = this._worker;
@@ -537,10 +525,28 @@ var LibreShockwave = (function() {
         var rawTarget = (target == null ? '' : String(target));
         var normalizedTarget = this._normalizeGotoNetPageTarget(rawTarget);
         var destinationLabel = normalizedTarget === '_blank' ? 'a new page' : 'this page';
+        var requestKey = normalizedTarget + '\n' + String(url);
 
-        console.log('[LS] gotoNetPage request url=' + url
-            + ' rawTarget=' + JSON.stringify(rawTarget)
-            + ' normalizedTarget=' + normalizedTarget);
+        if (this._blockedGotoNetPages[requestKey]) {
+            console.warn('[LS] gotoNetPage suppressed after previous cancel:', {
+                url: String(url),
+                rawTarget: rawTarget,
+                normalizedTarget: normalizedTarget
+            });
+            return;
+        }
+
+        console.error('[LS] gotoNetPage request:', {
+            url: String(url),
+            rawTarget: rawTarget,
+            normalizedTarget: normalizedTarget,
+            frame: this._lastFrame,
+            frameCount: this._lastFrameCount
+        });
+
+        if (this._maybeHandleMovieResetNavigation(url, normalizedTarget)) {
+            return;
+        }
 
         if (typeof this._opts.onGotoNetPage === 'function') {
             this._opts.onGotoNetPage(url, normalizedTarget);
@@ -552,7 +558,11 @@ var LibreShockwave = (function() {
                 'Director wants to open:\n' + url + '\n\nDestination: ' + destinationLabel + '\n\nPress OK to continue.'
             );
             if (!approved) {
-                console.log('[LS] gotoNetPage cancelled by user');
+                this._blockedGotoNetPages[requestKey] = true;
+                console.warn('[LS] gotoNetPage cancelled:', {
+                    url: String(url),
+                    normalizedTarget: normalizedTarget
+                });
                 return;
             }
 
@@ -582,6 +592,34 @@ var LibreShockwave = (function() {
         if (lowered === 'parent' || lowered === '_parent') return '_parent';
         if (lowered === 'top' || lowered === '_top') return '_top';
         return raw;
+    };
+
+    ShockwavePlayer.prototype._maybeHandleMovieResetNavigation = function(url, normalizedTarget) {
+        if (normalizedTarget !== '_self' || !this._loadedMovieUrl) {
+            return false;
+        }
+
+        try {
+            var requestedUrl = new URL(String(url), this._loadedMovieUrl);
+            var loadedMovieUrl = new URL(this._loadedMovieUrl, window.location.href);
+            var currentPageUrl = new URL(window.location.href);
+
+            if (currentPageUrl.origin === loadedMovieUrl.origin) {
+                return false;
+            }
+            if (requestedUrl.origin !== loadedMovieUrl.origin) {
+                return false;
+            }
+
+            console.warn('[LS] gotoNetPage treated as movie reset:', {
+                url: requestedUrl.href,
+                movieUrl: loadedMovieUrl.href
+            });
+            this.load(this._loadedMovieUrl);
+            return true;
+        } catch (e) {
+            return false;
+        }
     };
 
     // Simple one-shot resolver map: type → resolve function
@@ -742,6 +780,9 @@ var LibreShockwave = (function() {
         this._pending = null;
         this._lastSpriteCount = 0; // Reset so fast loop doesn't skip immediately
         this._loadStartTime = performance.now();
+        this._loadedMovieUrl = (typeof basePath === 'string' && basePath.indexOf('://') !== -1)
+            ? basePath
+            : null;
         var mySeq = this._loadSeq;
         // Send movie bytes to worker (transfer ownership — zero copy)
         this._worker.postMessage({ type: 'loadMovie', data: buf, basePath: basePath },
@@ -772,7 +813,9 @@ var LibreShockwave = (function() {
         }
 
         // Send debug playback toggle to worker
-        var dbg = this._opts.debugPlayback !== undefined ? this._opts.debugPlayback : true;
+        var dbg = this._opts.debugPlayback !== undefined
+            ? !!this._opts.debugPlayback
+            : !!this._opts.onDebugLog;
         this._worker.postMessage({ type: 'setDebugPlayback', enabled: dbg });
 
         // Restore trace handlers after movie load
@@ -853,35 +896,6 @@ var LibreShockwave = (function() {
         this._playing = false;
         this._stopLoop();
         this._stopCursorLoop();
-    };
-
-    ShockwavePlayer.prototype.debugHitTest = function(x, y) {
-        var self = this;
-        return new Promise(function(resolve) {
-            self._debugHitTestResolve = resolve;
-            self._worker.postMessage({ type: 'debugHitTest', x: x, y: y });
-            // Timeout in case worker doesn't respond
-            setTimeout(function() {
-                if (self._debugHitTestResolve) {
-                    self._debugHitTestResolve(-999);
-                    self._debugHitTestResolve = null;
-                }
-            }, 2000);
-        });
-    };
-
-    ShockwavePlayer.prototype.debugSpriteInfo = function(channel) {
-        var self = this;
-        return new Promise(function(resolve) {
-            self._debugSpriteInfoResolve = resolve;
-            self._worker.postMessage({ type: 'debugSpriteInfo', channel: channel });
-            setTimeout(function() {
-                if (self._debugSpriteInfoResolve) {
-                    self._debugSpriteInfoResolve({ channel: channel, info: '' });
-                    self._debugSpriteInfoResolve = null;
-                }
-            }, 2000);
-        });
     };
 
     ShockwavePlayer.prototype.stop = function() {
@@ -985,6 +999,21 @@ var LibreShockwave = (function() {
             self._resetResolve = resolve;
             self._initWorker();
         });
+    };
+
+    /**
+     * Clear all persistent player cache data from localStorage and
+     * reset the internal engine state.
+     */
+    ShockwavePlayer.prototype.clearCache = function() {
+        try {
+            localStorage.removeItem('ls_extParams');
+            localStorage.removeItem('ls_debugPlayback');
+            localStorage.removeItem('ls_traceHandlers');
+            localStorage.removeItem('ls_paramPresets');
+        } catch (e) {}
+        this._params = {};
+        return this.reset();
     };
 
     /**

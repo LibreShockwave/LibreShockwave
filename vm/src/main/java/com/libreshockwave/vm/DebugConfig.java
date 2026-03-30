@@ -3,11 +3,11 @@ package com.libreshockwave.vm;
 /**
  * Global debug configuration for the Lingo VM.
  * Controls debug playback logging (handler calls, error stack traces).
- * Enabled by default; can be toggled from Java or WASM JS.
+ * Disabled by default; can be toggled from Java or WASM JS.
  */
 public final class DebugConfig {
 
-    private static boolean debugPlaybackEnabled = true;
+    private static boolean debugPlaybackEnabled = false;
 
     private DebugConfig() {}
 
