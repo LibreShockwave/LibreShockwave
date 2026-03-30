@@ -285,6 +285,14 @@ public class SpriteBaker {
         return b;
     }
 
+    /**
+     * Resolve the runtime CastMember wrapper for a bitmap sprite.
+     *
+     * Score-placed sprites still need this lookup because authored sprites can
+     * have their member.image mutated at runtime without turning into dynamic
+     * sprite bindings. In that case the cast member chunk still describes the
+     * authored asset, while the runtime wrapper owns the live bitmap buffer.
+     */
     private CastMember resolveRuntimeBitmapMember(RenderSprite sprite) {
         if (sprite == null) {
             return null;

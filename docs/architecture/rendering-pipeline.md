@@ -159,6 +159,7 @@ The most compatibility-sensitive rendering areas in the current codebase are:
 - matte and background-transparent handling
 - darken/lighten family inks
 - script-modified 32-bit bitmaps
+- runtime-member resolution for score-placed mutable bitmaps
 - palette invalidation
 - text background and anti-alias recovery
 - film loop nesting
@@ -170,7 +171,7 @@ These are the places where visual regressions are most likely to surface if the 
 The rendering system is not "draw whatever the score says". It is:
 
 - a runtime sprite registry
-- a bake stage that materializes member content under Director rules
+- a bake stage that materializes authored or runtime-mutated member content under Director rules
 - a software compositor with compatibility-specific ink logic
 - a snapshot generator that both display and hit testing can consume
 
