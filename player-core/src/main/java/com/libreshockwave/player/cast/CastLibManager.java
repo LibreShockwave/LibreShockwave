@@ -787,18 +787,56 @@ public class CastLibManager implements CastLibProvider {
     @Override
     public String getFieldValue(Object memberNameOrNum, int castId) {
         ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member != null) {
+            return member.getTextContent();
+        }
+        return "";
+    }
 
+    @Override
+    public Datum getFieldDatum(Object memberNameOrNum, int castId) {
+        ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member == null) {
+            return Datum.EMPTY_STRING;
+        }
+        return new Datum.FieldText(member.getTextContent(), member.getCastLibNumber(), member.getMemberNumber());
+    }
+
+    @Override
+    public Datum getFieldParsedValue(int castLibNumber, int memberNumber, com.libreshockwave.vm.LingoVM vm) {
+        ensureInitialized();
+        CastLib castLib = getCastLib(castLibNumber);
+        if (castLib == null) {
+            return Datum.VOID;
+        }
+        CastMember member = castLib.getMember(memberNumber);
+        if (member == null) {
+            return Datum.VOID;
+        }
+        return member.getParsedTextValue(vm);
+    }
+
+    @Override
+    public void setFieldValue(Object memberNameOrNum, int castId, String value) {
+        ensureInitialized();
+        CastMember member = resolveFieldMember(memberNameOrNum, castId);
+        if (member != null) {
+            member.setDynamicText(value);
+        }
+    }
+
+    private CastMember resolveFieldMember(Object memberNameOrNum, int castId) {
         CastMember member = null;
 
         if (memberNameOrNum instanceof String name) {
-            // Find by name
             if (castId > 0) {
                 CastLib castLib = getCastLib(castId);
                 if (castLib != null) {
                     member = castLib.getMemberByName(name);
                 }
             } else {
-                // Search all casts — also check dynamic members in each cast
                 for (CastLib castLib : castLibs.values()) {
                     if (!castLib.isLoaded()) {
                         castLib.load();
@@ -810,8 +848,8 @@ public class CastLibManager implements CastLibProvider {
                 }
             }
         } else if (memberNameOrNum instanceof Integer num) {
-            // Find by number - decode combined slot numbers (castLib << 16 | member)
-            int effectiveCastId, effectiveMemberNum;
+            int effectiveCastId;
+            int effectiveMemberNum;
             if (num > 65535) {
                 effectiveCastId = num >> 16;
                 effectiveMemberNum = num & 0xFFFF;
@@ -825,51 +863,7 @@ public class CastLibManager implements CastLibProvider {
             }
         }
 
-        if (member != null) {
-            String tc = member.getTextContent();
-            return tc;
-        }
-
-        return "";
-    }
-
-    @Override
-    public void setFieldValue(Object memberNameOrNum, int castId, String value) {
-        ensureInitialized();
-
-        CastMember member = null;
-
-        if (memberNameOrNum instanceof String name) {
-            if (castId > 0) {
-                CastLib castLib = getCastLib(castId);
-                if (castLib != null) {
-                    member = castLib.getMemberByName(name);
-                }
-            } else {
-                for (CastLib castLib : castLibs.values()) {
-                    if (!castLib.isLoaded()) castLib.load();
-                    member = castLib.getMemberByName(name);
-                    if (member != null) break;
-                }
-            }
-        } else if (memberNameOrNum instanceof Integer num) {
-            int effectiveCastId, effectiveMemberNum;
-            if (num > 65535) {
-                effectiveCastId = num >> 16;
-                effectiveMemberNum = num & 0xFFFF;
-            } else {
-                effectiveCastId = castId > 0 ? castId : 1;
-                effectiveMemberNum = num;
-            }
-            CastLib castLib = getCastLib(effectiveCastId);
-            if (castLib != null) {
-                member = castLib.getMember(effectiveMemberNum);
-            }
-        }
-
-        if (member != null) {
-            member.setDynamicText(value);
-        }
+        return member;
     }
 
     /**
