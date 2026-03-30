@@ -316,22 +316,15 @@ public class CastMember {
 
     /**
      * Read text content eagerly (during construction) without full member load.
-     * Returns the text if an STXT chunk was found, or null if no text data exists.
+     * Returns the text if a text chunk was found, or an empty string if no text data exists.
      */
     private String loadTextEagerly() {
         if (sourceFile == null || chunk == null) return "";
-        KeyTableChunk keyTable = sourceFile.getKeyTable();
-        if (keyTable != null) {
-            var entry = keyTable.findEntry(chunk.id(), ChunkType.STXT.getFourCC());
-            if (entry != null) {
-                var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
-                if (textChunk.isPresent()) {
-                    return textChunk.get().text();
-                }
-            }
+        TextChunk textChunk = sourceFile.getTextForMember(chunk);
+        if (textChunk != null) {
+            return textChunk.text();
         }
-        var textChunk = sourceFile.getChunk(chunk.id(), TextChunk.class);
-        return textChunk.map(TextChunk::text).orElse("");
+        return "";
     }
 
     private void loadText() {
@@ -341,30 +334,8 @@ public class CastMember {
             return;
         }
 
-        // Text content is stored in an STXT chunk associated with this member.
-        // Use the KeyTableChunk to find the associated STXT chunk.
-        KeyTableChunk keyTable = sourceFile.getKeyTable();
-        if (keyTable != null) {
-            // The fourcc for STXT in the key table
-            int stxtFourcc = ChunkType.STXT.getFourCC();
-            var entry = keyTable.findEntry(chunk.id(), stxtFourcc);
-            if (entry != null) {
-                var textChunk = sourceFile.getChunk(entry.sectionId(), TextChunk.class);
-                if (textChunk.isPresent()) {
-                    textContent = textChunk.get().text();
-                    invalidateParsedTextCache();
-                    return;
-                }
-            }
-        }
-
-        // Fallback: Try to find a text chunk with the same ID as the member
-        var textChunk = sourceFile.getChunk(chunk.id(), TextChunk.class);
-        if (textChunk.isPresent()) {
-            textContent = textChunk.get().text();
-        } else {
-            textContent = "";
-        }
+        TextChunk textChunk = sourceFile.getTextForMember(chunk);
+        textContent = textChunk != null ? textChunk.text() : "";
         invalidateParsedTextCache();
     }
 
