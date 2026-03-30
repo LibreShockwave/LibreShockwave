@@ -333,7 +333,7 @@ public class InputHandler {
         }
         List<Integer> exactHits = getInteractiveHits(stageX, stageY, dispatcher, false);
         if (!exactHits.isEmpty()) {
-            return exactHits.getFirst();
+            return exactHits.get(0);
         }
         if (!allowBoundingBoxFallback) {
             return 0;
@@ -341,7 +341,7 @@ public class InputHandler {
         // Bounding-box fallback is retained for callers that want the old helper
         // semantics, but current stage hit testing is already bounds-based.
         List<Integer> boundingHits = getInteractiveHits(stageX, stageY, dispatcher, true);
-        return boundingHits.isEmpty() ? 0 : boundingHits.getFirst();
+        return boundingHits.isEmpty() ? 0 : boundingHits.get(0);
     }
 
     private List<Integer> hitTestAllInteractive(int stageX, int stageY, boolean allowBoundingBoxFallback) {

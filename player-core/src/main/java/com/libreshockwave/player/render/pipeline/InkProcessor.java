@@ -466,6 +466,55 @@ public final class InkProcessor {
     }
 
     /**
+     * Apply sprite-level color remapping using the source bitmap's preserved palette indices.
+     * This is used after MATTE masking so indexed furni layers can keep Director's edge
+     * transparency while still tinting the remaining pixels from black→foreColor / white→backColor.
+     */
+    static Bitmap applyIndexedColorRemap(Bitmap indexedSource, Bitmap maskedSource,
+                                         int foreColor, int backColor) {
+        if (indexedSource == null || maskedSource == null
+                || indexedSource.getWidth() != maskedSource.getWidth()
+                || indexedSource.getHeight() != maskedSource.getHeight()) {
+            return maskedSource;
+        }
+        byte[] paletteIndices = indexedSource.getPaletteIndices();
+        if (paletteIndices == null || paletteIndices.length != maskedSource.getPixels().length) {
+            return maskedSource;
+        }
+
+        int fr = (foreColor >> 16) & 0xFF;
+        int fg = (foreColor >> 8) & 0xFF;
+        int fb = foreColor & 0xFF;
+        int br = (backColor >> 16) & 0xFF;
+        int bg = (backColor >> 8) & 0xFF;
+        int bb = backColor & 0xFF;
+
+        int[] maskPixels = maskedSource.getPixels();
+        int[] result = new int[maskPixels.length];
+
+        for (int i = 0; i < maskPixels.length; i++) {
+            int alpha = (maskPixels[i] >>> 24) & 0xFF;
+            if (alpha == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
+
+            int paletteIndex = paletteIndices[i] & 0xFF;
+            float t = (255 - paletteIndex) / 255.0f;
+            int nr = Math.round((1 - t) * fr + t * br);
+            int ng = Math.round((1 - t) * fg + t * bg);
+            int nb = Math.round((1 - t) * fb + t * bb);
+
+            result[i] = (alpha << 24) | (nr << 16) | (ng << 8) | nb;
+        }
+
+        Bitmap remapped = new Bitmap(maskedSource.getWidth(), maskedSource.getHeight(),
+                maskedSource.getBitDepth(), result);
+        remapped.copyPaletteMetadataFrom(maskedSource);
+        return remapped;
+    }
+
+    /**
      * Returns true if the given ink mode supports sprite-level foreColor/backColor colorization.
      * Only Copy ink (0) supports colorization. Matte ink (8/9) is for transparency only —
      * applying colorization to Matte sprites incorrectly remaps colored bitmap content

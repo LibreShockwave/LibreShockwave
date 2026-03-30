@@ -209,6 +209,28 @@ class InkProcessorTest {
     }
 
     @Test
+    void indexedColorRemapUsesOriginalPaletteIndicesAfterMatteMasking() {
+        Bitmap raw = new Bitmap(3, 1, 8, new int[] {
+            0xFFFFFFFF,
+            0xFF7B5005,
+            0xFF000000
+        });
+        raw.setPaletteIndices(new byte[] {0, (byte) 128, (byte) 255});
+
+        Bitmap masked = new Bitmap(3, 1, 8, new int[] {
+            0x00000000,
+            0xFF7B5005,
+            0xFF000000
+        });
+
+        Bitmap remapped = InkProcessor.applyIndexedColorRemap(raw, masked, 0x000000, 0x33CC66);
+
+        assertEquals(0x00000000, remapped.getPixel(0, 0));
+        assertEquals(0xFF196633, remapped.getPixel(1, 0));
+        assertEquals(0xFF000000, remapped.getPixel(2, 0));
+    }
+
+    @Test
     void addPinTreatsEdgeConnectedPaletteZeroAsBackgroundForIndexedBitmaps() {
         Bitmap src = new Bitmap(3, 3, 8, new int[] {
             0xFF000000, 0xFF000000, 0xFF000000,

@@ -5,6 +5,7 @@ import com.libreshockwave.cast.BitmapInfo;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.SpriteRegistry;
@@ -186,7 +187,7 @@ public class SpriteProperties implements SpritePropertyProvider {
             case "ink" -> {
                 // Director ignores VOID values - keeps the current ink
                 if (!value.isVoid()) {
-                    sprite.setInk(value.toInt());
+                    sprite.setInk(coerceInkCode(value));
                 }
                 return true;
             }
@@ -466,5 +467,21 @@ public class SpriteProperties implements SpritePropertyProvider {
             return (ref.castLibNum() << 16) | ref.memberNum();
         }
         return d.toInt();
+    }
+
+    private static int coerceInkCode(Datum value) {
+        if (value instanceof Datum.Symbol sym) {
+            InkMode ink = InkMode.fromNameOrNull(sym.name());
+            if (ink != null) {
+                return ink.code();
+            }
+        }
+        if (value instanceof Datum.Str str) {
+            InkMode ink = InkMode.fromNameOrNull(str.value());
+            if (ink != null) {
+                return ink.code();
+            }
+        }
+        return value.toInt();
     }
 }
