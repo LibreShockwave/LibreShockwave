@@ -426,30 +426,6 @@ class LingoVMTest {
         }
     }
 
-    private static final class OverridingHandlerVm extends LingoVM {
-        private int executeCount;
-
-        private OverridingHandlerVm() {
-            super(null);
-        }
-
-        @Override
-        public HandlerRef findHandler(String handlerName) {
-            if ("getmemnum".equalsIgnoreCase(handlerName)) {
-                return new HandlerRef(null, null);
-            }
-            return null;
-        }
-
-        @Override
-        public Datum executeHandler(com.libreshockwave.chunks.ScriptChunk script,
-                                    com.libreshockwave.chunks.ScriptChunk.Handler handler,
-                                    List<Datum> args, Datum receiver) {
-            executeCount++;
-            return Datum.of("script:getmemnum");
-        }
-    }
-
     @Test
     void testBuiltinAbs() {
         LingoVM vm = new LingoVM(null);
