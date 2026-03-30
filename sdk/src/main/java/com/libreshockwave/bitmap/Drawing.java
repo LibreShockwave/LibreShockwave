@@ -712,7 +712,9 @@ public class Drawing {
                 continue;
             }
             int rgb = pixels[index] & 0xFFFFFF;
-            int count = counts.merge(rgb, 1, Integer::sum);
+            Integer previousCount = counts.get(rgb);
+            int count = previousCount == null ? 1 : previousCount + 1;
+            counts.put(rgb, count);
             opaqueEdgeCount++;
             if (count > dominantCount) {
                 dominantCount = count;
