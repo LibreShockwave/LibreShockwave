@@ -16,6 +16,33 @@ It **won't** *just* be an emulator, the goal is to eventually become a full soft
 ./gradlew build
 ```
 
+<<<<<<< Updated upstream
+=======
+## MCP Debug Server
+
+LibreShockwave includes a local MCP server product in the `mcp` module for AI-assisted debugging of headless player sessions.
+
+### Run
+
+```bash
+./gradlew :mcp:run
+```
+
+### Test
+
+```bash
+./gradlew :mcp:test
+```
+
+The server exposes debugger tools (session start/stop, stepping, breakpoints, watches, input simulation, frame PNG capture) and resources:
+- `debug://snapshot/current`
+- `debug://events/recent`
+- `debug://frame/latest.png`
+
+For full setup and usage (including Codex/Claude configuration and `libre.oldskooler.org` movie params), see:
+- [`mcp/README.md`](mcp/README.md)
+
+>>>>>>> Stashed changes
 ## Supported Formats
 
 - RIFX container (big-endian and little-endian)
