@@ -233,18 +233,153 @@ var LibreShockwave = (function() {
         }
         canvas.style.outline = 'none'; // Hide focus outline
 
-        // Track whether the canvas has focus — suppress input when it doesn't
-        self._canvasFocused = document.activeElement === canvas;
-        function notifyBlurRelease() {
+        var ua = navigator.userAgent || '';
+        var isLikelyMobile = !!((navigator.userAgentData && navigator.userAgentData.mobile) ||
+            /Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(ua));
+        var mobileKeyboardInput = null;
+        var lastMobileKeyDownTime = 0;
+        if (isLikelyMobile && document.body) {
+            // A tiny hidden textarea keeps mobile virtual keyboard behavior reliable.
+            mobileKeyboardInput = document.createElement('textarea');
+            mobileKeyboardInput.setAttribute('autocapitalize', 'off');
+            mobileKeyboardInput.setAttribute('autocomplete', 'off');
+            mobileKeyboardInput.setAttribute('autocorrect', 'off');
+            mobileKeyboardInput.setAttribute('spellcheck', 'false');
+            mobileKeyboardInput.setAttribute('inputmode', 'text');
+            mobileKeyboardInput.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1;padding:0;border:0;resize:none;';
+            document.body.appendChild(mobileKeyboardInput);
+        }
+        self._mobileKeyboardInput = mobileKeyboardInput;
+
+        function hasPlayerFocus() {
+            return document.activeElement === canvas ||
+                (!!mobileKeyboardInput && document.activeElement === mobileKeyboardInput);
+        }
+
+        function focusKeyboardTarget() {
+            self._canvasFocused = true;
+            if (mobileKeyboardInput) {
+                try {
+                    mobileKeyboardInput.focus({ preventScroll: true });
+                } catch (e) {
+                    mobileKeyboardInput.focus();
+                }
+                mobileKeyboardInput.value = '';
+                try { mobileKeyboardInput.setSelectionRange(0, 0); } catch (e2) {}
+                return;
+            }
+            canvas.focus();
+        }
+
+        function toKeyChar(rawKey) {
+            var keyChar = rawKey;
+            if (keyChar === 'Enter') keyChar = '\r';
+            else if (keyChar === 'Tab') keyChar = '\t';
+            else if (!keyChar || keyChar.length !== 1) keyChar = '';
+            return keyChar;
+        }
+
+        function toModifiers(e) {
+            return (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0);
+        }
+
+        function handleKeyDown(e) {
+            if (!self._canvasFocused) return;
+            if (!self._worker || !self._workerReady) return;
+            if (mobileKeyboardInput && e.target === mobileKeyboardInput) {
+                lastMobileKeyDownTime = Date.now();
+            }
+            // Handle Ctrl/Cmd shortcuts selectively
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'v' || e.key === 'V') return; // Let browser fire paste event
+                if (e.key === 'c' || e.key === 'C') {
+                    e.preventDefault();
+                    self._worker.postMessage({ type: 'getSelectedText' });
+                    return;
+                }
+                if (e.key === 'x' || e.key === 'X') {
+                    e.preventDefault();
+                    self._worker.postMessage({ type: 'cutSelectedText' });
+                    return;
+                }
+                if (e.key === 'a' || e.key === 'A') {
+                    e.preventDefault();
+                    self._worker.postMessage({ type: 'selectAll' });
+                    return;
+                }
+                return; // Block other Ctrl shortcuts from reaching player
+            }
+            e.preventDefault();
+            self._worker.postMessage({
+                type: 'keyDown',
+                keyCode: e.keyCode,
+                key: toKeyChar(e.key),
+                modifiers: toModifiers(e)
+            });
+        }
+
+        function handleKeyUp(e) {
+            if (!self._canvasFocused) return;
+            if (!self._worker || !self._workerReady) return;
+            if (e.ctrlKey || e.metaKey) return;
+            e.preventDefault();
+            self._worker.postMessage({
+                type: 'keyUp',
+                keyCode: e.keyCode,
+                key: toKeyChar(e.key),
+                modifiers: toModifiers(e)
+            });
+        }
+
+        // Track whether the canvas/input bridge has focus - suppress input when it doesn't
+        self._canvasFocused = hasPlayerFocus();
+        function notifyBlurRelease(forceRelease) {
+            if (!forceRelease && hasPlayerFocus()) {
+                self._canvasFocused = true;
+                return;
+            }
             self._canvasFocused = false;
             if (!self._worker || !self._workerReady) return;
             self._worker.postMessage({ type: 'blur' });
         }
         canvas.addEventListener('focus', function() { self._canvasFocused = true; });
-        canvas.addEventListener('blur', notifyBlurRelease);
-        window.addEventListener('blur', notifyBlurRelease);
+        canvas.addEventListener('blur', function() { notifyBlurRelease(false); });
+        if (mobileKeyboardInput) {
+            mobileKeyboardInput.addEventListener('focus', function() { self._canvasFocused = true; });
+            mobileKeyboardInput.addEventListener('blur', function() { notifyBlurRelease(false); });
+            mobileKeyboardInput.addEventListener('keydown', handleKeyDown);
+            mobileKeyboardInput.addEventListener('keyup', handleKeyUp);
+            mobileKeyboardInput.addEventListener('input', function(e) {
+                if (!self._canvasFocused) {
+                    mobileKeyboardInput.value = '';
+                    return;
+                }
+                if (!self._worker || !self._workerReady) {
+                    mobileKeyboardInput.value = '';
+                    return;
+                }
+                // Some mobile keyboards emit input without key events.
+                if (Date.now() - lastMobileKeyDownTime > 30) {
+                    var inputType = e.inputType || '';
+                    var inserted = e.data || '';
+                    if (inputType === 'deleteContentBackward') {
+                        self._worker.postMessage({ type: 'keyDown', keyCode: 8, key: '', modifiers: 0 });
+                        self._worker.postMessage({ type: 'keyUp', keyCode: 8, key: '', modifiers: 0 });
+                    } else if (inserted) {
+                        for (var i = 0; i < inserted.length; i++) {
+                            var ch = inserted.charAt(i);
+                            var code = ch.charCodeAt(0);
+                            self._worker.postMessage({ type: 'keyDown', keyCode: code, key: ch, modifiers: 0 });
+                            self._worker.postMessage({ type: 'keyUp', keyCode: code, key: ch, modifiers: 0 });
+                        }
+                    }
+                }
+                mobileKeyboardInput.value = '';
+            });
+        }
+        window.addEventListener('blur', function() { notifyBlurRelease(true); });
         document.addEventListener('visibilitychange', function() {
-            if (document.hidden) notifyBlurRelease();
+            if (document.hidden) notifyBlurRelease(true);
         });
 
         canvas.addEventListener('mousemove', function(e) {
@@ -263,8 +398,7 @@ var LibreShockwave = (function() {
             if (!self._worker || !self._workerReady) return;
             // Left-click only (right-click handled by context menu)
             if (e.button !== 0 && e.button !== 2) return;
-            self._canvasFocused = true;
-            canvas.focus();
+            focusKeyboardTarget();
             var pt = getCanvasPoint(e.clientX, e.clientY);
             var x = pt.x;
             var y = pt.y;
@@ -283,8 +417,7 @@ var LibreShockwave = (function() {
 
         canvas.addEventListener('dblclick', function(e) {
             if (e.button !== 0) return;
-            self._canvasFocused = true;
-            canvas.focus();
+            focusKeyboardTarget();
             if (!self._worker || !self._workerReady) return;
             self._worker.postMessage({ type: 'selectAll' });
         });
@@ -292,11 +425,15 @@ var LibreShockwave = (function() {
         // --- Touch event support (mobile browsers) ---
         // Convert touch events to mouse events so the Director player works on
         // mobile Chrome/Safari without any changes to the engine.
+        canvas.addEventListener('pointerdown', function(e) {
+            if (e.pointerType === 'touch') {
+                focusKeyboardTarget();
+            }
+        });
 
         canvas.addEventListener('touchstart', function(e) {
+            focusKeyboardTarget();
             e.preventDefault();
-            self._canvasFocused = true;
-            canvas.focus();
             var touch = e.changedTouches[0];
             var pt = getCanvasPoint(touch.clientX, touch.clientY);
             var x = pt.x;
@@ -345,58 +482,8 @@ var LibreShockwave = (function() {
             self._worker.postMessage({ type: 'mouseUp', x: x, y: y, button: 0 });
         });
 
-        canvas.addEventListener('keydown', function(e) {
-            if (!self._canvasFocused) return;
-            if (!self._worker || !self._workerReady) return;
-            // Handle Ctrl/Cmd shortcuts selectively
-            if (e.ctrlKey || e.metaKey) {
-                if (e.key === 'v' || e.key === 'V') return; // Let browser fire paste event
-                if (e.key === 'c' || e.key === 'C') {
-                    e.preventDefault();
-                    self._worker.postMessage({ type: 'getSelectedText' });
-                    return;
-                }
-                if (e.key === 'x' || e.key === 'X') {
-                    e.preventDefault();
-                    self._worker.postMessage({ type: 'cutSelectedText' });
-                    return;
-                }
-                if (e.key === 'a' || e.key === 'A') {
-                    e.preventDefault();
-                    self._worker.postMessage({ type: 'selectAll' });
-                    return;
-                }
-                return; // Block other Ctrl shortcuts from reaching player
-            }
-            e.preventDefault();
-            // Map special keys to their character equivalents
-            var keyChar = e.key;
-            if (keyChar === 'Enter') keyChar = '\r';
-            else if (keyChar === 'Tab') keyChar = '\t';
-            else if (keyChar.length !== 1) keyChar = '';
-            var modifiers = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0);
-            self._worker.postMessage({
-                type: 'keyDown', keyCode: e.keyCode,
-                key: keyChar, modifiers: modifiers
-            });
-        });
-
-        canvas.addEventListener('keyup', function(e) {
-            if (!self._canvasFocused) return;
-            if (!self._worker || !self._workerReady) return;
-            if (e.ctrlKey || e.metaKey) return;
-            e.preventDefault();
-            // Map special keys to their character equivalents
-            var keyChar = e.key;
-            if (keyChar === 'Enter') keyChar = '\r';
-            else if (keyChar === 'Tab') keyChar = '\t';
-            else if (keyChar.length !== 1) keyChar = '';
-            var modifiers = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0);
-            self._worker.postMessage({
-                type: 'keyUp', keyCode: e.keyCode,
-                key: keyChar, modifiers: modifiers
-            });
-        });
+        canvas.addEventListener('keydown', handleKeyDown);
+        canvas.addEventListener('keyup', handleKeyUp);
 
         // Clipboard paste support
         document.addEventListener('paste', function(e) {
@@ -1060,6 +1147,10 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype.destroy = function() {
         this._stopLoop();
         this._stopCursorLoop();
+        if (this._mobileKeyboardInput && this._mobileKeyboardInput.parentNode) {
+            this._mobileKeyboardInput.parentNode.removeChild(this._mobileKeyboardInput);
+            this._mobileKeyboardInput = null;
+        }
         if (this._worker) { this._worker.terminate(); this._worker = null; }
     };
 
