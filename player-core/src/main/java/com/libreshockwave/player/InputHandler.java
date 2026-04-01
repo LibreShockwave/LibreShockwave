@@ -318,19 +318,35 @@ public class InputHandler {
         return hitTestExact(stageX, stageY);
     }
 
-    private List<Integer> hitTestAll(int stageX, int stageY) {
+    /*private List<Integer> hitTestAll(int stageX, int stageY) {
         return hitTestAllInteractive(stageX, stageY, false);
-    }
+    }*/
 
     private int hitTestExact(int stageX, int stageY) {
-        return hitTestInteractive(stageX, stageY, false);
-    }
-
-    private int hitTestInteractive(int stageX, int stageY, boolean allowBoundingBoxFallback) {
         EventDispatcher dispatcher = eventDispatcherSupplier.get();
         if (dispatcher == null) {
             return 0;
         }
+
+
+        List<Integer> exactHits = getInteractiveHits(stageX, stageY, dispatcher, false);
+        if (!exactHits.isEmpty()) {
+            return exactHits.get(0);
+        }
+
+        // Bounding-box fallback is retained for callers that want the old helper
+        // semantics, but current stage hit testing is already bounds-based.
+        List<Integer> boundingHits = getInteractiveHits(stageX, stageY, dispatcher, true);
+        return boundingHits.isEmpty() ? 0 : boundingHits.get(0);
+    }
+
+    /*private int hitTestInteractive(int stageX, int stageY, boolean allowBoundingBoxFallback) {
+        EventDispatcher dispatcher = eventDispatcherSupplier.get();
+        if (dispatcher == null) {
+            return 0;
+        }
+
+
         List<Integer> exactHits = getInteractiveHits(stageX, stageY, dispatcher, false);
         if (!exactHits.isEmpty()) {
             return exactHits.get(0);
@@ -357,7 +373,7 @@ public class InputHandler {
             return List.of();
         }
         return getInteractiveHits(stageX, stageY, dispatcher, true);
-    }
+    }*/
 
     private List<Integer> getInteractiveHits(int stageX, int stageY, EventDispatcher dispatcher,
                                              boolean forceBoundingBox) {
