@@ -9,6 +9,7 @@ import com.libreshockwave.vm.builtin.BuiltinRegistry;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.opcode.ExecutionContext;
+import com.libreshockwave.vm.support.NoOpCastLibProvider;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -290,7 +291,7 @@ class ScriptInstanceMethodDispatcherTest {
         threadLocal.remove();
     }
 
-    private static final class ScriptHandlerProvider implements CastLibProvider {
+    private static final class ScriptHandlerProvider extends NoOpCastLibProvider {
         private final ScriptChunk script;
         private final ScriptChunk.Handler handler;
         private final boolean exposeStableRegistryMembers;
@@ -315,26 +316,6 @@ class ScriptInstanceMethodDispatcherTest {
         }
 
         @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
-        public int getCastLibByName(String name) {
-            return 0;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
-        }
-
-        @Override
         public Datum getMember(int castLibNumber, int memberNumber) {
             return Datum.VOID;
         }
@@ -353,21 +334,11 @@ class ScriptInstanceMethodDispatcherTest {
         }
 
         @Override
-        public int getCastLibCount() {
-            return 0;
-        }
-
-        @Override
         public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
             if ("type".equalsIgnoreCase(propName) && exposeBootstrapScriptMembers) {
                 return Datum.symbol("script");
             }
             return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override

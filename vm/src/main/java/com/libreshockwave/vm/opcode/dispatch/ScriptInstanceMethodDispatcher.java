@@ -76,7 +76,6 @@ public final class ScriptInstanceMethodDispatcher {
                     String localPropName = getPropertyName(args.get(0));
                     Datum subKey = args.get(1);
                     Datum value = args.get(2);
-                    String keyName = getPropertyName(subKey);
 
                     Datum localProp = instance.properties().get(localPropName);
 
@@ -86,29 +85,7 @@ public final class ScriptInstanceMethodDispatcher {
                         instance.properties().put(localPropName, localProp);
                     }
 
-                    // Now do the nested set
-                    if (localProp instanceof Datum.List list) {
-                        // List: use setAt (1-indexed)
-                        int index = subKey.toInt() - 1;
-                        if (index >= 0) {
-                            while (list.items().size() <= index) {
-                                list.items().add(Datum.VOID);
-                            }
-                            list.items().set(index, value);
-                        }
-                    } else if (localProp instanceof Datum.PropList pl) {
-                        // Integer subKey: positional set (1-based)
-                        if (subKey instanceof Datum.Int || subKey instanceof Datum.Float) {
-                            int index = subKey.toInt() - 1;
-                            if (index >= 0 && index < pl.size()) {
-                                pl.setValue(index, value);
-                            }
-                        } else {
-                            // PropList: set by key
-                            boolean isSym = subKey instanceof Datum.Symbol;
-                            pl.put(keyName, isSym, value);
-                        }
-                    }
+                    setNestedProperty(localProp, subKey, value);
                 }
                 return Datum.VOID;
             }
@@ -138,31 +115,7 @@ public final class ScriptInstanceMethodDispatcher {
 
                 // If there's a second argument, do nested lookup
                 if (args.size() > 1) {
-                    Datum subKey = args.get(1);
-                    if (localProp instanceof Datum.List list) {
-                        // List: use index (1-based)
-                        int index = subKey.toInt() - 1;
-                        if (index >= 0 && index < list.items().size()) {
-                            return list.items().get(index);
-                        }
-                        return Datum.VOID;
-                    } else if (localProp instanceof Datum.PropList pl) {
-                        // Integer subKey: positional access (1-based), like List
-                        if (subKey instanceof Datum.Int || subKey instanceof Datum.Float) {
-                            int index = subKey.toInt() - 1;
-                            if (index >= 0 && index < pl.size()) {
-                                return pl.getValue(index);
-                            }
-                            return Datum.VOID;
-                        }
-                        // PropList: look up by key (case-insensitive)
-                        String key = getPropertyName(subKey);
-                        Datum found = pl.get(key);
-                        return found != null ? found : Datum.VOID;
-                    } else {
-                        // Cannot get sub-property from non-list/proplist
-                        return Datum.VOID;
-                    }
+                    return getNestedProperty(localProp, args.get(1));
                 }
                 return localProp;
             }
@@ -292,6 +245,58 @@ public final class ScriptInstanceMethodDispatcher {
 
     private static String getPropertyName(Datum datum) {
         return datum.toKeyName();
+    }
+
+    private static Datum getNestedProperty(Datum container, Datum subKey) {
+        if (container instanceof Datum.List list) {
+            // List: use index (1-based)
+            int index = subKey.toInt() - 1;
+            if (index >= 0 && index < list.items().size()) {
+                return list.items().get(index);
+            }
+            return Datum.VOID;
+        }
+        if (container instanceof Datum.PropList pl) {
+            // Integer subKey: positional access (1-based), like List
+            if (subKey instanceof Datum.Int || subKey instanceof Datum.Float) {
+                int index = subKey.toInt() - 1;
+                if (index >= 0 && index < pl.size()) {
+                    return pl.getValue(index);
+                }
+                return Datum.VOID;
+            }
+            // PropList: look up by key (case-insensitive)
+            Datum found = pl.get(getPropertyName(subKey));
+            return found != null ? found : Datum.VOID;
+        }
+        // Cannot get sub-property from non-list/proplist
+        return Datum.VOID;
+    }
+
+    private static void setNestedProperty(Datum container, Datum subKey, Datum value) {
+        if (container instanceof Datum.List list) {
+            // List: use setAt (1-indexed)
+            int index = subKey.toInt() - 1;
+            if (index >= 0) {
+                while (list.items().size() <= index) {
+                    list.items().add(Datum.VOID);
+                }
+                list.items().set(index, value);
+            }
+            return;
+        }
+        if (container instanceof Datum.PropList pl) {
+            // Integer subKey: positional set (1-based)
+            if (subKey instanceof Datum.Int || subKey instanceof Datum.Float) {
+                int index = subKey.toInt() - 1;
+                if (index >= 0 && index < pl.size()) {
+                    pl.setValue(index, value);
+                }
+                return;
+            }
+            // PropList: set by key
+            pl.put(getPropertyName(subKey), subKey instanceof Datum.Symbol, value);
+        }
     }
 
     /**

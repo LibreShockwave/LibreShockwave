@@ -18,7 +18,6 @@ public final class ListMethodDispatcher {
         if ("count".equalsIgnoreCase(methodName)) return Datum.of(list.items().size());
         String method = methodName.toLowerCase();
         return switch (method) {
-            case "count" -> Datum.of(list.items().size()); // won't reach, but keep for safety
             case "getat" -> {
                 if (args.isEmpty()) yield Datum.VOID;
                 int index = args.get(0).toInt() - 1; // 1-indexed

@@ -153,17 +153,7 @@ public final class StringMethodDispatcher {
     }
 
     private static String extractWordsFromArray(String[] words, int start, int end) {
-        int actualEnd = resolveEnd(end, start, words.length);
-        if (start > words.length) return "";
-        int s = start - 1;
-        int e = Math.min(words.length, actualEnd);
-        if (s == e - 1) return words[s];
-        StringBuilder sb = new StringBuilder();
-        for (int i = s; i < e; i++) {
-            if (sb.length() > 0) sb.append(" ");
-            sb.append(words[i]);
-        }
-        return sb.toString();
+        return extractChunkRange(words, start, end, " ");
     }
 
     // ========================================================================
@@ -188,17 +178,7 @@ public final class StringMethodDispatcher {
     }
 
     private static String extractLinesFromArray(String[] lines, int start, int end) {
-        int actualEnd = resolveEnd(end, start, lines.length);
-        if (start > lines.length) return "";
-        int s = start - 1;
-        int e = Math.min(lines.length, actualEnd);
-        if (s == e - 1) return lines[s];
-        StringBuilder sb = new StringBuilder();
-        for (int i = s; i < e; i++) {
-            if (sb.length() > 0) sb.append("\r\n");
-            sb.append(lines[i]);
-        }
-        return sb.toString();
+        return extractChunkRange(lines, start, end, "\r\n");
     }
 
     // ========================================================================
@@ -233,6 +213,20 @@ public final class StringMethodDispatcher {
         if (end == 0) return start;
         if (end == -1) return count;
         return end;
+    }
+
+    private static String extractChunkRange(String[] chunks, int start, int end, String separator) {
+        int actualEnd = resolveEnd(end, start, chunks.length);
+        if (start > chunks.length) return "";
+        int s = start - 1;
+        int e = Math.min(chunks.length, actualEnd);
+        if (s == e - 1) return chunks[s];
+        StringBuilder sb = new StringBuilder();
+        for (int i = s; i < e; i++) {
+            if (sb.length() > 0) sb.append(separator);
+            sb.append(chunks[i]);
+        }
+        return sb.toString();
     }
 
     // Direct-scan methods delegated to StringChunkUtils to avoid duplication.

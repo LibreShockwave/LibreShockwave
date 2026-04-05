@@ -23,18 +23,3 @@ Thumbs.db
 
 # Logs
 *.log
-runtime/src/main/resources/player/libreshockwave.wasm
-/.claude
-/sdk/test_output
-/test_output
-*.hprof
-/player-simulator/frames
-node_modules/
-package-lock.json
-/frames
-/player-wasm/frames_wasm
-/frames_figure
-BUGS.md
-*.png
-player-wasm/package.json
-/.gradle-user

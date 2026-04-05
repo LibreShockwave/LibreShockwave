@@ -4,6 +4,7 @@ import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.support.NoOpCastLibProvider;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -317,7 +318,7 @@ class LingoVMTest {
         }
     }
 
-    private static final class RecordingCastProvider implements CastLibProvider {
+    private static final class RecordingCastProvider extends NoOpCastLibProvider {
         private int lastMemberByNameCastLibNumber = -1;
         private String lastMemberByName;
         private int lastGetMemberCastLibNumber = -1;
@@ -330,26 +331,11 @@ class LingoVMTest {
         private Datum memberByNameResult = Datum.CastMemberRef.of(11, 7);
 
         @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
         public int getCastLibByName(String name) {
             if ("bin".equalsIgnoreCase(name)) {
                 return 11;
             }
             return -1;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override
@@ -369,16 +355,6 @@ class LingoVMTest {
         @Override
         public int getCastLibCount() {
             return 11;
-        }
-
-        @Override
-        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override

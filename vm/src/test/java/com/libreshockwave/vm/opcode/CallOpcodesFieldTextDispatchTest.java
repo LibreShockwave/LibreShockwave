@@ -9,6 +9,7 @@ import com.libreshockwave.vm.Scope;
 import com.libreshockwave.vm.builtin.BuiltinRegistry;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.support.NoOpCastLibProvider;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -225,54 +226,9 @@ class CallOpcodesFieldTextDispatchTest {
                 () -> "(test)");
     }
 
-    private static final class RecordingCastProvider implements CastLibProvider {
+    private static final class RecordingCastProvider extends NoOpCastLibProvider {
         private int lastFieldCastId = -1;
         private String lastFieldMemberName;
-
-        @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
-        public int getCastLibByName(String name) {
-            return -1;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
-        }
-
-        @Override
-        public Datum getMember(int castLibNumber, int memberNumber) {
-            return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-        }
-
-        @Override
-        public Datum getMemberByName(int castLibNumber, String memberName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public int getCastLibCount() {
-            return 0;
-        }
-
-        @Override
-        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
-        }
 
         @Override
         public String getFieldValue(Object memberNameOrNum, int castId) {
