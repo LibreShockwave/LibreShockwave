@@ -23,8 +23,7 @@ public class SoundPreview {
         SoundChunk soundChunk = MemberResolver.findSoundForMember(dirFile, memberInfo.member());
 
         StringBuilder sb = new StringBuilder();
-        sb.append("=== SOUND: ").append(memberInfo.name()).append(" ===\n\n");
-        sb.append("Member ID: ").append(memberInfo.memberNum()).append("\n\n");
+        PreviewFormatUtils.appendMemberHeader(sb, "SOUND", memberInfo, true);
 
         if (soundChunk != null) {
             sb.append("--- Audio Properties ---\n");
@@ -41,22 +40,7 @@ public class SoundPreview {
         // Show frame appearances from score
         sb.append("\n--- Score Appearances ---\n");
         List<FrameAppearance> appearances = appearanceFinder.find(dirFile, memberInfo.memberNum());
-        if (appearances.isEmpty()) {
-            sb.append("Not used in score\n");
-        } else {
-            sb.append(appearanceFinder.format(appearances)).append("\n");
-            // Show detailed list if not too many
-            if (appearances.size() <= 20) {
-                sb.append("\nDetailed appearances:\n");
-                for (FrameAppearance app : appearances) {
-                    sb.append(String.format("  Frame %d, %s", app.frame(), app.channelName()));
-                    if (app.frameLabel() != null) {
-                        sb.append(" [").append(app.frameLabel()).append("]");
-                    }
-                    sb.append("\n");
-                }
-            }
-        }
+        PreviewFormatUtils.appendScoreAppearances(sb, appearances, appearanceFinder, false);
 
         return sb.toString();
     }

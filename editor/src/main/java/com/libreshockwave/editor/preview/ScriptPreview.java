@@ -24,8 +24,7 @@ public class ScriptPreview {
         ScriptNamesChunk names = dirFile.getScriptNames();
 
         StringBuilder sb = new StringBuilder();
-        sb.append("=== SCRIPT: ").append(memberInfo.name()).append(" ===\n\n");
-        sb.append("Member ID: ").append(memberInfo.memberNum()).append("\n");
+        PreviewFormatUtils.appendMemberHeader(sb, "SCRIPT", memberInfo, false);
 
         if (script == null) {
             sb.append("\n[No bytecode found for this script member]\n");

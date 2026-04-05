@@ -36,22 +36,11 @@ public class PalettePreview {
      */
     public String format(DirectorFile dirFile, CastMemberInfo memberInfo) {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== PALETTE: ").append(memberInfo.name()).append(" ===\n\n");
-        sb.append("Member ID: ").append(memberInfo.memberNum()).append("\n\n");
+        PreviewFormatUtils.appendMemberHeader(sb, "PALETTE", memberInfo, true);
 
         PaletteChunk paletteChunk = MemberResolver.findPaletteForMember(dirFile, memberInfo.member());
         if (paletteChunk != null) {
-            int[] colors = paletteChunk.colors();
-            sb.append("--- Palette Info ---\n");
-            sb.append("Color Count: ").append(colors.length).append("\n");
-            sb.append("\n--- Colors ---\n");
-            for (int i = 0; i < colors.length; i++) {
-                int c = colors[i];
-                int r = (c >> 16) & 0xFF;
-                int g = (c >> 8) & 0xFF;
-                int b = c & 0xFF;
-                sb.append(String.format("[%3d] #%02X%02X%02X (R:%3d G:%3d B:%3d)\n", i, r, g, b, r, g, b));
-            }
+            PreviewFormatUtils.appendPaletteInfo(sb, paletteChunk.colors());
         } else {
             sb.append("[Palette data not found]\n");
         }

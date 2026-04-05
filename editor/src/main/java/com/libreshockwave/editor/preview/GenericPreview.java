@@ -47,23 +47,7 @@ public class GenericPreview {
         if (dirFile.hasScore()) {
             sb.append("\n--- Score Appearances ---\n");
             List<FrameAppearance> appearances = appearanceFinder.find(dirFile, memberInfo.memberNum());
-            if (appearances.isEmpty()) {
-                sb.append("Not used in score\n");
-            } else {
-                sb.append(appearanceFinder.format(appearances)).append("\n");
-                // Show detailed list if not too many
-                if (appearances.size() <= 20) {
-                    sb.append("\nDetailed appearances:\n");
-                    for (FrameAppearance app : appearances) {
-                        sb.append(String.format("  Frame %d, %s at (%d, %d)",
-                                app.frame(), app.channelName(), app.posX(), app.posY()));
-                        if (app.frameLabel() != null) {
-                            sb.append(" [").append(app.frameLabel()).append("]");
-                        }
-                        sb.append("\n");
-                    }
-                }
-            }
+            PreviewFormatUtils.appendScoreAppearances(sb, appearances, appearanceFinder, true);
         }
 
         return sb.toString();
@@ -113,17 +97,8 @@ public class GenericPreview {
             case PALETTE -> {
                 PaletteChunk paletteChunk = MemberResolver.findPaletteForMember(dirFile, member);
                 if (paletteChunk != null) {
-                    int[] colors = paletteChunk.colors();
-                    sb.append("\n--- Palette Info ---\n");
-                    sb.append("Color Count: ").append(colors.length).append("\n");
-                    sb.append("\n--- Colors ---\n");
-                    for (int i = 0; i < colors.length; i++) {
-                        int c = colors[i];
-                        int r = (c >> 16) & 0xFF;
-                        int g = (c >> 8) & 0xFF;
-                        int b = c & 0xFF;
-                        sb.append(String.format("[%3d] #%02X%02X%02X (R:%3d G:%3d B:%3d)\n", i, r, g, b, r, g, b));
-                    }
+                    sb.append("\n");
+                    PreviewFormatUtils.appendPaletteInfo(sb, paletteChunk.colors());
                 } else {
                     sb.append("\n[Palette data not found]\n");
                 }

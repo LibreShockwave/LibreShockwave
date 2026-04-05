@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Handles method calls on property lists.
- * Uses equalsIgnoreCase to avoid toLowerCase String allocation.
+ * Uses equalsIgnoreCase to avoid toLowerCase String allocation on the hot count path.
  */
 public final class PropListMethodDispatcher {
 
@@ -15,8 +15,8 @@ public final class PropListMethodDispatcher {
     public static Datum dispatch(Datum.PropList propList, String methodName, List<Datum> args) {
         // Fast path for most common operations (no allocation)
         if ("count".equalsIgnoreCase(methodName)) {
-            // count(propList) → number of entries
-            // count(propList, #prop) → count of the sub-property value (list.prop.count)
+            // count(propList) -> number of entries
+            // count(propList, #prop) -> count of the sub-property value (list.prop.count)
             if (!args.isEmpty()) {
                 Datum sub = propList.getOrDefault(args.get(0).toKeyName(), Datum.VOID);
                 if (sub instanceof Datum.List subList) return Datum.of(subList.items().size());
@@ -25,114 +25,107 @@ public final class PropListMethodDispatcher {
             }
             return Datum.of(propList.size());
         }
-        if ("getprop".equalsIgnoreCase(methodName) || "getaprop".equalsIgnoreCase(methodName)
-                || "getproperty".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            String key = args.get(0).toKeyName();
-            Datum value = propList.getOrDefault(key, Datum.VOID);
-            // getProp(propList, #prop, index) → propList.prop[index]
-            if (args.size() >= 2 && value instanceof Datum.List subList) {
-                int index = args.get(1).toInt() - 1; // 1-indexed
-                if (index >= 0 && index < subList.items().size()) {
-                    return subList.items().get(index);
+
+        return switch (methodName.toLowerCase()) {
+            case "getprop", "getaprop", "getproperty" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                Datum value = propList.getOrDefault(args.get(0).toKeyName(), Datum.VOID);
+                // getProp(propList, #prop, index) -> propList.prop[index]
+                if (args.size() >= 2 && value instanceof Datum.List subList) {
+                    int index = args.get(1).toInt() - 1; // 1-indexed
+                    if (index >= 0 && index < subList.items().size()) {
+                        yield subList.items().get(index);
+                    }
+                    yield Datum.VOID;
                 }
-                return Datum.VOID;
+                yield value;
             }
-            return value;
-        }
-        if ("setprop".equalsIgnoreCase(methodName) || "setaprop".equalsIgnoreCase(methodName)) {
-            if (args.size() < 2) return Datum.VOID;
-            Datum keyDatum = args.get(0);
-            String key = keyDatum.toKeyName();
-            boolean isSym = keyDatum instanceof Datum.Symbol;
-            propList.put(key, isSym, args.get(1));
-            return Datum.VOID;
-        }
-        if ("addprop".equalsIgnoreCase(methodName)) {
-            if (args.size() < 2) return Datum.VOID;
-            String key = args.get(0).toKeyName();
-            boolean isSym = args.get(0) instanceof Datum.Symbol;
-            // addProp always appends — allows duplicate keys
-            propList.add(key, args.get(1), isSym);
-            return Datum.VOID;
-        }
-        if ("getat".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            Datum keyOrIndex = args.get(0);
-            if (keyOrIndex instanceof Datum.Str s) {
-                return propList.getOrDefault(s.value(), false, Datum.VOID);
-            } else if (keyOrIndex instanceof Datum.Symbol sym) {
-                return propList.getOrDefault(sym.name(), true, Datum.VOID);
-            } else {
+            case "setprop", "setaprop" -> {
+                if (args.size() < 2) yield Datum.VOID;
+                Datum keyDatum = args.get(0);
+                propList.put(keyDatum.toKeyName(), keyDatum instanceof Datum.Symbol, args.get(1));
+                yield Datum.VOID;
+            }
+            case "addprop" -> {
+                if (args.size() < 2) yield Datum.VOID;
+                Datum keyDatum = args.get(0);
+                // addProp always appends -> allows duplicate keys
+                propList.add(keyDatum.toKeyName(), args.get(1), keyDatum instanceof Datum.Symbol);
+                yield Datum.VOID;
+            }
+            case "getat" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                Datum keyOrIndex = args.get(0);
+                if (keyOrIndex instanceof Datum.Str s) {
+                    yield propList.getOrDefault(s.value(), false, Datum.VOID);
+                }
+                if (keyOrIndex instanceof Datum.Symbol sym) {
+                    yield propList.getOrDefault(sym.name(), true, Datum.VOID);
+                }
                 int index = keyOrIndex.toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
-                    return propList.getValue(index);
+                    yield propList.getValue(index);
                 }
-                return Datum.VOID;
+                yield Datum.VOID;
             }
-        }
-        if ("setat".equalsIgnoreCase(methodName)) {
-            if (args.size() < 2) return Datum.VOID;
-            Datum keyOrIndex = args.get(0);
-            Datum value = args.get(1);
-            if (keyOrIndex instanceof Datum.Int intKey) {
-                int index = intKey.value() - 1;
+            case "setat" -> {
+                if (args.size() < 2) yield Datum.VOID;
+                Datum keyOrIndex = args.get(0);
+                Datum value = args.get(1);
+                if (keyOrIndex instanceof Datum.Int intKey) {
+                    int index = intKey.value() - 1;
+                    if (index >= 0 && index < propList.size()) {
+                        propList.setValue(index, value);
+                    }
+                } else {
+                    propList.putTyped(keyOrIndex.toKeyName(), keyOrIndex instanceof Datum.Symbol, value);
+                }
+                yield Datum.VOID;
+            }
+            case "getone" -> {
+                // getOne(propList, value) - find the property NAME where the value matches
+                // Returns the key (as symbol) or 0 if not found
+                if (args.isEmpty()) yield Datum.ZERO;
+                Datum searchValue = args.get(0);
+                for (Datum.PropEntry entry : propList.entries()) {
+                    if (entry.value().lingoEquals(searchValue)) {
+                        yield Datum.symbol(entry.key());
+                    }
+                }
+                yield Datum.ZERO;
+            }
+            case "deleteprop" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                propList.remove(args.get(0).toKeyName());
+                yield Datum.VOID;
+            }
+            case "findpos" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                int pos = propList.findPos(args.get(0).toKeyName());
+                yield pos > 0 ? Datum.of(pos) : Datum.VOID;
+            }
+            case "getpropat" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                int index = args.get(0).toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
-                    propList.setValue(index, value);
+                    yield Datum.symbol(propList.getKey(index));
                 }
-            } else {
-                propList.putTyped(keyOrIndex.toKeyName(), keyOrIndex instanceof Datum.Symbol, value);
+                yield Datum.VOID;
             }
-            return Datum.VOID;
-        }
-        if ("getone".equalsIgnoreCase(methodName)) {
-            // getOne(propList, value) - find the property NAME where the value matches
-            // Returns the key (as symbol) or 0 if not found
-            if (args.isEmpty()) return Datum.ZERO;
-            Datum searchValue = args.get(0);
-            for (Datum.PropEntry entry : propList.entries()) {
-                if (entry.value().lingoEquals(searchValue)) {
-                    return Datum.symbol(entry.key());
+            case "deleteat" -> {
+                if (args.isEmpty()) yield Datum.VOID;
+                int index = args.get(0).toInt() - 1;
+                if (index >= 0 && index < propList.size()) {
+                    propList.removeAt(index);
                 }
+                yield Datum.VOID;
             }
-            return Datum.ZERO;
-        }
-        if ("deleteprop".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            String key = args.get(0).toKeyName();
-            propList.remove(key);
-            return Datum.VOID;
-        }
-        if ("findpos".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            String key = args.get(0).toKeyName();
-            int pos = propList.findPos(key);
-            return pos > 0 ? Datum.of(pos) : Datum.VOID;
-        }
-        if ("getpropat".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            int index = args.get(0).toInt() - 1;
-            if (index >= 0 && index < propList.size()) return Datum.symbol(propList.getKey(index));
-            return Datum.VOID;
-        }
-        if ("deleteat".equalsIgnoreCase(methodName)) {
-            if (args.isEmpty()) return Datum.VOID;
-            int index = args.get(0).toInt() - 1;
-            if (index >= 0 && index < propList.size()) propList.removeAt(index);
-            return Datum.VOID;
-        }
-        if ("getlast".equalsIgnoreCase(methodName)) {
-            if (propList.isEmpty()) return Datum.VOID;
-            return propList.getValue(propList.size() - 1);
-        }
-        if ("getfirst".equalsIgnoreCase(methodName)) {
-            if (propList.isEmpty()) return Datum.VOID;
-            return propList.getValue(0);
-        }
-        if ("duplicate".equalsIgnoreCase(methodName)) {
-            // Deep copy: Director's duplicate() creates independent copies of nested structures.
-            return propList.deepCopy();
-        }
-        return Datum.VOID;
+            case "getlast" -> propList.isEmpty() ? Datum.VOID : propList.getValue(propList.size() - 1);
+            case "getfirst" -> propList.isEmpty() ? Datum.VOID : propList.getValue(0);
+            case "duplicate" ->
+                    // Deep copy: Director's duplicate() creates independent copies of nested structures.
+                    propList.deepCopy();
+            default -> Datum.VOID;
+        };
     }
 }

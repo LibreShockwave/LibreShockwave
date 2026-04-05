@@ -2,6 +2,7 @@ package com.libreshockwave.vm.opcode.dispatch;
 
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.support.NoOpCastLibProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -535,56 +536,11 @@ class MemberRegistryMethodDispatcherTest {
         }
     }
 
-    private static class AliasFieldProvider implements CastLibProvider {
+    private static class AliasFieldProvider extends NoOpCastLibProvider {
         private final String fieldText;
 
         private AliasFieldProvider(String fieldText) {
             this.fieldText = fieldText;
-        }
-
-        @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
-        public int getCastLibByName(String name) {
-            return 0;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
-        }
-
-        @Override
-        public Datum getMember(int castLibNumber, int memberNumber) {
-            return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-        }
-
-        @Override
-        public Datum getMemberByName(int castLibNumber, String memberName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public int getCastLibCount() {
-            return 0;
-        }
-
-        @Override
-        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override
@@ -686,7 +642,7 @@ class MemberRegistryMethodDispatcherTest {
         }
     }
 
-    private static final class RegistryLookupProvider implements CastLibProvider {
+    private static final class RegistryLookupProvider extends NoOpCastLibProvider {
         private final Map<String, Datum> refsByName;
         private final Map<String, Datum> registryRefsByName;
         private final Map<Integer, Datum> typeBySlot;
@@ -719,31 +675,6 @@ class MemberRegistryMethodDispatcherTest {
         }
 
         @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
-        public int getCastLibByName(String name) {
-            return 0;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
-        }
-
-        @Override
-        public Datum getMember(int castLibNumber, int memberNumber) {
-            return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-        }
-
-        @Override
         public Datum getMemberByName(int castLibNumber, String memberName) {
             return refsByName.getOrDefault(memberName, Datum.VOID);
         }
@@ -754,21 +685,11 @@ class MemberRegistryMethodDispatcherTest {
         }
 
         @Override
-        public int getCastLibCount() {
-            return 0;
-        }
-
-        @Override
         public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
             if ("type".equalsIgnoreCase(propName)) {
                 return typeBySlot.getOrDefault((castLibNumber << 16) | memberNumber, Datum.VOID);
             }
             return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override
@@ -796,7 +717,7 @@ class MemberRegistryMethodDispatcherTest {
         }
     }
 
-    private static final class VisibilityAwareProvider implements CastLibProvider {
+    private static final class VisibilityAwareProvider extends NoOpCastLibProvider {
         private final Set<Integer> visibleSlots;
         private final Set<Integer> hiddenSlots;
         private final Set<Integer> liveSlots;
@@ -805,51 +726,6 @@ class MemberRegistryMethodDispatcherTest {
             this.visibleSlots = visibleSlots;
             this.hiddenSlots = hiddenSlots;
             this.liveSlots = liveSlots;
-        }
-
-        @Override
-        public int getCastLibByNumber(int castLibNumber) {
-            return castLibNumber;
-        }
-
-        @Override
-        public int getCastLibByName(String name) {
-            return 0;
-        }
-
-        @Override
-        public Datum getCastLibProp(int castLibNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) {
-            return false;
-        }
-
-        @Override
-        public Datum getMember(int castLibNumber, int memberNumber) {
-            return Datum.CastMemberRef.of(castLibNumber, memberNumber);
-        }
-
-        @Override
-        public Datum getMemberByName(int castLibNumber, String memberName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public int getCastLibCount() {
-            return 0;
-        }
-
-        @Override
-        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) {
-            return Datum.VOID;
-        }
-
-        @Override
-        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) {
-            return false;
         }
 
         @Override

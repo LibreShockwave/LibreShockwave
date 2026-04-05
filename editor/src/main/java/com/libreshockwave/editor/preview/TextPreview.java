@@ -17,8 +17,7 @@ public class TextPreview {
     public String format(DirectorFile dirFile, CastMemberInfo memberInfo) {
         StringBuilder sb = new StringBuilder();
         String typeName = memberInfo.memberType() == MemberType.BUTTON ? "BUTTON" : "TEXT";
-        sb.append("=== ").append(typeName).append(": ").append(memberInfo.name()).append(" ===\n\n");
-        sb.append("Member ID: ").append(memberInfo.memberNum()).append("\n\n");
+        PreviewFormatUtils.appendMemberHeader(sb, typeName, memberInfo, true);
 
         // Find the text chunk for this member
         TextChunk textChunk = MemberResolver.findTextForMember(dirFile, memberInfo.member());
