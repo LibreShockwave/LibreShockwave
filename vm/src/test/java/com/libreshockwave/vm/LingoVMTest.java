@@ -657,6 +657,34 @@ class LingoVMTest {
     }
 
     @Test
+    void testBuiltinGetaPropSeparatesSymbolAndStringNamespaces() {
+        LingoVM vm = new LingoVM(null);
+        Datum.PropList propList = new Datum.PropList();
+        propList.add("room_interface", Datum.of(1), true);
+        propList.add("room_interface", Datum.of(2), false);
+
+        Datum symbolResult = vm.callHandler("getaProp", List.of(propList, Datum.symbol("room_interface")));
+        Datum stringResult = vm.callHandler("getaProp", List.of(propList, Datum.of("room_interface")));
+
+        assertEquals(1, symbolResult.toInt());
+        assertEquals(2, stringResult.toInt());
+    }
+
+    @Test
+    void testBuiltinDeletePropRemovesOnlyMatchingKeyType() {
+        LingoVM vm = new LingoVM(null);
+        Datum.PropList propList = new Datum.PropList();
+        propList.add("room_interface", Datum.of(1), true);
+        propList.add("room_interface", Datum.of(2), false);
+
+        vm.callHandler("deleteProp", List.of(propList, Datum.of("room_interface")));
+
+        assertEquals(1, propList.size());
+        assertTrue(propList.entries().getFirst().isSymbolKey());
+        assertEquals(1, propList.entries().getFirst().value().toInt());
+    }
+
+    @Test
     void testTrigFunctions() {
         LingoVM vm = new LingoVM(null);
 

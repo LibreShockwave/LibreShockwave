@@ -503,3 +503,14 @@ tasks.register('runPublicRoomDiagnostic', JavaExec) {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
+
+tasks.register('runPublicRoomSwitchTest', JavaExec) {
+    group = 'verification'
+    description = 'Public room switch regression: enter one public room, then switch to another and capture lifecycle state'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.PublicRoomSwitchTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

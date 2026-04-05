@@ -216,8 +216,9 @@ public final class ListBuiltins {
         Datum container = args.get(0);
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
-        String key = args.get(1).toKeyName();
-        return pl.getOrDefault(key, Datum.VOID);
+        Datum keyDatum = args.get(1);
+        String key = keyDatum.toKeyName();
+        return pl.getOrDefault(key, keyDatum instanceof Datum.Symbol, Datum.VOID);
     }
 
     /**
@@ -257,8 +258,8 @@ public final class ListBuiltins {
         Datum container = args.get(0);
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
-        String key = args.get(1).toKeyName();
-        pl.remove(key);
+        Datum keyDatum = args.get(1);
+        pl.remove(keyDatum.toKeyName(), keyDatum instanceof Datum.Symbol);
         return Datum.VOID;
     }
 

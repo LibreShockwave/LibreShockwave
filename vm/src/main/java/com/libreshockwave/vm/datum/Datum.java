@@ -252,14 +252,27 @@ public sealed interface Datum {
             }
         }
 
-        /** Type-aware remove. */
+        /**
+         * Type-aware remove with exact-case cross-type fallback.
+         * Mirrors the lookup rules used by get(String, boolean) so callers can
+         * preserve symbol/string namespaces without breaking legacy exact-case
+         * cleanup paths.
+         */
         public void remove(String key, boolean isSymbolKey) {
+            int crossTypeIdx = -1;
             for (int i = 0; i < entries.size(); i++) {
-                if (entries.get(i).isSymbolKey() == isSymbolKey
-                        && entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.remove(i);
-                    return;
+                if (entries.get(i).key().equalsIgnoreCase(key)) {
+                    if (entries.get(i).isSymbolKey() == isSymbolKey) {
+                        entries.remove(i);
+                        return;
+                    }
+                    if (crossTypeIdx < 0 && entries.get(i).key().equals(key)) {
+                        crossTypeIdx = i;
+                    }
                 }
+            }
+            if (crossTypeIdx >= 0) {
+                entries.remove(crossTypeIdx);
             }
         }
 

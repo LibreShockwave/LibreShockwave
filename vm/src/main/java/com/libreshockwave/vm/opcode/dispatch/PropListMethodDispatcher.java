@@ -96,7 +96,8 @@ public final class PropListMethodDispatcher {
             }
             case "deleteprop" -> {
                 if (args.isEmpty()) yield Datum.VOID;
-                propList.remove(args.get(0).toKeyName());
+                Datum keyDatum = args.get(0);
+                propList.remove(keyDatum.toKeyName(), keyDatum instanceof Datum.Symbol);
                 yield Datum.VOID;
             }
             case "findpos" -> {

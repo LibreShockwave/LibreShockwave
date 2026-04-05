@@ -70,4 +70,18 @@ class PropListMethodDispatcherTest {
         assertEquals(1, symResult.toInt());
         assertEquals(2, strResult.toInt());
     }
+
+    @Test
+    void deletePropRemovesOnlyMatchingKeyType() {
+        Datum.PropList propList = new Datum.PropList();
+        propList.add("room_interface", Datum.of(1), true);   // symbol #room_interface
+        propList.add("room_interface", Datum.of(2), false);  // string "room_interface"
+
+        PropListMethodDispatcher.dispatch(
+                propList, "deleteProp", List.of(Datum.of("room_interface")));
+
+        assertEquals(1, propList.size());
+        assertTrue(propList.entries().getFirst().isSymbolKey());
+        assertEquals(1, propList.entries().getFirst().value().toInt());
+    }
 }
