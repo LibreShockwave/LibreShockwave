@@ -1,6 +1,7 @@
 package com.libreshockwave.vm;
 
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
+import com.libreshockwave.vm.builtin.flow.UpdateProvider;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.Datum;
@@ -117,6 +118,29 @@ class LingoVMTest {
 
         assertEquals(1, vm.executeCount);
         assertEquals("script:getmemnum", result.toStr());
+    }
+
+    @Test
+    void testReceiveUpdateAndRemoveUpdateAreNotBuiltins() {
+        LingoVM vm = new LingoVM(null);
+        RecordingUpdateProvider provider = new RecordingUpdateProvider();
+        UpdateProvider.setProvider(provider);
+        try {
+            vm.callHandler("receiveUpdate", List.of(Datum.of("obj-id")));
+            vm.callHandler("removeUpdate", List.of(Datum.of("obj-id")));
+
+            assertEquals(0, provider.receiveCalls);
+            assertEquals(0, provider.removeCalls);
+        } finally {
+            UpdateProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void testFormatTraceArgumentShowsVoidAndSymbolsExplicitly() {
+        assertEquals("<VOID>", LingoVM.formatTraceArgument(Datum.VOID));
+        assertEquals("#mouseUp", LingoVM.formatTraceArgument(Datum.symbol("mouseUp")));
+        assertEquals("\"login_a\"", LingoVM.formatTraceArgument(Datum.of("login_a")));
     }
 
     @Test
@@ -375,6 +399,21 @@ class LingoVMTest {
         public Datum getFieldParsedValue(int castLibNumber, int memberNumber, LingoVM vm) {
             fieldParsedCalls++;
             return fieldParsedValue;
+        }
+    }
+
+    private static final class RecordingUpdateProvider implements UpdateProvider {
+        private int receiveCalls;
+        private int removeCalls;
+
+        @Override
+        public void receiveUpdate(Datum target) {
+            receiveCalls++;
+        }
+
+        @Override
+        public void removeUpdate(Datum target) {
+            removeCalls++;
         }
     }
 

@@ -47,6 +47,42 @@ class SpriteEventBrokerSupportTest {
     }
 
     @Test
+    void registerProcedureVoidMethodAndEventExpandsToPerEventCallbacks() {
+        RecordingSpriteProvider provider = new RecordingSpriteProvider();
+        SpritePropertyProvider.setProvider(provider);
+        try {
+            Datum clientId = Datum.symbol("login_a");
+            Datum result = SpriteEventBrokerSupport.dispatchSpriteMethod(
+                    7,
+                    "registerProcedure",
+                    List.of(Datum.VOID, clientId, Datum.VOID));
+
+            assertTrue(result.isTruthy());
+
+            List<Datum> scriptInstances = provider.getScriptInstanceList(7);
+            assertNotNull(scriptInstances);
+            assertEquals(1, scriptInstances.size());
+            assertInstanceOf(Datum.ScriptInstance.class, scriptInstances.get(0));
+
+            Datum.ScriptInstance broker = (Datum.ScriptInstance) scriptInstances.get(0);
+            Datum procListDatum = broker.properties().get("pProcList");
+            assertInstanceOf(Datum.PropList.class, procListDatum);
+            Datum.PropList procList = (Datum.PropList) procListDatum;
+
+            assertProcEntry(procList, "mouseEnter", "mouseEnter", clientId);
+            assertProcEntry(procList, "mouseLeave", "mouseLeave", clientId);
+            assertProcEntry(procList, "mouseWithin", "mouseWithin", clientId);
+            assertProcEntry(procList, "mouseDown", "mouseDown", clientId);
+            assertProcEntry(procList, "mouseUp", "mouseUp", clientId);
+            assertProcEntry(procList, "mouseUpOutSide", "mouseUpOutSide", clientId);
+            assertProcEntry(procList, "keyDown", "keyDown", clientId);
+            assertProcEntry(procList, "keyUp", "keyUp", clientId);
+        } finally {
+            SpritePropertyProvider.clearProvider();
+        }
+    }
+
+    @Test
     void setMemberDispatchUsesSpriteMemberMethodPath() {
         RecordingSpriteProvider provider = new RecordingSpriteProvider();
         SpritePropertyProvider.setProvider(provider);
@@ -64,6 +100,16 @@ class SpriteEventBrokerSupportTest {
         } finally {
             SpritePropertyProvider.clearProvider();
         }
+    }
+
+    private static void assertProcEntry(Datum.PropList procList, String eventKey, String methodName, Datum clientId) {
+        Datum entryDatum = procList.get(eventKey);
+        assertInstanceOf(Datum.List.class, entryDatum);
+        Datum.List entry = (Datum.List) entryDatum;
+        assertEquals(2, entry.items().size());
+        assertInstanceOf(Datum.Symbol.class, entry.items().get(0));
+        assertEquals(methodName, entry.items().get(0).toKeyName());
+        assertEquals(clientId.toKeyName(), entry.items().get(1).toKeyName());
     }
 
     private static final class RecordingSpriteProvider implements SpritePropertyProvider {
