@@ -13,6 +13,8 @@ function _relayWorkerLog(type, args) {
         return;
     }
     if (msg.indexOf('[WORKER]') >= 0
+            || msg.indexOf('[TRACE]') >= 0
+            || msg.indexOf('Lingo call stack:') >= 0
             || msg.indexOf('[Player]') >= 0
             || msg.indexOf('[CastLib]') >= 0
             || msg.indexOf('[NetManager]') >= 0

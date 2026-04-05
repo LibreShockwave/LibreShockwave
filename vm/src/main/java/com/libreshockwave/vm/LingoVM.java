@@ -502,7 +502,7 @@ public class LingoVM {
             sb.append(handlerName).append('(');
             for (int i = 0; i < args.size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append(args.get(i).toStr());
+                sb.append(formatTraceArgument(args.get(i)));
             }
             sb.append(')');
             String scriptName = script.getScriptName();
@@ -653,6 +653,25 @@ public class LingoVM {
             }
         }
         return result;
+    }
+
+    static String formatTraceArgument(Datum value) {
+        if (value == null) {
+            return "<null>";
+        }
+        if (value.isVoid()) {
+            return "<VOID>";
+        }
+        if (value instanceof Datum.Symbol symbol) {
+            return "#" + symbol.name();
+        }
+        if (value instanceof Datum.Str str) {
+            return "\"" + str.value() + "\"";
+        }
+        if (value instanceof Datum.FieldText fieldText) {
+            return "\"" + fieldText.value() + "\"";
+        }
+        return value.toStr();
     }
 
     /**

@@ -68,17 +68,21 @@ public final class SpriteEventBrokerSupport {
         Datum.PropList procList = ensureProcList(broker);
 
         if (eventDatum.isVoid() && methodDatum.isVoid()) {
+            // Director semantics: VOID/VOID means "bind every entry to itself"
+            // (e.g. #mouseDown -> [#mouseDown, clientId]).
             for (int i = 0; i < procList.size(); i++) {
-                String key = procList.getKey(i);
-                procList.put(key, true, new Datum.List(List.of(new Datum.Symbol(key), clientId)));
+                Datum.PropEntry entry = procList.entries().get(i);
+                String key = entry.key();
+                Datum resolvedMethod = entry.isSymbolKey() ? Datum.symbol(key) : Datum.of(key);
+                procList.put(key, entry.isSymbolKey(), new Datum.List(List.of(resolvedMethod, clientId)));
             }
             return Datum.TRUE;
         }
 
         if (eventDatum.isVoid()) {
             for (int i = 0; i < procList.size(); i++) {
-                String key = procList.getKey(i);
-                procList.put(key, true, new Datum.List(List.of(methodDatum, clientId)));
+                Datum.PropEntry entry = procList.entries().get(i);
+                procList.put(entry.key(), entry.isSymbolKey(), new Datum.List(List.of(methodDatum, clientId)));
             }
             return Datum.TRUE;
         }
@@ -103,7 +107,10 @@ public final class SpriteEventBrokerSupport {
         }
 
         String eventKey = eventDatum.toKeyName();
-        procList.put(eventKey, true, new Datum.List(List.of(Datum.symbol("null"), Datum.ZERO)));
+        if (procList.get(eventKey) != null) {
+            procList.put(eventKey, eventDatum instanceof Datum.Symbol,
+                    new Datum.List(List.of(Datum.symbol("null"), Datum.ZERO)));
+        }
         return Datum.TRUE;
     }
 

@@ -4,7 +4,7 @@ import com.libreshockwave.vm.datum.Datum;
 
 /**
  * Interface for registering objects that receive per-frame 'update' messages.
- * Used by Habbo's receiveUpdate() and removeUpdate() functions.
+ * Runtime service used by engine code that wants direct update registration.
  */
 public interface UpdateProvider {
 

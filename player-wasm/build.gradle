@@ -270,6 +270,66 @@ tasks.register('runWasmRegistrationTest', Exec) {
 }
 
 // ---------------------------------------------------------------------------
+// registerProcedure trace diagnostic test.
+// Captures Event Broker Behavior registerProcedure traces during login window
+// build and verifies explicit VOID argument rendering plus call-stack context.
+//
+// Usage:
+//   ./gradlew :player-wasm:runWasmRegisterProcedureTraceTest
+//   ./gradlew :player-wasm:runWasmRegisterProcedureTraceTest -PoutputDir=C:/tmp/register-procedure-trace
+// ---------------------------------------------------------------------------
+tasks.register('runWasmRegisterProcedureTraceTest', Exec) {
+    group       = 'verification'
+    description = 'Trace registerProcedure args/call-stack in headless Chromium'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def dcrFile   = project.findProperty('dcrFile')  ?: 'C:/xampp/htdocs/dcr/14.1_b8/habbo.dcr'
+    def castDir   = project.findProperty('castDir')  ?: 'C:/xampp/htdocs/dcr/14.1_b8'
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-register-procedure-trace-test.js').absolutePath,
+        distPath,
+        dcrFile,
+        castDir,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
+// ---------------------------------------------------------------------------
+// receiveUpdate/removeUpdate routing diagnostic test.
+// Confirms update registration/removal calls are routed through Object API
+// rather than intercepted as VM builtins.
+//
+// Usage:
+//   ./gradlew :player-wasm:runWasmUpdateRoutingTraceTest
+//   ./gradlew :player-wasm:runWasmUpdateRoutingTraceTest -PoutputDir=C:/tmp/update-routing-trace
+// ---------------------------------------------------------------------------
+tasks.register('runWasmUpdateRoutingTraceTest', Exec) {
+    group       = 'verification'
+    description = 'Trace receiveUpdate/removeUpdate routing in headless Chromium'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def dcrFile   = project.findProperty('dcrFile')  ?: 'C:/xampp/htdocs/dcr/14.1_b8/habbo.dcr'
+    def castDir   = project.findProperty('castDir')  ?: 'C:/xampp/htdocs/dcr/14.1_b8'
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-update-routing-trace-test.js').absolutePath,
+        distPath,
+        dcrFile,
+        castDir,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket bridge integration test.
 // Starts a MUS TCP server + websockify + headless Chrome and verifies
 // the full WebSocket <-> TCP pipeline works end-to-end.
