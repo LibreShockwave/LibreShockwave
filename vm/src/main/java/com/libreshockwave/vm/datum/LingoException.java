@@ -65,9 +65,7 @@ public class LingoException extends RuntimeException {
         }
         StringBuilder sb = new StringBuilder("Lingo call stack:\n");
         for (LingoVM.CallStackFrame frame : lingoCallStack) {
-            sb.append("  at ").append(frame.handlerName())
-              .append(" (").append(frame.scriptName()).append(")")
-              .append(" [bytecode ").append(frame.bytecodeIndex()).append("]\n");
+            LingoVM.appendCallStackFrame(sb, frame);
         }
         return sb.toString();
     }

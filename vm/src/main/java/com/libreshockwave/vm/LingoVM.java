@@ -5,6 +5,7 @@ import com.libreshockwave.chunks.ScriptChunk;
 import com.libreshockwave.lingo.Opcode;
 import com.libreshockwave.vm.builtin.BuiltinRegistry;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.datum.DatumFormatter;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.opcode.ExecutionContext;
 import com.libreshockwave.vm.opcode.OpcodeHandler;
@@ -240,7 +241,20 @@ public class LingoVM {
     /**
      * A single frame in the Lingo call stack.
      */
-    public record CallStackFrame(String handlerName, String scriptName, int bytecodeIndex) {}
+    public record CallStackFrame(
+            String handlerName,
+            String scriptName,
+            int bytecodeIndex,
+            List<String> arguments
+    ) {
+        public CallStackFrame(String handlerName, String scriptName, int bytecodeIndex) {
+            this(handlerName, scriptName, bytecodeIndex, List.of());
+        }
+
+        public CallStackFrame {
+            arguments = arguments == null ? List.of() : List.copyOf(arguments);
+        }
+    }
 
     public int getCallStackDepth() {
         return callStack.size();
@@ -260,11 +274,7 @@ public class LingoVM {
         }
         List<CallStackFrame> frames = new ArrayList<>();
         for (Scope scope : callStack) {
-            frames.add(new CallStackFrame(
-                scope.getScript().getHandlerName(scope.getHandler()),
-                scope.getScript().getDisplayName(),
-                scope.getBytecodeIndex()
-            ));
+            frames.add(toCallStackFrame(scope));
         }
         return frames;
     }
@@ -725,14 +735,39 @@ public class LingoVM {
         }
         StringBuilder sb = new StringBuilder("Lingo call stack:\n");
         for (Scope scope : callStack) {
-            String handlerName = scope.getScript().getHandlerName(scope.getHandler());
-            String scriptName = scope.getScript().getDisplayName();
-            int bcIndex = scope.getBytecodeIndex();
-            sb.append("  at ").append(handlerName)
-              .append(" (").append(scriptName).append(")")
-              .append(" [bytecode ").append(bcIndex).append("]\n");
+            appendCallStackFrame(sb, toCallStackFrame(scope));
         }
         return sb.toString();
+    }
+
+    private CallStackFrame toCallStackFrame(Scope scope) {
+        List<Datum> displayArguments = scope.getDisplayArguments();
+        Datum receiver = scope.getReceiver();
+        if (receiver != null && !receiver.isVoid()
+                && !displayArguments.isEmpty()
+                && displayArguments.getFirst() == receiver) {
+            displayArguments = displayArguments.subList(1, displayArguments.size());
+        }
+        List<String> arguments = displayArguments.stream()
+                .map(DatumFormatter::formatExpanded)
+                .toList();
+        return new CallStackFrame(
+                scope.getScript().getHandlerName(scope.getHandler()),
+                scope.getScript().getDisplayName(),
+                scope.getBytecodeIndex(),
+                arguments
+        );
+    }
+
+    public static void appendCallStackFrame(StringBuilder sb, CallStackFrame frame) {
+        sb.append("  at ").append(frame.handlerName()).append('(');
+        for (int i = 0; i < frame.arguments().size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(frame.arguments().get(i));
+        }
+        sb.append(") (").append(frame.scriptName()).append(")")
+          .append(" [bytecode ").append(frame.bytecodeIndex()).append(']');
+        sb.append('\n');
     }
 
     /**

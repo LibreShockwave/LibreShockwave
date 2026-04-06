@@ -2,7 +2,10 @@ package com.libreshockwave.vm.datum;
 
 import com.libreshockwave.vm.util.StringUtils;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Utility for formatting Datum values as human-readable strings.
@@ -93,6 +96,111 @@ public final class DatumFormatter {
             case Datum.ScriptInstance si -> "<script#" + si.scriptId() + ">";
             default -> d.toString();
         };
+    }
+
+    /**
+     * Format a Datum for stack traces without truncation.
+     * Expands compound values inline and escapes control characters so the
+     * stack trace stays single-line per frame.
+     */
+    public static String formatExpanded(Datum d) {
+        return formatExpanded(d, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static String formatExpanded(Datum d, Set<Object> seen) {
+        if (d == null) return "<null>";
+
+        return switch (d) {
+            case Datum.Void v -> "<void>";
+            case Datum.Int i -> String.valueOf(i.value());
+            case Datum.Float f -> String.valueOf(f.value());
+            case Datum.Str s -> "\"" + StringUtils.escapeForDisplay(s.value()) + "\"";
+            case Datum.FieldText ft -> "\"" + StringUtils.escapeForDisplay(ft.value()) + "\"";
+            case Datum.Symbol sym -> "#" + sym.name();
+            case Datum.List list -> formatListExpanded(list, seen);
+            case Datum.PropList propList -> formatPropListExpanded(propList, seen);
+            case Datum.ArgList argList -> "<arglist " + formatListItemsExpanded(argList.items(), seen) + ">";
+            case Datum.ArgListNoRet argList -> "<arglist-noret " + formatListItemsExpanded(argList.items(), seen) + ">";
+            case Datum.ScriptInstance si -> formatScriptInstanceExpanded(si, seen);
+            case Datum.Point p -> "point(" + p.x() + ", " + p.y() + ")";
+            case Datum.Rect r -> "rect(" + r.left() + ", " + r.top() + ", " + r.right() + ", " + r.bottom() + ")";
+            case Datum.Color c -> "color(" + c.r() + ", " + c.g() + ", " + c.b() + ")";
+            case Datum.SpriteRef sr -> "sprite(" + sr.channelNum() + ")";
+            case Datum.CastMemberRef cm -> "member(" + cm.memberNum() + ", " + cm.castLibNum() + ")";
+            case Datum.CastLibRef cl -> "castLib(" + cl.castLibNum() + ")";
+            case Datum.StageRef sr -> "(the stage)";
+            case Datum.XtraRef xr -> "<Xtra \"" + StringUtils.escapeForDisplay(xr.xtraName()) + "\">";
+            case Datum.XtraInstance xi -> "<XtraInstance \"" + StringUtils.escapeForDisplay(xi.xtraName())
+                    + "\" #" + xi.instanceId() + ">";
+            default -> d.toString();
+        };
+    }
+
+    private static String formatListExpanded(Datum.List list, Set<Object> seen) {
+        if (!seen.add(list)) {
+            return "[<recursive-list>]";
+        }
+        try {
+            return formatListItemsExpanded(list.items(), seen);
+        } finally {
+            seen.remove(list);
+        }
+    }
+
+    private static String formatListItemsExpanded(java.util.List<Datum> items, Set<Object> seen) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(formatExpanded(items.get(i), seen));
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static String formatPropListExpanded(Datum.PropList propList, Set<Object> seen) {
+        if (!seen.add(propList)) {
+            return "[<recursive-proplist>]";
+        }
+        try {
+            StringBuilder sb = new StringBuilder("[");
+            var entries = propList.entries();
+            for (int i = 0; i < entries.size(); i++) {
+                if (i > 0) sb.append(", ");
+                Datum.PropEntry entry = entries.get(i);
+                if (entry.isSymbolKey()) {
+                    sb.append('#').append(entry.key());
+                } else {
+                    sb.append('"').append(StringUtils.escapeForDisplay(entry.key())).append('"');
+                }
+                sb.append(": ").append(formatExpanded(entry.value(), seen));
+            }
+            sb.append("]");
+            return sb.toString();
+        } finally {
+            seen.remove(propList);
+        }
+    }
+
+    private static String formatScriptInstanceExpanded(Datum.ScriptInstance instance, Set<Object> seen) {
+        if (!seen.add(instance)) {
+            return "<script#" + instance.scriptId() + " <recursive>>";
+        }
+        try {
+            StringBuilder sb = new StringBuilder("<script#")
+                    .append(instance.scriptId())
+                    .append(" {");
+            int i = 0;
+            for (Map.Entry<String, Datum> entry : instance.properties().entrySet()) {
+                if (i++ > 0) sb.append(", ");
+                sb.append(entry.getKey())
+                  .append(": ")
+                  .append(formatExpanded(entry.getValue(), seen));
+            }
+            sb.append("}>");
+            return sb.toString();
+        } finally {
+            seen.remove(instance);
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ import com.libreshockwave.chunks.ScriptChunk;
 import com.libreshockwave.vm.datum.Datum;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -72,6 +73,30 @@ public final class Scope {
 
     public List<Datum> getArguments() {
         return originalArguments;
+    }
+
+    /**
+     * Arguments as they should be displayed to users.
+     * Excludes an implicit prepended receiver and reflects SET_PARAM changes.
+     */
+    public List<Datum> getDisplayArguments() {
+        int offset = getDisplayArgumentOffset();
+        int explicitCount = Math.max(0, originalArguments.size() - offset);
+        if (explicitCount == 0) {
+            return List.of();
+        }
+        List<Datum> args = new ArrayList<>(explicitCount);
+        for (int i = 0; i < explicitCount; i++) {
+            int originalIndex = i + offset;
+            if (modifiedParams != null && i >= 0 && i < modifiedParams.length && modifiedParams[i] != null) {
+                args.add(modifiedParams[i]);
+            } else if (originalIndex >= 0 && originalIndex < originalArguments.size()) {
+                args.add(originalArguments.get(originalIndex));
+            } else {
+                args.add(Datum.VOID);
+            }
+        }
+        return List.copyOf(args);
     }
 
     public Datum getReceiver() {
@@ -157,22 +182,35 @@ public final class Scope {
             // count it (i.e., handler's first declared param is NOT 'me'), offset by 1.
             if (receiver != null && !receiver.isVoid()
                     && !originalArguments.isEmpty()
-                    && originalArguments.size() > handler.argCount()) {
-                // Check if the handler's first declared param is 'me'
-                boolean firstParamIsMe = false;
-                if (!handler.argNameIds().isEmpty() && script != null && script.file() != null) {
-                    var names = script.file().getScriptNamesForScript(script);
-                    if (names != null) {
-                        String firstName = names.getName(handler.argNameIds().get(0));
-                        firstParamIsMe = "me".equalsIgnoreCase(firstName);
-                    }
-                }
-                paramOffset = firstParamIsMe ? 0 : 1;
+                    && originalArguments.getFirst() == receiver
+                    && !isFirstParamDeclaredMe()) {
+                paramOffset = 1;
             } else {
                 paramOffset = 0;
             }
         }
         return paramOffset;
+    }
+
+    private int getDisplayArgumentOffset() {
+        if (receiver != null && !receiver.isVoid()
+                && !originalArguments.isEmpty()
+                && originalArguments.getFirst() == receiver) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private boolean isFirstParamDeclaredMe() {
+        if (handler.argNameIds().isEmpty() || script == null || script.file() == null) {
+            return false;
+        }
+        var names = script.file().getScriptNamesForScript(script);
+        if (names == null) {
+            return false;
+        }
+        String firstName = names.getName(handler.argNameIds().getFirst());
+        return "me".equalsIgnoreCase(firstName);
     }
 
     public Datum getParam(int index) {
