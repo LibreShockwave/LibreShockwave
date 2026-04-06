@@ -962,6 +962,9 @@ public class CastLibManager implements CastLibProvider {
             }
 
             for (var script : castLib.getAllScripts()) {
+                if (!isGlobalHandlerScriptType(script.getScriptType())) {
+                    continue;
+                }
                 // Use per-script Lnam (each Lctx has its own lnamSectionId)
                 var scriptNames = getPerScriptNames(script, defaultNames);
                 var handler = script.findHandler(handlerName, scriptNames);
@@ -972,6 +975,11 @@ public class CastLibManager implements CastLibProvider {
         }
 
         return null;
+    }
+
+    private static boolean isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType scriptType) {
+        return scriptType != com.libreshockwave.chunks.ScriptChunk.ScriptType.PARENT
+                && scriptType != com.libreshockwave.chunks.ScriptChunk.ScriptType.BEHAVIOR;
     }
 
     @Override

@@ -514,3 +514,14 @@ tasks.register('runPublicRoomSwitchTest', JavaExec) {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
+
+tasks.register('runBattleBallRoomTest', JavaExec) {
+    group = 'verification'
+    description = 'BattleBall room regression: Public Rooms -> Games -> BattleBall -> Go'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.libreshockwave.player.BattleBallRoomTest'
+    dependsOn compileTestJava
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

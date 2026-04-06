@@ -147,6 +147,15 @@ public final class CallOpcodes {
      */
     private static Datum dispatchMethod(ExecutionContext ctx, Datum target,
                                         String methodName, List<Datum> args) {
+        // Avoid pattern-switch dispatch for mutable refs: TeaVM has previously
+        // miscompiled some modern switch constructs in hot VM paths.
+        if (target instanceof Datum.VarRef varRef) {
+            return handleVarRefMethod(ctx, varRef, methodName, args);
+        }
+        if (target instanceof Datum.ChunkRef chunkRef) {
+            return handleChunkRefMethod(ctx, chunkRef, methodName, args);
+        }
+
         return switch (target) {
             case Datum.List list -> ListMethodDispatcher.dispatch(list, methodName, args);
             case Datum.PropList propList -> PropListMethodDispatcher.dispatch(propList, methodName, args);
@@ -192,8 +201,6 @@ public final class CallOpcodes {
                 }
                 yield Datum.VOID;
             }
-            case Datum.VarRef varRef -> handleVarRefMethod(ctx, varRef, methodName, args);
-            case Datum.ChunkRef chunkRef -> handleChunkRefMethod(ctx, chunkRef, methodName, args);
             case Datum.MovieRef m -> {
                 // Method calls on _movie - try as builtin with args
                 if (ctx.isBuiltin(methodName)) {
@@ -329,24 +336,28 @@ public final class CallOpcodes {
     private static Datum resolveVarRef(ExecutionContext ctx, Datum.VarRef varRef) {
         int variableMultiplier = ctx.getVariableMultiplier();
         int index = varRef.rawIndex() / variableMultiplier;
-        return switch (varRef.varType()) {
-            case LOCAL -> ctx.getLocal(index);
-            case PARAM -> ctx.getParam(index);
-            case PROPERTY -> {
-                Datum receiver = ctx.getReceiver();
-                if (receiver instanceof Datum.ScriptInstance si) {
-                    String propName = ctx.resolveName(varRef.rawIndex());
-                    Datum v = si.properties().get(propName);
-                    yield v != null ? v : Datum.VOID;
-                }
-                yield Datum.VOID;
+        // Use if-else instead of enum switch to keep this mutable-ref path
+        // friendly to TeaVM/WASM codegen.
+        if (varRef.varType() == VarType.LOCAL) {
+            return ctx.getLocal(index);
+        }
+        if (varRef.varType() == VarType.PARAM) {
+            return ctx.getParam(index);
+        }
+        if (varRef.varType() == VarType.PROPERTY) {
+            Datum receiver = ctx.getReceiver();
+            if (receiver instanceof Datum.ScriptInstance si) {
+                String propName = ctx.resolveName(varRef.rawIndex());
+                Datum value = si.properties().get(propName);
+                return value != null ? value : Datum.VOID;
             }
-            case GLOBAL, GLOBAL2 -> {
-                String name = ctx.resolveName(varRef.rawIndex());
-                yield ctx.getGlobal(name);
-            }
-            default -> Datum.VOID;
-        };
+            return Datum.VOID;
+        }
+        if (varRef.varType() == VarType.GLOBAL || varRef.varType() == VarType.GLOBAL2) {
+            String name = ctx.resolveName(varRef.rawIndex());
+            return ctx.getGlobal(name);
+        }
+        return Datum.VOID;
     }
 
     /**
@@ -355,21 +366,25 @@ public final class CallOpcodes {
     private static void setVarRef(ExecutionContext ctx, Datum.VarRef varRef, Datum value) {
         int variableMultiplier = ctx.getVariableMultiplier();
         int index = varRef.rawIndex() / variableMultiplier;
-        switch (varRef.varType()) {
-            case LOCAL -> ctx.setLocal(index, value);
-            case PARAM -> ctx.setParam(index, value);
-            case PROPERTY -> {
-                Datum receiver = ctx.getReceiver();
-                if (receiver instanceof Datum.ScriptInstance si) {
-                    String propName = ctx.resolveName(varRef.rawIndex());
-                    si.properties().put(propName, value);
-                }
+        if (varRef.varType() == VarType.LOCAL) {
+            ctx.setLocal(index, value);
+            return;
+        }
+        if (varRef.varType() == VarType.PARAM) {
+            ctx.setParam(index, value);
+            return;
+        }
+        if (varRef.varType() == VarType.PROPERTY) {
+            Datum receiver = ctx.getReceiver();
+            if (receiver instanceof Datum.ScriptInstance si) {
+                String propName = ctx.resolveName(varRef.rawIndex());
+                si.properties().put(propName, value);
             }
-            case GLOBAL, GLOBAL2 -> {
-                String name = ctx.resolveName(varRef.rawIndex());
-                ctx.setGlobal(name, value);
-            }
-            default -> { /* FIELD not supported in VarRef context */ }
+            return;
+        }
+        if (varRef.varType() == VarType.GLOBAL || varRef.varType() == VarType.GLOBAL2) {
+            String name = ctx.resolveName(varRef.rawIndex());
+            ctx.setGlobal(name, value);
         }
     }
 
