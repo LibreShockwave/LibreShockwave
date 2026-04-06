@@ -1,10 +1,14 @@
 package com.libreshockwave.vm;
 
+import com.libreshockwave.chunks.ScriptChunk;
+import com.libreshockwave.lingo.Opcode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.builtin.flow.UpdateProvider;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
 import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.datum.DatumFormatter;
+import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.support.NoOpCastLibProvider;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -141,6 +145,43 @@ class LingoVMTest {
         assertEquals("<VOID>", LingoVM.formatTraceArgument(Datum.VOID));
         assertEquals("#mouseUp", LingoVM.formatTraceArgument(Datum.symbol("mouseUp")));
         assertEquals("\"login_a\"", LingoVM.formatTraceArgument(Datum.of("login_a")));
+    }
+
+    @Test
+    void testExceptionCallStackFormatsFullArgumentsWithoutTruncation() {
+        String longArg = "abcdefghijklmnopqrstuvwxyz0123456789".repeat(4);
+        String formattedArg = DatumFormatter.formatExpanded(Datum.of(longArg));
+
+        LingoException exception = new LingoException("boom");
+        exception.setLingoCallStack(List.of(
+                new LingoVM.CallStackFrame(
+                        "replaceChunks",
+                        "\"String Services Class\" (PARENT)",
+                        35,
+                        List.of(formattedArg)
+                )
+        ));
+
+        String stack = exception.formatLingoCallStack();
+        assertNotNull(stack);
+        assertTrue(stack.contains("replaceChunks(" + formattedArg + ")"));
+        assertTrue(stack.contains(longArg));
+        assertFalse(stack.contains("..."));
+    }
+
+    @Test
+    void testDisplayArgumentsSkipImplicitPrependedReceiver() {
+        ScriptChunk.Handler handler = new ScriptChunk.Handler(
+                1, 0, 0, 0, 1, 0, 0, 0,
+                List.of(),
+                List.of(),
+                List.of(new ScriptChunk.Handler.Instruction(0, Opcode.RET, 0x01, 0)),
+                java.util.Map.of(0, 0)
+        );
+        Datum.ScriptInstance receiver = new Datum.ScriptInstance(12, java.util.Map.of());
+        Scope scope = new Scope(null, handler, List.of(receiver, Datum.of("abc")), receiver);
+
+        assertEquals(List.of(Datum.of("abc")), scope.getDisplayArguments());
     }
 
     @Test
