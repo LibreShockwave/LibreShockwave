@@ -1,6 +1,7 @@
 package com.libreshockwave.vm;
 
 import com.libreshockwave.chunks.ScriptChunk;
+import com.libreshockwave.id.ChunkId;
 import com.libreshockwave.lingo.Opcode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.builtin.flow.UpdateProvider;
@@ -182,6 +183,63 @@ class LingoVMTest {
         Scope scope = new Scope(null, handler, List.of(receiver, Datum.of("abc")), receiver);
 
         assertEquals(List.of(Datum.of("abc")), scope.getDisplayArguments());
+    }
+
+    @Test
+    void testAlertHookReceivesErrorTypeAndMessage() {
+        CapturingAlertHookVm vm = new CapturingAlertHookVm();
+        ScriptChunk.Handler alertHandler = new ScriptChunk.Handler(
+                1, 0, 0, 0, 2, 0, 0, 0,
+                List.of(),
+                List.of(),
+                List.of(new ScriptChunk.Handler.Instruction(0, Opcode.RET, 0x01, 0)),
+                java.util.Map.of(0, 0)
+        );
+        ScriptChunk alertScript = new ScriptChunk(
+                null,
+                new ChunkId(7),
+                ScriptChunk.ScriptType.PARENT,
+                0,
+                List.of(alertHandler),
+                List.of(),
+                List.of(),
+                List.of(),
+                new byte[0]
+        );
+        Datum.ScriptInstance hookInstance = new Datum.ScriptInstance(
+                77,
+                java.util.Map.of(Datum.PROP_SCRIPT_REF, Datum.ScriptRef.of(3, 7))
+        );
+        MoviePropertyProvider movieProvider = new MoviePropertyProvider() {
+            @Override
+            public Datum getMovieProp(String propName) {
+                return "alerthook".equalsIgnoreCase(propName) ? hookInstance : Datum.VOID;
+            }
+
+            @Override
+            public boolean setMovieProp(String propName, Datum value) {
+                return false;
+            }
+        };
+        CastLibProvider castProvider = new NoOpCastLibProvider() {
+            @Override
+            public HandlerLocation findHandlerInScript(int castLibNumber, int memberNumber, String handlerName) {
+                return new HandlerLocation(castLibNumber, alertScript, alertHandler, null);
+            }
+        };
+
+        MoviePropertyProvider.setProvider(movieProvider);
+        CastLibProvider.setProvider(castProvider);
+        try {
+            assertTrue(vm.fireAlertHook("Script Error", "boom"));
+            assertSame(hookInstance, vm.capturedReceiver);
+            assertEquals(2, vm.capturedArgs.size());
+            assertEquals("Script Error", vm.capturedArgs.get(0).toStr());
+            assertEquals("boom", vm.capturedArgs.get(1).toStr());
+        } finally {
+            MoviePropertyProvider.clearProvider();
+            CastLibProvider.clearProvider();
+        }
     }
 
     @Test
@@ -479,6 +537,24 @@ class LingoVMTest {
                                     List<Datum> args, Datum receiver) {
             executeCount++;
             return Datum.of("script:getmemnum");
+        }
+    }
+
+    private static final class CapturingAlertHookVm extends LingoVM {
+        private List<Datum> capturedArgs = List.of();
+        private Datum capturedReceiver = Datum.VOID;
+
+        private CapturingAlertHookVm() {
+            super(null);
+        }
+
+        @Override
+        public Datum executeHandler(com.libreshockwave.chunks.ScriptChunk script,
+                                    com.libreshockwave.chunks.ScriptChunk.Handler handler,
+                                    List<Datum> args, Datum receiver) {
+            this.capturedArgs = List.copyOf(args);
+            this.capturedReceiver = receiver;
+            return Datum.TRUE;
         }
     }
 

@@ -73,11 +73,13 @@ public class AlertHookHandler {
 
     /**
      * Fire the alertHook handler if one is set.
+     * @param errorType The error type/method string to pass to the handler
      * @param errorMsg The error message to pass to the handler
      * @param executeHandler callback to execute the handler
      * @return true if the error was handled (suppressed), false otherwise
      */
-    public boolean fireAlertHook(String errorMsg,
+    public boolean fireAlertHook(String errorType,
+                                  String errorMsg,
                                   HandlerExecutor executeHandler) {
         if (errorHandlerDepth > 0) {
             return false; // Prevent recursion
@@ -122,7 +124,10 @@ public class AlertHookHandler {
         }
 
         try {
-            List<Datum> alertArgs = List.of(Datum.of(errorMsg));
+            List<Datum> alertArgs = List.of(
+                    Datum.of(errorType != null ? errorType : ""),
+                    Datum.of(errorMsg != null ? errorMsg : "")
+            );
             Datum result = executeHandler.execute(script, handler, alertArgs, hookInstance);
             return result != null && result.isTruthy();
         } catch (Exception e) {
