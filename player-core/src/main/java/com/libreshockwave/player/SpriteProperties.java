@@ -66,6 +66,7 @@ public class SpriteProperties implements SpritePropertyProvider {
         }
 
         String prop = propName.toLowerCase();
+        SpriteBounds bounds = null;
         return switch (prop) {
             case "loch" -> Datum.of(sprite.getLocH());
             case "locv" -> Datum.of(sprite.getLocV());
@@ -80,16 +81,26 @@ public class SpriteProperties implements SpritePropertyProvider {
             case "stretch" -> Datum.of(sprite.getStretch());
             case "forecolor" -> Datum.of(sprite.getForeColor());
             case "backcolor" -> Datum.of(sprite.getBackColor());
-            case "left" -> Datum.of(sprite.getLocH());
-            case "top" -> Datum.of(sprite.getLocV());
-            case "right" -> Datum.of(sprite.getLocH() + sprite.getWidth());
-            case "bottom" -> Datum.of(sprite.getLocV() + sprite.getHeight());
-            case "rect" -> new Datum.Rect(
-                sprite.getLocH(),
-                sprite.getLocV(),
-                sprite.getLocH() + sprite.getWidth(),
-                sprite.getLocV() + sprite.getHeight()
-            );
+            case "left" -> {
+                bounds = resolveSpriteBounds(sprite);
+                yield Datum.of(bounds.left());
+            }
+            case "top" -> {
+                bounds = resolveSpriteBounds(sprite);
+                yield Datum.of(bounds.top());
+            }
+            case "right" -> {
+                bounds = resolveSpriteBounds(sprite);
+                yield Datum.of(bounds.right());
+            }
+            case "bottom" -> {
+                bounds = resolveSpriteBounds(sprite);
+                yield Datum.of(bounds.bottom());
+            }
+            case "rect" -> {
+                bounds = resolveSpriteBounds(sprite);
+                yield new Datum.Rect(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+            }
             case "spritenum" -> Datum.of(spriteNum);
             case "type" -> Datum.of(1);  // 1 = bitmap default
             case "castnum", "membernum" -> Datum.of(sprite.getEffectiveCastMember());
@@ -133,6 +144,79 @@ public class SpriteProperties implements SpritePropertyProvider {
                 yield Datum.VOID;
             }
         };
+    }
+
+    private record SpriteBounds(int left, int top, int right, int bottom) {}
+
+    private SpriteBounds resolveSpriteBounds(SpriteState sprite) {
+        int width = sprite.getWidth();
+        int height = sprite.getHeight();
+        int regX = 0;
+        int regY = 0;
+
+        if (castLibManager != null) {
+            int castLib = sprite.getEffectiveCastLib();
+            int memberNum = sprite.getEffectiveCastMember();
+            boolean flipH = effectiveFlipH(sprite);
+            boolean flipV = sprite.isFlipV();
+
+            CastMember runtimeMember = castLibManager.getDynamicMember(castLib, memberNum);
+            if (runtimeMember != null) {
+                int basisWidth = width > 0 ? width : runtimeMember.getProp("width").toInt();
+                int basisHeight = height > 0 ? height : runtimeMember.getProp("height").toInt();
+                regX = mirrorOffset(runtimeMember.getRegPointX(), basisWidth, flipH);
+                regY = mirrorOffset(runtimeMember.getRegPointY(), basisHeight, flipV);
+            } else {
+                CastMemberChunk member = castLibManager.getCastMember(castLib, memberNum);
+                if (member != null) {
+                    if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
+                        BitmapInfo bi = BitmapInfo.parse(member.specificData());
+                        int bmpWidth = bi.width();
+                        int bmpHeight = bi.height();
+                        regX = bi.regXLocal();
+                        regY = bi.regYLocal();
+                        if (width > 0 && bmpWidth > 0 && bmpWidth != width) {
+                            regX = regX * width / bmpWidth;
+                        }
+                        if (height > 0 && bmpHeight > 0 && bmpHeight != height) {
+                            regY = regY * height / bmpHeight;
+                        }
+                        regX = mirrorOffset(regX, width > 0 ? width : bmpWidth, flipH);
+                        regY = mirrorOffset(regY, height > 0 ? height : bmpHeight, flipV);
+                    } else {
+                        regX = mirrorOffset(member.regPointX(), width, flipH);
+                        regY = mirrorOffset(member.regPointY(), height, flipV);
+                    }
+                }
+            }
+        }
+
+        int left = sprite.getLocH() - regX;
+        int top = sprite.getLocV() - regY;
+        return new SpriteBounds(left, top, left + width, top + height);
+    }
+
+    private int mirrorOffset(int reg, int span, boolean flipped) {
+        if (!flipped || span <= 0) {
+            return reg;
+        }
+        return span - reg;
+    }
+
+    private boolean effectiveFlipH(SpriteState sprite) {
+        return sprite.isFlipH() ^ hasDirectorHorizontalMirror(sprite.getRotation(), sprite.getSkew());
+    }
+
+    private static boolean hasDirectorHorizontalMirror(double rotation, double skew) {
+        return normalizeTransformAngle(rotation) == 180 && normalizeTransformAngle(skew) == 180;
+    }
+
+    private static int normalizeTransformAngle(double angle) {
+        int normalized = (int) Math.round(angle) % 360;
+        if (normalized < 0) {
+            normalized += 360;
+        }
+        return normalized;
     }
 
     @Override
