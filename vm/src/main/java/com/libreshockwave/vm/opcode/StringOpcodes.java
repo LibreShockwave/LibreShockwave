@@ -200,7 +200,7 @@ public final class StringOpcodes {
      */
     private static boolean put(ExecutionContext ctx) {
         int arg = ctx.getArgument();
-        int putType = (arg >> 4) & 0xF;  // 0=INTO, 1=BEFORE, 2=AFTER
+        int putType = (arg >> 4) & 0xF;  // Director bytecode uses 1=INTO, 2=AFTER, 3=BEFORE in observed scripts
         int varType = arg & 0xF;
 
         // Read context var args (pop ID from stack, and castId for fields)
@@ -214,10 +214,10 @@ public final class StringOpcodes {
         Datum value = ctx.pop();
 
         switch (putType) {
-            case 0: // INTO
+            case 1: // INTO
                 setContextVar(ctx, varType, idDatum, castIdDatum, value);
                 break;
-            case 1: { // BEFORE
+            case 3: { // BEFORE
                 Datum current = getContextVar(ctx, varType, idDatum, castIdDatum);
                 String valStr = value.toStr();
                 String curStr = current.toStr();
@@ -296,7 +296,7 @@ public final class StringOpcodes {
         if (type == StringChunkType.CHAR) {
             String newString;
             switch (putType) {
-                case 0: { // INTO
+                case 1: { // INTO
                     int[] range = getCharChunkReplaceRange(currentString, first, last);
                     if (range == null) {
                         return true;
@@ -304,7 +304,7 @@ public final class StringOpcodes {
                     newString = currentString.substring(0, range[0]) + valueString + currentString.substring(range[1]);
                     break;
                 }
-                case 1: { // BEFORE
+                case 3: { // BEFORE
                     int insertAt = getChunkInsertionIndex(currentString, type, first, true, itemDelimiter);
                     newString = currentString.substring(0, insertAt) + valueString + currentString.substring(insertAt);
                     break;
@@ -330,10 +330,10 @@ public final class StringOpcodes {
         ChunkExpr chunkExpr = new ChunkExpr(type, first, last);
         String newString;
         switch (putType) {
-            case 0:
+            case 1:
                 newString = stringByPuttingIntoChunk(currentString, chunkExpr, valueString, itemDelimiter);
                 break;
-            case 1:
+            case 3:
                 newString = stringByPuttingBeforeChunk(currentString, chunkExpr, valueString, itemDelimiter);
                 break;
             case 2:
