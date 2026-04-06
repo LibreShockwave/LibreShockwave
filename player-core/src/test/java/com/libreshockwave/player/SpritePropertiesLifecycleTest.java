@@ -408,6 +408,30 @@ class SpritePropertiesLifecycleTest {
         assertEquals(preview.getMemberNumber(), state.getEffectiveCastMember());
     }
 
+    @Test
+    void spriteBoundsUseRegistrationPointAdjustedStageEdges() throws Exception {
+        SpriteRegistry registry = new SpriteRegistry();
+        SpriteProperties props = new SpriteProperties(registry);
+        CastLibManager castLibManager = new CastLibManager(null, (castLib, fileName) -> {});
+        CastLib castLib = new CastLib(7, null, null);
+        injectCastLib(castLibManager, castLib);
+        props.setCastLibManager(castLibManager);
+
+        CastMember cloud = castLib.createDynamicMember("bitmap");
+        cloud.setBitmapDirectly(new Bitmap(21, 22, 32));
+        assertTrue(cloud.setProp("regPoint", new Datum.Point(21, 0)));
+
+        assertTrue(props.setSpriteProp(41, "member",
+                Datum.CastMemberRef.of(7, cloud.getMemberNumber())));
+        assertTrue(props.setSpriteProp(41, "loc", new Datum.Point(100, 50)));
+
+        assertEquals(79, props.getSpriteProp(41, "left").toInt());
+        assertEquals(50, props.getSpriteProp(41, "top").toInt());
+        assertEquals(100, props.getSpriteProp(41, "right").toInt());
+        assertEquals(72, props.getSpriteProp(41, "bottom").toInt());
+        assertEquals(new Datum.Rect(79, 50, 100, 72), props.getSpriteProp(41, "rect"));
+    }
+
     @SuppressWarnings("unchecked")
     private static void injectCastLib(CastLibManager castLibManager, CastLib castLib) throws Exception {
         Field castLibsField = CastLibManager.class.getDeclaredField("castLibs");
