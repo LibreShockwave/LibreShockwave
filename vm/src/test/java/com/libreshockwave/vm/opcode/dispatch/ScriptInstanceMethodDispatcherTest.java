@@ -223,6 +223,42 @@ class ScriptInstanceMethodDispatcherTest {
         }
     }
 
+    @Test
+    void setAtWritesRegularScriptInstanceProperty() {
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(77, new LinkedHashMap<>());
+
+        Datum result = ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                instance,
+                "setAt",
+                List.of(Datum.symbol("pFacadeId"), Datum.symbol("snowwar_loungesystem")));
+
+        assertTrue(result.isVoid());
+        assertTrue(instance.properties().get("pFacadeId") instanceof Datum.Symbol);
+        assertEquals("snowwar_loungesystem", ((Datum.Symbol) instance.properties().get("pFacadeId")).name());
+    }
+
+    @Test
+    void setAtUpdatesAncestorOwnedProperty() {
+        LinkedHashMap<String, Datum> ancestorProps = new LinkedHashMap<>();
+        ancestorProps.put("pFacadeId", Datum.symbol("old"));
+        Datum.ScriptInstance ancestor = new Datum.ScriptInstance(78, ancestorProps);
+
+        LinkedHashMap<String, Datum> childProps = new LinkedHashMap<>();
+        childProps.put("ancestor", ancestor);
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(77, childProps);
+
+        ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                instance,
+                "setAt",
+                List.of(Datum.symbol("pFacadeId"), Datum.symbol("snowwar_loungesystem")));
+
+        assertTrue(ancestor.properties().get("pFacadeId") instanceof Datum.Symbol);
+        assertEquals("snowwar_loungesystem", ((Datum.Symbol) ancestor.properties().get("pFacadeId")).name());
+        assertFalse(instance.properties().containsKey("pFacadeId"));
+    }
+
     @SuppressWarnings("unchecked")
     private static void pushActiveScope(LingoVM vm) throws Exception {
         Field callStackField = LingoVM.class.getDeclaredField("callStack");

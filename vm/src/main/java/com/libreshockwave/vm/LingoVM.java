@@ -307,6 +307,9 @@ public class LingoVM {
         // First search the main file
         if (file != null) {
             for (ScriptChunk script : file.getScripts()) {
+                if (!isGlobalHandlerScriptType(script.getScriptType())) {
+                    continue;
+                }
                 ScriptChunk.Handler handler = script.findHandler(handlerName);
                 if (handler != null) {
                     HandlerRef ref = new HandlerRef(script, handler);
@@ -330,6 +333,11 @@ public class LingoVM {
 
         missingHandlerCache.add(cacheKey);
         return null;
+    }
+
+    static boolean isGlobalHandlerScriptType(ScriptChunk.ScriptType scriptType) {
+        return scriptType != ScriptChunk.ScriptType.PARENT
+                && scriptType != ScriptChunk.ScriptType.BEHAVIOR;
     }
 
     /**

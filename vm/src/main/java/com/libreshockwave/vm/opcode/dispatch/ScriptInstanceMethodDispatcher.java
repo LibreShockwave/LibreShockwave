@@ -37,18 +37,14 @@ public final class ScriptInstanceMethodDispatcher {
         }
         switch (method) {
             case "setat" -> {
-                // setAt on ScriptInstance: only "ancestor" key is allowed (dirplayer-rs)
+                // Director scripts use setAt(instance, #prop, value) as a generic
+                // property setter, including on parent-script instances created at
+                // runtime. Route it through the same ancestor-aware write path as
+                // setaProp/setProp instead of treating it as list-only access.
                 if (args.size() >= 2) {
                     String propName = getPropertyName(args.get(0));
                     Datum value = args.get(1);
-                    if (propName.equalsIgnoreCase("ancestor") || propName.equals(Datum.PROP_ANCESTOR)) {
-                        // Match dirplayer-rs: ancestor can only be set to a ScriptInstance
-                        if (value instanceof Datum.ScriptInstance si) {
-                            instance.properties().put(Datum.PROP_ANCESTOR, si);
-                        }
-                    } else {
-                        throw new LingoException("Cannot setAt property " + propName + " on script instance");
-                    }
+                    AncestorChainWalker.setProperty(instance, propName, value);
                 }
                 return Datum.VOID;
             }

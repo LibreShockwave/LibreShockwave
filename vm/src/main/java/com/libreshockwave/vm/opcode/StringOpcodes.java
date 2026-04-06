@@ -289,33 +289,31 @@ public final class StringOpcodes {
         Datum currentDatum = getContextVar(ctx, varType, idDatum, castIdDatum);
         String currentString = currentDatum.toStr();
         String valueString = value.toStr();
+        char itemDelimiter = getItemDelimiter();
 
         // Fast path: CHAR type — directly compute byte range, zero record allocations.
         // Hot path for "put X after char Y of str" in replaceChunks.
         if (type == StringChunkType.CHAR) {
-            // Director uses negative chunk indices to mean "from the end"
-            if (first < 0) first = currentString.length();
-            if (last < 0) last = currentString.length();
-            if (first < 1) first = 1;
-            int effectiveLast = last == 0 ? first : last;
-            int rangeStart, rangeEnd;
-            if (first > currentString.length()) {
-                // Out of range — no change
-                return true;
-            }
-            rangeStart = first - 1;
-            rangeEnd = Math.min(effectiveLast, currentString.length());
             String newString;
             switch (putType) {
-                case 0: // INTO
-                    newString = currentString.substring(0, rangeStart) + valueString + currentString.substring(rangeEnd);
+                case 0: { // INTO
+                    int[] range = getCharChunkReplaceRange(currentString, first, last);
+                    if (range == null) {
+                        return true;
+                    }
+                    newString = currentString.substring(0, range[0]) + valueString + currentString.substring(range[1]);
                     break;
-                case 1: // BEFORE
-                    newString = currentString.substring(0, rangeStart) + valueString + currentString.substring(rangeStart);
+                }
+                case 1: { // BEFORE
+                    int insertAt = getChunkInsertionIndex(currentString, type, first, true, itemDelimiter);
+                    newString = currentString.substring(0, insertAt) + valueString + currentString.substring(insertAt);
                     break;
-                case 2: // AFTER
-                    newString = currentString.substring(0, rangeEnd) + valueString + currentString.substring(rangeEnd);
+                }
+                case 2: { // AFTER
+                    int insertAt = getChunkInsertionIndex(currentString, type, last == 0 ? first : last, false, itemDelimiter);
+                    newString = currentString.substring(0, insertAt) + valueString + currentString.substring(insertAt);
                     break;
+                }
                 default:
                     newString = currentString;
             }
@@ -324,7 +322,6 @@ public final class StringOpcodes {
         }
 
         // General path — resolve negative indices ("the last") to actual count
-        char itemDelimiter = getItemDelimiter();
         if (first < 0 || last < 0) {
             int count = StringChunkUtils.countChunks(currentString, type, itemDelimiter);
             if (first < 0) first = count;
@@ -616,9 +613,8 @@ public final class StringOpcodes {
      */
     private static String stringByPuttingBeforeChunk(String str, ChunkExpr chunk,
                                                       String value, char itemDelimiter) {
-        int[] range = getChunkByteRange(str, chunk, itemDelimiter);
-        if (range == null) return str;
-        return str.substring(0, range[0]) + value + str.substring(range[0]);
+        int insertAt = getChunkInsertionIndex(str, chunk.type(), chunk.first(), true, itemDelimiter);
+        return str.substring(0, insertAt) + value + str.substring(insertAt);
     }
 
     /**
@@ -626,9 +622,9 @@ public final class StringOpcodes {
      */
     private static String stringByPuttingAfterChunk(String str, ChunkExpr chunk,
                                                      String value, char itemDelimiter) {
-        int[] range = getChunkByteRange(str, chunk, itemDelimiter);
-        if (range == null) return str;
-        return str.substring(0, range[1]) + value + str.substring(range[1]);
+        int targetIndex = chunk.last() == 0 ? chunk.first() : chunk.last();
+        int insertAt = getChunkInsertionIndex(str, chunk.type(), targetIndex, false, itemDelimiter);
+        return str.substring(0, insertAt) + value + str.substring(insertAt);
     }
 
     /**
@@ -743,6 +739,82 @@ public final class StringOpcodes {
             }
         }
         return (rangeStart >= 0) ? new int[] { rangeStart, str.length() } : null;
+    }
+
+    /**
+     * Resolve a replacement range for CHAR chunks.
+     * Returns null when the target chunk does not exist or the range is inverted.
+     */
+    private static int[] getCharChunkReplaceRange(String str, int first, int last) {
+        int length = str.length();
+        int normalizedFirst = normalizeCharChunkIndex(first, length, true);
+        int normalizedLast = normalizeCharChunkIndex(last == 0 ? first : last, length, true);
+        if (normalizedFirst < 1 || normalizedFirst > length) {
+            return null;
+        }
+        if (normalizedLast < normalizedFirst) {
+            return null;
+        }
+        int rangeStart = normalizedFirst - 1;
+        int rangeEnd = Math.min(normalizedLast, length);
+        if (rangeEnd < rangeStart) {
+            return null;
+        }
+        return new int[] { rangeStart, rangeEnd };
+    }
+
+    /**
+     * Resolve an insertion point for BEFORE/AFTER chunk operations.
+     * Missing chunks clamp to the nearest valid boundary instead of becoming a no-op.
+     */
+    private static int getChunkInsertionIndex(String str, StringChunkType type, int targetIndex,
+                                              boolean before, char itemDelimiter) {
+        if (type == StringChunkType.CHAR) {
+            int length = str.length();
+            int normalized = normalizeCharChunkIndex(targetIndex, length, before);
+            if (before) {
+                if (normalized <= 1) {
+                    return 0;
+                }
+                if (normalized > length) {
+                    return length;
+                }
+                return normalized - 1;
+            }
+            if (normalized <= 0) {
+                return 0;
+            }
+            if (normalized >= length) {
+                return length;
+            }
+            return normalized;
+        }
+
+        int[] range = getChunkByteRange(str, new ChunkExpr(type, targetIndex, targetIndex), itemDelimiter);
+        if (range != null) {
+            return before ? range[0] : range[1];
+        }
+
+        if (before) {
+            return targetIndex <= 1 ? 0 : str.length();
+        }
+        return targetIndex <= 0 ? 0 : str.length();
+    }
+
+    private static int normalizeCharChunkIndex(int index, int length, boolean before) {
+        if (index < 0) {
+            return length;
+        }
+        if (before) {
+            if (index < 1) {
+                return 1;
+            }
+            return index;
+        }
+        if (index == 0) {
+            return 0;
+        }
+        return index;
     }
 
     /**
