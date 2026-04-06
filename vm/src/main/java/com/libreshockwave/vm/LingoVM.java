@@ -47,7 +47,10 @@ public class LingoVM {
     // complete before this wall-clock time. Prevents infinite loops that span
     // multiple short handler invocations (where per-handler timeout wouldn't fire).
     private long tickDeadline = 0;  // 0 = no tick-level timeout
-    private long tickDeadlineMs = 30_000;  // configurable duration (default 30s, 0 = disabled)
+    // Disabled by default: the per-handler 60s timeout already protects against
+    // runaway loops, and a shorter per-tick deadline can falsely kill legitimate
+    // long-running handlers such as replaceChunks on large payloads in WASM.
+    private long tickDeadlineMs = 0;  // configurable duration (0 = disabled)
 
     // Event propagation callback (set by EventDispatcher)
     private Runnable passCallback;
@@ -634,7 +637,7 @@ public class LingoVM {
                 traceListener.onError("Error in " + script.getHandlerName(handler), e);
             }
             // Try alertHook before rethrowing — if it returns true, suppress the error
-            if (!isErrorHandler && fireAlertHook(e.getMessage())) {
+            if (!isErrorHandler && fireAlertHook("Script Error", e.getMessage())) {
                 result = Datum.VOID; // Error suppressed by alertHook
             } else {
                 throw e;
@@ -722,7 +725,11 @@ public class LingoVM {
      * Delegates to AlertHookHandler.
      */
     public boolean fireAlertHook(String errorMsg) {
-        return alertHookHandler.fireAlertHook(errorMsg, this::executeHandler);
+        return fireAlertHook("Alert", errorMsg);
+    }
+
+    public boolean fireAlertHook(String errorType, String errorMsg) {
+        return alertHookHandler.fireAlertHook(errorType, errorMsg, this::executeHandler);
     }
 
     /**
