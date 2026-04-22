@@ -76,6 +76,7 @@ public final class NetBuiltins {
         builtins.put("neterror", NetBuiltins::netError);
         builtins.put("getstreamstatus", NetBuiltins::getStreamStatus);
         builtins.put("gotonetpage", NetBuiltins::gotoNetPage);
+        builtins.put("gotonetmovie", NetBuiltins::gotoNetMovie);
     }
 
     /**
@@ -133,6 +134,17 @@ public final class NetBuiltins {
         String target = args.size() > 1 ? args.get(1).toStr() : "";
         provider.gotoNetPage(url, target);
         return Datum.TRUE;
+    }
+
+    private static Datum gotoNetMovie(LingoVM vm, List<Datum> args) {
+        MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
+        if (provider == null || args.isEmpty()) {
+            return Datum.of(-1);
+        }
+
+        String url = args.get(0).toStr();
+        int requestId = provider.gotoNetMovie(url);
+        return Datum.of(requestId);
     }
 
     /**

@@ -36,6 +36,8 @@ public class WasmEntry {
     private static byte[] stringBuffer = new byte[65536];
     private static byte[] netBuffer;
     private static final Queue<String[]> pendingGotoNetPages = new ArrayDeque<>();
+    private static final Queue<String> pendingGotoNetMovies = new ArrayDeque<>();
+    private static int nextGotoNetMovieRequestId = 1;
 
     private static final Set<String> failedCasts = new HashSet<>();
 
@@ -67,6 +69,13 @@ public class WasmEntry {
                     url != null ? url : "",
                     target != null ? target : ""
             });
+        }
+    }
+
+    static int enqueueGotoNetMovie(String url) {
+        synchronized (pendingGotoNetMovies) {
+            pendingGotoNetMovies.offer(url != null ? url : "");
+            return nextGotoNetMovieRequestId++;
         }
     }
 
@@ -124,6 +133,22 @@ public class WasmEntry {
         return (maxUrlLen << 16) | maxTargetLen;
     }
 
+    @Export(name = "readNextGotoNetMovie")
+    public static int readNextGotoNetMovie() {
+        String next;
+        synchronized (pendingGotoNetMovies) {
+            next = pendingGotoNetMovies.poll();
+        }
+        if (next == null) {
+            return 0;
+        }
+
+        byte[] urlBytes = next.getBytes(StandardCharsets.UTF_8);
+        int len = Math.min(urlBytes.length, stringBuffer.length);
+        System.arraycopy(urlBytes, 0, stringBuffer, 0, len);
+        return len;
+    }
+
     // === Movie loading ===
 
     /**
@@ -143,6 +168,12 @@ public class WasmEntry {
 
         if (wasmPlayer != null) {
             wasmPlayer.shutdown();
+        }
+        synchronized (pendingGotoNetPages) {
+            pendingGotoNetPages.clear();
+        }
+        synchronized (pendingGotoNetMovies) {
+            pendingGotoNetMovies.clear();
         }
 
         wasmPlayer = new WasmPlayer();

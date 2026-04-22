@@ -116,6 +116,21 @@ class LingoVMTest {
     }
 
     @Test
+    void testGotoNetMovieBuiltinDelegatesToMovieProvider() {
+        LingoVM vm = new LingoVM(null);
+        RecordingMovieProvider provider = new RecordingMovieProvider();
+        MoviePropertyProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("gotoNetMovie",
+                    List.of(Datum.of("https://example.com/movie.dcr")));
+            assertEquals(73, result.toInt());
+            assertEquals("https://example.com/movie.dcr", provider.lastGotoMovieUrl);
+        } finally {
+            MoviePropertyProvider.clearProvider();
+        }
+    }
+
+    @Test
     void testCallHandlerPrefersGlobalScriptHandlerOverBuiltin() {
         OverridingHandlerVm vm = new OverridingHandlerVm();
 
@@ -421,6 +436,7 @@ class LingoVMTest {
         private Datum lastValue = Datum.VOID;
         private String lastGotoUrl;
         private String lastGotoTarget;
+        private String lastGotoMovieUrl;
 
         @Override
         public Datum getMovieProp(String propName) {
@@ -438,6 +454,12 @@ class LingoVMTest {
         public void gotoNetPage(String url, String target) {
             lastGotoUrl = url;
             lastGotoTarget = target;
+        }
+
+        @Override
+        public int gotoNetMovie(String url) {
+            lastGotoMovieUrl = url;
+            return 73;
         }
     }
 

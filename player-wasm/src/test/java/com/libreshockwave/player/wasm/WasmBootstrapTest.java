@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -24,6 +25,23 @@ class WasmBootstrapTest {
     private static final Path ARCHIVE_DIR =
             Path.of("/tmp/habbo_origins_src/archive/unprotected_client_dump_20_06_2024");
     private static final Path LIVE_FUSE_CLIENT_PATH = Path.of("/tmp/fuse_client_14_1_b8.cct");
+
+    @Test
+    void wasmEntryQueuesGotoNetMovieRequests() throws Exception {
+        while (WasmEntry.readNextGotoNetMovie() != 0) {
+            // Drain stale requests from previous tests.
+        }
+
+        String url = "https://example.com/rooms/welcome_lounge.dcr";
+        byte[] expected = url.getBytes(StandardCharsets.UTF_8);
+        int requestId = WasmEntry.enqueueGotoNetMovie(url);
+        assertTrue(requestId > 0);
+
+        int len = WasmEntry.readNextGotoNetMovie();
+        assertEquals(expected.length, len);
+        assertEquals(url, new String(getStaticByteArray("stringBuffer"), 0, len, StandardCharsets.UTF_8));
+        assertEquals(0, WasmEntry.readNextGotoNetMovie());
+    }
 
     @Test
     void habboStartsThroughWasmPreloadPath() throws Exception {
