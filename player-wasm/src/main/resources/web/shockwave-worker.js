@@ -150,6 +150,20 @@ function _drainGotoNetPages() {
             self.postMessage({ type: 'gotoNetPage', url: url, target: target });
         }
     } catch (navErr) {}
+    _drainGotoNetMovies();
+}
+
+function _drainGotoNetMovies() {
+    if (!_e || !_e.exports) return;
+    try {
+        while (true) {
+            var urlLen = _e.exports.readNextGotoNetMovie(); _e._clearEx();
+            if (!urlLen) break;
+            var strAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+            var url = new TextDecoder().decode(new Uint8Array(_e._mem(), strAddr, urlLen));
+            self.postMessage({ type: 'gotoNetMovie', url: url });
+        }
+    } catch (navErr) {}
 }
 
 // --- External params stored locally for pre-fetch access ---

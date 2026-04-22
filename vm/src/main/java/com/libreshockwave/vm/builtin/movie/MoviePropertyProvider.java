@@ -91,6 +91,13 @@ public interface MoviePropertyProvider {
     default void gotoNetPage(String url, String target) {
     }
 
+    /**
+     * Retrieve and play a network movie, returning a host-defined request id.
+     */
+    default int gotoNetMovie(String url) {
+        return -1;
+    }
+
     // Thread-local provider for VM access
     ThreadLocal<MoviePropertyProvider> CURRENT = new ThreadLocal<>();
 

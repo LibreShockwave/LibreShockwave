@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 /**
  * Provides movie-level property access for Lingo scripts.
@@ -49,6 +50,7 @@ public class MovieProperties implements MoviePropertyProvider {
     // Timer start time (in millis)
     private final long startTime;
     private BiConsumer<String, String> gotoNetPageHandler;
+    private Function<String, Integer> gotoNetMovieHandler;
 
     public MovieProperties(Player player, DirectorFile file) {
         this.player = player;
@@ -62,6 +64,10 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public void setGotoNetPageHandler(BiConsumer<String, String> gotoNetPageHandler) {
         this.gotoNetPageHandler = gotoNetPageHandler;
+    }
+
+    public void setGotoNetMovieHandler(Function<String, Integer> gotoNetMovieHandler) {
+        this.gotoNetMovieHandler = gotoNetMovieHandler;
     }
 
     @Override
@@ -394,6 +400,26 @@ public class MovieProperties implements MoviePropertyProvider {
         if (gotoNetPageHandler != null) {
             gotoNetPageHandler.accept(safeUrl, safeTarget);
         }
+    }
+
+    @Override
+    public int gotoNetMovie(String url) {
+        String safeUrl = url != null ? url : "";
+        String recentError = player.getRecentScriptErrorMessage(10000);
+        String recentStack = player.getRecentScriptErrorStack(10000);
+
+        System.err.println("[MovieNavigationRequest] url=" + safeUrl
+                + " frame=" + player.getCurrentFrame()
+                + " recentError=" + (recentError.isEmpty() ? "<none>" : recentError));
+        if (!recentStack.isEmpty()) {
+            System.err.println("[MovieNavigationRequest] recentLingoStack:\n" + recentStack);
+        }
+
+        if (gotoNetMovieHandler != null) {
+            Integer requestId = gotoNetMovieHandler.apply(safeUrl);
+            return requestId != null ? requestId : -1;
+        }
+        return -1;
     }
 
     private String getMovieName() {

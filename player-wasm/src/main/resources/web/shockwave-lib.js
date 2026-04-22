@@ -563,6 +563,10 @@ var LibreShockwave = (function() {
                 this._handleGotoNetPage(msg.url, msg.target);
                 break;
 
+            case 'gotoNetMovie':
+                this._handleGotoNetMovie(msg.url);
+                break;
+
             case 'fetchRelay': {
                 // Worker needs a cross-origin fetch; do it from main thread and relay back
                 var worker = this._worker;
@@ -710,6 +714,36 @@ var LibreShockwave = (function() {
     };
 
     // Simple one-shot resolver map: type → resolve function
+    ShockwavePlayer.prototype._resolveMovieNavigationUrl = function(url) {
+        var rawUrl = url == null ? '' : String(url);
+        if (!rawUrl) return '';
+
+        try {
+            return new URL(rawUrl, this._loadedMovieUrl || window.location.href).href;
+        } catch (e) {
+            return rawUrl;
+        }
+    };
+
+    ShockwavePlayer.prototype._handleGotoNetMovie = function(url) {
+        if (!url) return;
+
+        var resolvedUrl = this._resolveMovieNavigationUrl(url);
+        console.log('[LS] gotoNetMovie request:', {
+            url: String(url),
+            resolvedUrl: resolvedUrl,
+            frame: this._lastFrame,
+            frameCount: this._lastFrameCount
+        });
+
+        if (typeof this._opts.onGotoNetMovie === 'function') {
+            this._opts.onGotoNetMovie(resolvedUrl, String(url));
+            return;
+        }
+
+        this.load(resolvedUrl);
+    };
+
     ShockwavePlayer.prototype._resolveOnce = function(type, value) {
         if (this._pending && this._pending.type === type) {
             var resolve = this._pending.resolve;

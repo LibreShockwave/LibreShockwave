@@ -35,6 +35,7 @@ public class WasmPlayer {
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
         player.getMovieProperties().setGotoNetPageHandler(WasmEntry::enqueueGotoNetPage);
+        player.getMovieProperties().setGotoNetMovieHandler(WasmEntry::enqueueGotoNetMovie);
         player.setErrorListener(WasmEntry::reportScriptError);
 
         // When a fetch completes, cache cast files in CastLibManager so they're
