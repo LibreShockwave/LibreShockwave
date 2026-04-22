@@ -1,7 +1,6 @@
 package com.libreshockwave.player.wasm;
 
 import com.libreshockwave.DirectorFile;
-import com.libreshockwave.player.FuseCompatibilityProfile;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.PlayerState;
 
@@ -35,9 +34,6 @@ public class WasmPlayer {
 
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
-        player.setInitialBuiltinVariable("connection.info.id", com.libreshockwave.vm.datum.Datum.symbol("info"));
-        player.setInitialBuiltinVariable("connection.room.id", com.libreshockwave.vm.datum.Datum.symbol("room"));
-        player.setCompatibilityProfile(new FuseCompatibilityProfile());
         player.getMovieProperties().setGotoNetPageHandler(WasmEntry::enqueueGotoNetPage);
         player.setErrorListener(WasmEntry::reportScriptError);
 
