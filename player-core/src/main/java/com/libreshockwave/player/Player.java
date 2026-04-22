@@ -115,7 +115,6 @@ public class Player implements UpdateProvider {
     private Runnable vmExecutorShutdown;  // Shutdown hook, avoids referencing ExecutorService in shutdown()
     private final java.util.concurrent.atomic.AtomicBoolean vmRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.List<ExternalCastLoadHandler> externalCastLoadHandlers = new java.util.ArrayList<>();
-    private PlayerCompatibilityProfile compatibilityProfile = PlayerCompatibilityProfile.NONE;
     private final List<Datum> updatingObjects = new ArrayList<>();
     private final Map<String, Datum> initialBuiltinVariables = new LinkedHashMap<>();
 
@@ -557,7 +556,6 @@ public class Player implements UpdateProvider {
         String fileName = castLib.getFileName();
         LifecycleDiagnostics.logExternalCastLoaded(castLibNumber, fileName);
         ExternalCastLoadEvent event = new ExternalCastLoadEvent(castLibNumber, fileName);
-        compatibilityProfile.onExternalCastLoaded(this, castLibNumber, fileName);
         for (ExternalCastLoadHandler handler : externalCastLoadHandlers) {
             handler.onExternalCastLoaded(this, castLibNumber, fileName);
         }
@@ -579,12 +577,6 @@ public class Player implements UpdateProvider {
 
     public TimeoutManager getTimeoutManager() {
         return timeoutManager;
-    }
-
-    public void setCompatibilityProfile(PlayerCompatibilityProfile compatibilityProfile) {
-        this.compatibilityProfile = compatibilityProfile != null
-                ? compatibilityProfile
-                : PlayerCompatibilityProfile.NONE;
     }
 
     /**
@@ -1050,7 +1042,6 @@ public class Player implements UpdateProvider {
                         // Process Xtra callbacks after frame execution so room
                         // object creation sees any cast updates from this frame.
                         xtraManager.tickAll();
-                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         frameContext.advanceFrame();
                     } finally {
@@ -1098,7 +1089,6 @@ public class Player implements UpdateProvider {
             // Process Xtra callbacks after frame execution so room object
             // creation sees any cast updates from this frame.
             xtraManager.tickAll();
-            compatibilityProfile.afterFrameExecution(this);
             timeoutManager.processTimeouts(vm, System.currentTimeMillis());
             processUpdatingObjects();
             frameContext.advanceFrame();
@@ -1139,7 +1129,6 @@ public class Player implements UpdateProvider {
                         // Process Xtra callbacks after frame execution so room
                         // object creation sees any cast updates from this frame.
                         xtraManager.tickAll();
-                        compatibilityProfile.afterFrameExecution(this);
                         timeoutManager.processTimeouts(vm, System.currentTimeMillis());
                         processUpdatingObjects();
                         frameContext.advanceFrame();
@@ -1201,7 +1190,6 @@ public class Player implements UpdateProvider {
         setupProviders();
         try {
             applyInitialBuiltinVariables();
-            compatibilityProfile.beforePrepareMovie(this);
 
             // 0. Initiate fetch of all external casts (async network requests)
             preloadAllCasts();
@@ -1399,14 +1387,12 @@ public class Player implements UpdateProvider {
         @Override
         public void onHandlerEnter(HandlerInfo info) {
             LifecycleDiagnostics.logHandlerEnter(info);
-            compatibilityProfile.onHandlerEnter(Player.this, info);
             if (delegate != null) delegate.onHandlerEnter(info);
         }
 
         @Override
         public void onHandlerExit(HandlerInfo info, Datum returnValue) {
             LifecycleDiagnostics.logHandlerExit(info, returnValue);
-            compatibilityProfile.onHandlerExit(Player.this, info, returnValue);
             if (delegate != null) delegate.onHandlerExit(info, returnValue);
         }
 
