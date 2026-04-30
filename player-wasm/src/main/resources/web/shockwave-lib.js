@@ -951,17 +951,16 @@ var LibreShockwave = (function() {
             this.setTempo(this._tempoOverride);
         }
 
-        // Preload external casts before starting; worker handles the network pump
+        // Preload external casts before starting. The worker queues async fetches
+        // and replies immediately so startup rendering is not held by network I/O.
         this._worker.postMessage({ type: 'preloadCasts' });
-        await this._waitFor('castsDone');
-        if (this._loadSeq !== mySeq) return; // Superseded by newer load
 
-        // Pre-fetch sw1 URLs from main thread into relay cache.
+        // Pre-fetch sw1 URLs from main thread into relay cache in the background.
         // The worker cannot reliably fetch cross-origin URLs (Chrome hang bug),
-        // so we do it here and serve from cache when the relay arrives.
+        // so we do it here and serve from cache when the relay arrives. Cache
+        // misses still fall through to an async relay fetch.
         this._relayCache = {};
-        await this._prefetchRelayCache();
-        if (this._loadSeq !== mySeq) return; // Superseded by newer load
+        this._prefetchRelayCache(mySeq);
 
         console.log('[LS] Ready to play after ' +
                     Math.round(performance.now() - this._loadStartTime) + 'ms');
@@ -985,22 +984,24 @@ var LibreShockwave = (function() {
         return urls;
     }
 
-    ShockwavePlayer.prototype._prefetchRelayCache = async function() {
+    ShockwavePlayer.prototype._prefetchRelayCache = function(loadSeq) {
         var urls = _parseSwUrls(this._params);
         if (urls.length === 0) return;
-        console.log('[LS] Pre-fetching ' + urls.length + ' sw URLs for relay cache');
+        console.log('[LS] Pre-fetching ' + urls.length + ' sw URLs for relay cache in background');
         var self = this;
-        await Promise.all(urls.map(function(url) {
-            return _fetchWithTimeout(url)
+        urls.forEach(function(url) {
+            _fetchWithTimeout(url)
                 .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
                 .then(function(buf) {
+                    if (loadSeq !== undefined && self._loadSeq !== loadSeq) return;
                     self._relayCache[url] = buf;
                     console.log('[LS] Pre-fetched: ' + url + ' (' + buf.byteLength + ' bytes)');
                 })
                 .catch(function(e) {
+                    if (!e || !e.message) e = { message: String(e) };
                     console.warn('[LS] Pre-fetch failed: ' + url + ' — ' + e.message);
                 });
-        }));
+        });
     };
 
     // --- Playback control ---
