@@ -74,6 +74,7 @@ var _musErrors = {};       // instanceId -> errorCode
 // --- Non-blocking fetch delivery queue ---
 var _fetchQueue = [];   // [{taskId, data: ArrayBuffer}] or [{taskId, error: number}]
 var _loadStartTime = 0; // timestamp when loading began (for perf logging)
+var _networkSeq = 0;    // increments per movie load to ignore stale async fetches
 
 // --- Cross-origin fetch relay (main thread fetches on behalf of worker) ---
 var _fetchRelayMap = {};  // relayId -> { engine, taskId, url, fallbacks }
@@ -171,9 +172,6 @@ var _params = {};
 
 // --- Diagnostic tick counter ---
 var _tickNum = 0;
-
-// --- Movie base path (set during loadMovie) ---
-var _movieBasePath = '';
 
 // ============================================================
 // WasmEngine — mirrors the main-thread version but without Canvas
@@ -379,22 +377,14 @@ WasmEngine.prototype._deliverError = function(taskId, status) {
     this.exports.deliverFetchError(taskId, status || 0); this._clearEx();
 };
 
-/** Drain pending network requests; fetch synchronously and deliver. */
+/**
+ * Legacy helper kept for callers that still ask to "collect" requests.
+ * It now only starts the fetches and returns immediately; completed responses
+ * are delivered later by deliverQueuedResults().
+ */
 WasmEngine.prototype.pumpNetworkCollect = function() {
-    var reqs = this._drainRequests();
-    if (!reqs) return [];
-    var selfEngine = this;
-    return reqs.map(function(req) {
-        return selfEngine._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || [])
-            .then(function(result) {
-                if (result && result.data) {
-                    selfEngine._deliverResult(req.taskId, result.data, result.url || req.url);
-                } else {
-                    selfEngine._deliverError(req.taskId, result && result.status ? result.status : 0);
-                }
-                _flushWasmDiagnostics();
-            });
-    });
+    this.pumpNetworkFire();
+    return [];
 };
 
 // ============================================================
@@ -402,9 +392,8 @@ WasmEngine.prototype.pumpNetworkCollect = function() {
 // ============================================================
 
 /**
- * Fetch a URL synchronously using XMLHttpRequest (allowed in Workers).
- * Blocks until the response arrives, giving natural network latency.
- * Result is pushed to _fetchQueue for delivery on the next tick.
+ * Ask the main thread to perform a fetch that the worker should not perform
+ * directly. Resolves asynchronously; never blocks the worker tick loop.
  */
 WasmEngine.prototype._relayFetch = function(url, method, postData) {
     return new Promise(function(resolve, reject) {
@@ -509,15 +498,21 @@ function _isCastFileUrl(url) {
 WasmEngine.prototype.pumpNetworkFire = function() {
     var reqs = this._drainRequests();
     if (!reqs) return 0;
+    var seq = _networkSeq;
     for (var i = 0; i < reqs.length; i++) {
         let req = reqs[i];
         this._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || [])
             .then(function(result) {
+                if (seq !== _networkSeq) return;
                 if (result && result.data) {
                     _fetchQueue.push({ taskId: req.taskId, data: result.data, url: result.url || req.url });
                 } else {
                     _fetchQueue.push({ taskId: req.taskId, error: result && result.status ? result.status : 0 });
                 }
+            })
+            .catch(function(e) {
+                if (seq !== _networkSeq) return;
+                _fetchQueue.push({ taskId: req.taskId, error: e && e.status ? e.status : 0 });
             });
     }
     return reqs.length;
@@ -739,31 +734,8 @@ WasmEngine.prototype.deliverMusEvents = function() {
 };
 
 // ============================================================
-// JS-side response cache helpers
+// URL helpers
 // ============================================================
-
-/**
- * Fetch a URL synchronously, trying fallbacks on failure.
- * @return ArrayBuffer or null
- */
-function _fetchSyncData(url, fallbacks) {
-    var urls = [url];
-    if (fallbacks) {
-        for (var i = 0; i < fallbacks.length; i++) urls.push(fallbacks[i]);
-    }
-    for (var j = 0; j < urls.length; j++) {
-        try {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', urls[j], false);
-            xhr.responseType = 'arraybuffer';
-            xhr.send(null);
-            if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
-                return xhr.response;
-            }
-        } catch (e) { /* try next */ }
-    }
-    return null;
-}
 
 /**
  * Returns true if the URL is cross-origin relative to this worker.
@@ -775,46 +747,6 @@ function _isCrossOrigin(url) {
     try {
         return new URL(url, self.location.href).origin !== self.location.origin;
     } catch(e) { return false; }
-}
-
-/**
- * Compute the base directory from a movie URL.
- * "http://host/path/movie.dcr" -> "http://host/path/"
- */
-function _getBaseDir(url) {
-    var i = url.lastIndexOf('/');
-    return i >= 0 ? url.substring(0, i + 1) : '';
-}
-
-/**
- * Pre-fetch sw1 param URLs (external_variables, external_texts)
- * and any dynamic cast entries found in external_variables.txt.
- * This runs during preloadCasts, BEFORE play(), so the data is
- * cached and available instantly when the Lingo state machine needs it.
- */
-async function _prefetchSw1Assets(basePath) {
-    var baseDir = _getBaseDir(basePath);
-
-    // Collect all HTTP URLs from ALL sw params (sw1-sw9).
-    // Params use "key=value;key=value" format; values containing "://" are URLs.
-    var urls = [];
-    for (var i = 1; i <= 9; i++) {
-        var sw = _params['sw' + i] || _params['SW' + i];
-        if (!sw) continue;
-        sw.split(';').forEach(function(pair) {
-            pair = pair.trim();
-            var eq = pair.indexOf('=');
-            if (eq < 0) return;
-            var val = pair.substring(eq + 1).trim();
-            if (val.indexOf('://') !== -1) urls.push(val);
-        });
-    }
-    if (urls.length === 0) return;
-
-    console.log('[WORKER] Pre-fetching ' + urls.length + ' sw1 URLs');
-
-    // No pre-fetching — files are fetched synchronously on demand.
-    // The browser HTTP cache serves repeated requests efficiently.
 }
 
 // ============================================================
@@ -846,7 +778,8 @@ self.onmessage = async function(e) {
 
             case 'loadMovie': {
                 _tickNum = 0;
-                _movieBasePath = msg.basePath || '';
+                _networkSeq++;
+                _fetchQueue = [];
                 var info = _e.loadMovie(new Uint8Array(msg.data), msg.basePath);
                 _e.playing  = false;
                 _flushWasmDiagnostics();
@@ -887,28 +820,9 @@ self.onmessage = async function(e) {
                 _loadStartTime = castT0;
                 var n = _e.preloadCasts();
                 console.log('[WORKER] preloadCasts: ' + n + ' casts queued');
-                if (n > 0) {
-                    var p1 = _e.pumpNetworkCollect();
-                    if (p1.length > 0) await Promise.all(p1);
-                    // pump any secondary requests queued during prepareMovie
-                    var p2 = _e.pumpNetworkCollect();
-                    if (p2.length > 0) await Promise.all(p2);
-                }
-                // Continue pumping until no more requests
-                while (true) {
-                    var pn = _e.pumpNetworkCollect();
-                    if (pn.length === 0) break;
-                    await Promise.all(pn);
-                }
-                console.log('[WORKER] preloadCasts done in ' + Math.round(performance.now() - castT0) + 'ms');
-
-                // Pre-fetch sw1 assets (external_variables, external_texts, dynamic casts)
-                // so they're cached before the Lingo state machine needs them
-                try {
-                    await _prefetchSw1Assets(_movieBasePath);
-                } catch (prefetchErr) {
-                    console.error('[WORKER] prefetch error: ' + prefetchErr);
-                }
+                var fired = _e.pumpNetworkFire();
+                console.log('[WORKER] preloadCasts fired ' + fired + ' async fetches in ' +
+                            Math.round(performance.now() - castT0) + 'ms');
 
                 _flushWasmDiagnostics();
                 self.postMessage({ type: 'castsDone' });
