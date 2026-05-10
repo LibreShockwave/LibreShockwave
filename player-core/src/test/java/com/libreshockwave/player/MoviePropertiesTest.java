@@ -13,4 +13,12 @@ class MoviePropertiesTest {
 
         assertEquals(Datum.STAGE, properties.getMovieProp("activeWindow"));
     }
+
+    @Test
+    void movieAndStageNameUseMovieName() {
+        MovieProperties properties = new MovieProperties(null, null);
+
+        assertEquals("", properties.getMovieProp("name").toStr());
+        assertEquals("", properties.getStageProp("name").toStr());
+    }
 }
