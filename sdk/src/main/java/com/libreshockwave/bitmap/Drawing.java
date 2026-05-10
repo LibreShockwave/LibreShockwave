@@ -103,8 +103,7 @@ public class Drawing {
                 if (mask != null) {
                     int mx = srcX + x;
                     int my = srcY + y;
-                    if (mx < 0 || mx >= mask.getWidth() || my < 0 || my >= mask.getHeight()
-                            || (mask.getPixel(mx, my) >>> 24) == 0) {
+                    if (!maskAllowsPixel(mask, mx, my)) {
                         continue;
                     }
                 }
@@ -358,6 +357,17 @@ public class Drawing {
             return srcAlpha;
         }
         return (srcAlpha * blendAlpha) / 255;
+    }
+
+    public static boolean maskAllowsPixel(Bitmap mask, int x, int y) {
+        if (mask == null || x < 0 || x >= mask.getWidth() || y < 0 || y >= mask.getHeight()) {
+            return false;
+        }
+        int pixel = mask.getPixel(x, y);
+        if (mask.hasNativeMatteAlpha()) {
+            return ((pixel >>> 24) & 0xFF) != 0;
+        }
+        return maskAlphaFromPixel(pixel) < 255;
     }
 
     /**
