@@ -695,9 +695,7 @@ var LibreShockwave = (function() {
             var loadedMovieUrl = new URL(this._loadedMovieUrl, window.location.href);
             var currentPageUrl = new URL(window.location.href);
 
-            if (requestedUrl.pathname.indexOf('/clientutils') === 0
-                    || requestedUrl.searchParams.get('key') === 'error'
-                    || requestedUrl.searchParams.has('error')) {
+            if (this._isClientErrorNavigation(requestedUrl)) {
                 return false;
             }
             if (currentPageUrl.origin === loadedMovieUrl.origin) {
@@ -716,6 +714,27 @@ var LibreShockwave = (function() {
         } catch (e) {
             return false;
         }
+    };
+
+    ShockwavePlayer.prototype._isClientErrorNavigation = function(requestedUrl) {
+        var params = requestedUrl.searchParams;
+        if (params.get('key') === 'error') {
+            return true;
+        }
+        if (params.has('error_id') || params.has('client_errors') || params.has('server_errors')) {
+            return true;
+        }
+
+        var errorValue = params.get('error');
+        if (!errorValue) {
+            return false;
+        }
+
+        return params.has('client_version')
+            || params.has('client_uptime')
+            || params.has('client_process_list')
+            || params.has('neterr_cast')
+            || params.has('neterr_res');
     };
 
     // Simple one-shot resolver map: type → resolve function

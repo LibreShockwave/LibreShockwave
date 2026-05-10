@@ -5,10 +5,13 @@ import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.movie.MoviePropertyProvider;
+import com.libreshockwave.vm.xtra.XtraManager;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -25,6 +28,7 @@ public class MovieProperties implements MoviePropertyProvider {
 
     private final Player player;
     private final DirectorFile file;
+    private final XtraManager xtraManagerOverride;
 
     // Writable movie properties
     private boolean exitLock = false;
@@ -55,6 +59,14 @@ public class MovieProperties implements MoviePropertyProvider {
     public MovieProperties(Player player, DirectorFile file) {
         this.player = player;
         this.file = file;
+        this.xtraManagerOverride = null;
+        this.startTime = System.currentTimeMillis();
+    }
+
+    MovieProperties(Player player, DirectorFile file, XtraManager xtraManagerOverride) {
+        this.player = player;
+        this.file = file;
+        this.xtraManagerOverride = xtraManagerOverride;
         this.startTime = System.currentTimeMillis();
     }
 
@@ -210,7 +222,8 @@ public class MovieProperties implements MoviePropertyProvider {
                 }
                 yield Datum.ZERO;
             }
-            case "number of xtras" -> Datum.ZERO;
+            case "number of xtras" -> Datum.of(getRegisteredXtraNames().size());
+            case "xtralist" -> getXtraList();
 
             // Window/Stage
             case "activewindow", "stage" -> Datum.STAGE;
@@ -478,6 +491,28 @@ public class MovieProperties implements MoviePropertyProvider {
 
     public Datum getActorList() {
         return actorList;
+    }
+
+    private Datum getXtraList() {
+        List<Datum> items = new ArrayList<>();
+        for (String name : getRegisteredXtraNames()) {
+            Datum.PropList entry = new Datum.PropList();
+            entry.add("name", Datum.of(name), true);
+            entry.add("fileName", Datum.of(name + ".x32"), true);
+            items.add(entry);
+        }
+        return new Datum.List(items);
+    }
+
+    private List<String> getRegisteredXtraNames() {
+        XtraManager manager = xtraManagerOverride;
+        if (manager == null && player != null) {
+            manager = player.getXtraManager();
+        }
+        if (manager == null) {
+            return List.of();
+        }
+        return manager.getRegisteredXtraNames();
     }
 
     public Datum getAlertHook() {
