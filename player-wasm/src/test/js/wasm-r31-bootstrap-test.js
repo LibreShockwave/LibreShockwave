@@ -152,7 +152,7 @@ var betaClientParams = {
     "sw7":"external.texts.txt=${baseUrl}/gamedata/external_texts.txt?",
     "sw8":"use.sso.ticket=1;sso.ticket=vibe-sso-admin-ef39b7ab-e16b-4ea5-b83e-c8ee6a8a7076"
 };
-var _testState = { loaded: false, error: null, tick: 0, frame: 0, debugLogs: [] };
+var _testState = { loaded: false, error: null, tick: 0, frame: 0, debugLogs: [], gotoNetPages: [] };
 try {
     var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
         basePath: "${baseUrl}/",
@@ -170,6 +170,9 @@ try {
         onError: function(message) {
             _testState.error = message;
             console.error("LibreShockwave beta client error:", message);
+        },
+        onGotoNetPage: function(url, target) {
+            _testState.gotoNetPages.push({ url: String(url), target: String(target) });
         },
         onFrame: function(frame) {
             _testState.tick++;
@@ -230,9 +233,13 @@ try {
         const loaded = await loadBrowser();
         browser = loaded.browser;
         page = await loaded.newPage();
+        let sawMovieReset = false;
+        let sawLoadCastsError = false;
 
         page.on('console', msg => {
             const text = msg.text();
+            if (text.includes('gotoNetPage treated as movie reset')) sawMovieReset = true;
+            if (text.includes('error=load_casts')) sawLoadCastsError = true;
             if (text.includes('[LS]') || text.includes('[WORKER]') || text.includes('LibreShockwave')) {
                 console.log('  [page] ' + preview(text));
             }
@@ -259,6 +266,7 @@ try {
                     error: window._testState.error,
                     tick: window._testState.tick,
                     frame: window._testState.frame,
+                    gotoNetPages: window._testState.gotoNetPages.slice(),
                     debugLogs: window._testState.debugLogs.slice(-20),
                     spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
                     nonBlack,
@@ -292,12 +300,17 @@ try {
         console.log('Sprites:     ', finalState && finalState.spriteCount);
         console.log('Non-black:   ', finalState && finalState.nonBlack);
         console.log('Color buckets:', finalState && finalState.colorBuckets);
+        console.log('GotoNetPages:', finalState && finalState.gotoNetPages && finalState.gotoNetPages.length);
         if (finalState && finalState.debugLogs && finalState.debugLogs.length > 0) {
             console.log('\n--- Debug Log Tail ---');
             finalState.debugLogs.forEach(log => console.log(preview(log)));
         }
 
+        const clientReportedLoadCasts = finalState && finalState.gotoNetPages &&
+            finalState.gotoNetPages.some(entry => entry.url.includes('error=load_casts'));
+
         const passed = finalState && finalState.loaded && !finalState.error &&
+            !sawMovieReset && !sawLoadCastsError && !clientReportedLoadCasts &&
             finalState.spriteCount >= SPRITE_THRESHOLD &&
             finalState.nonBlack > NON_BLACK_THRESHOLD &&
             finalState.colorBuckets >= COLOR_BUCKET_THRESHOLD;
@@ -305,7 +318,7 @@ try {
         if (passed) {
             console.log('\nPASS: r31 bootstrap rendered non-black content');
         } else {
-            console.log('\nFAIL: r31 bootstrap stayed blank/black');
+            console.log('\nFAIL: r31 bootstrap did not load cleanly');
             process.exitCode = 1;
         }
     } finally {
