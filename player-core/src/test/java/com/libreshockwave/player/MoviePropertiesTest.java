@@ -15,10 +15,10 @@ class MoviePropertiesTest {
     }
 
     @Test
-    void movieAndStageNameUseMovieName() {
+    void movieNameDefaultsEmptyAndStageNameMatchesDirectorWindow() {
         MovieProperties properties = new MovieProperties(null, null);
 
         assertEquals("", properties.getMovieProp("name").toStr());
-        assertEquals("", properties.getStageProp("name").toStr());
+        assertEquals("stage", properties.getStageProp("name").toStr());
     }
 }

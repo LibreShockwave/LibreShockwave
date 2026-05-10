@@ -149,22 +149,28 @@ public final class StackOpcodes {
             return true;
         }
 
-        // First arg is the script name (or a script reference)
+        // First arg is the script name, a member reference, or a script reference.
         Datum firstArg = args.get(0);
-        String scriptName;
-        if (firstArg instanceof Datum.Str s) {
-            scriptName = s.value();
-        } else if (firstArg instanceof Datum.Symbol sym) {
-            scriptName = sym.name();
-        } else {
-            scriptName = firstArg.toStr();
-        }
 
-        // Find the script by name to get a member reference
+        // Find the script to get a member reference.
         CastLibProvider provider = CastLibProvider.getProvider();
         Datum memberRef = null;
         if (provider != null) {
-            memberRef = provider.getMemberByName(0, scriptName);
+            if (firstArg instanceof Datum.CastMemberRef cmr) {
+                memberRef = cmr;
+            } else if (firstArg instanceof Datum.ScriptRef sr) {
+                memberRef = Datum.CastMemberRef.of(sr.castLibNum(), sr.memberNum());
+            } else {
+                String scriptName;
+                if (firstArg instanceof Datum.Str s) {
+                    scriptName = s.value();
+                } else if (firstArg instanceof Datum.Symbol sym) {
+                    scriptName = sym.name();
+                } else {
+                    scriptName = firstArg.toStr();
+                }
+                memberRef = provider.getMemberByName(0, scriptName);
+            }
         }
 
         // Create the script instance

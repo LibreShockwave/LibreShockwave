@@ -25,6 +25,7 @@ const POLL_MS = 250;
 const SPRITE_THRESHOLD = 1;
 const NON_BLACK_THRESHOLD = 100;
 const COLOR_BUCKET_THRESHOLD = 5;
+const LOG_PREVIEW_LIMIT = 1200;
 
 const MIME = {
     '.html': 'text/html',
@@ -48,6 +49,13 @@ function serveFile(res, filePath) {
         'Access-Control-Allow-Origin': '*',
     });
     res.end(data);
+}
+
+function preview(text) {
+    text = String(text);
+    return text.length > LOG_PREVIEW_LIMIT
+        ? text.slice(0, LOG_PREVIEW_LIMIT) + `... <truncated ${text.length - LOG_PREVIEW_LIMIT} chars>`
+        : text;
 }
 
 function createServer() {
@@ -192,6 +200,15 @@ try {
         'showProgram',
         'changeRoom',
         'enterRoom',
+        'assetDownloadCallbacks',
+        'importFileToCast',
+        'removeActiveTask',
+        'updateState',
+        'prepareFrame',
+        'receiveUpdate',
+        'updateQueue',
+        'update',
+        'registerDownloadCallback',
         'startCastLoad',
         'loadVariables',
         'LoadTexts'
@@ -217,7 +234,7 @@ try {
         page.on('console', msg => {
             const text = msg.text();
             if (text.includes('[LS]') || text.includes('[WORKER]') || text.includes('LibreShockwave')) {
-                console.log('  [page] ' + text);
+                console.log('  [page] ' + preview(text));
             }
         });
 
@@ -256,7 +273,7 @@ try {
             }
 
             if (state.error) {
-                console.error('FAIL: player error: ' + state.error);
+                console.error('FAIL: player error: ' + preview(state.error));
                 break;
             }
             if (state.spriteCount >= SPRITE_THRESHOLD &&
@@ -277,7 +294,7 @@ try {
         console.log('Color buckets:', finalState && finalState.colorBuckets);
         if (finalState && finalState.debugLogs && finalState.debugLogs.length > 0) {
             console.log('\n--- Debug Log Tail ---');
-            finalState.debugLogs.forEach(log => console.log(log));
+            finalState.debugLogs.forEach(log => console.log(preview(log)));
         }
 
         const passed = finalState && finalState.loaded && !finalState.error &&

@@ -339,6 +339,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 yield new Datum.Rect(0, 0, w, h);
             }
             case "title" -> Datum.of(stageTitle);
+            case "name" -> Datum.of("stage");
             case "visible" -> Datum.TRUE;
             case "bgcolor" -> Datum.of(player.getStageRenderer().getBackgroundColor());
             case "image" -> {
