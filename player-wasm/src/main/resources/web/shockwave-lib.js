@@ -966,7 +966,7 @@ var LibreShockwave = (function() {
         if (this._tempoOverride > 0) {
             this.setTempo(this._tempoOverride);
         }
-        if (this._autoplay) this.play();
+        if (this._autoplay && !this._playing) this.play();
     };
 
     // Parse all sw1-sw9 params for URLs (key=value;key=value format)
