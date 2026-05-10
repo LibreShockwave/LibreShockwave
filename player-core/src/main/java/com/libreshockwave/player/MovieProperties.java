@@ -213,7 +213,7 @@ public class MovieProperties implements MoviePropertyProvider {
             case "number of xtras" -> Datum.ZERO;
 
             // Window/Stage
-            case "stage" -> Datum.STAGE;
+            case "activewindow", "stage" -> Datum.STAGE;
 
             // Misc
             case "emptystring" -> Datum.EMPTY_STRING;
