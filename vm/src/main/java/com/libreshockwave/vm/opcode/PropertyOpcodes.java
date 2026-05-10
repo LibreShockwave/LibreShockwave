@@ -103,6 +103,28 @@ public final class PropertyOpcodes {
         return Datum.VOID;
     }
 
+    private static boolean isBuiltinConstantName(String propName) {
+        return switch (propName.toLowerCase()) {
+            case "pi", "true", "false", "void", "empty", "emptystring",
+                 "return", "enter", "tab", "quote", "backspace", "space" -> true;
+            default -> false;
+        };
+    }
+
+    private static Datum getPlayerProp(String propName) {
+        if (isBuiltinConstantName(propName)) {
+            return getBuiltinConstant(propName);
+        }
+
+        MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
+        return provider != null ? provider.getMovieProp(propName) : Datum.VOID;
+    }
+
+    private static boolean setPlayerProp(String propName, Datum value) {
+        MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
+        return provider != null && provider.setMovieProp(propName, value);
+    }
+
     private static boolean getObjProp(ExecutionContext ctx) {
         String propName = ctx.resolveName(ctx.getArgument());
         Datum obj = ctx.pop();
@@ -121,7 +143,7 @@ public final class PropertyOpcodes {
                 MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
                 yield provider != null ? provider.getMovieProp(propName) : Datum.VOID;
             }
-            case Datum.PlayerRef p -> getBuiltinConstant(propName);
+            case Datum.PlayerRef p -> getPlayerProp(propName);
             case Datum.SpriteRef sr -> {
                 SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
                 yield spriteProvider != null ? spriteProvider.getSpriteProp(sr.channelNum(), propName) : Datum.VOID;
@@ -232,6 +254,7 @@ public final class PropertyOpcodes {
                     provider.setMovieProp(propName, value);
                 }
             }
+            case Datum.PlayerRef p -> setPlayerProp(propName, value);
             case Datum.SpriteRef sr -> {
                 SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
                 if (spriteProvider != null) {
@@ -636,8 +659,7 @@ public final class PropertyOpcodes {
                 yield Datum.VOID;
             }
             case Datum.PlayerRef p -> {
-                // Player properties - limited set
-                yield getBuiltinConstant(propName);
+                yield getPlayerProp(propName);
             }
             case Datum.Point point -> getPointProp(point, propName);
             case Datum.Rect rect -> getRectProp(rect, propName);
