@@ -46,7 +46,7 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         lastTaskId = taskId;
 
         String resolvedUrl = resolveUrl(url);
-        String[] fallbacks = FileUtil.getUrlsWithFallbacks(resolvedUrl);
+        String[] fallbacks = withMovieDirectoryCastFallbacks(resolvedUrl, FileUtil.getUrlsWithFallbacks(resolvedUrl));
 
         NetTask task = new NetTask(taskId, resolvedUrl);
         task.fallbackUrls = fallbacks;
@@ -263,6 +263,50 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         return fileName;
     }
 
+    private String[] withMovieDirectoryCastFallbacks(String resolvedUrl, String[] fallbacks) {
+        if (resolvedUrl == null || basePath == null || basePath.isEmpty()) {
+            return fallbacks;
+        }
+
+        String fileName = FileUtil.getFileName(resolvedUrl);
+        if (fileName == null || fileName.isEmpty()) {
+            return fallbacks;
+        }
+
+        String lowerName = fileName.toLowerCase(Locale.ROOT);
+        if (!(lowerName.endsWith(".cct") || lowerName.endsWith(".cst") || !lowerName.contains("."))) {
+            return fallbacks;
+        }
+
+        String origin = extractOrigin(basePath);
+        String movieDir = extractMovieDirectory(basePath);
+        if (origin == null || movieDir == null || movieDir.equals(origin + "/")) {
+            return fallbacks;
+        }
+
+        String rootUrl = origin + "/" + fileName;
+        String lowerResolved = resolvedUrl.toLowerCase(Locale.ROOT);
+        if (!lowerResolved.equals(rootUrl.toLowerCase(Locale.ROOT))
+                && !lowerResolved.equals((rootUrl + ".cct").toLowerCase(Locale.ROOT))
+                && !lowerResolved.equals((rootUrl + ".cst").toLowerCase(Locale.ROOT))) {
+            return fallbacks;
+        }
+
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        String movieDirUrl = movieDir + fileName;
+        for (String fallback : FileUtil.getUrlsWithFallbacks(movieDirUrl)) {
+            urls.add(fallback);
+        }
+        if (fallbacks != null) {
+            for (String fallback : fallbacks) {
+                if (fallback != null && !fallback.isEmpty()) {
+                    urls.add(fallback);
+                }
+            }
+        }
+        return urls.toArray(new String[0]);
+    }
+
     private byte[] findCachedData(String originalUrl, String resolvedUrl) {
         for (String key : buildCacheKeys(originalUrl, resolvedUrl)) {
             byte[] cached = urlCache.get(key);
@@ -312,6 +356,15 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         if (schemeEnd < 0) return null;
         int pathStart = url.indexOf('/', schemeEnd + 3);
         return pathStart >= 0 ? url.substring(0, pathStart) : url;
+    }
+
+    private static String extractMovieDirectory(String url) {
+        if (url == null || url.isEmpty()) return null;
+        int query = url.indexOf('?');
+        String clean = query >= 0 ? url.substring(0, query) : url;
+        int slash = clean.lastIndexOf('/');
+        if (slash < 0) return null;
+        return clean.substring(0, slash + 1);
     }
 
     /**

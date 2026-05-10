@@ -695,6 +695,11 @@ var LibreShockwave = (function() {
             var loadedMovieUrl = new URL(this._loadedMovieUrl, window.location.href);
             var currentPageUrl = new URL(window.location.href);
 
+            if (requestedUrl.pathname.indexOf('/clientutils') === 0
+                    || requestedUrl.searchParams.get('key') === 'error'
+                    || requestedUrl.searchParams.has('error')) {
+                return false;
+            }
             if (currentPageUrl.origin === loadedMovieUrl.origin) {
                 return false;
             }
