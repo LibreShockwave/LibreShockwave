@@ -2,7 +2,8 @@ package com.libreshockwave.vm.xtra;
 
 import com.libreshockwave.vm.datum.Datum;
 
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -12,27 +13,56 @@ import java.util.Map;
  */
 public class XtraManager {
 
-    private final Map<String, Xtra> registeredXtras = new HashMap<>();
+    private final Map<String, Xtra> registeredXtras = new LinkedHashMap<>();
 
     /**
      * Register an Xtra by name.
      */
     public void registerXtra(Xtra xtra) {
-        registeredXtras.put(xtra.getName().toLowerCase(), xtra);
+        registeredXtras.put(toLookupName(xtra.getName()), xtra);
     }
 
     /**
      * Check if an Xtra is registered.
      */
     public boolean isXtraRegistered(String name) {
-        return registeredXtras.containsKey(name.toLowerCase());
+        return registeredXtras.containsKey(toLookupName(name));
+    }
+
+    /**
+     * Return the Director-facing Xtra names exposed through "the xtraList".
+     */
+    public List<String> getRegisteredXtraNames() {
+        List<String> names = new ArrayList<>();
+        for (Xtra xtra : registeredXtras.values()) {
+            names.add(toDirectorXtraListName(xtra.getName()));
+        }
+        return names;
+    }
+
+    public int getRegisteredXtraCount() {
+        return registeredXtras.size();
+    }
+
+    private static String toDirectorXtraListName(String name) {
+        if ("Multiuser".equalsIgnoreCase(name)) {
+            return "Multiusr";
+        }
+        return name;
+    }
+
+    private static String toLookupName(String name) {
+        if ("Multiusr".equalsIgnoreCase(name)) {
+            return "multiuser";
+        }
+        return name.toLowerCase();
     }
 
     /**
      * Get an Xtra by name.
      */
     public Xtra getXtra(String name) {
-        return registeredXtras.get(name.toLowerCase());
+        return registeredXtras.get(toLookupName(name));
     }
 
     /**
