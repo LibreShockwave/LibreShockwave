@@ -54,6 +54,15 @@ class CastMemberTextImageTest {
                 "MATTE copy should preserve all rendered white text pixels");
     }
 
+    @Test
+    void adjustTextHeightDoesNotShrinkBelowScriptedRect() {
+        CastMember member = buildTextMember("Oops.. Cannot connect to Habbo Hotel");
+        member.setProp("rect", new Datum.Rect(0, 0, 220, 120));
+
+        assertEquals(120, member.getProp("height").toInt(),
+                "boxType=adjust should expand, not shrink below the scripted rect");
+    }
+
     private static CastMember buildTextMember(String text) {
         CastMember.setTextRenderer(new SimpleTextRenderer());
         CastMember member = new CastMember(1, 1, MemberType.TEXT);

@@ -30,7 +30,6 @@ class LocalHabboBootstrapTest {
         Player player = new Player(file);
         player.setInitialBuiltinVariable("connection.info.id", Datum.symbol("info"));
         player.setInitialBuiltinVariable("connection.room.id", Datum.symbol("room"));
-        player.setCompatibilityProfile(new FuseCompatibilityProfile());
 
         player.getCastLibManager().setExternalCastDataByUrl("fuse_client.cct", Files.readAllBytes(fuseClientPath));
         player.getCastLibManager().setExternalCastDataByUrl("empty.cct", Files.readAllBytes(emptyCastPath));
@@ -58,7 +57,6 @@ class LocalHabboBootstrapTest {
         Player player = new Player(file);
         player.setInitialBuiltinVariable("connection.info.id", Datum.symbol("info"));
         player.setInitialBuiltinVariable("connection.room.id", Datum.symbol("room"));
-        player.setCompatibilityProfile(new FuseCompatibilityProfile());
 
         player.onNetFetchComplete("fuse_client.cct", Files.readAllBytes(fuseClientPath));
         player.onNetFetchComplete("empty.cct", Files.readAllBytes(emptyCastPath));
