@@ -518,6 +518,36 @@ WasmEngine.prototype.pumpNetworkFire = function() {
     return reqs.length;
 };
 
+/**
+ * Fetch and deliver the currently pending network requests before playback.
+ *
+ * Bootstrap-style Director movies often keep their startup scripts in external
+ * casts. If play()/prepareMovie runs before those casts are delivered, the movie
+ * can advance with no sprites or handlers registered and remain black forever.
+ */
+WasmEngine.prototype.pumpNetworkAndWait = async function() {
+    var reqs = this._drainRequests();
+    if (!reqs) return 0;
+    var seq = _networkSeq;
+    var engine = this;
+    await Promise.all(reqs.map(async function(req) {
+        try {
+            var result = await engine._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || []);
+            if (seq !== _networkSeq) return;
+            if (result && result.data) {
+                engine._deliverResult(req.taskId, result.data, result.url || req.url);
+            } else {
+                engine._deliverError(req.taskId, result && result.status ? result.status : 0);
+            }
+        } catch (e) {
+            if (seq !== _networkSeq) return;
+            engine._deliverError(req.taskId, e && e.status ? e.status : 0);
+        }
+    }));
+    _flushWasmDiagnostics();
+    return reqs.length;
+};
+
 // ============================================================
 // Multiuser Xtra — WebSocket bridge
 // ============================================================
@@ -820,8 +850,8 @@ self.onmessage = async function(e) {
                 _loadStartTime = castT0;
                 var n = _e.preloadCasts();
                 console.log('[WORKER] preloadCasts: ' + n + ' casts queued');
-                var fired = _e.pumpNetworkFire();
-                console.log('[WORKER] preloadCasts fired ' + fired + ' async fetches in ' +
+                var fired = await _e.pumpNetworkAndWait();
+                console.log('[WORKER] preloadCasts delivered ' + fired + ' fetches in ' +
                             Math.round(performance.now() - castT0) + 'ms');
 
                 _flushWasmDiagnostics();

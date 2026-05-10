@@ -232,6 +232,37 @@ tasks.register('runWasmChromiumTest', Exec) {
 }
 
 // ---------------------------------------------------------------------------
+// r31 bootstrap regression test.
+// Reproduces the direct shockwave-lib.js embed with an onLoad play() callback
+// and fails when the movie loads but stays on a black, sprite-less canvas.
+//
+// Usage:
+//   ./gradlew :player-wasm:runWasmR31BootstrapTest
+//   ./gradlew :player-wasm:runWasmR31BootstrapTest -PhtdocsRoot=C:/xampp/htdocs
+//   ./gradlew :player-wasm:runWasmR31BootstrapTest -PdcrUrlPath=/habbo.dcr
+// ---------------------------------------------------------------------------
+tasks.register('runWasmR31BootstrapTest', Exec) {
+    group       = 'verification'
+    description = 'Test r31 Habbo bootstrap DCR renders instead of staying black'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def htdocsRoot = project.findProperty('htdocsRoot') ?: 'C:/xampp/htdocs'
+    def dcrUrlPath = project.findProperty('dcrUrlPath') ?: '/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr'
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-r31-bootstrap-test.js').absolutePath,
+        distPath,
+        htdocsRoot,
+        dcrUrlPath,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket bridge integration test.
 // Starts a MUS TCP server + websockify + headless Chrome and verifies
 // the full WebSocket <-> TCP pipeline works end-to-end.

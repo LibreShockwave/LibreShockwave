@@ -946,14 +946,12 @@ var LibreShockwave = (function() {
             }
         }
 
-        if (this._opts.onLoad) this._opts.onLoad(info);
-        if (this._tempoOverride > 0) {
-            this.setTempo(this._tempoOverride);
-        }
-
         // Preload external casts before starting. The worker queues async fetches
-        // and replies immediately so startup rendering is not held by network I/O.
+        // and waits for the initial cast bytes so bootstrap movies have their
+        // startup scripts before onLoad/autoplay can call play().
         this._worker.postMessage({ type: 'preloadCasts' });
+        await this._waitFor('castsDone');
+        if (this._loadSeq !== mySeq) return;
 
         // Pre-fetch sw1 URLs from main thread into relay cache in the background.
         // The worker cannot reliably fetch cross-origin URLs (Chrome hang bug),
@@ -964,6 +962,10 @@ var LibreShockwave = (function() {
 
         console.log('[LS] Ready to play after ' +
                     Math.round(performance.now() - this._loadStartTime) + 'ms');
+        if (this._opts.onLoad) this._opts.onLoad(info);
+        if (this._tempoOverride > 0) {
+            this.setTempo(this._tempoOverride);
+        }
         if (this._autoplay) this.play();
     };
 
