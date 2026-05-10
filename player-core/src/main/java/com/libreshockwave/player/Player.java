@@ -1278,11 +1278,19 @@ public class Player implements UpdateProvider {
     private void handleExternalCastFetch(String url, byte[] data) {
         castLibManager.cacheExternalData(url, data);
         try {
-            java.util.List<Integer> requestedCastNums = castLibManager.getRequestedExternalCastSlots(url);
-            if (requestedCastNums.isEmpty()) {
+            java.util.LinkedHashSet<Integer> castNums = new java.util.LinkedHashSet<>(
+                    castLibManager.getRequestedExternalCastSlots(url));
+
+            // A fetched external cast should hydrate authored matching cast slots even
+            // before Lingo explicitly swaps castLib.fileName. Bootstrap movies often
+            // keep their startup APIs in those casts and expect them to be visible
+            // before prepareMovie/startMovie continues.
+            castNums.addAll(castLibManager.getMatchingCastLibNumbersByUrl(url));
+
+            if (castNums.isEmpty()) {
                 return;
             }
-            for (Integer castNum : requestedCastNums) {
+            for (Integer castNum : castNums) {
                 loadExternalCastFromCachedData(castNum, data);
             }
         } catch (Throwable e) {
