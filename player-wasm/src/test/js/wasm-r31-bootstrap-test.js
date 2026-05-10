@@ -20,11 +20,11 @@ const htdocsRoot = process.argv[3] || 'C:/xampp/htdocs';
 const dcrUrlPath = process.argv[4] || '/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr';
 const outputDir = process.argv[5] || path.resolve(process.cwd(), 'frames_r31_bootstrap');
 
-const MAX_POLLS = 180;
+const MAX_POLLS = 300;
 const POLL_MS = 250;
-const SPRITE_THRESHOLD = 1;
-const NON_BLACK_THRESHOLD = 100;
-const COLOR_BUCKET_THRESHOLD = 5;
+const SPRITE_THRESHOLD = 10;
+const NON_BLACK_THRESHOLD = 2000;
+const COLOR_BUCKET_THRESHOLD = 20;
 const LOG_PREVIEW_LIMIT = 1200;
 
 const MIME = {
@@ -287,6 +287,30 @@ try {
             if (state.spriteCount >= SPRITE_THRESHOLD &&
                     state.nonBlack > NON_BLACK_THRESHOLD &&
                     state.colorBuckets >= COLOR_BUCKET_THRESHOLD) {
+                await new Promise(r => setTimeout(r, 5000));
+                finalState = await page.evaluate(() => {
+                    const canvas = document.getElementById('beta-client-stage');
+                    const ctx = canvas.getContext('2d');
+                    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                    let nonBlack = 0;
+                    const colorBuckets = new Set();
+                    for (let p = 0; p < data.length; p += 40) {
+                        const r = data[p], g = data[p + 1], b = data[p + 2];
+                        if (r > 10 || g > 10 || b > 10) nonBlack++;
+                        colorBuckets.add((r >> 5) + ',' + (g >> 5) + ',' + (b >> 5));
+                    }
+                    return {
+                        loaded: window._testState.loaded,
+                        error: window._testState.error,
+                        tick: window._testState.tick,
+                        frame: window._testState.frame,
+                        gotoNetPages: window._testState.gotoNetPages.slice(),
+                        debugLogs: window._testState.debugLogs.slice(-20),
+                        spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+                        nonBlack,
+                        colorBuckets: colorBuckets.size,
+                    };
+                });
                 break;
             }
         }
