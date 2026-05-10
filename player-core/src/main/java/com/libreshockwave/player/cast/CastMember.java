@@ -737,12 +737,15 @@ public class CastMember {
             case "text" -> Datum.of(getTextContent());
             case "width" -> Datum.of(textRectRight - textRectLeft);
             case "height" -> {
-                // Director auto-expands text member height for boxType=adjust.
-                // Must render eagerly so height reflects actual text content.
+                // Director auto-expands text member height for boxType=adjust, but
+                // it does not shrink below the scripted rect. Habbo's r33/r31 text
+                // wrapper relies on height and rect agreeing when it builds a
+                // fake-alpha mask from member.image.
                 if (textBoxType == 0) {
                     Bitmap rendered = renderTextToImage();
                     if (rendered != null) {
-                        yield Datum.of(rendered.getHeight());
+                        int rectHeight = textRectBottom - textRectTop;
+                        yield Datum.of(Math.max(rendered.getHeight(), rectHeight));
                     }
                 }
                 yield Datum.of(textRectBottom - textRectTop);
