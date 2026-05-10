@@ -245,4 +245,30 @@ class DrawingMatteTest {
         assertEquals(0xFFFFFFFF, dest.getPixel(1, 0));
         assertEquals(0xFFFFFFFF, dest.getPixel(2, 0));
     }
+
+    @Test
+    void copyPixelsMaskImageUsesBlackPixelsAsMaskForNonAlphaImages() {
+        Bitmap dest = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF
+        });
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+                0xFF000000,
+                0xFF000000,
+                0xFF000000
+        });
+        Bitmap mask = new Bitmap(3, 1, 8, new int[] {
+                0xFFFFFFFF,
+                0xFF000000,
+                0xFFFFFFFF
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 1,
+                Palette.InkMode.COPY, 255, mask);
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
+        assertEquals(0xFF000000, dest.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(2, 0));
+    }
 }

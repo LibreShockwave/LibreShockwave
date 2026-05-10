@@ -474,9 +474,7 @@ public final class ImageMethodDispatcher {
                     if (mask != null) {
                         int origSx = srcRect.left() + (x * srcW / destW);
                         int origSy = srcRect.top() + (y * srcH / destH);
-                        if (origSx < 0 || origSx >= mask.getWidth()
-                                || origSy < 0 || origSy >= mask.getHeight()
-                                || (mask.getPixel(origSx, origSy) >>> 24) == 0) {
+                        if (!Drawing.maskAllowsPixel(mask, origSx, origSy)) {
                             continue; // Leave as transparent (default 0)
                         }
                     }
