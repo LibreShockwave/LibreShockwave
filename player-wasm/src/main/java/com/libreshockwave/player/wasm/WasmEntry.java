@@ -286,10 +286,11 @@ public class WasmEntry {
         if (wasmPlayer == null) return;
         try {
             lastError = null;
-            // Set step limit to catch infinite loops. The dump handler runs ~292K
-            // instructions; 5M gives 17x headroom while catching infinite loops fast.
+            // Set step limit to catch infinite loops. Large startup handlers in
+            // real clients can legitimately do multi-megabyte text conversion,
+            // so keep enough headroom for those while still bounding runaway code.
             if (wasmPlayer.getPlayer() != null) {
-                wasmPlayer.getPlayer().getVM().setStepLimit(5_000_000);
+                wasmPlayer.getPlayer().getVM().setStepLimit(50_000_000);
             }
             log("play() called, frame before=" + wasmPlayer.getCurrentFrame());
             wasmPlayer.play();
@@ -1212,6 +1213,10 @@ public class WasmEntry {
         }
 
         if (error != null) {
+            String detail = error.getMessage();
+            if (detail != null && !detail.isEmpty() && (message == null || !message.equals(detail))) {
+                sb.append(": ").append(detail);
+            }
             String stack = error.formatLingoCallStack();
             if (stack != null && !stack.isBlank()) {
                 sb.append('\n').append(stack);
