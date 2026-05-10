@@ -94,7 +94,7 @@ public class MovieProperties implements MoviePropertyProvider {
             case "stagebottom" -> Datum.of(file != null ? file.getStageHeight() : 0);
 
             // Movie info
-            case "moviename" -> Datum.of(getMovieName());
+            case "name", "moviename" -> Datum.of(getMovieName());
             case "moviepath" -> Datum.of(getMoviePath());
             case "path" -> Datum.of(file != null ? file.getBasePath() : "");
 
