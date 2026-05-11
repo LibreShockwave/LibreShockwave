@@ -193,11 +193,41 @@ public final class CallOpcodes {
                 }
                 yield Datum.VOID;
             }
+            case Datum.CastLibRef clr -> {
+                if (("getpropref".equalsIgnoreCase(methodName) || "getprop".equalsIgnoreCase(methodName))
+                        && args.size() >= 2
+                        && "member".equalsIgnoreCase(args.get(0).toKeyName())) {
+                    CastLibProvider provider = CastLibProvider.getProvider();
+                    if (provider == null) {
+                        yield Datum.VOID;
+                    }
+                    Datum key = args.get(1);
+                    if (key instanceof Datum.Int i) {
+                        yield provider.getMember(clr.castLibNum(), i.value());
+                    }
+                    yield provider.getMemberByName(clr.castLibNum(), key.toStr());
+                }
+                yield Datum.VOID;
+            }
             case Datum.CastMemberRef cmr -> {
                 // Method calls on cast member references (e.g., member.charPosToLoc)
                 CastLibProvider provider = CastLibProvider.getProvider();
                 if (provider != null) {
                     yield provider.callMemberMethod(cmr.castLibNum(), cmr.memberNum(), methodName, args);
+                }
+                yield Datum.VOID;
+            }
+            case Datum.CastLibMemberAccessor accessor -> {
+                if ("getat".equalsIgnoreCase(methodName) && !args.isEmpty()) {
+                    CastLibProvider provider = CastLibProvider.getProvider();
+                    if (provider == null) {
+                        yield Datum.VOID;
+                    }
+                    Datum key = args.get(0);
+                    if (key instanceof Datum.Int i) {
+                        yield provider.getMember(accessor.castLibNum(), i.value());
+                    }
+                    yield provider.getMemberByName(accessor.castLibNum(), key.toStr());
                 }
                 yield Datum.VOID;
             }

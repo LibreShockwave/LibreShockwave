@@ -477,6 +477,16 @@ public sealed interface Datum {
         public String toString() { return "castLib(" + castLibNumber.value() + ")"; }
     }
 
+    /** Proxy for Director's castLib(n).member[...] collection syntax. */
+    record CastLibMemberAccessor(CastLibId castLibNumber) implements Datum {
+        public static CastLibMemberAccessor of(int castLibNumber) {
+            return new CastLibMemberAccessor(new CastLibId(castLibNumber));
+        }
+        public int castLibNum() { return castLibNumber.value(); }
+        @Override
+        public String toString() { return "castLib(" + castLibNumber.value() + ").member"; }
+    }
+
     /** Stage reference (the stage window) */
     record StageRef() implements Datum {
         @Override
@@ -824,6 +834,7 @@ public sealed interface Datum {
             case SpriteRef sr -> sr;
             case CastMemberRef cm -> cm;
             case CastLibRef cl -> cl;
+            case CastLibMemberAccessor cma -> cma;
             case StageRef st -> st;
             case MovieRef m -> m;
             case PlayerRef p -> p;

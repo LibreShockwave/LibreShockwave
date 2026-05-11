@@ -138,11 +138,12 @@ public final class TypeBuiltins {
 
         Datum identifier = args.get(0);
         CastLibProvider provider = CastLibProvider.getProvider();
+        int scopedCastLib = args.size() >= 2 ? resolveCastLibScope(provider, args.get(1)) : 0;
 
         if (identifier instanceof Datum.Str str) {
             // Find script by name
             if (provider != null) {
-                Datum memberRef = provider.getMemberByName(0, str.value());
+                Datum memberRef = provider.getMemberByName(scopedCastLib, str.value());
                 if (memberRef instanceof Datum.CastMemberRef cmr) {
                     return new Datum.ScriptRef(cmr.castLib(), cmr.member());
                 }
@@ -150,7 +151,7 @@ public final class TypeBuiltins {
         } else if (identifier instanceof Datum.Symbol sym) {
             // Find script by symbol name
             if (provider != null) {
-                Datum memberRef = provider.getMemberByName(0, sym.name());
+                Datum memberRef = provider.getMemberByName(scopedCastLib, sym.name());
                 if (memberRef instanceof Datum.CastMemberRef cmr) {
                     return new Datum.ScriptRef(cmr.castLib(), cmr.member());
                 }
@@ -188,6 +189,24 @@ public final class TypeBuiltins {
         }
 
         return Datum.VOID;
+    }
+
+    private static int resolveCastLibScope(CastLibProvider provider, Datum scope) {
+        if (provider == null || scope == null || scope.isVoid()) {
+            return 0;
+        }
+        if (scope instanceof Datum.CastLibRef clr) {
+            return clr.castLibNum();
+        }
+        if (scope instanceof Datum.Int i) {
+            return i.value();
+        }
+        String name = scope.toStr();
+        if (name == null || name.isBlank()) {
+            return 0;
+        }
+        int castLib = provider.getCastLibByName(name);
+        return castLib > 0 ? castLib : 0;
     }
 
     /**

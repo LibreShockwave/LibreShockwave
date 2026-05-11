@@ -31,6 +31,7 @@ public class WasmPlayer {
         } catch (Exception e) {
             return false;
         }
+        file.setBasePath(toMovieDirectory(basePath));
 
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
@@ -51,6 +52,22 @@ public class WasmPlayer {
         castRevision = 0;
 
         return true;
+    }
+
+    private static String toMovieDirectory(String basePath) {
+        if (basePath == null || basePath.isEmpty()) {
+            return "";
+        }
+        String clean = basePath;
+        int query = clean.indexOf('?');
+        if (query >= 0) {
+            clean = clean.substring(0, query);
+        }
+        int slash = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+        if (slash >= 0) {
+            return clean.substring(0, slash + 1);
+        }
+        return clean;
     }
 
     /**
