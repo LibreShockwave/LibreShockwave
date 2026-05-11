@@ -1024,7 +1024,7 @@ public class WasmEntry {
         if (b == null) return 0;
         WasmMultiuserBridge.PendingRequest req = b.getRequest(index);
         if (req == null || req.type != WasmMultiuserBridge.REQ_SEND) return 0;
-        return writeToStringBuffer(req.content);
+        return writeLatin1ToStringBuffer(req.content);
     }
 
     @Export(name = "drainMusPending")
@@ -1063,7 +1063,7 @@ public class WasmEntry {
         WasmMultiuserBridge b = musBridge();
         if (b == null) return;
         try {
-            String data = new String(stringBuffer, 0, dataLen);
+            String data = new String(stringBuffer, 0, dataLen, StandardCharsets.ISO_8859_1);
             b.deliverMessage(instanceId, 0, "", "", data);
         } catch (Throwable e) {
             captureError("musDeliverMessage", e);
@@ -1232,6 +1232,14 @@ public class WasmEntry {
     private static int writeToStringBuffer(String s) {
         if (s == null || s.isEmpty()) return 0;
         byte[] bytes = s.getBytes();
+        int len = Math.min(bytes.length, stringBuffer.length);
+        System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        return len;
+    }
+
+    private static int writeLatin1ToStringBuffer(String s) {
+        if (s == null || s.isEmpty()) return 0;
+        byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         return len;

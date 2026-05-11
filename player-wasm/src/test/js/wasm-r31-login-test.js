@@ -26,13 +26,13 @@ const INFO_HOST = process.env.R31_INFO_HOST || 'verysecret.classichabbo.com';
 const INFO_PORT = Number(process.env.R31_INFO_PORT || 30100);
 const MUS_HOST = 'verysecret.classichabbo.com';
 const MUS_PORT = 38101;
-const WS_PROXY_HOST = process.env.R31_WS_PROXY_HOST || '127.0.0.1';
+const WS_PROXY_HOST = process.env.R31_WS_PROXY_HOST || 'localhost';
 const WS_PROXY_PORT = Number(process.env.R31_WS_PROXY_PORT || 30101);
 const WS_PROXY_PROTOCOL = process.env.R31_WS_PROXY_PROTOCOL || 'ws';
 const MUS_WEBSOCKET_URL = process.env.R31_MUS_WEBSOCKET_URL ||
     `${WS_PROXY_PROTOCOL}://${WS_PROXY_HOST}:${WS_PROXY_PORT}`;
 const MUS_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(MUS_WEBSOCKET_URL);
-const SSO_TICKET = process.env.R31_SSO_TICKET || 'vibe-sso-admin-ee8bb56e-6bc9-434a-a72b-213d39b4b677';
+const SSO_TICKET = process.env.R31_SSO_TICKET || 'vibe-sso-admin-1226074b-8630-4350-bfca-4a55debfb2e7';
 
 const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 300);
 const TRACE_R31 = process.env.R31_TRACE === '1';
