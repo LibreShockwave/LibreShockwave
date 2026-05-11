@@ -38,7 +38,7 @@ function _musDebug(msg) {
 
 function _musPreview(data) {
     if (!_debugLogsEnabled || data == null) return '';
-    var bytes = new TextEncoder().encode(String(data));
+    var bytes = data instanceof Uint8Array ? data : _binaryStringToBytes(String(data));
     var hex = [];
     var text = '';
     var limit = Math.min(bytes.length, 64);
@@ -91,7 +91,7 @@ var _musWebSocketUrl = ''; // optional browser WebSocket proxy for Multiuser Xtr
 
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
-var _musInbound = {};      // instanceId -> [string] (MUS message bodies, tab-separated)
+var _musInbound = {};      // instanceId -> [Uint8Array] (raw MUS TCP chunks)
 
 var _musConnected = {};    // instanceId -> true (pending connect notifications)
 var _musDisconnected = {}; // instanceId -> true (pending disconnect notifications)
@@ -217,6 +217,19 @@ WasmEngine.prototype._mem = function() { return this.teavm.memory.buffer; };
 WasmEngine.prototype._readString = function(addr, len) {
     return new TextDecoder().decode(new Uint8Array(this._mem(), addr, len));
 };
+WasmEngine.prototype._readBytes = function(addr, len) {
+    var copy = new Uint8Array(len);
+    copy.set(new Uint8Array(this._mem(), addr, len));
+    return copy;
+};
+
+function _binaryStringToBytes(value) {
+    var bytes = new Uint8Array(value.length);
+    for (var i = 0; i < value.length; i++) {
+        bytes[i] = value.charCodeAt(i) & 0xff;
+    }
+    return bytes;
+}
 
 WasmEngine.prototype._writeBytes = function(addr, bytes, maxLen) {
     new Uint8Array(this._mem(), addr, maxLen).set(bytes.subarray(0, Math.min(bytes.length, maxLen)));
@@ -615,12 +628,11 @@ WasmEngine.prototype.pumpMusRequests = function() {
         } else if (type === 1) {
             // SEND — raw content bytes (must be binary frame for websockify)
             var dataLen = this.exports.getMusPendingSendData(i); this._clearEx();
-            var data = this._readString(strAddr, dataLen);
+            var data = this._readBytes(strAddr, dataLen);
             var ws = _musSockets[instId];
             if (ws && ws.readyState === WebSocket.OPEN) {
                 _musDebug('send instance=' + instId + ' bytes=' + dataLen + _musPreview(data));
-                var bytes = new TextEncoder().encode(data);
-                ws.send(bytes.buffer);
+                ws.send(data.buffer);
             } else {
                 _musDebug('send dropped instance=' + instId + ' readyState=' + (ws ? ws.readyState : 'missing') + ' bytes=' + dataLen + _musPreview(data));
             }
@@ -680,9 +692,9 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
         if (!_musInbound[instId]) _musInbound[instId] = [];
         var data;
         if (typeof evt.data === 'string') {
-            data = evt.data;
+            data = _binaryStringToBytes(evt.data);
         } else {
-            data = new TextDecoder().decode(new Uint8Array(evt.data));
+            data = new Uint8Array(evt.data);
         }
         _musDebug('message instance=' + instId + ' bytes=' + data.length + _musPreview(data));
         _musInbound[instId].push(data);
@@ -784,7 +796,7 @@ WasmEngine.prototype.deliverMusEvents = function() {
         var msgs = _musInbound[mid];
         var iid = parseInt(mid);
         for (var i = 0; i < msgs.length; i++) {
-            var msgBytes = new TextEncoder().encode(msgs[i]);
+            var msgBytes = msgs[i];
             var len = Math.min(msgBytes.length, 4096);
             new Uint8Array(this._mem(), strAddr, len).set(msgBytes.subarray(0, len));
             try {
