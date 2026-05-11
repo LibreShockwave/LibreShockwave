@@ -34,7 +34,7 @@ const MUS_WEBSOCKET_URL = process.env.R31_MUS_WEBSOCKET_URL ||
 const MUS_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(MUS_WEBSOCKET_URL);
 const SSO_TICKET = process.env.R31_SSO_TICKET || 'vibe-sso-admin-ee8bb56e-6bc9-434a-a72b-213d39b4b677';
 
-const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 180);
+const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 300);
 const TRACE_R31 = process.env.R31_TRACE === '1';
 const POLL_MS = 500;
 
@@ -527,7 +527,12 @@ async function main() {
     } else if (connectionFailedPage || wsFailed) {
         console.log('FAIL: Browser attempted the MUS WebSocket but the r31 client still reached the connection-failed path.');
     } else if (!loginPassed && !ssoSessionEstablished) {
-        console.log('FAIL: Login did not complete before timeout; inspect the MUS logs and final screenshot.');
+        if (musSendLines.length < 4 && musMessageLines.length >= 3 && !wsFailed) {
+            console.log('FAIL: Login was still inside the slow pure-Lingo crypto stage when the diagnostic timed out.');
+            console.log('Increase R31_MAX_POLLS or rerun with a fresh SSO ticket if this point has already been reached.');
+        } else {
+            console.log('FAIL: Login did not complete before timeout; inspect the MUS logs and final screenshot.');
+        }
     } else if (ssoSessionEstablished && !visualLoggedIn) {
         console.log('PASS: r31 SSO connection reached encrypted MUS traffic and stayed open; visual login did not complete before timeout.');
     } else {
