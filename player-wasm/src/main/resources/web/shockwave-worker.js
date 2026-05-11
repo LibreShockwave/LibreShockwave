@@ -18,6 +18,7 @@ function _relayWorkerLog(type, args) {
             || msg.indexOf('[Player]') >= 0
             || msg.indexOf('[CastLib]') >= 0
             || msg.indexOf('[NetManager]') >= 0
+            || msg.indexOf('[MUS]') >= 0
             || msg.indexOf('[EH]') >= 0
             || msg.indexOf('[EventDispatcher]') >= 0
             || msg.indexOf('[HitTest]') >= 0
@@ -28,6 +29,30 @@ function _relayWorkerLog(type, args) {
 console.log = function() { _relayWorkerLog('log', arguments); };
 console.warn = function() { _relayWorkerLog('warn', arguments); };
 console.error = function() { _relayWorkerLog('error', arguments); };
+
+function _musDebug(msg) {
+    if (_debugLogsEnabled) {
+        self.postMessage({ type: 'debugLog', msg: '[MUS] ' + msg });
+    }
+}
+
+function _musPreview(data) {
+    if (!_debugLogsEnabled || data == null) return '';
+    var bytes = new TextEncoder().encode(String(data));
+    var hex = [];
+    var text = '';
+    var limit = Math.min(bytes.length, 64);
+    for (var i = 0; i < limit; i++) {
+        var b = bytes[i];
+        hex.push((b < 16 ? '0' : '') + b.toString(16));
+        text += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+    }
+    if (bytes.length > limit) {
+        hex.push('...');
+        text += '...';
+    }
+    return ' hex=' + hex.join(' ') + ' ascii=' + JSON.stringify(text);
+}
 
 /**
  * LibreShockwave Web Worker — runs the WASM engine off the main thread.
@@ -584,6 +609,7 @@ WasmEngine.prototype.pumpMusRequests = function() {
 
             var protocol = (_pageProtocol === 'https:') ? 'wss' : 'ws';
             var wsUrl = protocol + '://' + host + ':' + port;
+            _musDebug('connect request instance=' + instId + ' url=' + wsUrl);
             this._musConnect(instId, wsUrl);
 
         } else if (type === 1) {
@@ -592,14 +618,18 @@ WasmEngine.prototype.pumpMusRequests = function() {
             var data = this._readString(strAddr, dataLen);
             var ws = _musSockets[instId];
             if (ws && ws.readyState === WebSocket.OPEN) {
+                _musDebug('send instance=' + instId + ' bytes=' + dataLen + _musPreview(data));
                 var bytes = new TextEncoder().encode(data);
                 ws.send(bytes.buffer);
+            } else {
+                _musDebug('send dropped instance=' + instId + ' readyState=' + (ws ? ws.readyState : 'missing') + ' bytes=' + dataLen + _musPreview(data));
             }
 
         } else if (type === 2) {
             // DISCONNECT
             var ws2 = _musSockets[instId];
             if (ws2) {
+                _musDebug('disconnect request instance=' + instId);
                 ws2.onclose = null; // prevent double-notification
                 ws2.close();
                 delete _musSockets[instId];
@@ -625,7 +655,7 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
     try {
         ws = new WebSocket(wsUrl);
     } catch(e) {
-        self.postMessage({type:'error', msg:'[MUS] WebSocket constructor failed: ' + e.message});
+        _musDebug('WebSocket constructor failed instance=' + instId + ' url=' + wsUrl + ' error=' + e.message);
         _musErrors[instId] = -3; // connection refused
         return;
     }
@@ -633,6 +663,7 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
     _musSockets[instId] = ws;
 
     ws.onopen = function() {
+        _musDebug('open instance=' + instId + ' url=' + wsUrl);
         _musConnected[instId] = true;
     };
 
@@ -645,15 +676,18 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
         } else {
             data = new TextDecoder().decode(new Uint8Array(evt.data));
         }
+        _musDebug('message instance=' + instId + ' bytes=' + data.length + _musPreview(data));
         _musInbound[instId].push(data);
     };
 
-    ws.onclose = function() {
+    ws.onclose = function(evt) {
+        _musDebug('close instance=' + instId + ' code=' + (evt && evt.code) + ' reason=' + (evt && evt.reason ? evt.reason : '') + ' wasClean=' + (evt && evt.wasClean));
         _musDisconnected[instId] = true;
         delete _musSockets[instId];
     };
 
     ws.onerror = function() {
+        _musDebug('error instance=' + instId + ' url=' + wsUrl);
         _musErrors[instId] = -2; // network error
     };
 };

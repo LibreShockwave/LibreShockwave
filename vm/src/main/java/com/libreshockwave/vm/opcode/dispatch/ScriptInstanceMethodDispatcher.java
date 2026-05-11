@@ -161,6 +161,12 @@ public final class ScriptInstanceMethodDispatcher {
             }
         }
 
+        HugeInt15NativeDispatcher.DispatchResult hugeIntResult =
+                HugeInt15NativeDispatcher.dispatch(instance, methodName, args);
+        if (hugeIntResult.handled()) {
+            return hugeIntResult.value();
+        }
+
         // SECOND: For registry-owner script instances, prefill stable entries
         // before their authored handlers run. This mirrors Director's member
         // registry semantics without forcing movie-specific reindex hooks.

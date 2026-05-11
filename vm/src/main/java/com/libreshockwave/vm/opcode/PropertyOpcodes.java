@@ -130,7 +130,12 @@ public final class PropertyOpcodes {
         Datum obj = ctx.pop();
 
         Datum result = switch (obj) {
-            case Datum.CastLibRef clr -> getCastLibProp(clr, propName);
+            case Datum.CastLibRef clr -> {
+                if ("member".equalsIgnoreCase(propName)) {
+                    yield Datum.CastLibMemberAccessor.of(clr.castLibNum());
+                }
+                yield getCastLibProp(clr, propName);
+            }
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
             case Datum.ScriptInstance si -> AncestorChainWalker.getProperty(si, propName);
             case Datum.XtraInstance xi -> XtraBuiltins.getProperty(xi, propName);
@@ -650,7 +655,13 @@ public final class PropertyOpcodes {
             }
             case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
-            case Datum.CastLibRef clr -> getCastLibProp(clr, propName);
+            case Datum.CastLibRef clr -> {
+                if ("member".equalsIgnoreCase(propName)) {
+                    yield Datum.CastLibMemberAccessor.of(clr.castLibNum());
+                }
+                yield getCastLibProp(clr, propName);
+            }
+            case Datum.CastLibMemberAccessor cma -> getCastLibMemberAccessorProp(cma, propName, isNumericIndex, numericIndex);
             case Datum.MovieRef m -> {
                 MoviePropertyProvider provider = MoviePropertyProvider.getProvider();
                 if (provider != null) {
@@ -707,7 +718,13 @@ public final class PropertyOpcodes {
             }
             case Datum.ScriptInstance si -> AncestorChainWalker.getProperty(si, propName);
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
-            case Datum.CastLibRef clr -> getCastLibProp(clr, propName);
+            case Datum.CastLibRef clr -> {
+                if ("member".equalsIgnoreCase(propName)) {
+                    yield Datum.CastLibMemberAccessor.of(clr.castLibNum());
+                }
+                yield getCastLibProp(clr, propName);
+            }
+            case Datum.CastLibMemberAccessor cma -> getCastLibMemberAccessorProp(cma, propName, false, 0);
             case Datum.StageRef s -> {
                 MoviePropertyProvider stageProvider = MoviePropertyProvider.getProvider();
                 yield stageProvider != null ? stageProvider.getStageProp(propName) : Datum.VOID;
@@ -716,6 +733,20 @@ public final class PropertyOpcodes {
             case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.getProperty(sc, propName);
             default -> Datum.VOID;
         };
+    }
+
+    private static Datum getCastLibMemberAccessorProp(Datum.CastLibMemberAccessor accessor,
+                                                      String propName,
+                                                      boolean isNumericIndex,
+                                                      int numericIndex) {
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (provider == null) {
+            return Datum.VOID;
+        }
+        if (isNumericIndex) {
+            return provider.getMember(accessor.castLibNum(), numericIndex);
+        }
+        return provider.getMemberByName(accessor.castLibNum(), propName);
     }
 
     /**

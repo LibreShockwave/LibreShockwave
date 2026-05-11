@@ -101,8 +101,9 @@ public class WasmMultiuserBridge implements MultiuserNetBridge {
 
     void notifyConnected(int instanceId) {
         connectedMap.put(instanceId, true);
-        // Deliver a connection acknowledgment message (errorCode 0 = success)
-        queueMessage(instanceId, new NetMessage(0, "system", "N:N:N:N:N:N:N", new Datum.Str("")));
+        // Director's Multiuser Xtra reports a successful connection with this
+        // exact system message. Habbo r31 waits for it before sending SSO.
+        queueMessage(instanceId, new NetMessage(0, "System", "ConnectToNetServer", new Datum.Str("")));
     }
 
     void notifyDisconnected(int instanceId) {
@@ -110,7 +111,7 @@ public class WasmMultiuserBridge implements MultiuserNetBridge {
     }
 
     void notifyError(int instanceId, int errorCode) {
-        queueMessage(instanceId, new NetMessage(errorCode, "system", "N:N:N:N:N:N:N", new Datum.Str("")));
+        queueMessage(instanceId, new NetMessage(errorCode, "System", "ConnectionProblem", new Datum.Str("")));
     }
 
     void deliverMessage(int instanceId, int errorCode, String senderID, String subject, String content) {

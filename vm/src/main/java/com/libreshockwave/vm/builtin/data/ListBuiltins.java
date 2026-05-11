@@ -2,6 +2,7 @@ package com.libreshockwave.vm.builtin.data;
 
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,7 @@ public final class ListBuiltins {
         builtins.put("addat", ListBuiltins::addAt);
         builtins.put("deleteat", ListBuiltins::deleteAt);
         builtins.put("append", ListBuiltins::append);
+        builtins.put("add", ListBuiltins::append);
         builtins.put("getaprop", ListBuiltins::getaProp);
         builtins.put("setaprop", ListBuiltins::setaProp);
         builtins.put("addprop", ListBuiltins::addProp);
@@ -80,6 +82,17 @@ public final class ListBuiltins {
                 return pl.getValue(index);
             }
             return Datum.VOID;
+        }
+
+        if (container instanceof Datum.CastLibMemberAccessor accessor) {
+            CastLibProvider provider = CastLibProvider.getProvider();
+            if (provider == null) {
+                return Datum.VOID;
+            }
+            if (keyOrIndex instanceof Datum.Int i) {
+                return provider.getMember(accessor.castLibNum(), i.value());
+            }
+            return provider.getMemberByName(accessor.castLibNum(), keyOrIndex.toStr());
         }
 
         if (container instanceof Datum.Point point) {

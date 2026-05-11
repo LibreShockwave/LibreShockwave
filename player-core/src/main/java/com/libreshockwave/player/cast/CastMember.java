@@ -610,6 +610,9 @@ public class CastMember {
             case "type" -> Datum.symbol(getDirectorTypeName());
             case "castlibnum" -> Datum.of(castLibId.value());
             case "castlib" -> Datum.CastLibRef.of(castLibId.value());
+            case "script" -> getScript() != null
+                    ? Datum.ScriptRef.of(castLibId.value(), memberId.value())
+                    : Datum.VOID;
             case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
             case "mediaready" -> Datum.of(1); // Always ready for now
             default -> getTypeProp(prop);
