@@ -259,6 +259,63 @@ class ScriptInstanceMethodDispatcherTest {
         assertFalse(instance.properties().containsKey("pFacadeId"));
     }
 
+    @Test
+    void countWithoutArgsCountsScriptInstanceProperties() {
+        LinkedHashMap<String, Datum> props = new LinkedHashMap<>();
+        props.put("a", Datum.of(1));
+        props.put("b", Datum.of(2));
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(77, props);
+
+        Datum result = ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                instance,
+                "count",
+                List.of());
+
+        assertEquals(2, result.toInt());
+    }
+
+    @Test
+    void countWithPropertyArgCountsResolvedPropertyValue() {
+        LinkedHashMap<String, Datum> props = new LinkedHashMap<>();
+        props.put("pData", Datum.list(Datum.of(1), Datum.of(2), Datum.of(3)));
+        props.put("pName", Datum.of("r31"));
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(77, props);
+
+        Datum listCount = ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                instance,
+                "count",
+                List.of(Datum.symbol("pData")));
+        Datum stringCount = ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                instance,
+                "count",
+                List.of(Datum.symbol("pName")));
+
+        assertEquals(3, listCount.toInt());
+        assertEquals(3, stringCount.toInt());
+    }
+
+    @Test
+    void countWithPropertyArgWalksAncestorChain() {
+        LinkedHashMap<String, Datum> ancestorProps = new LinkedHashMap<>();
+        ancestorProps.put("pData", Datum.list(Datum.of(5), Datum.of(6)));
+        Datum.ScriptInstance ancestor = new Datum.ScriptInstance(78, ancestorProps);
+
+        LinkedHashMap<String, Datum> childProps = new LinkedHashMap<>();
+        childProps.put("ancestor", ancestor);
+        Datum.ScriptInstance child = new Datum.ScriptInstance(77, childProps);
+
+        Datum result = ScriptInstanceMethodDispatcher.dispatch(
+                null,
+                child,
+                "count",
+                List.of(Datum.symbol("pData")));
+
+        assertEquals(2, result.toInt());
+    }
+
     @SuppressWarnings("unchecked")
     private static void pushActiveScope(LingoVM vm) throws Exception {
         Field callStackField = LingoVM.class.getDeclaredField("callStack");

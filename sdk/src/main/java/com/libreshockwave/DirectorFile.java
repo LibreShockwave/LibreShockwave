@@ -48,6 +48,7 @@ public class DirectorFile {
     private final List<ScriptContextChunk> allScriptContexts = new ArrayList<>();
     private ScriptNamesChunk scriptNames;  // Default/primary names chunk
     private final Map<ChunkId, ScriptNamesChunk> scriptNamesById = new HashMap<>();
+    private final Map<ChunkId, ScriptNamesChunk> scriptNamesForScriptCache = new HashMap<>();
     private ScoreChunk scoreChunk;
     private FrameLabelsChunk frameLabelsChunk;
 
@@ -629,13 +630,24 @@ public class DirectorFile {
      */
     public ScriptNamesChunk getScriptNamesForScript(ScriptChunk script) {
         if (script == null) return scriptNames;
+        ScriptNamesChunk cached = scriptNamesForScriptCache.get(script.id());
+        if (cached != null) {
+            return cached;
+        }
         for (ScriptContextChunk ctx : allScriptContexts) {
             for (var entry : ctx.entries()) {
                 if (entry.id().equals(script.id())) {
                     ScriptNamesChunk names = scriptNamesById.get(ctx.lnamSectionId());
-                    return names != null ? names : scriptNames;
+                    ScriptNamesChunk resolved = names != null ? names : scriptNames;
+                    if (resolved != null) {
+                        scriptNamesForScriptCache.put(script.id(), resolved);
+                    }
+                    return resolved;
                 }
             }
+        }
+        if (scriptNames != null) {
+            scriptNamesForScriptCache.put(script.id(), scriptNames);
         }
         return scriptNames;
     }

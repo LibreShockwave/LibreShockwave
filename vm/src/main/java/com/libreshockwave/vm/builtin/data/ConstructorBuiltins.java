@@ -45,7 +45,7 @@ public final class ConstructorBuiltins {
         Datum target = args.get(0);
         List<Datum> constructorArgs = args.size() > 1
             ? new ArrayList<>(args.subList(1, args.size()))
-            : new ArrayList<>();
+            : List.of();
 
         // Handle new(#memberType, castLib) - create new cast member
         if (target instanceof Datum.Symbol typeSymbol && !constructorArgs.isEmpty()

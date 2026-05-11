@@ -53,7 +53,7 @@ public class BuiltinRegistry {
      * Lingo is case-insensitive, so we normalize to lowercase.
      */
     public boolean contains(String name) {
-        return builtins.containsKey(name.toLowerCase());
+        return builtins.containsKey(normalizeName(name));
     }
 
     /**
@@ -61,7 +61,7 @@ public class BuiltinRegistry {
      * Lingo is case-insensitive, so we normalize to lowercase.
      */
     public Datum invoke(String name, LingoVM vm, List<Datum> args) {
-        var func = builtins.get(name.toLowerCase());
+        var func = builtins.get(normalizeName(name));
         if (func != null) {
             return func.apply(vm, args);
         }
@@ -70,11 +70,33 @@ public class BuiltinRegistry {
     }
 
     /**
+     * Invoke a builtin if present. Returns null when the name is not registered.
+     */
+    public Datum invokeIfPresent(String name, LingoVM vm, List<Datum> args) {
+        var func = builtins.get(normalizeName(name));
+        return func != null ? func.apply(vm, args) : null;
+    }
+
+    public BiFunction<LingoVM, List<Datum>, Datum> get(String name) {
+        return builtins.get(normalizeName(name));
+    }
+
+    /**
      * Register a custom builtin function.
      * Names are normalized to lowercase for case-insensitive lookup.
      */
     public void register(String name, BiFunction<LingoVM, List<Datum>, Datum> func) {
-        builtins.put(name.toLowerCase(), func);
+        builtins.put(normalizeName(name), func);
+    }
+
+    private static String normalizeName(String name) {
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c >= 'A' && c <= 'Z') {
+                return name.toLowerCase(java.util.Locale.ROOT);
+            }
+        }
+        return name;
     }
 
     /**

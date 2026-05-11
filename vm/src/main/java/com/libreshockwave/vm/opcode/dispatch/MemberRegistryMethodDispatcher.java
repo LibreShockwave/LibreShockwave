@@ -23,14 +23,17 @@ public final class MemberRegistryMethodDispatcher {
     private MemberRegistryMethodDispatcher() {}
 
     static DispatchResult prefill(Datum.ScriptInstance instance, String methodName, List<Datum> args) {
-        Datum.PropList registry = getRegistry(instance);
-        if (registry == null || methodName == null || methodName.isEmpty()) {
+        if (methodName == null || methodName.isEmpty()) {
             return NOT_HANDLED;
         }
 
         switch (methodName.toLowerCase(Locale.ROOT)) {
-            case "getmemnum", "exists", "memberexists", "getmember" ->
+            case "getmemnum", "exists", "memberexists", "getmember" -> {
+                Datum.PropList registry = getRegistry(instance);
+                if (registry != null) {
                     resolveRegisteredMemberSlot(instance, registry, args, true);
+                }
+            }
             default -> {
                 return NOT_HANDLED;
             }
@@ -39,18 +42,27 @@ public final class MemberRegistryMethodDispatcher {
     }
 
     static DispatchResult dispatch(Datum.ScriptInstance instance, String methodName, List<Datum> args) {
-        Datum.PropList registry = getRegistry(instance);
-        if (registry == null || methodName == null || methodName.isEmpty()) {
+        if (methodName == null || methodName.isEmpty()) {
             return NOT_HANDLED;
         }
 
-        return switch (methodName.toLowerCase(Locale.ROOT)) {
-            case "getmemnum" -> new DispatchResult(true, Datum.of(resolveRegisteredMemberSlot(instance, registry, args, true)));
-            case "exists", "memberexists" -> new DispatchResult(
-                    true,
-                    Math.abs(resolveRegisteredMemberSlot(instance, registry, args, true)) > 0 ? Datum.TRUE : Datum.FALSE);
-            case "getmember" -> new DispatchResult(true, resolveRegisteredMember(instance, registry, args));
-            case "readaliasindexesfromfield" -> dispatchReadAliasIndexesFromField(instance, registry, args);
+        String method = methodName.toLowerCase(Locale.ROOT);
+        return switch (method) {
+            case "getmemnum", "exists", "memberexists", "getmember", "readaliasindexesfromfield" -> {
+                Datum.PropList registry = getRegistry(instance);
+                if (registry == null) {
+                    yield NOT_HANDLED;
+                }
+                yield switch (method) {
+                    case "getmemnum" -> new DispatchResult(true, Datum.of(resolveRegisteredMemberSlot(instance, registry, args, true)));
+                    case "exists", "memberexists" -> new DispatchResult(
+                            true,
+                            Math.abs(resolveRegisteredMemberSlot(instance, registry, args, true)) > 0 ? Datum.TRUE : Datum.FALSE);
+                    case "getmember" -> new DispatchResult(true, resolveRegisteredMember(instance, registry, args));
+                    case "readaliasindexesfromfield" -> dispatchReadAliasIndexesFromField(instance, registry, args);
+                    default -> NOT_HANDLED;
+                };
+            }
             default -> NOT_HANDLED;
         };
     }

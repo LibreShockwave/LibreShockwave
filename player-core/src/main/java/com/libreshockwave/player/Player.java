@@ -511,6 +511,7 @@ public class Player implements UpdateProvider {
             return;
         }
         bitmapCache.clear();
+        castLibManager.clearHandlerLookupCache();
         vm.invalidateHandlerCache();
         stageRenderer.getSpriteRegistry().bumpRevision();
         notifyExternalCastLoaded(castLibNumber);
