@@ -58,7 +58,7 @@ function _musPreview(data) {
  * LibreShockwave Web Worker — runs the WASM engine off the main thread.
  *
  * Message protocol (main → worker):
- *   {type:'init',    basePath}
+ *   {type:'init',    basePath, musWebSocketUrl?}
  *   {type:'loadMovie', data:ArrayBuffer, basePath}
  *   {type:'setParam',  key, value}
  *   {type:'clearParams'}
@@ -87,6 +87,7 @@ var _e = null;          // WasmEngine instance
 var _isTicking = false; // guard against overlapping ticks
 var _pageProtocol = ''; // page protocol from main thread (e.g. 'https:')
 var _debugLogsEnabled = false;
+var _musWebSocketUrl = ''; // optional browser WebSocket proxy for Multiuser Xtra
 
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
@@ -583,9 +584,9 @@ WasmEngine.prototype.pumpNetworkAndWait = async function() {
  *   type 1 = send    → send on existing WebSocket
  *   type 2 = disconnect → close WebSocket
  *
- * WebSocket URL is built as ws://host:port (or wss:// if page is HTTPS).
- * A WebSocket proxy must be running at that address to bridge to the
- * real Multiuser Server TCP socket.
+ * By default the WebSocket URL is built as ws://host:port (or wss:// if the
+ * page is HTTPS). Embedders can set musWebSocketUrl to keep the Lingo target
+ * host/port intact while sending browser traffic through a separate proxy.
  */
 WasmEngine.prototype.pumpMusRequests = function() {
     if (this._wasmDead) return;
@@ -607,9 +608,8 @@ WasmEngine.prototype.pumpMusRequests = function() {
             var host = this._readString(strAddr, hostLen);
             var port = this.exports.getMusPendingPort(i); this._clearEx();
 
-            var protocol = (_pageProtocol === 'https:') ? 'wss' : 'ws';
-            var wsUrl = protocol + '://' + host + ':' + port;
-            _musDebug('connect request instance=' + instId + ' url=' + wsUrl);
+            var wsUrl = _buildMusWebSocketUrl(host, port);
+            _musDebug('connect request instance=' + instId + ' target=' + host + ':' + port + ' url=' + wsUrl);
             this._musConnect(instId, wsUrl);
 
         } else if (type === 1) {
@@ -639,6 +639,14 @@ WasmEngine.prototype.pumpMusRequests = function() {
 
     this.exports.drainMusPending(); this._clearEx();
 };
+
+function _buildMusWebSocketUrl(host, port) {
+    if (_musWebSocketUrl) {
+        return _musWebSocketUrl;
+    }
+    var protocol = (_pageProtocol === 'https:') ? 'wss' : 'ws';
+    return protocol + '://' + host + ':' + port;
+}
 
 /**
  * Open a WebSocket and wire up event handlers.
@@ -824,6 +832,7 @@ self.onmessage = async function(e) {
 
             case 'init': {
                 _pageProtocol = msg.pageProtocol || '';
+                _musWebSocketUrl = msg.musWebSocketUrl ? String(msg.musWebSocketUrl) : '';
                 // Fallback: detect protocol from worker's own location
                 // (e.g. blob:https://... when loaded as a blob URL worker)
                 if (!_pageProtocol && self.location && self.location.href) {

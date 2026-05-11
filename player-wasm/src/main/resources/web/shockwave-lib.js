@@ -51,6 +51,7 @@ var LibreShockwave = (function() {
      * @param {Object} [options]
      * @param {string}  [options.basePath]  - Directory containing WASM files.
      * @param {Object}  [options.params]    - External parameters (e.g. { sw1: "..." }).
+     * @param {string}  [options.musWebSocketUrl] - Optional WebSocket proxy URL for Multiuser Xtra.
      * @param {boolean} [options.autoplay]  - Start playing after load (default: true).
      * @param {boolean} [options.remember]  - Persist params/URL in localStorage (default: false).
      * @param {Function} [options.onLoad]   - Called with { width, height, frameCount, tempo }.
@@ -69,6 +70,7 @@ var LibreShockwave = (function() {
         this._opts        = opts;
         this._basePath    = opts.basePath || _autoBasePath;
         this._params      = opts.params ? _clone(opts.params) : {};
+        this._musWebSocketUrl = opts.musWebSocketUrl || '';
         this._autoplay    = opts.autoplay !== false;
         this._remember    = !!opts.remember;
         this._canvas      = el;
@@ -511,7 +513,12 @@ var LibreShockwave = (function() {
                 if (self._opts.onError) self._opts.onError(e.message);
             };
             // Send init with absolute base path so importScripts/fetch work from the worker
-            worker.postMessage({ type: 'init', basePath: absBase, pageProtocol: location.protocol });
+            worker.postMessage({
+                type: 'init',
+                basePath: absBase,
+                pageProtocol: location.protocol,
+                musWebSocketUrl: self._musWebSocketUrl
+            });
         }
 
         // Create worker from file URL (most reliable, works on all mobile browsers).
