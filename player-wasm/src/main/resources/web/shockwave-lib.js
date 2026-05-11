@@ -558,7 +558,11 @@ var LibreShockwave = (function() {
                 break;
 
             case 'debugLog':
-                console.log(msg.msg);
+                if (this._opts.onDebugLog) {
+                    this._opts.onDebugLog(msg.msg);
+                } else {
+                    console.log(msg.msg);
+                }
                 break;
 
             case 'selectedText':
