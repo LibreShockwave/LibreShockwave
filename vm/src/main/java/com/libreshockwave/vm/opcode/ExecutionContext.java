@@ -2,8 +2,10 @@ package com.libreshockwave.vm.opcode;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.chunks.ScriptChunk;
+import com.libreshockwave.chunks.ScriptNamesChunk;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.HandlerRef;
+import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.LingoException;
 import com.libreshockwave.vm.Scope;
 import com.libreshockwave.vm.TraceListener;
@@ -19,6 +21,7 @@ import java.util.List;
 public final class ExecutionContext {
 
     private final Scope scope;
+    private final LingoVM vm;
     private ScriptChunk.Handler.Instruction instruction;
     private int argument;
     private final BuiltinRegistry builtins;
@@ -31,6 +34,10 @@ public final class ExecutionContext {
     private final BuiltinInvoker builtinInvoker;
     private final ErrorStateSetter errorStateSetter;
     private final CallStackFormatter callStackFormatter;
+    private final int variableMultiplier;
+    private final ScriptNamesChunk scriptNames;
+    private int cachedJumpOffset = Integer.MIN_VALUE;
+    private int cachedJumpIndex = -1;
 
     public ExecutionContext(
             Scope scope,
@@ -43,7 +50,24 @@ public final class ExecutionContext {
             BuiltinInvoker builtinInvoker,
             ErrorStateSetter errorStateSetter,
             CallStackFormatter callStackFormatter) {
+        this(scope, null, instruction, builtins, traceListener, handlerExecutor, handlerFinder,
+                globalAccessor, builtinInvoker, errorStateSetter, callStackFormatter);
+    }
+
+    public ExecutionContext(
+            Scope scope,
+            LingoVM vm,
+            ScriptChunk.Handler.Instruction instruction,
+            BuiltinRegistry builtins,
+            TraceListener traceListener,
+            HandlerExecutor handlerExecutor,
+            HandlerFinder handlerFinder,
+            GlobalAccessor globalAccessor,
+            BuiltinInvoker builtinInvoker,
+            ErrorStateSetter errorStateSetter,
+            CallStackFormatter callStackFormatter) {
         this.scope = scope;
+        this.vm = vm;
         this.instruction = instruction;
         this.argument = instruction.argument();
         this.builtins = builtins;
@@ -54,6 +78,8 @@ public final class ExecutionContext {
         this.builtinInvoker = builtinInvoker;
         this.errorStateSetter = errorStateSetter;
         this.callStackFormatter = callStackFormatter;
+        this.variableMultiplier = computeVariableMultiplier(scope.getScript());
+        this.scriptNames = resolveScriptNames(scope.getScript());
     }
 
     /**
@@ -98,7 +124,10 @@ public final class ExecutionContext {
      * capitalX → 1, dirVersion >= 500 → 8, else → 6.
      */
     public int getVariableMultiplier() {
-        ScriptChunk script = scope.getScript();
+        return variableMultiplier;
+    }
+
+    private static int computeVariableMultiplier(ScriptChunk script) {
         if (script != null && script.file() != null) {
             DirectorFile file = script.file();
             if (file.isCapitalX()) {
@@ -110,6 +139,13 @@ public final class ExecutionContext {
             return 6;
         }
         return 1; // Default when no file info available
+    }
+
+    private static ScriptNamesChunk resolveScriptNames(ScriptChunk script) {
+        if (script == null || script.file() == null) {
+            return null;
+        }
+        return script.file().getScriptNamesForScript(script);
     }
 
     // Stack operations (delegated to scope)
@@ -184,7 +220,7 @@ public final class ExecutionContext {
     // Name resolution - delegates to ScriptChunk which uses the correct cast lib's names
 
     public String resolveName(int nameId) {
-        return getScript().resolveName(nameId);
+        return scriptNames != null ? scriptNames.getName(nameId) : getScript().resolveName(nameId);
     }
 
     // Script/handler access
@@ -208,7 +244,14 @@ public final class ExecutionContext {
     // Jump handling
 
     public void jumpTo(int targetOffset) {
-        int targetIndex = scope.getHandler().getInstructionIndex(targetOffset);
+        int targetIndex;
+        if (targetOffset == cachedJumpOffset) {
+            targetIndex = cachedJumpIndex;
+        } else {
+            targetIndex = scope.getHandler().getInstructionIndex(targetOffset);
+            cachedJumpOffset = targetOffset;
+            cachedJumpIndex = targetIndex;
+        }
         if (targetIndex >= 0) {
             scope.setBytecodeIndex(targetIndex);
         }
@@ -245,6 +288,21 @@ public final class ExecutionContext {
 
     public Datum invokeBuiltin(String name, List<Datum> args) {
         return builtinInvoker.invoke(name, args);
+    }
+
+    public Datum invokeBuiltinIfPresent(String name, List<Datum> args) {
+        return builtins.invokeIfPresent(name, vm, args);
+    }
+
+    public Datum invokeBuiltinIfPresent(String name, Datum firstArg, List<Datum> restArgs) {
+        var func = builtins.get(name);
+        if (func == null) {
+            return null;
+        }
+        ArrayList<Datum> args = new ArrayList<>(restArgs.size() + 1);
+        args.add(firstArg);
+        args.addAll(restArgs);
+        return func.apply(vm, args);
     }
 
     public BuiltinRegistry getBuiltins() {

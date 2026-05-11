@@ -107,17 +107,20 @@ public final class CallOpcodes {
         HandlerRef ref = ctx.findHandler(handlerName);
         if (ref != null) {
             result = safeExecuteHandler(ctx, ref.script(), ref.handler(), args, null);
-        } else if (ctx.isBuiltin(handlerName)) {
-            result = ctx.invokeBuiltin(handlerName, args);
         } else {
+            Datum builtinResult = ctx.invokeBuiltinIfPresent(handlerName, args);
+            if (builtinResult != null) {
+                result = builtinResult;
+            } else {
             // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
             // Director compiles these as EXT_CALL with 0 args when used without "the"
-            if (args.isEmpty()) {
-                result = PropertyOpcodes.getBuiltinConstant(handlerName);
-            } else {
-                System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
-                System.err.println(ctx.formatCallStack());
-                result = Datum.VOID;
+                if (args.isEmpty()) {
+                    result = PropertyOpcodes.getBuiltinConstant(handlerName);
+                } else {
+                    System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                    System.err.println(ctx.formatCallStack());
+                    result = Datum.VOID;
+                }
             }
         }
         if (!noRet) {
@@ -233,18 +236,17 @@ public final class CallOpcodes {
             }
             case Datum.MovieRef m -> {
                 // Method calls on _movie - try as builtin with args
-                if (ctx.isBuiltin(methodName)) {
-                    yield ctx.invokeBuiltin(methodName, args);
+                Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, args);
+                if (builtinResult != null) {
+                    yield builtinResult;
                 }
                 yield Datum.VOID;
             }
             default -> {
                 // Try to find the method as a global handler (with target as first arg)
-                if (ctx.isBuiltin(methodName)) {
-                    List<Datum> fullArgs = new ArrayList<>();
-                    fullArgs.add(target);
-                    fullArgs.addAll(args);
-                    yield ctx.invokeBuiltin(methodName, fullArgs);
+                Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, target, args);
+                if (builtinResult != null) {
+                    yield builtinResult;
                 }
                 yield Datum.VOID;
             }

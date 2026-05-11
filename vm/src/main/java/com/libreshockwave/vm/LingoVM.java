@@ -34,6 +34,7 @@ public class LingoVM {
     private final ConsoleTracePrinter consolePrinter;
     private final Map<String, HandlerRef> handlerCache = new HashMap<>();
     private final Set<String> missingHandlerCache = new HashSet<>();
+    private final Map<ScriptChunk.Handler, String> handlerNameCache = new IdentityHashMap<>();
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
     private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
     private boolean flushingDeferredScriptInstanceCalls = false;
@@ -81,11 +82,11 @@ public class LingoVM {
     private final Set<String> tracedHandlers = new java.util.HashSet<>();
 
     public void addTraceHandler(String name) {
-        tracedHandlers.add(name.toLowerCase());
+        tracedHandlers.add(normalizeLookupName(name));
     }
 
     public void removeTraceHandler(String name) {
-        tracedHandlers.remove(name.toLowerCase());
+        tracedHandlers.remove(normalizeLookupName(name));
     }
 
     public void clearTraceHandlers() {
@@ -295,7 +296,7 @@ public class LingoVM {
             return null;
         }
 
-        String cacheKey = handlerName.toLowerCase(Locale.ROOT);
+        String cacheKey = normalizeLookupName(handlerName);
         HandlerRef cached = handlerCache.get(cacheKey);
         if (cached != null) {
             return cached;
@@ -489,12 +490,12 @@ public class LingoVM {
 
         // Prevent recursive error handling - if we're already in an error handler
         // and trying to call another error handler, return VOID
-        String handlerName = script.getHandlerName(handler);
+        String handlerName = getHandlerName(script, handler);
         boolean isErrorHandler = alertHookHandler.isErrorHandler(handlerName);
         if (isErrorHandler && alertHookHandler.shouldSkipErrorHandler(handlerName, args)) {
             return Datum.VOID;
         }
-        String hn = handlerName.toLowerCase();
+        String hn = normalizeLookupName(handlerName);
 
         // Reentrancy guard: if deconstruct is already on the call stack for the
         // same receiver, skip re-entry. This prevents infinite recursion when
@@ -602,7 +603,7 @@ public class LingoVM {
                 // crossings from System.currentTimeMillis(). With DevTools open (especially
                 // Network inspector), each Date.now() call is more expensive due to Chrome
                 // instrumentation overhead — fewer checks avoids this bottleneck.
-                if ((steps & 0x1FFF) == 0) {
+                if ((steps & 0xFFFF) == 0) {
                     long now = System.currentTimeMillis();
                     if (now - lastGcTime >= 1000) {
                         if (gcCallback != null) {
@@ -693,6 +694,26 @@ public class LingoVM {
             return "\"" + fieldText.value() + "\"";
         }
         return value.toStr();
+    }
+
+    private String getHandlerName(ScriptChunk script, ScriptChunk.Handler handler) {
+        String cached = handlerNameCache.get(handler);
+        if (cached != null) {
+            return cached;
+        }
+        String resolved = script.getHandlerName(handler);
+        handlerNameCache.put(handler, resolved);
+        return resolved;
+    }
+
+    public static String normalizeLookupName(String name) {
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c >= 'A' && c <= 'Z') {
+                return name.toLowerCase(Locale.ROOT);
+            }
+        }
+        return name;
     }
 
     /**
@@ -844,6 +865,7 @@ public class LingoVM {
     private ExecutionContext createExecutionContext(Scope scope, ScriptChunk.Handler.Instruction instr) {
         return new ExecutionContext(
             scope,
+            this,
             instr,
             builtins,
             traceListener,

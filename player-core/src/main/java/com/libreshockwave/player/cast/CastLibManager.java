@@ -10,6 +10,7 @@ import com.libreshockwave.id.SlotId;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
+import com.libreshockwave.vm.LingoVM;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -26,6 +27,8 @@ public class CastLibManager implements CastLibProvider {
 
     private final DirectorFile file;
     private final Map<Integer, CastLib> castLibs = new LinkedHashMap<>();
+    private final Map<Integer, Map<String, HandlerLocation>> handlerLookupCache = new HashMap<>();
+    private final Map<Integer, List<String>> scriptPropertyNamesCache = new HashMap<>();
     private boolean initialized = false;
 
     // Callback for cast data loading: when Lingo sets castLib.fileName, this is called
@@ -173,6 +176,7 @@ public class CastLibManager implements CastLibProvider {
     private void tryLoadCastFromCache(int castLibNumber, String newFileName) {
         if (newFileName == null || newFileName.isEmpty()) return;
 
+        clearHandlerLookupCache();
         markPendingExternalLoad(castLibNumber, newFileName);
 
         // Player provides a callback that checks its internal caches safely
@@ -1010,18 +1014,11 @@ public class CastLibManager implements CastLibProvider {
                 continue;
             }
 
-            var defaultNames = castLib.getScriptNames();
-            if (defaultNames == null) {
-                continue;
-            }
-
             // Look up script by member number
-            var script = castLib.getScript(memberNumber);
-            if (script != null) {
-                var scriptNames = getPerScriptNames(script, defaultNames);
-                var handler = script.findHandler(handlerName, scriptNames);
-                if (handler != null) {
-                    return new HandlerLocation(castLib.getNumber(), script, handler, scriptNames);
+            if (castLib.getScript(memberNumber) != null) {
+                HandlerLocation location = findHandlerInLoadedScript(castLib, memberNumber, handlerName);
+                if (location != null) {
+                    return location;
                 }
                 // Found the script but no handler - don't continue searching
                 return null;
@@ -1043,6 +1040,20 @@ public class CastLibManager implements CastLibProvider {
             return null;
         }
 
+        return findHandlerInLoadedScript(castLib, memberNumber, handlerName);
+    }
+
+    private HandlerLocation findHandlerInLoadedScript(CastLib castLib, int memberNumber, String handlerName) {
+        String normalizedHandlerName = LingoVM.normalizeLookupName(handlerName);
+        int scriptKey = handlerScriptKey(castLib.getNumber(), memberNumber);
+        Map<String, HandlerLocation> cachedByName = handlerLookupCache.get(scriptKey);
+        if (cachedByName != null) {
+            HandlerLocation cached = cachedByName.get(normalizedHandlerName);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         var defaultNames = castLib.getScriptNames();
         if (defaultNames == null) {
             return null;
@@ -1053,11 +1064,24 @@ public class CastLibManager implements CastLibProvider {
             var scriptNames = getPerScriptNames(script, defaultNames);
             var handler = script.findHandler(handlerName, scriptNames);
             if (handler != null) {
-                return new HandlerLocation(castLib.getNumber(), script, handler, scriptNames);
+                HandlerLocation location = new HandlerLocation(castLib.getNumber(), script, handler, scriptNames);
+                handlerLookupCache
+                        .computeIfAbsent(scriptKey, ignored -> new HashMap<>())
+                        .put(normalizedHandlerName, location);
+                return location;
             }
         }
 
         return null;
+    }
+
+    private static int handlerScriptKey(int castLibNumber, int memberNumber) {
+        return (castLibNumber << 16) ^ (memberNumber & 0xFFFF);
+    }
+
+    public void clearHandlerLookupCache() {
+        handlerLookupCache.clear();
+        scriptPropertyNamesCache.clear();
     }
 
     /**
@@ -1084,8 +1108,15 @@ public class CastLibManager implements CastLibProvider {
                 if (!castLib.isLoaded()) continue;
                 var script = castLib.getScript(memberNumber);
                 if (script != null && script.hasProperties()) {
+                    int scriptKey = handlerScriptKey(castLib.getNumber(), memberNumber);
+                    List<String> cached = scriptPropertyNamesCache.get(scriptKey);
+                    if (cached != null) {
+                        return cached;
+                    }
                     var scriptNames = getPerScriptNames(script, castLib.getScriptNames());
-                    return script.getPropertyNames(scriptNames);
+                    List<String> names = List.copyOf(script.getPropertyNames(scriptNames));
+                    scriptPropertyNamesCache.put(scriptKey, names);
+                    return names;
                 }
             }
             return java.util.List.of();
@@ -1101,8 +1132,15 @@ public class CastLibManager implements CastLibProvider {
             return java.util.List.of();
         }
 
+        int scriptKey = handlerScriptKey(castLibNumber, memberNumber);
+        List<String> cached = scriptPropertyNamesCache.get(scriptKey);
+        if (cached != null) {
+            return cached;
+        }
         var scriptNames = getPerScriptNames(script, castLib.getScriptNames());
-        return script.getPropertyNames(scriptNames);
+        List<String> names = List.copyOf(script.getPropertyNames(scriptNames));
+        scriptPropertyNamesCache.put(scriptKey, names);
+        return names;
     }
 
     /**

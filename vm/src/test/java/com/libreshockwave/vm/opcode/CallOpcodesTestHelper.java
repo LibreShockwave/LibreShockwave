@@ -249,6 +249,10 @@ public final class CallOpcodesTestHelper {
                 return Datum.VOID;
             }
             case "count" -> {
+                if (!args.isEmpty()) {
+                    Datum value = getPropertyFromAncestorChain(instance, getPropertyName(args.get(0)));
+                    return countValue(value);
+                }
                 return Datum.of(instance.properties().size());
             }
             case "ilk" -> {
@@ -278,6 +282,17 @@ public final class CallOpcodesTestHelper {
 
     private static String getPropertyName(Datum datum) {
         return datum.toKeyName();
+    }
+
+    private static Datum countValue(Datum value) {
+        if (value == null || value.isVoid()) return Datum.ZERO;
+        return switch (value) {
+            case Datum.List list -> Datum.of(list.items().size());
+            case Datum.PropList propList -> Datum.of(propList.size());
+            case Datum.Str str -> Datum.of(str.value().length());
+            case Datum.FieldText fieldText -> Datum.of(fieldText.value().length());
+            default -> Datum.ZERO;
+        };
     }
 
     /**
