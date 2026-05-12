@@ -44,6 +44,7 @@ public final class ImageMethodDispatcher {
                 notifyImageMutation(bmp);
                 yield copyPixels(bmp, args);
             }
+            case "setalpha" -> { notifyImageMutation(bmp); yield setAlpha(bmp, args); }
             case "duplicate" -> new Datum.ImageRef(bmp.copy());
             case "crop" -> crop(bmp, args);
             case "setpixel" -> {
@@ -142,6 +143,10 @@ public final class ImageMethodDispatcher {
                     }
                 }
             }
+            case "usealpha" -> {
+                bmp.setNativeAlpha(value.isTruthy());
+                notifyImageMutation(bmp);
+            }
             default -> System.err.println("[LingoVM] Unhandled ImageRef set: " + propName);
         }
     }
@@ -153,6 +158,7 @@ public final class ImageMethodDispatcher {
             case "width" -> Datum.of(bmp.getWidth());
             case "height" -> Datum.of(bmp.getHeight());
             case "depth" -> Datum.of(bmp.getBitDepth());
+            case "usealpha" -> bmp.isNativeAlpha() ? Datum.TRUE : Datum.FALSE;
             case "ilk" -> Datum.symbol("image");
             case "image" -> imageRef; // Self-reference for .image on an image
             case "paletteref" -> {
@@ -282,6 +288,63 @@ public final class ImageMethodDispatcher {
         }
 
         return Datum.VOID;
+    }
+
+    /**
+     * image.setAlpha(alphaLevelOrImage) - Replace the alpha channel on a 32-bit image.
+     */
+    private static Datum setAlpha(Bitmap bmp, List<Datum> args) {
+        if (bmp.getBitDepth() != 32 || args.isEmpty()) {
+            return Datum.FALSE;
+        }
+
+        Datum alphaArg = args.get(0);
+        if (alphaArg instanceof Datum.ImageRef alphaRef) {
+            Bitmap alpha = alphaRef.bitmap();
+            if (alpha == null
+                    || alpha.getBitDepth() != 8
+                    || alpha.getWidth() != bmp.getWidth()
+                    || alpha.getHeight() != bmp.getHeight()) {
+                return Datum.FALSE;
+            }
+
+            // Habbo's Writer_Class builds an 8-bit matte with transparent white
+            // background and dark glyph pixels. Plain extracted alpha images are
+            // opaque grayscale, so only matte-style images need inverted luma.
+            boolean mattePolarity = alphaHasTransparency(alpha);
+            for (int y = 0; y < bmp.getHeight(); y++) {
+                for (int x = 0; x < bmp.getWidth(); x++) {
+                    int alphaPixel = alpha.getPixel(x, y);
+                    int alphaLevel = Drawing.maskAlphaFromPixel(alphaPixel);
+                    if (mattePolarity) {
+                        alphaLevel = 255 - alphaLevel;
+                    }
+                    int pixel = bmp.getPixel(x, y);
+                    bmp.setPixel(x, y, (alphaLevel << 24) | (pixel & 0x00FFFFFF));
+                }
+            }
+            return Datum.TRUE;
+        }
+
+        int alphaLevel = clamp(alphaArg.toInt(), 0, 255);
+        for (int y = 0; y < bmp.getHeight(); y++) {
+            for (int x = 0; x < bmp.getWidth(); x++) {
+                int pixel = bmp.getPixel(x, y);
+                bmp.setPixel(x, y, (alphaLevel << 24) | (pixel & 0x00FFFFFF));
+            }
+        }
+        return Datum.TRUE;
+    }
+
+    private static boolean alphaHasTransparency(Bitmap alpha) {
+        for (int y = 0; y < alpha.getHeight(); y++) {
+            for (int x = 0; x < alpha.getWidth(); x++) {
+                if (((alpha.getPixel(x, y) >>> 24) & 0xFF) < 255) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -437,6 +500,9 @@ public final class ImageMethodDispatcher {
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
         }
+        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT && src.hasNativeMatteAlpha()) {
+            effectiveInk = Palette.InkMode.COPY;
+        }
         if (effectiveInk == Palette.InkMode.DARKEN) {
             if (!grayscaleColorized) {
                 effectiveSrc = multiplyBitmapColor(effectiveSrc, bgColorRemap >= 0 ? bgColorRemap : 0xFFFFFF);
@@ -550,6 +616,7 @@ public final class ImageMethodDispatcher {
         // This covers identity, flips, and 90-degree rotations.
         Bitmap transformed = new Bitmap(destW, destH, src.getBitDepth());
         transformed.copyPaletteMetadataFrom(src);
+        transformed.setNativeAlpha(src.isNativeAlpha());
         byte[] srcPaletteIndices = src.getPaletteIndices();
         byte[] transformedIndices = srcPaletteIndices != null ? new byte[destW * destH] : null;
         boolean axisAligned =
@@ -609,12 +676,21 @@ public final class ImageMethodDispatcher {
         if (transformedIndices != null) {
             transformed.setPaletteIndices(transformedIndices);
         }
-        Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, ink, blend);
+
+        Palette.InkMode effectiveInk = ink;
+        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT && transformed.hasNativeMatteAlpha()) {
+            effectiveInk = Palette.InkMode.COPY;
+        }
+        if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
+            effectiveInk = Palette.InkMode.BLEND;
+        }
+
+        Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, effectiveInk, blend);
         preservePaletteIndicesOnCopy(dest, transformed,
                 minX, minY,
                 0, 0,
                 destW, destH, destW, destH,
-                ink, blend, null, -1, -1);
+                effectiveInk, blend, null, -1, -1);
 
         return Datum.VOID;
     }

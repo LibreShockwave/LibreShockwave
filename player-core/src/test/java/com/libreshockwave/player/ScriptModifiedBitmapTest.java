@@ -345,6 +345,146 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void backgroundTransparentCopyPixelsUsesNativeAlphaInsteadOfKeyingTextPixels() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0x00FFFFFF);
+        src.setPixel(1, 1, 0xFF000000);
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(0, 0, 0), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "Native-alpha transparent pixels should leave the destination unchanged");
+        assertEquals(0xFF000000, dest.getPixel(1, 1),
+                "Native-alpha text pixels should not be erased by a matching #bgColor key");
+    }
+
+    @Test
+    void imageUseAlphaPropertyEnablesNativeAlphaCopyPixels() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0x00FFFFFF);
+        src.setPixel(1, 1, 0xFF000000);
+        Datum.ImageRef srcRef = new Datum.ImageRef(src);
+
+        ImageMethodDispatcher.setProperty(srcRef, "useAlpha", Datum.TRUE);
+
+        assertTrue(src.isNativeAlpha());
+        assertEquals(1, ImageMethodDispatcher.getProperty(srcRef, "useAlpha").toInt());
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(0, 0, 0), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(srcRef, new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "useAlpha transparent pixels should leave the destination unchanged");
+        assertEquals(0xFF000000, dest.getPixel(1, 1),
+                "useAlpha text pixels should not be erased by a matching #bgColor key");
+    }
+
+    @Test
+    void imageSetAlphaAppliesMattePolarityForFakeAlphaText() {
+        Bitmap dest = new Bitmap(3, 1, 32);
+        dest.fill(0xFF336699);
+        dest.setNativeAlpha(true);
+
+        Bitmap matte = new Bitmap(3, 1, 8, new int[] {
+                0x00FFFFFF,
+                0xFF7F7F7F,
+                0xFF000000
+        });
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(new Datum.ImageRef(matte)));
+
+        assertEquals(1, result.toInt());
+        assertEquals(0x00336699, dest.getPixel(0, 0),
+                "Transparent matte background should clear the destination alpha");
+        assertEquals(0x80336699, dest.getPixel(1, 0),
+                "Gray antialias matte pixels should become partial alpha");
+        assertEquals(0xFF336699, dest.getPixel(2, 0),
+                "Black matte text pixels should become fully opaque");
+    }
+
+    @Test
+    void imageSetAlphaUsesGrayscaleLevelForOpaqueAlphaImages() {
+        Bitmap dest = new Bitmap(3, 1, 32);
+        dest.fill(0xFF336699);
+        dest.setNativeAlpha(true);
+
+        Bitmap alpha = new Bitmap(3, 1, 8, new int[] {
+                0xFF000000,
+                0xFF7F7F7F,
+                0xFFFFFFFF
+        });
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(new Datum.ImageRef(alpha)));
+
+        assertEquals(1, result.toInt());
+        assertEquals(0x00336699, dest.getPixel(0, 0));
+        assertEquals(0x7F336699, dest.getPixel(1, 0));
+        assertEquals(0xFF336699, dest.getPixel(2, 0));
+    }
+
+    @Test
+    void imageSetAlphaAppliesFlatAlphaLevel() {
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFF336699);
+        dest.setNativeAlpha(true);
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(Datum.of(96)));
+
+        assertEquals(1, result.toInt());
+        assertEquals(0x60336699, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void backgroundTransparentQuadCopyUsesNativeAlphaInsteadOfWhiteKey() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0x00FFFFFF);
+        src.setPixel(1, 1, 0xFFFFFFFF);
+        src.setNativeAlpha(true);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(0, 0),
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 3),
+                new Datum.Point(0, 3)
+        )));
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "Native-alpha transparent pixels should leave the destination unchanged through quad copies");
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 1),
+                "Native-alpha white text pixels should not be erased by ink 36's default white key");
+    }
+
+    @Test
     void copyPixelsIgnoresMaskImageWhenSourceUsesNativeAlpha() {
         Bitmap dest = new Bitmap(1, 1, 32);
         dest.fill(0xFFFFFFFF);
