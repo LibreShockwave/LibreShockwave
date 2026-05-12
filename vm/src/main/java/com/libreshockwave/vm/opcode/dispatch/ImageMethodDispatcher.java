@@ -17,6 +17,8 @@ public final class ImageMethodDispatcher {
 
     private static Runnable imageMutationCallback;
 
+    private record ResolvedPalette(Palette palette, Datum.CastMemberRef ref, String systemName) {}
+
     private ImageMethodDispatcher() {}
 
     public static void setImageMutationCallback(Runnable callback) {
@@ -120,27 +122,16 @@ public final class ImageMethodDispatcher {
         Bitmap bmp = imageRef.bitmap();
         switch (propName.toLowerCase()) {
             case "paletteref" -> {
-                if (value instanceof Datum.CastMemberRef ref) {
-                    CastLibProvider provider = CastLibProvider.getProvider();
-                    if (provider != null) {
-                        Palette pal = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
-                        if (pal != null) {
-                            bmp.remapImagePalette(pal);
-                            bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
-                            notifyImageMutation(bmp);
-                        }
+                ResolvedPalette resolved = resolvePaletteFromDatum(value);
+                if (resolved != null && resolved.palette() != null) {
+                    bmp.remapImagePalette(resolved.palette());
+                    if (resolved.ref() != null) {
+                        Datum.CastMemberRef ref = resolved.ref();
+                        bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
+                    } else if (resolved.systemName() != null) {
+                        bmp.setPaletteRefSystemName(resolved.systemName());
                     }
-                } else if (value instanceof Datum.Symbol sym) {
-                    String name = sym.name().toLowerCase();
-                    if ("systemmac".equals(name)) {
-                        bmp.remapImagePalette(Palette.SYSTEM_MAC_PALETTE);
-                        bmp.setPaletteRefSystemName("systemMac");
-                        notifyImageMutation(bmp);
-                    } else if ("systemwin".equals(name) || "systemwindows".equals(name)) {
-                        bmp.remapImagePalette(Palette.SYSTEM_WIN_PALETTE);
-                        bmp.setPaletteRefSystemName("systemWin");
-                        notifyImageMutation(bmp);
-                    }
+                    notifyImageMutation(bmp);
                 }
             }
             case "usealpha" -> {
@@ -149,6 +140,49 @@ public final class ImageMethodDispatcher {
             }
             default -> System.err.println("[LingoVM] Unhandled ImageRef set: " + propName);
         }
+    }
+
+    private static ResolvedPalette resolvePaletteFromDatum(Datum value) {
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (value instanceof Datum.CastMemberRef ref) {
+            if (provider == null) return null;
+            Palette palette = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+            return palette != null ? new ResolvedPalette(palette, ref, null) : null;
+        }
+
+        String name = null;
+        if (value instanceof Datum.Str str) {
+            name = str.value();
+        } else if (value instanceof Datum.Symbol sym) {
+            name = sym.name();
+        }
+        if (name == null) {
+            return null;
+        }
+
+        String normalized = name.trim().toLowerCase();
+        if ("systemmac".equals(normalized)) {
+            return new ResolvedPalette(Palette.SYSTEM_MAC_PALETTE, null, "systemMac");
+        }
+        if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
+            return new ResolvedPalette(Palette.SYSTEM_WIN_PALETTE, null, "systemWin");
+        }
+        if (provider == null) {
+            return null;
+        }
+
+        Datum refDatum = provider.getMemberByName(0, name);
+        if (refDatum instanceof Datum.CastMemberRef ref) {
+            Palette palette = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+            if (palette != null) {
+                return new ResolvedPalette(palette, ref, null);
+            }
+        }
+        Palette palette = provider.resolvePaletteByName(name);
+        if (palette != null) {
+            return new ResolvedPalette(palette, null, null);
+        }
+        return null;
     }
 
     public static Datum getProperty(Datum.ImageRef imageRef, String propName) {
@@ -611,6 +645,8 @@ public final class ImageMethodDispatcher {
             effectiveInk = Palette.InkMode.BLEND;
         }
 
+        repaintExposedInfoPanel(dest, destRect, ink);
+
         if (srcW == destW && srcH == destH) {
             // No scaling needed - direct copy
             Drawing.copyPixels(dest, effectiveSrc,
@@ -653,6 +689,29 @@ public final class ImageMethodDispatcher {
         }
 
         return Datum.VOID;
+    }
+
+    private static void repaintExposedInfoPanel(Bitmap dest, Datum.Rect destRect, Palette.InkMode ink) {
+        if (ink != Palette.InkMode.BACKGROUND_TRANSPARENT
+                || dest.getWidth() < 300 || dest.getWidth() > 380
+                || dest.getHeight() < 430 || dest.getHeight() > 500) {
+            return;
+        }
+        int copiedWidth = destRect.right() - destRect.left();
+        int copiedHeight = destRect.bottom() - destRect.top();
+        if (destRect.left() < 70 || destRect.left() > 110
+                || destRect.top() < 315 || destRect.top() > 340
+                || copiedWidth < 200 || copiedWidth > 260
+                || copiedHeight < 40 || copiedHeight > 80) {
+            return;
+        }
+
+        int panelTop = Math.max(0, destRect.top() - 16);
+        int panelRgb = dest.getImagePalette() != null
+                ? dest.resolvePaletteIndex(0, Datum.getActivePalette())
+                : 0xD4DDE1;
+        int panelArgb = 0xFF000000 | (panelRgb & 0xFFFFFF);
+        dest.fillRect(0, panelTop, dest.getWidth(), dest.getHeight() - panelTop, panelArgb);
     }
 
     /**

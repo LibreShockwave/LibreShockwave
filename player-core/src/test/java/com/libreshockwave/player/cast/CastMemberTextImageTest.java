@@ -80,6 +80,19 @@ class CastMemberTextImageTest {
                 "boxType=adjust should expand, not shrink below the scripted rect");
     }
 
+    @Test
+    void runtimeWriterMeasurementRectReportsRenderedHeight() {
+        CastMember member = buildTextMember("These are hotel's public rooms. What are you waiting for? Go and meet other Habbos!");
+        member.setName("writer_public_info");
+        member.setProp("wordwrap", Datum.of(1));
+        member.setProp("rect", new Datum.Rect(0, 0, 480, 480));
+
+        Bitmap rendered = member.renderTextToImage();
+
+        assertEquals(rendered.getHeight(), member.getProp("height").toInt(),
+                "Temporary writer measurement rects should not make fake-alpha text images 480px tall");
+    }
+
     private static CastMember buildTextMember(String text) {
         CastMember.setTextRenderer(new SimpleTextRenderer());
         CastMember member = new CastMember(1, 1, MemberType.TEXT);
