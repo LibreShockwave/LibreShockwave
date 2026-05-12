@@ -51,7 +51,7 @@ var LibreShockwave = (function() {
      * @param {Object} [options]
      * @param {string}  [options.basePath]  - Directory containing WASM files.
      * @param {Object}  [options.params]    - External parameters (e.g. { sw1: "..." }).
-     * @param {string}  [options.musWebSocketUrl] - Optional WebSocket proxy URL for Multiuser Xtra.
+     * @param {string}  [options.musWebSocketUrl] - Optional WebSocket URL override for Multiuser Xtra.
      * @param {boolean} [options.autoplay]  - Start playing after load (default: true).
      * @param {boolean} [options.remember]  - Persist params/URL in localStorage (default: false).
      * @param {Function} [options.onLoad]   - Called with { width, height, frameCount, tempo }.

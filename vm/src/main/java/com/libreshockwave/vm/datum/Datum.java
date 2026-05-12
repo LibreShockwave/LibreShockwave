@@ -827,6 +827,15 @@ public sealed interface Datum {
             int rgb = targetBitmap.resolvePaletteIndex(pic.index(), getActivePalette());
             return 0xFF000000 | (rgb & 0xFFFFFF);
         }
+        if (colorDatum instanceof Int i && targetBitmap != null
+                && targetBitmap.getBitDepth() <= 8
+                && targetBitmap.getImagePalette() != null) {
+            int val = i.value();
+            if (val >= 0 && val <= 255) {
+                int rgb = targetBitmap.resolvePaletteIndex(val, getActivePalette());
+                return 0xFF000000 | (rgb & 0xFFFFFF);
+            }
+        }
         return datumToArgb(colorDatum);
     }
 

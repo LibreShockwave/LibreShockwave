@@ -18,6 +18,8 @@ public final class ImageBuiltins {
 
     private ImageBuiltins() {}
 
+    private record ResolvedPalette(Palette palette, Datum.CastMemberRef ref, String systemName) {}
+
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
         builtins.put("image", ImageBuiltins::image);
     }
@@ -50,23 +52,16 @@ public final class ImageBuiltins {
         // Store the palette on the bitmap so paletteIndex() colors can be resolved correctly.
         if (args.size() >= 4) {
             Datum paletteArg = args.get(3);
-            Palette pal = resolvePaletteFromDatum(paletteArg);
-            if (pal != null) {
-                bmp.setImagePalette(pal);
+            ResolvedPalette resolved = resolvePaletteFromDatum(paletteArg);
+            if (resolved != null && resolved.palette() != null) {
+                bmp.setImagePalette(resolved.palette());
             }
-            if (paletteArg instanceof Datum.CastMemberRef ref) {
+            if (resolved != null && resolved.ref() != null) {
+                Datum.CastMemberRef ref = resolved.ref();
                 bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
             }
-            // Also handle #systemMac symbol
-            if (paletteArg instanceof Datum.Symbol sym) {
-                String name = sym.name().toLowerCase();
-                if (name.equals("systemmac")) {
-                    bmp.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
-                    bmp.setPaletteRefSystemName("systemMac");
-                } else if (name.equals("systemwin") || name.equals("systemwindows")) {
-                    bmp.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
-                    bmp.setPaletteRefSystemName("systemWin");
-                }
+            if (resolved != null && resolved.systemName() != null) {
+                bmp.setPaletteRefSystemName(resolved.systemName());
             }
         }
 
@@ -76,17 +71,46 @@ public final class ImageBuiltins {
     /**
      * Resolve a palette from a Datum (cast member reference, palette index color, etc.)
      */
-    private static Palette resolvePaletteFromDatum(Datum datum) {
+    private static ResolvedPalette resolvePaletteFromDatum(Datum datum) {
         CastLibProvider provider = CastLibProvider.getProvider();
-        if (provider == null) return null;
 
         // Handle member reference — look up the palette cast member
         if (datum instanceof Datum.CastMemberRef ref) {
-            return provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+            if (provider == null) return null;
+            Palette palette = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+            return palette != null ? new ResolvedPalette(palette, ref, null) : null;
         }
 
         // Handle member looked up by name — may already be resolved to CastMemberRef
         // but could also be a generic Datum if member() returned something else
+        String name = null;
+        if (datum instanceof Datum.Str str) {
+            name = str.value();
+        } else if (datum instanceof Datum.Symbol sym) {
+            name = sym.name();
+        }
+        if (name != null) {
+            String normalized = name.trim().toLowerCase();
+            if ("systemmac".equals(normalized)) {
+                return new ResolvedPalette(Palette.SYSTEM_MAC_PALETTE, null, "systemMac");
+            }
+            if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
+                return new ResolvedPalette(Palette.SYSTEM_WIN_PALETTE, null, "systemWin");
+            }
+            if (provider != null) {
+                Datum refDatum = provider.getMemberByName(0, name);
+                if (refDatum instanceof Datum.CastMemberRef ref) {
+                    Palette palette = provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+                    if (palette != null) {
+                        return new ResolvedPalette(palette, ref, null);
+                    }
+                }
+                Palette palette = provider.resolvePaletteByName(name);
+                if (palette != null) {
+                    return new ResolvedPalette(palette, null, null);
+                }
+            }
+        }
         return null;
     }
 }

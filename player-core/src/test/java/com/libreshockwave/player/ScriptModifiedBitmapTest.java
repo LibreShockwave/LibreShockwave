@@ -182,6 +182,18 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void fillWithVoidLeavesExistingPixelsUntouched() {
+        Bitmap bmp = new Bitmap(3, 3, 32);
+        bmp.fill(0xFF000066);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                List.of(new Datum.Rect(0, 0, 3, 3), Datum.VOID));
+
+        assertEquals(0xFF000066, bmp.getPixel(1, 1),
+                "Director fill(rect, VOID) should not synthesize a white fill color");
+    }
+
+    @Test
     void copyPixelsQuadRotatesClockwiseLikeDirectorDropdown() {
         Bitmap src = new Bitmap(2, 3, 32);
         src.setPixel(0, 0, 0xFFFF0000);
@@ -382,6 +394,30 @@ public class ScriptModifiedBitmapTest {
                 "Native-alpha transparent pixels should leave the destination unchanged");
         assertEquals(0xFF000000, dest.getPixel(1, 1),
                 "Native-alpha text pixels should not be erased by a matching #bgColor key");
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsPreservesColoredNativeAlphaText() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 3, 32);
+        src.fill(0x00FFFFFF);
+        src.setPixel(1, 1, 0xFF000066);
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(221, 221, 221), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "Native-alpha transparent pixels should leave the destination unchanged");
+        assertEquals(0xFF000066, dest.getPixel(1, 1),
+                "Colored text pixels should stay colored when copied with ink 36");
     }
 
     @Test
@@ -964,6 +1000,56 @@ public class ScriptModifiedBitmapTest {
                 "Index 1 should map to the first divergent target shade");
         assertEquals(0xFF33AA77, duplicate.getPixel(1, 0),
                 "Index 2 must not collapse onto index 1 just because the old RGB matched");
+    }
+
+    @Test
+    void remapImagePaletteUsesPreservedIndicesWithoutOldPaletteMetadata() {
+        Palette newPalette = new Palette(new int[]{0xD4DDE1, 0x335577}, "nav-ui");
+        Bitmap bmp = new Bitmap(2, 1, 8);
+        bmp.setPixel(0, 0, 0xFFDBDBDB);
+        bmp.setPixel(1, 0, 0xFF999999);
+        bmp.setPaletteIndices(new byte[]{0, 1});
+
+        int changed = bmp.remapImagePalette(newPalette);
+
+        assertEquals(2, changed);
+        assertSame(newPalette, bmp.getImagePalette());
+        assertEquals(0xFFD4DDE1, bmp.getPixel(0, 0));
+        assertEquals(0xFF335577, bmp.getPixel(1, 0));
+    }
+
+    @Test
+    void fillOnPalettedImageResolvesSmallIntegersThroughImagePalette() {
+        Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xD4DDE1}, "nav-ui");
+        Bitmap bmp = new Bitmap(2, 2, 8);
+        bmp.setImagePalette(navPalette);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                List.of(new Datum.Rect(0, 0, 2, 2), Datum.of(1)));
+
+        assertEquals(0xFFD4DDE1, bmp.getPixel(0, 0));
+        assertEquals(0xFFD4DDE1, bmp.getPixel(1, 1));
+    }
+
+    @Test
+    void transparentInfoPanelCopyRepaintsExposedPalettedBacking() {
+        Palette navPalette = new Palette(new int[]{0xD4DDE1, 0xFFFFFF}, "nav-ui");
+        Bitmap dest = new Bitmap(340, 454, 8);
+        dest.setImagePalette(navPalette);
+        dest.fill(0xFFDBDBDB);
+
+        Bitmap src = new Bitmap(230, 56, 32);
+        src.fill(0xFFFFFFFF);
+        src.setPixel(10, 10, 0xFF111111);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(86, 325, 316, 381),
+                        new Datum.Rect(0, 0, 230, 56), props));
+
+        assertEquals(0xFFD4DDE1, dest.getPixel(10, 320));
+        assertEquals(0xFF111111, dest.getPixel(96, 335));
     }
 
     @Test

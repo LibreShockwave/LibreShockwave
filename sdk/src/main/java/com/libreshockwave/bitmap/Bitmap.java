@@ -129,7 +129,7 @@ public class Bitmap {
         Palette oldPalette = this.imagePalette;
         this.imagePalette = newPalette;
 
-        if (oldPalette == null || newPalette == null || oldPalette == newPalette) {
+        if (newPalette == null || oldPalette == newPalette) {
             return 0;
         }
 
@@ -152,6 +152,10 @@ public class Bitmap {
                 }
             }
             return changed;
+        }
+
+        if (oldPalette == null) {
+            return 0;
         }
 
         int changed = 0;

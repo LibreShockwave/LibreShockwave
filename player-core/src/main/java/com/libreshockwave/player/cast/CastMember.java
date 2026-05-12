@@ -748,6 +748,9 @@ public class CastMember {
                     Bitmap rendered = renderTextToImage();
                     if (rendered != null) {
                         int rectHeight = textRectBottom - textRectTop;
+                        if (isRuntimeDynamicMember() && rectHeight >= 256) {
+                            yield Datum.of(rendered.getHeight());
+                        }
                         yield Datum.of(Math.max(rendered.getHeight(), rectHeight));
                     }
                 }
@@ -1353,9 +1356,10 @@ public class CastMember {
                     yield new Datum.Point(0, 0);
                 }
 
+                int fieldWidth = Math.max(1, textRectRight - textRectLeft);
                 int[] pos = textRenderer.charPosToLoc(text, charIndex,
                         textFont, textFontSize, textFontStyle, textFixedLineSpace,
-                        textAlignment, 0);
+                        textAlignment, fieldWidth);
                 yield new Datum.Point(pos[0], pos[1]);
             }
             case "count" -> {

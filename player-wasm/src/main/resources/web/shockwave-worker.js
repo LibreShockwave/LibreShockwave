@@ -87,7 +87,7 @@ var _e = null;          // WasmEngine instance
 var _isTicking = false; // guard against overlapping ticks
 var _pageProtocol = ''; // page protocol from main thread (e.g. 'https:')
 var _debugLogsEnabled = false;
-var _musWebSocketUrl = ''; // optional browser WebSocket proxy for Multiuser Xtra
+var _musWebSocketUrl = ''; // optional browser WebSocket URL override for Multiuser Xtra
 
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
@@ -597,9 +597,8 @@ WasmEngine.prototype.pumpNetworkAndWait = async function() {
  *   type 1 = send    → send on existing WebSocket
  *   type 2 = disconnect → close WebSocket
  *
- * By default the WebSocket URL is built as ws://host:port (or wss:// if the
- * page is HTTPS). Embedders can set musWebSocketUrl to keep the Lingo target
- * host/port intact while sending browser traffic through a separate proxy.
+ * By default the WebSocket URL is built from the Lingo host/port, using wss://
+ * for secure pages and for known TLS-only websocket endpoints.
  */
 WasmEngine.prototype.pumpMusRequests = function() {
     if (this._wasmDead) return;
@@ -656,8 +655,18 @@ function _buildMusWebSocketUrl(host, port) {
     if (_musWebSocketUrl) {
         return _musWebSocketUrl;
     }
-    var protocol = (_pageProtocol === 'https:') ? 'wss' : 'ws';
+    var protocol = _shouldUseSecureMusWebSocket(host, port) ? 'wss' : 'ws';
     return protocol + '://' + host + ':' + port;
+}
+
+function _shouldUseSecureMusWebSocket(host, port) {
+    var normalizedHost = String(host || '').toLowerCase();
+    var normalizedPort = String(port || '');
+    if (_pageProtocol === 'https:' || normalizedPort === '443') {
+        return true;
+    }
+    return normalizedHost === 'verysecret.classichabbo.com'
+        && (normalizedPort === '30100' || normalizedPort === '39101');
 }
 
 /**
