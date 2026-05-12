@@ -241,6 +241,12 @@ class DatumTest {
     }
 
     @Test
+    void stringHexColorsConvertToArgb() {
+        assertEquals(0xFFFFFFFF, Datum.datumToArgb(Datum.of("#FFFFFF")));
+        assertEquals(0xFF1234AB, Datum.datumToArgb(Datum.of("1234AB")));
+    }
+
+    @Test
     void testNumericOperations() {
         Datum a = Datum.of(10);
         Datum b = Datum.of(3);

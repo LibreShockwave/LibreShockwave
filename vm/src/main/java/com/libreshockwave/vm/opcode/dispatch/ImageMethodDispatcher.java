@@ -308,10 +308,11 @@ public final class ImageMethodDispatcher {
                 return Datum.FALSE;
             }
 
-            // Habbo's Writer_Class builds an 8-bit matte with transparent white
-            // background and dark glyph pixels. Plain extracted alpha images are
-            // opaque grayscale, so only matte-style images need inverted luma.
-            boolean mattePolarity = alphaHasTransparency(alpha);
+            // Habbo's Writer_Class builds an 8-bit matte with a white outside
+            // region and dark glyph pixels. Plain grayscale alpha maps use the
+            // opposite polarity, so infer matte-style masks from transparent
+            // pixels or from white-backed text matte shapes.
+            boolean mattePolarity = hasMattePolarity(alpha);
             for (int y = 0; y < bmp.getHeight(); y++) {
                 for (int x = 0; x < bmp.getWidth(); x++) {
                     int alphaPixel = alpha.getPixel(x, y);
@@ -336,6 +337,14 @@ public final class ImageMethodDispatcher {
         return Datum.TRUE;
     }
 
+    private static boolean hasMattePolarity(Bitmap alpha) {
+        if (alphaHasTransparency(alpha)) {
+            return true;
+        }
+        return hasWhiteEdgeAndDarkInterior(alpha)
+                || hasWhiteCornersAndDarkPixels(alpha);
+    }
+
     private static boolean alphaHasTransparency(Bitmap alpha) {
         for (int y = 0; y < alpha.getHeight(); y++) {
             for (int x = 0; x < alpha.getWidth(); x++) {
@@ -345,6 +354,83 @@ public final class ImageMethodDispatcher {
             }
         }
         return false;
+    }
+
+    private static boolean hasWhiteEdgeAndDarkInterior(Bitmap alpha) {
+        int width = alpha.getWidth();
+        int height = alpha.getHeight();
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+
+        int edgePixels = 0;
+        int whiteEdgePixels = 0;
+        boolean hasDarkPixel = false;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int luma = Drawing.maskAlphaFromPixel(alpha.getPixel(x, y));
+                if (luma < 250) {
+                    hasDarkPixel = true;
+                }
+                if (x == 0 || y == 0 || x == width - 1 || y == height - 1) {
+                    edgePixels++;
+                    if (luma >= 250) {
+                        whiteEdgePixels++;
+                    }
+                }
+            }
+        }
+
+        return hasDarkPixel && edgePixels > 0 && whiteEdgePixels * 4 >= edgePixels * 3;
+    }
+
+    private static boolean hasWhiteCornersAndDarkPixels(Bitmap alpha) {
+        int width = alpha.getWidth();
+        int height = alpha.getHeight();
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+
+        int[][] corners = uniqueCorners(width, height);
+        int whiteCorners = 0;
+        for (int[] corner : corners) {
+            int luma = Drawing.maskAlphaFromPixel(alpha.getPixel(corner[0], corner[1]));
+            if (luma >= 250) {
+                whiteCorners++;
+            }
+        }
+        if (whiteCorners < corners.length) {
+            return false;
+        }
+
+        boolean hasDarkPixel = false;
+        for (int y = 0; y < height && !hasDarkPixel; y++) {
+            for (int x = 0; x < width; x++) {
+                if (Drawing.maskAlphaFromPixel(alpha.getPixel(x, y)) < 250) {
+                    hasDarkPixel = true;
+                    break;
+                }
+            }
+        }
+        return hasDarkPixel;
+    }
+
+    private static int[][] uniqueCorners(int width, int height) {
+        if (width == 1 && height == 1) {
+            return new int[][] {{0, 0}};
+        }
+        if (height == 1) {
+            return new int[][] {{0, 0}, {width - 1, 0}};
+        }
+        if (width == 1) {
+            return new int[][] {{0, 0}, {0, height - 1}};
+        }
+        return new int[][] {
+                {0, 0},
+                {width - 1, 0},
+                {0, height - 1},
+                {width - 1, height - 1}
+        };
     }
 
     /**

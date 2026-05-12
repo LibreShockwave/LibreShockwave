@@ -443,6 +443,57 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void imageSetAlphaInvertsOpaqueWhiteEdgeTextMattes() {
+        Bitmap dest = new Bitmap(5, 3, 32);
+        dest.fill(0xFF336699);
+        dest.setNativeAlpha(true);
+
+        Bitmap matte = new Bitmap(5, 3, 8);
+        matte.fill(0xFFFFFFFF);
+        matte.setPixel(2, 1, 0xFF000000);
+        matte.setPixel(1, 1, 0xFF7F7F7F);
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(new Datum.ImageRef(matte)));
+
+        assertEquals(1, result.toInt());
+        assertEquals(0x00336699, dest.getPixel(0, 0),
+                "White matte edges should become transparent background");
+        assertEquals(0x80336699, dest.getPixel(1, 1),
+                "Gray antialias matte pixels should become partial alpha");
+        assertEquals(0xFF336699, dest.getPixel(2, 1),
+                "Dark text matte pixels should become fully opaque");
+    }
+
+    @Test
+    void imageSetAlphaInvertsSingleLineOpaqueTextMattes() {
+        Bitmap dest = new Bitmap(5, 1, 32);
+        dest.fill(0xFF336699);
+        dest.setNativeAlpha(true);
+
+        Bitmap matte = new Bitmap(5, 1, 8, new int[] {
+                0xFFFFFFFF,
+                0xFF000000,
+                0xFF7F7F7F,
+                0xFF000000,
+                0xFFFFFFFF
+        });
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(new Datum.ImageRef(matte)));
+
+        assertEquals(1, result.toInt());
+        assertEquals(0x00336699, dest.getPixel(0, 0),
+                "White matte corners should become transparent background");
+        assertEquals(0xFF336699, dest.getPixel(1, 0),
+                "Black one-line text pixels should become fully opaque");
+        assertEquals(0x80336699, dest.getPixel(2, 0),
+                "Gray one-line antialias pixels should become partial alpha");
+        assertEquals(0x00336699, dest.getPixel(4, 0),
+                "White matte corners should stay transparent after the glyph run");
+    }
+
+    @Test
     void imageSetAlphaAppliesFlatAlphaLevel() {
         Bitmap dest = new Bitmap(1, 1, 32);
         dest.fill(0xFF336699);
