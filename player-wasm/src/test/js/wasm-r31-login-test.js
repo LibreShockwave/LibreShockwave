@@ -16,25 +16,24 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const path = require('path');
+const tls = require('tls');
 
 const distPath = process.argv[2] || path.resolve(__dirname, '../../../build/dist');
 const htdocsRoot = process.argv[3] || 'C:/xampp/htdocs';
-const dcrUrlPath = process.argv[4] || '/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr';
+const dcrUrlPath = process.argv[4] || 'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
 const outputDir = process.argv[5] || path.resolve(process.cwd(), 'frames_r31_login');
 
-const INFO_HOST = process.env.R31_INFO_HOST || 'verysecret.classichabbo.com';
-const INFO_PORT = Number(process.env.R31_INFO_PORT || 30100);
+const INFO_HOST = 'verysecret.classichabbo.com';
+const INFO_PORT = 30100;
 const MUS_HOST = 'verysecret.classichabbo.com';
-const MUS_PORT = Number(process.env.R31_MUS_PORT || 39101);
-const WS_PROXY_HOST = process.env.R31_WS_PROXY_HOST || 'localhost';
-const WS_PROXY_PORT = Number(process.env.R31_WS_PROXY_PORT || 30101);
-const WS_PROXY_PROTOCOL = process.env.R31_WS_PROXY_PROTOCOL || 'ws';
-const MUS_WEBSOCKET_URL = process.env.R31_MUS_WEBSOCKET_URL ||
-    `${WS_PROXY_PROTOCOL}://${WS_PROXY_HOST}:${WS_PROXY_PORT}`;
+const MUS_PORT = 39101;
+const GAME_WEBSOCKET_URL = `wss://${INFO_HOST}:${INFO_PORT}`;
+const MUS_WEBSOCKET_URL = `wss://${MUS_HOST}:${MUS_PORT}`;
+const GAME_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(GAME_WEBSOCKET_URL);
 const MUS_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(MUS_WEBSOCKET_URL);
-const SSO_TICKET = process.env.R31_SSO_TICKET || 'vibe-sso-admin-1226074b-8630-4350-bfca-4a55debfb2e7';
+const SSO_TICKET = 'vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5';
 
-const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 300);
+const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 900);
 const TRACE_R31 = process.env.R31_TRACE === '1';
 const POLL_MS = 500;
 
@@ -48,6 +47,7 @@ function parseWebSocketEndpoint(value) {
     return {
         host: url.hostname,
         port: Number(url.port || (secure ? 443 : 80)),
+        secure,
     };
 }
 
@@ -110,12 +110,14 @@ function tcpProbe(host, port, timeoutMs = 5000) {
     });
 }
 
-function websocketUpgradeProbe(host, port, timeoutMs = 5000) {
+function websocketUpgradeProbe(host, port, timeoutMs = 5000, secure = false) {
     return new Promise(resolve => {
         const started = Date.now();
         const key = crypto.randomBytes(16).toString('base64');
         let response = '';
-        const socket = net.createConnection({ host, port });
+        const socket = secure
+            ? tls.connect({ host, port, servername: host })
+            : net.createConnection({ host, port });
         const done = result => {
             socket.destroy();
             resolve(Object.assign({ elapsedMs: Date.now() - started }, result));
@@ -177,23 +179,14 @@ async function captureCanvas(page, filePath) {
     }
 }
 
-function browserHtml(baseUrl, movieUrl, variablesUrl, textsUrl) {
+function browserHtml(baseUrl) {
     return `<!doctype html>
 <html><body>
 <canvas id="beta-client-stage" width="960" height="540"></canvas>
 <script src="${baseUrl}/shockwave-lib.js"><\/script>
 <script>
-var betaClientMovieUrl = "${movieUrl}";
-var betaClientParams = {
-    "sw1":"client.allow.cross.domain=1;client.notify.cross.domain=0",
-    "sw2":"connection.info.host=${INFO_HOST};connection.info.port=${INFO_PORT}",
-    "sw3":"connection.mus.host=${MUS_HOST};connection.mus.port=${MUS_PORT}",
-    "sw4":"site.url=;url.prefix=",
-    "sw5":"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error",
-    "sw6":"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=${variablesUrl}",
-    "sw7":"external.texts.txt=${textsUrl}",
-    "sw8":"use.sso.ticket=1;sso.ticket=${SSO_TICKET}"
-};
+var betaClientMovieUrl = "https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?";
+var betaClientParams = {"sw1":"client.allow.cross.domain=1;client.notify.cross.domain=0","sw2":"connection.info.host=verysecret.classichabbo.com;connection.info.port=30100","sw3":"connection.mus.host=verysecret.classichabbo.com;connection.mus.port=39101","sw4":"site.url=;url.prefix=","sw5":"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error","sw6":"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?","sw7":"external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?","sw8":"use.sso.ticket=1;sso.ticket=vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5"};
 window._testState = {
     loaded: false,
     error: null,
@@ -213,7 +206,6 @@ try {
         autoplay: true,
         remember: false,
         debugPlayback: true,
-        musWebSocketUrl: ${JSON.stringify(MUS_WEBSOCKET_URL)},
         params: betaClientParams,
         onLoad: function(info) {
             _testState.loaded = true;
@@ -300,8 +292,9 @@ async function main() {
     console.log('Htdocs: ', htdocsRoot);
     console.log('DCR:    ', dcrUrlPath);
     console.log('Target: ', `${INFO_HOST}:${INFO_PORT}`);
-    console.log('WS URL: ', MUS_WEBSOCKET_URL);
+    console.log('Game WS:', GAME_WEBSOCKET_URL);
     console.log('MUS:    ', `${MUS_HOST}:${MUS_PORT}`);
+    console.log('MUS WS: ', MUS_WEBSOCKET_URL);
     console.log('SSO:    ', SSO_TICKET);
     console.log('Output: ', outputDir);
 
@@ -321,39 +314,21 @@ async function main() {
     fs.mkdirSync(outputDir, { recursive: true });
 
     console.log('\n--- Network Preflight ---');
-    const [gameTcp, gameWs, proxyTcp, proxyWs, musTcp, musWs] = await Promise.all([
+    const [gameTcp, gameWs, musTcp, musWs] = await Promise.all([
         tcpProbe(INFO_HOST, INFO_PORT),
-        websocketUpgradeProbe(INFO_HOST, INFO_PORT),
-        tcpProbe(MUS_WEBSOCKET_ENDPOINT.host, MUS_WEBSOCKET_ENDPOINT.port),
-        websocketUpgradeProbe(MUS_WEBSOCKET_ENDPOINT.host, MUS_WEBSOCKET_ENDPOINT.port),
+        websocketUpgradeProbe(GAME_WEBSOCKET_ENDPOINT.host, GAME_WEBSOCKET_ENDPOINT.port, 5000, GAME_WEBSOCKET_ENDPOINT.secure),
         tcpProbe(MUS_HOST, MUS_PORT),
-        websocketUpgradeProbe(MUS_HOST, MUS_PORT),
+        websocketUpgradeProbe(MUS_WEBSOCKET_ENDPOINT.host, MUS_WEBSOCKET_ENDPOINT.port, 5000, MUS_WEBSOCKET_ENDPOINT.secure),
     ]);
     console.log(`Target TCP ${INFO_HOST}:${INFO_PORT}: ${gameTcp.ok ? 'OPEN' : 'FAIL'} ${gameTcp.error || ''}`);
-    console.log(`Target WS  ${INFO_HOST}:${INFO_PORT}: ${gameWs.ok ? 'OPEN' : 'FAIL'} ${gameWs.status || gameWs.error || ''}`);
-    console.log(`Proxy TCP  ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port}: ${proxyTcp.ok ? 'OPEN' : 'FAIL'} ${proxyTcp.error || ''}`);
-    console.log(`Proxy WS   ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port}: ${proxyWs.ok ? 'OPEN' : 'FAIL'} ${proxyWs.status || proxyWs.error || ''}`);
+    console.log(`Game WSS   ${GAME_WEBSOCKET_ENDPOINT.host}:${GAME_WEBSOCKET_ENDPOINT.port}: ${gameWs.ok ? 'OPEN' : 'FAIL'} ${gameWs.status || gameWs.error || ''}`);
     console.log(`MUS TCP  ${MUS_HOST}:${MUS_PORT}: ${musTcp.ok ? 'OPEN' : 'FAIL'} ${musTcp.error || ''}`);
-    console.log(`MUS WS   ${MUS_HOST}:${MUS_PORT}: ${musWs.ok ? 'OPEN' : 'FAIL'} ${musWs.status || musWs.error || ''}`);
+    console.log(`MUS WSS  ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port}: ${musWs.ok ? 'OPEN' : 'FAIL'} ${musWs.status || musWs.error || ''}`);
 
     const { server, port } = await createServer();
     const baseUrl = `http://127.0.0.1:${port}`;
-    const movieUrl = isAbsoluteUrl(dcrUrlPath) ? dcrUrlPath : `${baseUrl}${dcrUrlPath}?`;
     const htmlPath = path.join(distPath, '_test_r31_login.html');
-    const variablesUrl = isAbsoluteUrl(dcrUrlPath)
-        ? 'https://images.classichabbo.com/gamedata/external_variables.txt?'
-        : `${baseUrl}/_test_r31_external_variables.txt?`;
-    const textsUrl = isAbsoluteUrl(dcrUrlPath)
-        ? 'https://images.classichabbo.com/gamedata/external_texts.txt?'
-        : `${baseUrl}/gamedata/external_texts.txt?`;
-    if (!isAbsoluteUrl(dcrUrlPath)) {
-        const variablesPath = path.join(htdocsRoot, 'gamedata', 'external_variables.txt');
-        const variables = fs.readFileSync(variablesPath, 'utf8')
-            .replace(/https?:\/\/localhost/gi, baseUrl)
-            .replace(/https?:\/\/127\.0\.0\.1(?::\d+)?/gi, baseUrl);
-        fs.writeFileSync(path.join(distPath, '_test_r31_external_variables.txt'), variables);
-    }
-    fs.writeFileSync(htmlPath, browserHtml(baseUrl, movieUrl, variablesUrl, textsUrl));
+    fs.writeFileSync(htmlPath, browserHtml(baseUrl));
 
     let browser;
     let finalState = null;
@@ -511,18 +486,16 @@ async function main() {
     console.log('\n--- Diagnosis ---');
     if (!gameTcp.ok) {
         console.log(`FAIL: ${INFO_HOST}:${INFO_PORT} is not reachable over TCP.`);
-    } else if (!proxyTcp.ok) {
-        console.log(`FAIL: MUS WebSocket proxy ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port} is not reachable over TCP.`);
-    } else if (!proxyWs.ok) {
-        console.log(`FAIL: MUS WebSocket proxy ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port} does not accept a WebSocket upgrade.`);
-        console.log(`LibreShockwave keeps the r31 target as ${INFO_HOST}:${INFO_PORT} and routes browser transport through ${MUS_WEBSOCKET_URL}.`);
+    } else if (!gameWs.ok) {
+        console.log(`FAIL: game WebSocket target ${GAME_WEBSOCKET_ENDPOINT.host}:${GAME_WEBSOCKET_ENDPOINT.port} does not accept a WSS upgrade.`);
+    } else if (!musTcp.ok) {
+        console.log(`FAIL: ${MUS_HOST}:${MUS_PORT} is not reachable over TCP.`);
+    } else if (!musWs.ok) {
+        console.log(`FAIL: MUS WebSocket target ${MUS_WEBSOCKET_ENDPOINT.host}:${MUS_WEBSOCKET_ENDPOINT.port} does not accept a WSS upgrade.`);
     } else if (clientError && clientError.error === 'cross_domain_castload') {
         console.log(`FAIL: r31 reached the server on ${clientError.host || INFO_HOST}:${clientError.port || INFO_PORT}, then the client raised cross_domain_castload.`);
         console.log('This is past the initial socket connect: the WebSocket opened and exchanged packets before the fatal clientutils redirect.');
         console.log('Check the r31 server/cast cross-domain settings and the cast/load host values returned during bootstrap.');
-        if (!musWs.ok) {
-            console.log(`Also note: ${MUS_HOST}:${MUS_PORT} is TCP-open but does not accept a WebSocket upgrade, so MUS needs a WebSocket proxy if this client path uses it.`);
-        }
     } else if (clientError) {
         console.log(`FAIL: r31 redirected to client error "${clientError.error || 'unknown'}" with mus_errorcode=${clientError.musErrorCode || 'n/a'}.`);
     } else if (connectionFailedPage || wsFailed) {
