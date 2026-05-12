@@ -812,10 +812,7 @@ public class CastMember {
         // the text content. Director auto-adjusts the rect height when text is set,
         // so the stored rectBottom may not reflect the actual content height.
         int height = textBoxType == 0 ? 0 : (textRectBottom - textRectTop);
-        // Director's text-member .image behaves like transparent text artwork.
-        // UI wrappers then paint their own background and composite the text with
-        // MATTE or TRANSPARENT ink as needed.
-        return renderTextToImage(width, height, 0x00FFFFFF);
+        return renderTextToImage(width, height, textBgColor);
     }
 
     /**
@@ -837,7 +834,6 @@ public class CastMember {
         }
 
         String text = getTextContent();
-
         textRenderedImage = textRenderer.renderText(text, width, height,
                 textFont, textFontSize, textFontStyle,
                 textAlignment, textColor, bgColor,

@@ -106,6 +106,38 @@ class DrawingMatteTest {
     }
 
     @Test
+    void createMatteUsesDominantBlackBorderFloodFillForRgbTextImages() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFFFFFFFF, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.markScriptModified();
+
+        Bitmap matte = Drawing.createMatte(src);
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
+        assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
+    void copiedRuntimeTextImagesKeepDominantRgbMatteRule() {
+        Bitmap src = new Bitmap(3, 3, 32, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFFFFFFFF, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000
+        });
+        src.markScriptModified();
+
+        Bitmap matte = Drawing.createMatte(src.copy());
+
+        assertEquals(0x00FFFFFF, matte.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, matte.getPixel(1, 1));
+        assertEquals(0x00FFFFFF, matte.getPixel(2, 2));
+    }
+
+    @Test
     void applyFloodFillTransparencyUsesSameIndexedMatteRule() {
         Bitmap src = new Bitmap(3, 3, 8, new int[] {
             0xFF000000, 0xFF000000, 0xFF000000,
@@ -151,8 +183,12 @@ class DrawingMatteTest {
     }
 
     @Test
-    void matteCopyPixelsOnlyRemovesWhiteBoundingPixels() {
-        Bitmap dest = new Bitmap(3, 3, 32);
+    void matteCopyPixelsRemovesDominantRgbBoundingPixels() {
+        Bitmap dest = new Bitmap(3, 3, 32, new int[] {
+                0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233
+        });
         Bitmap src = new Bitmap(3, 3, 32, new int[] {
                 0xFF2A6883, 0xFF2A6883, 0xFF2A6883,
                 0xFF2A6883, 0xFFFFFFFF, 0xFF2A6883,
@@ -161,26 +197,32 @@ class DrawingMatteTest {
 
         Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
 
-        assertEquals(0xFF2A6883, dest.getPixel(0, 0));
+        assertEquals(0xFF112233, dest.getPixel(0, 0));
         assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
     }
 
     @Test
-    void matteCopyPixelsDoesNotStripColoredContentInsideDarkFrame() {
-        Bitmap dest = new Bitmap(4, 4, 32);
+    void matteCopyPixelsStripsDominantRgbFrameAndKeepsContent() {
+        Bitmap dest = new Bitmap(4, 4, 32, new int[] {
+                0xFF112233, 0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233, 0xFF112233
+        });
         Bitmap src = new Bitmap(4, 4, 32, new int[] {
                 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
                 0xFF000000, 0xFF2A6883, 0xFF2A6883, 0xFF000000,
                 0xFF000000, 0xFF2A6883, 0xFF2A6883, 0xFF000000,
                 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000
         });
+        src.markScriptModified();
 
         Drawing.copyPixels(dest, src, 0, 0, 0, 0, 4, 4, Palette.InkMode.MATTE, 255);
 
-        assertEquals(0xFF000000, dest.getPixel(0, 0));
+        assertEquals(0xFF112233, dest.getPixel(0, 0));
         assertEquals(0xFF2A6883, dest.getPixel(1, 1));
         assertEquals(0xFF2A6883, dest.getPixel(2, 2));
-        assertEquals(0xFF000000, dest.getPixel(3, 3));
+        assertEquals(0xFF112233, dest.getPixel(3, 3));
     }
 
     void matteCopyPixelsKeepsMixed32BitNoWhiteEdgeStripOpaque() {
@@ -270,5 +312,65 @@ class DrawingMatteTest {
         assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
         assertEquals(0xFF000000, dest.getPixel(1, 0));
         assertEquals(0xFFFFFFFF, dest.getPixel(2, 0));
+    }
+
+    @Test
+    void matteCopyIntoEightBitImageBuildsBlackTextMaskFromBlackOnWhiteSource() {
+        Bitmap mask = new Bitmap(3, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap text = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Drawing.copyPixels(mask, text, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFFFFFFF, mask.getPixel(0, 0));
+        assertEquals(0xFF000000, mask.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, mask.getPixel(2, 0));
+    }
+
+    @Test
+    void matteCopyIntoEightBitImageBuildsBlackTextMaskFromWhiteOnBlackSource() {
+        Bitmap mask = new Bitmap(3, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap text = new Bitmap(3, 3, 32, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFFFFFFFF, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000
+        });
+
+        Drawing.copyPixels(mask, text, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFFFFFFF, mask.getPixel(0, 0));
+        assertEquals(0xFF000000, mask.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, mask.getPixel(2, 0));
+    }
+
+    @Test
+    void matteCopyIntoBlackEightBitImagePreservesWhiteTextPixels() {
+        Bitmap dest = new Bitmap(3, 3, 8, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000
+        });
+        Bitmap text = new Bitmap(3, 3, 32, new int[] {
+                0xFF000000, 0xFF000000, 0xFF000000,
+                0xFF000000, 0xFFFFFFFF, 0xFF000000,
+                0xFF000000, 0xFF000000, 0xFF000000
+        });
+
+        Drawing.copyPixels(dest, text, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFF000000, dest.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
+        assertEquals(0xFF000000, dest.getPixel(2, 2));
     }
 }

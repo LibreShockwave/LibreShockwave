@@ -27,7 +27,7 @@ public final class PropListMethodDispatcher {
         }
 
         return switch (methodName.toLowerCase()) {
-            case "getprop", "getaprop", "getproperty" -> {
+            case "getprop", "getpropref", "getaprop", "getproperty" -> {
                 if (args.isEmpty()) yield Datum.VOID;
                 Datum value = propList.getOrDefault(args.get(0).toKeyName(), Datum.VOID);
                 // getProp(propList, #prop, index) -> propList.prop[index]
