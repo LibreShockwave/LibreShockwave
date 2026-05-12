@@ -290,7 +290,7 @@ tasks.register('runWasmR31LoginTest', Exec) {
 
     def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
     def htdocsRoot = project.findProperty('htdocsRoot') ?: 'C:/xampp/htdocs'
-    def dcrUrlPath = project.findProperty('dcrUrlPath') ?: '/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr'
+    def dcrUrlPath = project.findProperty('dcrUrlPath') ?: 'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?'
     def outputDir = project.findProperty('outputDir') ?: ''
 
     commandLine 'node',

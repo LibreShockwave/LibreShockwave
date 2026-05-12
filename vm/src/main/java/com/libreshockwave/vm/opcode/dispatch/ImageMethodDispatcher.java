@@ -212,14 +212,15 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        // Director's image() creates white-filled images by default.
-        // When fill() receives VOID as color, default to white — this matches
-        // Director's convention where VOID means "use default background."
-        // Habbo's clearImage() passes pProps[#bgColor] which may be VOID
-        // when the layout definition omits bgColor.
+        // Window overlays may call fill() with VOID when no bgColor is defined.
+        // Native Director leaves those pixels untouched, allowing the already
+        // rendered backing art to show through transparent elements.
+        if (colorDatum.isVoid()) {
+            return Datum.VOID;
+        }
         // Use bitmap-aware color resolution so paletteIndex() colors resolve
         // through the target bitmap's custom palette (e.g., nav_ui_palette).
-        int colorArgb = colorDatum.isVoid() ? 0xFFFFFFFF : Datum.datumToArgb(colorDatum, bmp);
+        int colorArgb = Datum.datumToArgb(colorDatum, bmp);
 
         int w = right - left;
         int h = bottom - top;
