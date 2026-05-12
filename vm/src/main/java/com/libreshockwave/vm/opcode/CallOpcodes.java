@@ -276,6 +276,8 @@ public final class CallOpcodes {
             if (args.isEmpty()) return Datum.VOID;
             int index = args.get(0).toInt();
             return index == 1 ? Datum.of(point.x()) : index == 2 ? Datum.of(point.y()) : Datum.VOID;
+        } else if ("duplicate".equalsIgnoreCase(methodName)) {
+            return new Datum.Point(point.x(), point.y());
         } else if ("setat".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.VOID;
             point.setComponent(args.get(0).toInt(), args.get(1).toInt());
@@ -308,6 +310,8 @@ public final class CallOpcodes {
                 case 4 -> Datum.of(rect.bottom());
                 default -> Datum.VOID;
             };
+        } else if ("duplicate".equalsIgnoreCase(methodName)) {
+            return new Datum.Rect(rect.left(), rect.top(), rect.right(), rect.bottom());
         } else if ("setat".equalsIgnoreCase(methodName)) {
             if (args.size() < 2) return Datum.VOID;
             rect.setComponent(args.get(0).toInt(), args.get(1).toInt());

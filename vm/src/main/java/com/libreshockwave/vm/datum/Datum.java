@@ -795,6 +795,18 @@ public sealed interface Datum {
                 int gray = 255 - val;
                 return 0xFF000000 | (gray << 16) | (gray << 8) | gray;
             }
+        } else if (colorDatum instanceof Str s) {
+            String value = s.value().trim();
+            if (value.startsWith("#")) {
+                value = value.substring(1);
+            }
+            if (value.length() == 6) {
+                try {
+                    return 0xFF000000 | (Integer.parseInt(value, 16) & 0xFFFFFF);
+                } catch (NumberFormatException ignored) {
+                    // Fall through to Director's black default for invalid color strings.
+                }
+            }
         }
         return 0xFF000000;
     }
