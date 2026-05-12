@@ -14,32 +14,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CastMemberTextImageTest {
 
     @Test
-    void textMemberImageUsesTransparentBackgroundEvenWhenBgColorIsDark() {
+    void textMemberImageUsesMemberBackgroundColor() {
         CastMember member = buildTextMember("Habbo Club");
 
         Bitmap image = member.renderTextToImage();
 
-        assertEquals(0, (image.getPixel(0, 0) >>> 24) & 0xFF);
-        assertEquals(0, (image.getPixel(image.getWidth() - 1, image.getHeight() - 1) >>> 24) & 0xFF);
-        assertTrue(image.hasNativeMatteAlpha(), "text member image should expose alpha-backed transparency");
+        assertEquals(0xFF000000, image.getPixel(0, 0));
+        assertEquals(0xFF000000, image.getPixel(image.getWidth() - 1, image.getHeight() - 1));
     }
 
     @Test
-    void explicitTextRenderKeepsOpaqueBackgroundSeparateFromMemberImageCache() {
+    void explicitTextRenderKeepsBackgroundSeparateFromMemberImageCache() {
         CastMember member = buildTextMember("Habbo Club");
 
-        Bitmap transparentMemberImage = member.renderTextToImage();
+        Bitmap memberImage = member.renderTextToImage();
         Bitmap opaqueSpriteImage = member.renderTextToImage(
-                transparentMemberImage.getWidth(),
-                transparentMemberImage.getHeight(),
-                0xFF000000);
+                memberImage.getWidth(),
+                memberImage.getHeight(),
+                0xFFFFFFFF);
 
-        assertEquals(0, (transparentMemberImage.getPixel(0, 0) >>> 24) & 0xFF);
-        assertEquals(0xFF000000, opaqueSpriteImage.getPixel(0, 0));
+        assertEquals(0xFF000000, memberImage.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, opaqueSpriteImage.getPixel(0, 0));
     }
 
     @Test
-    void matteCompositePreservesWhiteTextFromTransparentMemberImage() {
+    void matteCompositePreservesWhiteTextFromBlackBackedMemberImage() {
         CastMember member = buildTextMember("Habbo Club\rqg");
 
         Bitmap textImage = member.renderTextToImage();
@@ -52,6 +51,24 @@ class CastMemberTextImageTest {
 
         assertEquals(countWhitePixels(textImage), countWhitePixels(dest),
                 "MATTE copy should preserve all rendered white text pixels");
+    }
+
+    @Test
+    void compactVFontWhiteTextRendersInsideTenPixelHighBottomBarFields() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("V"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fixedlinespace", Datum.of(11));
+        member.setProp("rect", new Datum.Rect(0, 0, 90, 10));
+        member.setProp("color", new Datum.Color(255, 255, 255));
+        member.setProp("bgcolor", new Datum.Color(0, 0, 0));
+        member.setProp("text", Datum.of("Habbo Club"));
+
+        Bitmap textImage = member.renderTextToImage();
+
+        assertTrue(countWhitePixels(textImage) > 0,
+                "Bottom bar fields are only 10px high, so V/9 text must not be clipped away");
     }
 
     @Test

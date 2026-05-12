@@ -25,7 +25,7 @@ const outputDir = process.argv[5] || path.resolve(process.cwd(), 'frames_r31_log
 const INFO_HOST = process.env.R31_INFO_HOST || 'verysecret.classichabbo.com';
 const INFO_PORT = Number(process.env.R31_INFO_PORT || 30100);
 const MUS_HOST = 'verysecret.classichabbo.com';
-const MUS_PORT = 38101;
+const MUS_PORT = Number(process.env.R31_MUS_PORT || 39101);
 const WS_PROXY_HOST = process.env.R31_WS_PROXY_HOST || 'localhost';
 const WS_PROXY_PORT = Number(process.env.R31_WS_PROXY_PORT || 30101);
 const WS_PROXY_PROTOCOL = process.env.R31_WS_PROXY_PROTOCOL || 'ws';
@@ -256,6 +256,7 @@ try {
             "setImportedCast", "removeCastLoadTask", "DoCallBack",
             "securityCastDownloadCallback", "responseWithPublicKey",
             "getLoginParameter", "assign", "powMod", "getString", "getByteArray",
+            "setText", "createImgFromTxt",
             "WvUrP88jJ4snglkrhCh3u9vHu0ADDS",
             "forwardToRosettaDisablePage", "handleServerSecretKey",
             "handleCryptoParameters", "sendLogin", "getDomainAndTld", "error", "fatalError"].forEach(function(name) {

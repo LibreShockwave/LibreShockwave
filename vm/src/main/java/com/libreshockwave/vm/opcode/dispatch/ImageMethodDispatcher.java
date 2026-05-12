@@ -205,6 +205,13 @@ public final class ImageMethodDispatcher {
             return Datum.VOID;
         }
 
+        if (colorDatum instanceof Datum.PropList pl) {
+            Datum propColor = getPropIgnoreCase(pl, "color", "Color");
+            if (!propColor.isVoid()) {
+                colorDatum = propColor;
+            }
+        }
+
         // Director's image() creates white-filled images by default.
         // When fill() receives VOID as color, default to white — this matches
         // Director's convention where VOID means "use default background."

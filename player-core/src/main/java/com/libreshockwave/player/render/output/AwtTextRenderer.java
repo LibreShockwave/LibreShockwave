@@ -134,7 +134,9 @@ public class AwtTextRenderer implements TextRenderer {
         // Convert BufferedImage to our Bitmap format
         int[] pixels = bufImg.getRGB(0, 0, bufImg.getWidth(), bufImg.getHeight(),
                 null, 0, bufImg.getWidth());
-        return new Bitmap(bufImg.getWidth(), bufImg.getHeight(), 32, pixels);
+        Bitmap bitmap = new Bitmap(bufImg.getWidth(), bufImg.getHeight(), 32, pixels);
+        bitmap.markScriptModified();
+        return bitmap;
     }
 
     @Override

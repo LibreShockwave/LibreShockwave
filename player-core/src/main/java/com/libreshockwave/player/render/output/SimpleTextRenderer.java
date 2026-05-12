@@ -368,7 +368,9 @@ public class SimpleTextRenderer implements TextRenderer {
             y += lineAdvance;
         }
 
-        return new Bitmap(width, height, 32, pixels);
+        Bitmap bitmap = new Bitmap(width, height, 32, pixels);
+        bitmap.markScriptModified();
+        return bitmap;
     }
 
     /**
@@ -427,7 +429,9 @@ public class SimpleTextRenderer implements TextRenderer {
             y += lineAdvance;
         }
 
-        return new Bitmap(width, height, 32, pixels);
+        Bitmap bitmap = new Bitmap(width, height, 32, pixels);
+        bitmap.markScriptModified();
+        return bitmap;
     }
 
     private static void drawUnderline(int[] pixels, int width, int height,
@@ -494,7 +498,9 @@ public class SimpleTextRenderer implements TextRenderer {
             }
         }
 
-        return new Bitmap(w, h, 32, dst);
+        Bitmap result = new Bitmap(w, h, 32, dst);
+        result.markScriptModified();
+        return result;
     }
 
     // --- Built-in font metrics ---

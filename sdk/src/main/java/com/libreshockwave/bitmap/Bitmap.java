@@ -235,10 +235,12 @@ public class Bitmap {
         if (other == null) {
             this.imagePalette = null;
             this.paletteIndices = null;
+            this.scriptModified = false;
             clearPaletteRefMetadata();
             return;
         }
         this.imagePalette = other.imagePalette;
+        this.scriptModified = other.scriptModified;
         this.nativeAlpha = other.nativeAlpha;
         this.paletteIndices = other.paletteIndices != null
                 ? java.util.Arrays.copyOf(other.paletteIndices, other.paletteIndices.length)

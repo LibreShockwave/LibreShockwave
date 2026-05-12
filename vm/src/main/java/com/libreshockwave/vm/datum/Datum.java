@@ -797,6 +797,13 @@ public sealed interface Datum {
             }
         } else if (colorDatum instanceof Str s) {
             String value = s.value().trim();
+            if (value.length() >= 2) {
+                char first = value.charAt(0);
+                char last = value.charAt(value.length() - 1);
+                if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                    value = value.substring(1, value.length() - 1).trim();
+                }
+            }
             if (value.startsWith("#")) {
                 value = value.substring(1);
             }

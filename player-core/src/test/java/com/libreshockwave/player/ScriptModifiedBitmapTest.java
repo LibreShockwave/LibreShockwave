@@ -166,6 +166,22 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void fillAcceptsDirectorColorPropList() {
+        Bitmap bmp = new Bitmap(3, 3, 32);
+        bmp.fill(0xFF000000);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("color", Datum.of("\"#FFFFFF\""), true);
+        props.add("shape", Datum.symbol("rect"), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                List.of(new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFFFFFFF, bmp.getPixel(1, 1),
+                "Director fill(rect, [#color: ...]) should use the prop-list color");
+    }
+
+    @Test
     void copyPixelsQuadRotatesClockwiseLikeDirectorDropdown() {
         Bitmap src = new Bitmap(2, 3, 32);
         src.setPixel(0, 0, 0xFFFF0000);
@@ -660,6 +676,38 @@ public class ScriptModifiedBitmapTest {
 
         assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
                 "copyPixels blend should scale, not replace, the source alpha");
+    }
+
+    @Test
+    void compatibilityTextMaskCopiesWhiteGlyphsOntoBlackImage() {
+        Bitmap textMemberImage = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap mask = new Bitmap(3, 3, 8);
+        mask.fill(0xFFFFFFFF);
+
+        Datum.PropList matteProps = new Datum.PropList();
+        matteProps.add("ink", Datum.of(8), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(mask), "copyPixels",
+                List.of(new Datum.ImageRef(textMemberImage), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), matteProps));
+
+        Bitmap solidWhite = new Bitmap(3, 3, 32);
+        solidWhite.fill(0xFFFFFFFF);
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFF000000);
+
+        Datum.PropList maskProps = new Datum.PropList();
+        maskProps.add("maskImage", new Datum.ImageRef(mask), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(solidWhite), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), maskProps));
+
+        assertEquals(0xFF000000, dest.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
+        assertEquals(0xFF000000, dest.getPixel(2, 2));
     }
 
     @Test
