@@ -346,8 +346,8 @@ public final class SoftwareFrameRenderer {
             return;
         }
 
-        int opacity = srcA * blendPercent;
-        int invOpacity = 25500 - opacity;
+        int opacity = (srcA * blendPercent) / 100;
+        int invOpacity = 256 - opacity;
 
         int srcR = (src >> 16) & 0xFF;
         int srcG = (src >> 8) & 0xFF;
@@ -356,9 +356,9 @@ public final class SoftwareFrameRenderer {
         int dstG = (dst >> 8) & 0xFF;
         int dstB = dst & 0xFF;
 
-        int outR = (srcR * opacity + dstR * invOpacity + 12750) / 25500;
-        int outG = (srcG * opacity + dstG * invOpacity + 12750) / 25500;
-        int outB = (srcB * opacity + dstB * invOpacity + 12750) / 25500;
+        int outR = (srcR * opacity + dstR * invOpacity) >> 8;
+        int outG = (srcG * opacity + dstG * invOpacity) >> 8;
+        int outB = (srcB * opacity + dstB * invOpacity) >> 8;
 
         argb[dstIdx] = 0xFF000000 | (outR << 16) | (outG << 8) | outB;
     }
