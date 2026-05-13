@@ -138,6 +138,31 @@ class DrawingMatteTest {
     }
 
     @Test
+    void matteCopyPixelsKeepsColoredIndexedFrameOpaque() {
+        Bitmap dest = new Bitmap(3, 3, 32, new int[] {
+                0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233,
+                0xFF112233, 0xFF112233, 0xFF112233
+        });
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+                0xFF6794A7, 0xFF6794A7, 0xFF6794A7,
+                0xFF6794A7, 0xFFEFEFEF, 0xFF6794A7,
+                0xFF6794A7, 0xFF6794A7, 0xFF6794A7
+        });
+        src.setPaletteIndices(new byte[] {
+                4, 4, 4,
+                4, 9, 4,
+                4, 4, 4
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFF6794A7, dest.getPixel(0, 0));
+        assertEquals(0xFFEFEFEF, dest.getPixel(1, 1));
+        assertEquals(0xFF6794A7, dest.getPixel(2, 2));
+    }
+
+    @Test
     void applyFloodFillTransparencyUsesSameIndexedMatteRule() {
         Bitmap src = new Bitmap(3, 3, 8, new int[] {
             0xFF000000, 0xFF000000, 0xFF000000,

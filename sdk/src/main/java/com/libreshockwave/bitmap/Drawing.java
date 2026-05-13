@@ -145,6 +145,9 @@ public class Drawing {
 
         byte[] paletteIndices = src.getPaletteIndices();
         FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        if (matteSpec == null) {
+            return false;
+        }
         boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
         if (!isMaskSource(pixels, transparent, matteSpec)) {
             return false;
@@ -651,7 +654,9 @@ public class Drawing {
 
         byte[] paletteIndices = src.getPaletteIndices();
         FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
-        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+        boolean[] transparent = matteSpec != null
+                ? computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec)
+                : new boolean[w * h];
 
         int[] mask = new int[w * h];
         for (int i = 0; i < pixels.length; i++) {
@@ -689,6 +694,9 @@ public class Drawing {
         int[] pixels = region.getPixels();
         byte[] paletteIndices = region.getPaletteIndices();
         FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        if (matteSpec == null) {
+            return region;
+        }
         boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
 
         for (int i = 0; i < pixels.length; i++) {
@@ -701,22 +709,42 @@ public class Drawing {
     }
 
     private static FloodFillMatte resolveFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
-        FloodFillMatte indexedMatte = resolveIndexedFloodFillMatte(pixels, paletteIndices, w, h);
-        if (indexedMatte != null) {
-            return indexedMatte;
+        if (hasPaletteIndices(paletteIndices, w, h)) {
+            return resolveIndexedFloodFillMatte(pixels, paletteIndices, w, h);
         }
         return resolveRgbFloodFillMatte(pixels, w, h);
     }
 
     private static FloodFillMatte resolveIndexedFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
-        if (paletteIndices == null || paletteIndices.length < w * h) {
-            return null;
+        if (edgeContainsPaletteIndex(paletteIndices, w, h, 0)) {
+            int indexZeroRgb = resolvePaletteIndexRgb(pixels, paletteIndices, 0);
+            if (indexZeroRgb == 0x000000 || indexZeroRgb == DEFAULT_RGB_MATTE) {
+                return new FloodFillMatte(0, indexZeroRgb, 0);
+            }
         }
+
         Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
         if (matteIndex == null) {
             return null;
         }
-        return new FloodFillMatte(matteIndex, resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex), 0);
+        int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex);
+        if (matteRgb != 0x000000 && matteRgb != DEFAULT_RGB_MATTE) {
+            return null;
+        }
+        return new FloodFillMatte(matteIndex, matteRgb, 0);
+    }
+
+    private static boolean hasPaletteIndices(byte[] paletteIndices, int w, int h) {
+        return paletteIndices != null && paletteIndices.length >= w * h;
+    }
+
+    private static boolean edgeContainsPaletteIndex(byte[] paletteIndices, int w, int h, int paletteIndex) {
+        for (int index : iterateEdgeIndices(w, h)) {
+            if ((paletteIndices[index] & 0xFF) == paletteIndex) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Integer inferDominantEdgePaletteIndex(int[] pixels, byte[] paletteIndices, int w, int h) {
@@ -818,7 +846,7 @@ public class Drawing {
 
     private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
         Integer matteRgb = inferDominantEdgeRgb(pixels, w, h);
-        if (matteRgb != null && matteRgb == 0x000000) {
+        if (matteRgb != null) {
             return new FloodFillMatte(matteRgb, 0);
         }
         return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
