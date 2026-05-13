@@ -30,6 +30,12 @@ public class FontRegistry {
     /** Canonical font name -> member key (lowercase) for fuzzy matching */
     private static final ConcurrentHashMap<String, String> canonicalIndex = new ConcurrentHashMap<>();
 
+    /** Director font cast members can alias short names such as "v" to a platform font name. */
+    private static final ConcurrentHashMap<String, FontAlias> aliases = new ConcurrentHashMap<>();
+
+    public record FontAlias(String fontName, boolean bold) {
+    }
+
     /**
      * Register a PFR1 font parsed from XMED chunk data.
      * @param memberName the cast member name (e.g. "v", "vb")
@@ -80,6 +86,21 @@ public class FontRegistry {
     public static byte[] getTtfBytes(String fontName) {
         if (fontName == null) return null;
         return ttfCache.get(fontName.toLowerCase());
+    }
+
+    public static void registerFontAlias(String alias, String fontName, boolean bold) {
+        if (alias == null || alias.isBlank() || fontName == null || fontName.isBlank()) {
+            return;
+        }
+        aliases.put(alias.toLowerCase(), new FontAlias(fontName, bold));
+        canonicalIndex.put(canonicalFontName(alias), alias.toLowerCase());
+    }
+
+    public static FontAlias getFontAlias(String fontName) {
+        if (fontName == null) {
+            return null;
+        }
+        return aliases.get(fontName.toLowerCase());
     }
 
     /**
@@ -209,6 +230,7 @@ public class FontRegistry {
         ttfCache.clear();
         rasterizedCache.clear();
         canonicalIndex.clear();
+        aliases.clear();
         firstRegisteredFont = null;
     }
 }

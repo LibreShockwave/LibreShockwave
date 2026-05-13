@@ -7,8 +7,11 @@ import com.libreshockwave.format.ChunkType;
 import com.libreshockwave.id.CastLibId;
 import com.libreshockwave.vm.datum.Datum;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -205,17 +208,19 @@ public class CastLib {
     }
 
     /**
-     * Scan OLE members for XMED chunks containing PFR1 font data.
+     * Scan font members for Director font aliases and OLE members for XMED PFR1 font data.
      * Registers any found fonts with FontRegistry.
      */
     private void scanXmedFonts() {
         if (sourceFile == null) return;
         KeyTableChunk keyTable = sourceFile.getKeyTable();
-        if (keyTable == null) return;
 
         int xmedFourcc = ChunkType.XMED.getFourCC();
 
+        registerFontAliases(sourceFile);
+
         for (CastMemberChunk member : sourceFile.getCastMembers()) {
+            if (keyTable == null) continue;
             var entry = keyTable.findEntry(member.id(), xmedFourcc);
             if (entry == null) continue;
 
@@ -233,6 +238,75 @@ public class CastLib {
                 }
             }
         }
+    }
+
+    public static void registerFontAliases(DirectorFile file) {
+        if (file == null) {
+            return;
+        }
+        for (CastMemberChunk member : file.getCastMembers()) {
+            FontAliasInfo aliasInfo = parseFontAlias(member.specificData(), member.name());
+            if (aliasInfo != null) {
+                FontRegistry.registerFontAlias(aliasInfo.alias(), aliasInfo.fontName(), aliasInfo.bold());
+            }
+        }
+    }
+
+    record FontAliasInfo(String alias, String fontName, boolean bold) {
+    }
+
+    static FontAliasInfo parseFontAlias(byte[] data, String memberName) {
+        if (data == null || data.length < 12) {
+            return null;
+        }
+
+        List<String> strings = extractPrintableNullTerminatedStrings(data);
+        if (strings.size() < 2 || !"font".equalsIgnoreCase(strings.get(0))) {
+            return null;
+        }
+
+        String fontName = null;
+        for (int i = strings.size() - 1; i >= 1; i--) {
+            String value = strings.get(i);
+            if (!value.equalsIgnoreCase("font")) {
+                fontName = value;
+                break;
+            }
+        }
+        if (fontName == null || fontName.isBlank()) {
+            return null;
+        }
+
+        String alias = memberName;
+        if (alias == null || alias.isBlank()) {
+            alias = strings.size() >= 3 ? strings.get(strings.size() - 2) : null;
+        }
+        if (alias == null || alias.isBlank() || alias.equalsIgnoreCase("fontName")) {
+            return null;
+        }
+
+        boolean bold = data.length > 23 && (data[23] & 0x01) != 0;
+        return new FontAliasInfo(alias, fontName, bold);
+    }
+
+    private static List<String> extractPrintableNullTerminatedStrings(byte[] data) {
+        List<String> strings = new ArrayList<>();
+        int start = -1;
+        for (int i = 0; i <= data.length; i++) {
+            int value = i < data.length ? data[i] & 0xFF : 0;
+            boolean printable = value >= 0x20 && value <= 0x7E;
+            if (printable) {
+                if (start < 0) {
+                    start = i;
+                }
+            } else if (start >= 0) {
+                if (value == 0 && i > start) {
+                    strings.add(new String(data, start, i - start, StandardCharsets.US_ASCII));
+                }
+                start = -1;
+            }
+        }
+        return strings;
     }
 
     /**
@@ -862,6 +936,29 @@ public class CastLib {
             return;
         }
         fetchedExternalData = data.clone();
+        if (containsAscii(data, "font")) {
+            try {
+                registerFontAliases(DirectorFile.load(data));
+            } catch (Throwable ignored) {
+                // Full cast loading will report parse errors when the data is actually consumed.
+            }
+        }
+    }
+
+    private static boolean containsAscii(byte[] data, String needle) {
+        if (needle == null || needle.isEmpty() || data.length < needle.length()) {
+            return false;
+        }
+        for (int i = 0; i <= data.length - needle.length(); i++) {
+            int j = 0;
+            while (j < needle.length() && data[i + j] == (byte) needle.charAt(j)) {
+                j++;
+            }
+            if (j == needle.length()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Track next dynamic member number for new members created at runtime
