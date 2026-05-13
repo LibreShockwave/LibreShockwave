@@ -362,7 +362,7 @@ public class SimpleTextRenderer implements TextRenderer {
             }
             if (underline && line.length() > 0) {
                 int inkBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
-                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 2));
+                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 1));
                 drawUnderline(pixels, width, height, underlineY, lineStartX, x, textColor);
             }
             y += lineAdvance;
@@ -424,7 +424,7 @@ public class SimpleTextRenderer implements TextRenderer {
             if (underline && line.length() > 0) {
                 int glyphTop = Math.max(0, y);
                 int glyphBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphTop, Math.min(height - 1, y + ascent));
-                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom + 2), lineStartX, x, textColor);
+                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom + 1), lineStartX, x, textColor);
             }
             y += lineAdvance;
         }

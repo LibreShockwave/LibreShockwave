@@ -73,6 +73,27 @@ class BitmapCacheTest {
     }
 
     @Test
+    void indexedBackgroundTransparentRemapUsesDirectForeColorAndResolvedBackColor() {
+        Bitmap raw = new Bitmap(3, 1, 8, new int[] {
+                0xFFFFFFFF,
+                0xFF7B5005,
+                0xFF000000
+        });
+        raw.setPaletteIndices(new byte[] {0, (byte) 128, (byte) 255});
+        Palette palette = new Palette(new int[] {
+                0xFFFFFFFF,
+                0xFF6699FF
+        }, "test-remap");
+
+        BitmapCache.IndexedMatteColorRemap remap = BitmapCache.resolveIndexedMatteColorRemap(
+                raw, InkMode.BACKGROUND_TRANSPARENT.code(), 0x000000, 1, true, true, palette);
+
+        assertNotNull(remap);
+        assertEquals(0x000000, remap.foreColor());
+        assertEquals(0x6699FF, remap.backColor());
+    }
+
+    @Test
     void quadCopiedPalettedWrapperKeepsIndicesAndDynamicMatteRemap() {
         Palette sourcePalette = new Palette(new int[] {0xFFFFFF, 0xFF808080, 0xFF000000}, "furni-ramp");
         Bitmap src = new Bitmap(2, 3, 8, new int[] {

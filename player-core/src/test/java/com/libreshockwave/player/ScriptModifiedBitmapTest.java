@@ -423,6 +423,55 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void backgroundTransparentCopyPixelsInvertsWhiteNativeAlphaMaskWithDefaultBackgroundColor() {
+        Bitmap dest = new Bitmap(3, 1, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF, 0x00FFFFFF, 0xFFFFFFFF
+        });
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 1),
+                        new Datum.Rect(0, 0, 3, 1), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "Opaque white mask backing should key out with the default white background color");
+        assertEquals(0xFF7B9498, dest.getPixel(1, 0),
+                "Transparent mask holes should use Director's default UI text-mask ink without explicit #bgColor");
+        assertEquals(0xFFC0C0C0, dest.getPixel(2, 0));
+    }
+
+    @Test
+    void backgroundTransparentInverseAlphaMaskDoesNotPaintOutsideSourceBounds() {
+        Bitmap dest = new Bitmap(5, 1, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF, 0x00FFFFFF, 0xFFFFFFFF
+        });
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 5, 1),
+                        new Datum.Rect(0, 0, 5, 1), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0));
+        assertEquals(0xFF7B9498, dest.getPixel(1, 0));
+        assertEquals(0xFFC0C0C0, dest.getPixel(2, 0));
+        assertEquals(0xFFC0C0C0, dest.getPixel(3, 0),
+                "Pixels outside the source bitmap must not be converted to black ink");
+        assertEquals(0xFFC0C0C0, dest.getPixel(4, 0));
+    }
+
+    @Test
     void backgroundTransparentCopyPixelsPreservesColoredNativeAlphaText() {
         Bitmap dest = new Bitmap(3, 3, 32);
         dest.fill(0xFFC0C0C0);
@@ -1055,6 +1104,93 @@ public class ScriptModifiedBitmapTest {
 
         assertEquals(0xFFD4DDE1, bmp.getPixel(0, 0));
         assertEquals(0xFFD4DDE1, bmp.getPixel(1, 1));
+        assertArrayEquals(new byte[]{1, 1, 1, 1}, bmp.getPaletteIndices(),
+                "paletted fills should preserve the palette index used by later remaps");
+    }
+
+    @Test
+    void palettedFillIndicesSurviveLaterIndexedCopyPixels() {
+        Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xD4DDE1, 0xC0C0C0}, "nav-ui");
+        Bitmap dest = new Bitmap(4, 1, 8);
+        dest.setImagePalette(navPalette);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "fill",
+                List.of(new Datum.Rect(0, 0, 4, 1), new Datum.PaletteIndexColor(1)));
+
+        Bitmap src = new Bitmap(1, 1, 8);
+        src.setImagePalette(navPalette);
+        src.fillRectPaletteIndex(0, 0, 1, 1, 2, 0xFFC0C0C0);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(3, 0, 4, 1),
+                        new Datum.Rect(0, 0, 1, 1)));
+
+        assertArrayEquals(new byte[]{1, 1, 1, 2}, dest.getPaletteIndices(),
+                "copyPixels should update the copied region without clearing previous paletted fills");
+        assertEquals(0xFFD4DDE1, dest.getPixel(0, 0));
+        assertEquals(0xFFC0C0C0, dest.getPixel(3, 0));
+    }
+
+    @Test
+    void palettedBackgroundTransparentCopyDoesNotPreserveKeyedOutWhiteIndex() {
+        Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xD4DDE1, 0x000000}, "nav-ui");
+        Bitmap dest = new Bitmap(2, 1, 8);
+        dest.setImagePalette(navPalette);
+        dest.fillRectPaletteIndex(0, 0, 2, 1, 1, 0xFFD4DDE1);
+
+        Bitmap src = new Bitmap(2, 1, 8);
+        src.setImagePalette(navPalette);
+        src.fillRectPaletteIndex(0, 0, 1, 1, 0, 0xFFFFFFFF);
+        src.fillRectPaletteIndex(1, 0, 1, 1, 2, 0xFF000000);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 2, 1),
+                        new Datum.Rect(0, 0, 2, 1),
+                        inkProps(36)));
+
+        assertArrayEquals(new byte[]{1, 2}, dest.getPaletteIndices(),
+                "white keyed out by Background Transparent must not overwrite destination palette metadata");
+        assertEquals(0xFFD4DDE1, dest.getPixel(0, 0));
+        assertEquals(0xFF000000, dest.getPixel(1, 0));
+    }
+
+    @Test
+    void scaledPalettedCopyPixelsScalePaletteIndicesWithPixels() {
+        Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xDEDEDE, 0x000000}, "nav-ui");
+        Bitmap src = new Bitmap(3, 1, 8);
+        src.setImagePalette(navPalette);
+        src.fillRectPaletteIndex(0, 0, 1, 1, 2, 0xFF000000);
+        src.fillRectPaletteIndex(1, 0, 2, 1, 1, 0xFFDEDEDE);
+
+        Bitmap dest = new Bitmap(3, 6, 8);
+        dest.setImagePalette(navPalette);
+        dest.fill(0xFFFFFFFF);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 6),
+                        new Datum.Rect(0, 0, 3, 1),
+                        inkProps(36)));
+
+        byte[] indices = dest.getPaletteIndices();
+        assertNotNull(indices);
+        assertEquals(2, indices[0] & 0xFF);
+        assertEquals(1, indices[1] & 0xFF);
+        assertEquals(1, indices[(5 * 3) + 2] & 0xFF);
+
+        Bitmap buffer = new Bitmap(3, 6, 8);
+        buffer.setImagePalette(navPalette);
+        buffer.fill(0xFFFFFFFF);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(buffer), "copyPixels",
+                List.of(new Datum.ImageRef(dest), new Datum.Rect(0, 0, 3, 6),
+                        new Datum.Rect(0, 0, 3, 6)));
+
+        assertEquals(0xFFDEDEDE, buffer.getPixel(1, 3),
+                "later paletted copies should not rematerialize scaled track pixels as palette index 0");
+    }
+
+    private static Datum.PropList inkProps(int ink) {
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(ink), true);
+        return props;
     }
 
     @Test
