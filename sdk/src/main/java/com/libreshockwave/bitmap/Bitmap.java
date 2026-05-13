@@ -113,8 +113,40 @@ public class Bitmap {
         return paletteIndices != null ? java.util.Arrays.copyOf(paletteIndices, paletteIndices.length) : null;
     }
 
-    private void clearPaletteIndices() {
+    public void clearPaletteIndices() {
         this.paletteIndices = null;
+    }
+
+    /**
+     * Set a pixel while preserving any stored palette-index metadata.
+     * Use only when the caller will update paletteIndices separately.
+     */
+    public void setPixelPreservePaletteIndex(int x, int y, int argb) {
+        if (x >= 0 && x < width && y >= 0 && y < height) {
+            pixels[y * width + x] = argb;
+        }
+    }
+
+    /**
+     * Fill a region with a concrete palette index, updating both rendered RGB
+     * pixels and the index metadata used by later palette remaps.
+     */
+    public void fillRectPaletteIndex(int x, int y, int w, int h, int index, int argb) {
+        if (paletteIndices == null || paletteIndices.length != pixels.length) {
+            paletteIndices = new byte[pixels.length];
+        }
+        int x2 = Math.min(x + w, width);
+        int y2 = Math.min(y + h, height);
+        x = Math.max(0, x);
+        y = Math.max(0, y);
+
+        for (int py = y; py < y2; py++) {
+            for (int px = x; px < x2; px++) {
+                int offset = py * width + px;
+                pixels[offset] = argb;
+                paletteIndices[offset] = (byte) (index & 0xFF);
+            }
+        }
     }
 
     /**

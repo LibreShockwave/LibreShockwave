@@ -118,7 +118,7 @@ public class Drawing {
                 int destPixel = dest.getPixel(dx, dy);
 
                 int resultPixel = applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
-                dest.setPixel(dx, dy, resultPixel);
+                dest.setPixelPreservePaletteIndex(dx, dy, resultPixel);
             }
         }
     }
@@ -173,7 +173,7 @@ public class Drawing {
 
                 int sourceLuma = maskAlphaFromPixel(pixels[index]);
                 int maskLuma = lightMatte ? sourceLuma : 255 - sourceLuma;
-                dest.setPixel(dx, dy, 0xFF000000 | (maskLuma << 16) | (maskLuma << 8) | maskLuma);
+                dest.setPixelPreservePaletteIndex(dx, dy, 0xFF000000 | (maskLuma << 16) | (maskLuma << 8) | maskLuma);
             }
         }
 
@@ -818,7 +818,7 @@ public class Drawing {
 
     private static FloodFillMatte resolveRgbFloodFillMatte(int[] pixels, int w, int h) {
         Integer matteRgb = inferDominantEdgeRgb(pixels, w, h);
-        if (matteRgb != null) {
+        if (matteRgb != null && matteRgb == 0x000000) {
             return new FloodFillMatte(matteRgb, 0);
         }
         return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);

@@ -188,7 +188,8 @@ public class BitmapCache {
         if (raw == null || raw.getBitDepth() <= 1 || raw.getPaletteIndices() == null) {
             return null;
         }
-        if (InkMode.fromCode(ink) != InkMode.MATTE) {
+        InkMode inkMode = InkMode.fromCode(ink);
+        if (inkMode != InkMode.MATTE && inkMode != InkMode.BACKGROUND_TRANSPARENT) {
             return null;
         }
         if (!hasForeColor && !hasBackColor) {
