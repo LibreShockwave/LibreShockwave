@@ -146,6 +146,9 @@ public class Drawing {
         byte[] paletteIndices = src.getPaletteIndices();
         FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
         boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+        if (!isMaskSource(pixels, transparent, matteSpec)) {
+            return false;
+        }
         int matteLuma = maskAlphaFromPixel(0xFF000000 | (matteSpec.matteColorRgb() & 0xFFFFFF));
         boolean lightMatte = matteLuma >= 128;
 
@@ -175,6 +178,52 @@ public class Drawing {
         }
 
         return true;
+    }
+
+    private static boolean isMaskSource(int[] pixels, boolean[] transparent, FloodFillMatte matteSpec) {
+        return isGrayscaleMaskSource(pixels, transparent)
+                || isWhiteBackedMaskSource(pixels, transparent, matteSpec);
+    }
+
+    private static boolean isGrayscaleMaskSource(int[] pixels, boolean[] transparent) {
+        int opaquePixels = 0;
+        for (int i = 0; i < pixels.length; i++) {
+            if (transparent[i] || ((pixels[i] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int r = (pixels[i] >> 16) & 0xFF;
+            int g = (pixels[i] >> 8) & 0xFF;
+            int b = pixels[i] & 0xFF;
+            if (r != g || g != b) {
+                return false;
+            }
+            opaquePixels++;
+        }
+        return opaquePixels > 0;
+    }
+
+    private static boolean isWhiteBackedMaskSource(int[] pixels, boolean[] transparent, FloodFillMatte matteSpec) {
+        int matteLuma = maskAlphaFromPixel(0xFF000000 | (matteSpec.matteColorRgb() & 0xFFFFFF));
+        if (matteLuma < 250) {
+            return false;
+        }
+
+        boolean hasTransparentMatte = false;
+        boolean hasOpaqueInk = false;
+        for (int i = 0; i < pixels.length; i++) {
+            if (((pixels[i] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            if (transparent[i]) {
+                hasTransparentMatte = true;
+            } else {
+                hasOpaqueInk = true;
+            }
+            if (hasTransparentMatte && hasOpaqueInk) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isMostlyWhiteRegion(Bitmap bitmap, int x, int y, int width, int height) {

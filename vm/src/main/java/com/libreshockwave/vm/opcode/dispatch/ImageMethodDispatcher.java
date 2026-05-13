@@ -624,6 +624,16 @@ public final class ImageMethodDispatcher {
             }
         }
 
+        if (ink == Palette.InkMode.BACKGROUND_TRANSPARENT
+                && bgColorRemap >= 0
+                && (bgColorRemap & 0xFFFFFF) != 0xFFFFFF
+                && effectiveSrc.hasNativeMatteAlpha()
+                && isInverseWhiteAlphaMask(effectiveSrc, effectiveSrcX, effectiveSrcY, srcW, srcH)) {
+            effectiveSrc = invertWhiteAlphaMaskToBlackInk(effectiveSrc, effectiveSrcX, effectiveSrcY, srcW, srcH);
+            effectiveSrcX = 0;
+            effectiveSrcY = 0;
+        }
+
         Palette.InkMode effectiveInk = ink;
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
@@ -644,8 +654,6 @@ public final class ImageMethodDispatcher {
         if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
             effectiveInk = Palette.InkMode.BLEND;
         }
-
-        repaintExposedInfoPanel(dest, destRect, ink);
 
         if (srcW == destW && srcH == destH) {
             // No scaling needed - direct copy
@@ -689,29 +697,6 @@ public final class ImageMethodDispatcher {
         }
 
         return Datum.VOID;
-    }
-
-    private static void repaintExposedInfoPanel(Bitmap dest, Datum.Rect destRect, Palette.InkMode ink) {
-        if (ink != Palette.InkMode.BACKGROUND_TRANSPARENT
-                || dest.getWidth() < 300 || dest.getWidth() > 380
-                || dest.getHeight() < 430 || dest.getHeight() > 500) {
-            return;
-        }
-        int copiedWidth = destRect.right() - destRect.left();
-        int copiedHeight = destRect.bottom() - destRect.top();
-        if (destRect.left() < 70 || destRect.left() > 110
-                || destRect.top() < 315 || destRect.top() > 340
-                || copiedWidth < 200 || copiedWidth > 260
-                || copiedHeight < 40 || copiedHeight > 80) {
-            return;
-        }
-
-        int panelTop = Math.max(0, destRect.top() - 16);
-        int panelRgb = dest.getImagePalette() != null
-                ? dest.resolvePaletteIndex(0, Datum.getActivePalette())
-                : 0xD4DDE1;
-        int panelArgb = 0xFF000000 | (panelRgb & 0xFFFFFF);
-        dest.fillRect(0, panelTop, dest.getWidth(), dest.getHeight() - panelTop, panelArgb);
     }
 
     /**
@@ -953,6 +938,40 @@ public final class ImageMethodDispatcher {
             }
         }
         return true;
+    }
+
+    private static boolean isInverseWhiteAlphaMask(Bitmap src, int srcX, int srcY, int width, int height) {
+        boolean hasOpaqueWhite = false;
+        boolean hasTransparentInk = false;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel = src.getPixel(srcX + x, srcY + y);
+                int alpha = (pixel >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    hasTransparentInk = true;
+                    continue;
+                }
+                if ((pixel & 0xFFFFFF) != 0xFFFFFF) {
+                    return false;
+                }
+                hasOpaqueWhite = true;
+            }
+        }
+        return hasOpaqueWhite && hasTransparentInk;
+    }
+
+    private static Bitmap invertWhiteAlphaMaskToBlackInk(Bitmap src, int srcX, int srcY, int width, int height) {
+        Bitmap inverted = new Bitmap(width, height, 32);
+        inverted.setNativeAlpha(true);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel = src.getPixel(srcX + x, srcY + y);
+                if (((pixel >>> 24) & 0xFF) == 0) {
+                    inverted.setPixel(x, y, 0xFF000000);
+                }
+            }
+        }
+        return inverted;
     }
 
     private static Bitmap multiplyBitmapColor(Bitmap src, int tintRgb) {

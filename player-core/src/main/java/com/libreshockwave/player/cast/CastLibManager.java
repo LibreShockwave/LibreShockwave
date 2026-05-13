@@ -356,14 +356,19 @@ public class CastLibManager implements CastLibProvider {
             if (targetCastLib == null) {
                 return Datum.VOID;
             }
-            CastMember targetMember = targetCastLib.getMember(targetRef.memberNum());
-            if (targetMember == null) {
+            CastMember argumentMember = targetCastLib.getMember(targetRef.memberNum());
+            if (argumentMember == null) {
                 return Datum.VOID;
             }
-            Palette sourcePalette = member.getPaletteData();
-            if (sourcePalette != null) {
-                targetMember.setPaletteData(sourcePalette);
+            Palette receiverPalette = member.getPaletteData();
+            if (receiverPalette != null) {
+                argumentMember.setPaletteData(receiverPalette);
                 return targetArg;
+            }
+            Palette argumentPalette = argumentMember.getPaletteData();
+            if (argumentPalette != null) {
+                member.setPaletteData(argumentPalette);
+                return Datum.CastMemberRef.of(castLibNumber, memberNumber);
             }
         }
         return member.callMethod(methodName, args);

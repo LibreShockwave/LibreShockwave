@@ -8,6 +8,7 @@ import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.pipeline.BitmapCache;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.SpriteBaker;
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
 import org.junit.jupiter.api.Test;
@@ -394,6 +395,31 @@ public class ScriptModifiedBitmapTest {
                 "Native-alpha transparent pixels should leave the destination unchanged");
         assertEquals(0xFF000000, dest.getPixel(1, 1),
                 "Native-alpha text pixels should not be erased by a matching #bgColor key");
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsInvertsWhiteNativeAlphaMaskWithExplicitBackgroundColor() {
+        Bitmap dest = new Bitmap(3, 1, 32);
+        dest.fill(0xFFC0C0C0);
+
+        Bitmap src = new Bitmap(3, 1, 32, new int[] {
+                0xFFFFFFFF, 0x00FFFFFF, 0xFFFFFFFF
+        });
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("bgColor", new Datum.Color(221, 221, 221), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 1),
+                        new Datum.Rect(0, 0, 3, 1), props));
+
+        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+                "Opaque white mask backing should remain transparent over the destination");
+        assertEquals(0xFF000000, dest.getPixel(1, 0),
+                "Transparent mask holes should become black ink");
+        assertEquals(0xFFC0C0C0, dest.getPixel(2, 0));
     }
 
     @Test
@@ -1032,24 +1058,64 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
-    void transparentInfoPanelCopyRepaintsExposedPalettedBacking() {
-        Palette navPalette = new Palette(new int[]{0xD4DDE1, 0xFFFFFF}, "nav-ui");
-        Bitmap dest = new Bitmap(340, 454, 8);
-        dest.setImagePalette(navPalette);
-        dest.fill(0xFFDBDBDB);
+    void bitmapMemberPalettePropertyAcceptsPaletteMemberName() {
+        Palette defaultPalette = new Palette(new int[]{0xDBDBDB, 0x000000}, "default");
+        Palette navPalette = new Palette(new int[]{0xD4DDE1, 0x000000}, "nav_ui_palette");
+        Bitmap bmp = new Bitmap(1, 1, 8);
+        bmp.setImagePalette(defaultPalette);
+        bmp.setPixel(0, 0, 0xFFDBDBDB);
+        bmp.setPaletteIndices(new byte[]{0});
+        CastMember member = new CastMember(1, 42, MemberType.BITMAP);
+        member.setBitmapDirectly(bmp);
 
-        Bitmap src = new Bitmap(230, 56, 32);
-        src.fill(0xFFFFFFFF);
-        src.setPixel(10, 10, 0xFF111111);
+        CastLibProvider.setProvider(new PaletteNameProvider(navPalette));
+        try {
+            assertTrue(member.setProp("palette", Datum.of("nav_ui_palette")));
 
-        Datum.PropList props = new Datum.PropList();
-        props.add("ink", Datum.of(36), true);
-        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
-                List.of(new Datum.ImageRef(src), new Datum.Rect(86, 325, 316, 381),
-                        new Datum.Rect(0, 0, 230, 56), props));
+            assertEquals(0xFFD4DDE1, member.getBitmap().getPixel(0, 0));
+            Datum paletteRef = member.getProp("paletteRef");
+            assertInstanceOf(Datum.CastMemberRef.class, paletteRef);
+            assertEquals(3, ((Datum.CastMemberRef) paletteRef).castLibNum());
+            assertEquals(44, ((Datum.CastMemberRef) paletteRef).memberNum());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
 
-        assertEquals(0xFFD4DDE1, dest.getPixel(10, 320));
-        assertEquals(0xFF111111, dest.getPixel(96, 335));
+    private record PaletteNameProvider(Palette palette) implements CastLibProvider {
+        @Override
+        public int getCastLibByNumber(int castLibNumber) { return castLibNumber; }
+
+        @Override
+        public int getCastLibByName(String name) { return -1; }
+
+        @Override
+        public Datum getCastLibProp(int castLibNumber, String propName) { return Datum.VOID; }
+
+        @Override
+        public boolean setCastLibProp(int castLibNumber, String propName, Datum value) { return false; }
+
+        @Override
+        public Datum getMember(int castLibNumber, int memberNumber) { return Datum.VOID; }
+
+        @Override
+        public Datum getMemberByName(int castLibNumber, String memberName) {
+            return "nav_ui_palette".equals(memberName) ? Datum.CastMemberRef.of(3, 44) : Datum.VOID;
+        }
+
+        @Override
+        public int getCastLibCount() { return 1; }
+
+        @Override
+        public Datum getMemberProp(int castLibNumber, int memberNumber, String propName) { return Datum.VOID; }
+
+        @Override
+        public boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value) { return false; }
+
+        @Override
+        public Palette getMemberPalette(int castLibNumber, int memberNumber) {
+            return castLibNumber == 3 && memberNumber == 44 ? palette : null;
+        }
     }
 
     @Test

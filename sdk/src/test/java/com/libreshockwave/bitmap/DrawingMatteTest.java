@@ -355,6 +355,40 @@ class DrawingMatteTest {
     }
 
     @Test
+    void matteCopyOfColoredArtworkIntoWhiteEightBitImagePreservesSourceColor() {
+        Bitmap dest = new Bitmap(1, 1, 8, new int[] {
+                0xFFFFFFFF
+        });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] {
+                0xFFD4DDE1
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 1, 1, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFD4DDE1, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void matteCopyOfWhiteBackedColoredTextIntoEightBitImageBuildsLumaMask() {
+        Bitmap mask = new Bitmap(3, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap text = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF336666, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Drawing.copyPixels(mask, text, 0, 0, 0, 0, 3, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFFFFFFF, mask.getPixel(0, 0));
+        assertEquals(0xFF575757, mask.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, mask.getPixel(2, 2));
+    }
+
+    @Test
     void matteCopyIntoBlackEightBitImagePreservesWhiteTextPixels() {
         Bitmap dest = new Bitmap(3, 3, 8, new int[] {
                 0xFF000000, 0xFF000000, 0xFF000000,
