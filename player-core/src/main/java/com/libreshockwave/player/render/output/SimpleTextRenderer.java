@@ -249,8 +249,8 @@ public class SimpleTextRenderer implements TextRenderer {
     private static int alignmentOffset(String alignment, int fieldWidth, int lineWidth) {
         if (alignment == null || fieldWidth <= 0) return 0;
         return switch (alignment) {
-            case "center" -> (fieldWidth - lineWidth) / 2;
-            case "right" -> fieldWidth - lineWidth;
+            case "center" -> Math.max(0, (fieldWidth - lineWidth) / 2);
+            case "right" -> Math.max(0, fieldWidth - lineWidth);
             default -> 0;
         };
     }
