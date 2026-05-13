@@ -69,6 +69,36 @@ class SimpleTextRendererTest {
     }
 
     @Test
+    void onePixelDefaultLeadingDoesNotExpandBitmapFontLineAdvance() {
+        FontRegistry.clear();
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
+                160, 0,
+                "V", 9, "plain",
+                "left", 0xFF000000, 0x00FFFFFF,
+                false, false, 9, 1);
+
+        assertEquals(19, text.getHeight(),
+                "expected one-pixel default leading to affect image height without adding interline spacing");
+    }
+
+    @Test
+    void explicitBitmapFontLineSpacingStillExpandsLineAdvance() {
+        FontRegistry.clear();
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
+                160, 0,
+                "V", 9, "plain",
+                "left", 0xFF000000, 0x00FFFFFF,
+                false, false, 9, 9);
+
+        assertEquals(36, text.getHeight(),
+                "expected explicit extra leading to keep the larger Director line advance");
+    }
+
+    @Test
     void locToCharPosTreatsLfAsLineBreak() {
         SimpleTextRenderer renderer = new SimpleTextRenderer();
 

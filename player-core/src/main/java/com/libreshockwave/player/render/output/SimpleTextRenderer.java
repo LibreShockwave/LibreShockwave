@@ -382,14 +382,13 @@ public class SimpleTextRenderer implements TextRenderer {
             }
         }
 
-        // In Director, topSpacing adds leading above EACH line (per-line leading),
-        // so the effective line advance = fixedLineSpace + topSpacing.
         // The Writer_Class decomposes fixedLineSpace into:
         //   member.fixedLineSpace = fontSize
         //   member.topSpacing = requestedFixedLineSpace - fontSize
-        // Total per-line advance = fontSize + topSpacing = requestedFixedLineSpace.
-        int lineAdvance = lineHeight + topSpacing;
-        int neededHeight = lines.size() * lineAdvance;
+        // A one-pixel topSpacing is the default font leading and does not widen
+        // the line advance; larger values represent explicit fixed line spacing.
+        int lineAdvance = bitmapLineAdvance(font, lineHeight, topSpacing);
+        int neededHeight = lines.size() * lineAdvance + excludedLeading(font, lineHeight, topSpacing);
         if (neededHeight > height) height = neededHeight;
 
         int[] pixels = new int[width * height];
@@ -428,6 +427,18 @@ public class SimpleTextRenderer implements TextRenderer {
         Bitmap bitmap = new Bitmap(width, height, 32, pixels);
         bitmap.markScriptModified();
         return bitmap;
+    }
+
+    private static int bitmapLineAdvance(BitmapFont font, int lineHeight, int topSpacing) {
+        return lineHeight + (isDefaultLeading(font, lineHeight, topSpacing) ? 0 : topSpacing);
+    }
+
+    private static int excludedLeading(BitmapFont font, int lineHeight, int topSpacing) {
+        return isDefaultLeading(font, lineHeight, topSpacing) ? topSpacing : 0;
+    }
+
+    private static boolean isDefaultLeading(BitmapFont font, int lineHeight, int topSpacing) {
+        return topSpacing == 1 && font != null && lineHeight == font.getFontSize();
     }
 
     /**

@@ -118,16 +118,17 @@ public final class SoftwareFrameRenderer {
                 int srcA = (src >> 24) & 0xFF;
                 if (srcA == 0) continue;
 
-                if (blend < 100) {
-                    srcA = (srcA * blend) / 100;
-                    if (srcA == 0) continue;
-                }
-
                 int dstIdx = (dstY + sy) * stageWidth + (dstX + sx);
                 if (dstIdx < 0 || dstIdx >= argbLen) continue;
 
                 if (useSpecialInk) {
+                    if (blend < 100) {
+                        srcA = (srcA * blend) / 100;
+                        if (srcA == 0) continue;
+                    }
                     compositeSpecialInk(argb, dstIdx, src, srcA, ink);
+                } else if (blend < 100) {
+                    alphaCompositePercent(argb, dstIdx, src, srcA, blend);
                 } else if (srcA >= 255) {
                     argb[dstIdx] = src | 0xFF000000;
                 } else {
@@ -175,16 +176,17 @@ public final class SoftwareFrameRenderer {
                 int srcA = (src >> 24) & 0xFF;
                 if (srcA == 0) continue;
 
-                if (blend < 100) {
-                    srcA = (srcA * blend) / 100;
-                    if (srcA == 0) continue;
-                }
-
                 int dstIdx = dy * stageWidth + dx;
                 if (dstIdx < 0 || dstIdx >= argbLen) continue;
 
                 if (useSpecialInk) {
+                    if (blend < 100) {
+                        srcA = (srcA * blend) / 100;
+                        if (srcA == 0) continue;
+                    }
                     compositeSpecialInk(argb, dstIdx, src, srcA, ink);
+                } else if (blend < 100) {
+                    alphaCompositePercent(argb, dstIdx, src, srcA, blend);
                 } else if (srcA >= 255) {
                     argb[dstIdx] = src | 0xFF000000;
                 } else {
@@ -326,5 +328,38 @@ public final class SoftwareFrameRenderer {
         int outB = (srcB * srcA + dstB * dstA * invA / 255) / outA;
 
         argb[dstIdx] = (outA << 24) | (outR << 16) | (outG << 8) | outB;
+    }
+
+    private static void alphaCompositePercent(int[] argb, int dstIdx, int src, int srcA, int blendPercent) {
+        if (dstIdx < 0 || dstIdx >= argb.length) return;
+        if (srcA <= 0 || blendPercent <= 0) return;
+        if (blendPercent >= 100) {
+            alphaComposite(argb, dstIdx, src, srcA);
+            return;
+        }
+
+        int dst = argb[dstIdx];
+        int dstA = (dst >> 24) & 0xFF;
+        if (dstA != 255) {
+            int blendedAlpha = (srcA * blendPercent) / 100;
+            alphaComposite(argb, dstIdx, src, blendedAlpha);
+            return;
+        }
+
+        int opacity = srcA * blendPercent;
+        int invOpacity = 25500 - opacity;
+
+        int srcR = (src >> 16) & 0xFF;
+        int srcG = (src >> 8) & 0xFF;
+        int srcB = src & 0xFF;
+        int dstR = (dst >> 16) & 0xFF;
+        int dstG = (dst >> 8) & 0xFF;
+        int dstB = dst & 0xFF;
+
+        int outR = (srcR * opacity + dstR * invOpacity + 12750) / 25500;
+        int outG = (srcG * opacity + dstG * invOpacity + 12750) / 25500;
+        int outB = (srcB * opacity + dstB * invOpacity + 12750) / 25500;
+
+        argb[dstIdx] = 0xFF000000 | (outR << 16) | (outG << 8) | outB;
     }
 }
