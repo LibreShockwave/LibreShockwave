@@ -144,6 +144,16 @@ class DatumTest {
     }
 
     @Test
+    void testPropListTextColorAliases() {
+        Datum.PropList pl = new Datum.PropList();
+        pl.add("color", Datum.of(0xEEEEEE), true);
+        pl.add("bgColor", Datum.of(0x6794A7), true);
+
+        assertEquals(0xEEEEEE, pl.get("txtColor", true).toInt());
+        assertEquals(0x6794A7, pl.get("txtBgColor", true).toInt());
+    }
+
+    @Test
     void testLingoEqualsCrossType() {
         // Director: #foo = "foo" is TRUE (case-insensitive)
         assertTrue(Datum.symbol("info").lingoEquals(Datum.of("info")));
