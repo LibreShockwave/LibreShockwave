@@ -986,9 +986,8 @@ public class CastLibManager implements CastLibProvider {
         return null;
     }
 
-    private static boolean isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType scriptType) {
-        return scriptType != com.libreshockwave.chunks.ScriptChunk.ScriptType.PARENT
-                && scriptType != com.libreshockwave.chunks.ScriptChunk.ScriptType.BEHAVIOR;
+    static boolean isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType scriptType) {
+        return scriptType == com.libreshockwave.chunks.ScriptChunk.ScriptType.MOVIE_SCRIPT;
     }
 
     @Override

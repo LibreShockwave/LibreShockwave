@@ -120,6 +120,56 @@ class MemberRegistryMethodDispatcherTest {
     }
 
     @Test
+    void getmemberReturnsVoidWhenRegistryLookupMisses() {
+        Datum.PropList registry = new Datum.PropList();
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
+        instance.properties().put("pAllMemNumList", registry);
+
+        CastLibProvider.setProvider(new RegistryLookupProvider(Map.of(), Map.of()));
+        try {
+            MemberRegistryMethodDispatcher.DispatchResult result =
+                    MemberRegistryMethodDispatcher.dispatch(
+                            instance,
+                            "getmember",
+                            List.of(Datum.of("friend_list_icon_notification")));
+
+            assertTrue(result.handled());
+            assertTrue(result.value().isVoid(),
+                    "temporary registry misses should not synthesize member(0) and clear visible UI");
+        } finally {
+            CastLibProvider.clearProvider();
+            MemberRegistryMethodDispatcher.clearRememberedAliases();
+        }
+    }
+
+    @Test
+    void prefillDirectlyServesRegistryGetmemberForRegistryOwners() {
+        Datum.PropList registry = new Datum.PropList();
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
+        instance.properties().put("pAllMemNumList", registry);
+
+        CastLibProvider.setProvider(new RegistryLookupProvider(
+                Map.of("friend_list_icon_notification", Datum.CastMemberRef.of(78, 581)),
+                Map.of()));
+        try {
+            MemberRegistryMethodDispatcher.DispatchResult result =
+                    MemberRegistryMethodDispatcher.prefill(
+                            instance,
+                            "getMember",
+                            List.of(Datum.of("friend_list_icon_notification")));
+
+            assertTrue(result.handled());
+            Datum.CastMemberRef ref = assertInstanceOf(Datum.CastMemberRef.class, result.value());
+            assertEquals(78, ref.castLibNum());
+            assertEquals(581, ref.memberNum());
+            assertEquals((78 << 16) | 581, registry.get("friend_list_icon_notification").toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+            MemberRegistryMethodDispatcher.clearRememberedAliases();
+        }
+    }
+
+    @Test
     void readAliasIndexesFromFieldBootstrapsStableTargetsThatWereNotPreindexedYet() {
         Datum.PropList registry = new Datum.PropList();
         Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
@@ -346,7 +396,7 @@ class MemberRegistryMethodDispatcherTest {
     }
 
     @Test
-    void getmemnumDoesNotBootstrapNonScriptMembersFromBroadLookup() {
+    void getmemnumBootstrapsStableVisibleBitmapMembersFromBroadLookup() {
         Datum.PropList registry = new Datum.PropList();
         Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
         instance.properties().put("pAllMemNumList", registry);
@@ -355,6 +405,31 @@ class MemberRegistryMethodDispatcherTest {
                 Map.of("grunge_barrel_a_0_1_1_0_0", Datum.CastMemberRef.of(11, 7)),
                 Map.of(),
                 Map.of("grunge_barrel_a_0_1_1_0_0", "bitmap")));
+        try {
+            MemberRegistryMethodDispatcher.DispatchResult result =
+                    MemberRegistryMethodDispatcher.dispatch(
+                            instance,
+                            "getmemnum",
+                            List.of(Datum.of("grunge_barrel_a_0_1_1_0_0")));
+
+            assertTrue(result.handled());
+            assertEquals((11 << 16) | 7, result.value().toInt());
+            assertEquals((11 << 16) | 7, registry.get("grunge_barrel_a_0_1_1_0_0").toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+            MemberRegistryMethodDispatcher.clearRememberedAliases();
+        }
+    }
+
+    @Test
+    void getmemnumDoesNotBootstrapHiddenBitmapMembersFromBroadLookup() {
+        Datum.PropList registry = new Datum.PropList();
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
+        instance.properties().put("pAllMemNumList", registry);
+
+        CastLibProvider.setProvider(new BroadLookupVisibilityProvider(
+                Map.of("grunge_barrel_a_0_1_1_0_0", Datum.CastMemberRef.of(11, 7)),
+                Set.of()));
         try {
             MemberRegistryMethodDispatcher.DispatchResult result =
                     MemberRegistryMethodDispatcher.dispatch(
@@ -372,7 +447,7 @@ class MemberRegistryMethodDispatcherTest {
     }
 
     @Test
-    void prefillSeedsStableVisibleMembersWithoutHandling() {
+    void prefillSeedsStableVisibleMembersAndReturnsAccessorResult() {
         Datum.PropList registry = new Datum.PropList();
         Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
         instance.properties().put("pAllMemNumList", registry);
@@ -385,7 +460,8 @@ class MemberRegistryMethodDispatcherTest {
                             instance,
                             "getmemnum",
                             List.of(Datum.of("Object Base Class")));
-            assertEquals(MemberRegistryMethodDispatcher.NOT_HANDLED, resolved);
+            assertTrue(resolved.handled());
+            assertEquals((2 << 16) | 74, resolved.value().toInt());
             assertEquals((2 << 16) | 74, registry.get("Object Base Class").toInt());
 
             MemberRegistryMethodDispatcher.DispatchResult unresolved =
@@ -393,7 +469,8 @@ class MemberRegistryMethodDispatcherTest {
                             instance,
                             "getmemnum",
                             List.of(Datum.of("Missing Class")));
-            assertEquals(MemberRegistryMethodDispatcher.NOT_HANDLED, unresolved);
+            assertTrue(unresolved.handled());
+            assertEquals(0, unresolved.value().toInt());
         } finally {
             CastLibProvider.clearProvider();
             MemberRegistryMethodDispatcher.clearRememberedAliases();
@@ -406,9 +483,9 @@ class MemberRegistryMethodDispatcherTest {
         Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
         instance.properties().put("pAllMemNumList", registry);
 
-        CastLibProvider.setProvider(new RegistryLookupProvider(
+        CastLibProvider.setProvider(new BroadLookupVisibilityProvider(
                 Map.of("grunge_barrel_a_0_1_1_0_0", Datum.CastMemberRef.of(11, 7)),
-                Map.of()));
+                Set.of()));
         try {
             MemberRegistryMethodDispatcher.DispatchResult result =
                     MemberRegistryMethodDispatcher.dispatch(
@@ -744,6 +821,43 @@ class MemberRegistryMethodDispatcherTest {
         public boolean memberExists(int castLibNumber, int memberNumber) {
             int slotValue = (castLibNumber << 16) | memberNumber;
             return liveSlots.contains(slotValue);
+        }
+    }
+
+    private static final class BroadLookupVisibilityProvider extends NoOpCastLibProvider {
+        private final Map<String, Datum> refsByName;
+        private final Set<Integer> visibleSlots;
+
+        private BroadLookupVisibilityProvider(Map<String, Datum> refsByName, Set<Integer> visibleSlots) {
+            this.refsByName = new HashMap<>(refsByName);
+            this.visibleSlots = visibleSlots;
+        }
+
+        @Override
+        public Datum getMemberByName(int castLibNumber, String memberName) {
+            return refsByName.getOrDefault(memberName, Datum.VOID);
+        }
+
+        @Override
+        public Datum getRegistryMemberByName(int castLibNumber, String memberName) {
+            return Datum.VOID;
+        }
+
+        @Override
+        public boolean isRegistryVisibleMember(int castLibNumber, int memberNumber) {
+            return visibleSlots.contains((castLibNumber << 16) | memberNumber);
+        }
+
+        @Override
+        public boolean memberExists(int castLibNumber, int memberNumber) {
+            for (Datum ref : refsByName.values()) {
+                if (ref instanceof Datum.CastMemberRef cmr
+                        && cmr.castLibNum() == castLibNumber
+                        && cmr.memberNum() == memberNumber) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

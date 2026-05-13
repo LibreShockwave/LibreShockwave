@@ -337,8 +337,7 @@ public class LingoVM {
     }
 
     static boolean isGlobalHandlerScriptType(ScriptChunk.ScriptType scriptType) {
-        return scriptType != ScriptChunk.ScriptType.PARENT
-                && scriptType != ScriptChunk.ScriptType.BEHAVIOR;
+        return scriptType == ScriptChunk.ScriptType.MOVIE_SCRIPT;
     }
 
     /**

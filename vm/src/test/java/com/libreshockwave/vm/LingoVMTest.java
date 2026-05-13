@@ -288,7 +288,7 @@ class LingoVMTest {
     }
 
     @Test
-    void testMemberBuiltinReturnsInvalidRefWhenNamedMemberIsMissingFromSpecificCast() {
+    void testMemberBuiltinReturnsVoidWhenNamedMemberIsMissingFromSpecificCast() {
         LingoVM vm = new LingoVM(null);
         RecordingCastProvider provider = new RecordingCastProvider();
         provider.memberByNameResult = Datum.VOID;
@@ -297,12 +297,34 @@ class LingoVMTest {
             Datum result = vm.callHandler("member", List.of(Datum.of("grunge_barrel.props"), Datum.of("bin")));
             assertEquals(11, provider.lastMemberByNameCastLibNumber);
             assertEquals("grunge_barrel.props", provider.lastMemberByName);
-            assertEquals(11, provider.lastGetMemberCastLibNumber);
-            assertEquals(0, provider.lastGetMemberNumber);
-            assertInstanceOf(Datum.CastMemberRef.class, result);
-            Datum.CastMemberRef ref = (Datum.CastMemberRef) result;
-            assertEquals(11, ref.castLibNum());
-            assertEquals(0, ref.memberNum());
+            assertEquals(-1, provider.lastGetMemberCastLibNumber);
+            assertEquals(-1, provider.lastGetMemberNumber);
+            assertTrue(result.isVoid());
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void globalHandlerLookupOnlyTreatsMovieScriptsAsGlobal() {
+        assertTrue(LingoVM.isGlobalHandlerScriptType(ScriptChunk.ScriptType.MOVIE_SCRIPT));
+        assertFalse(LingoVM.isGlobalHandlerScriptType(ScriptChunk.ScriptType.SCORE));
+        assertFalse(LingoVM.isGlobalHandlerScriptType(ScriptChunk.ScriptType.BEHAVIOR));
+        assertFalse(LingoVM.isGlobalHandlerScriptType(ScriptChunk.ScriptType.PARENT));
+        assertFalse(LingoVM.isGlobalHandlerScriptType(ScriptChunk.ScriptType.UNKNOWN));
+    }
+
+    @Test
+    void testMemberBuiltinReturnsVoidForZeroMemberNumber() {
+        LingoVM vm = new LingoVM(null);
+        RecordingCastProvider provider = new RecordingCastProvider();
+        CastLibProvider.setProvider(provider);
+        try {
+            Datum result = vm.callHandler("member", List.of(Datum.ZERO));
+
+            assertTrue(result.isVoid());
+            assertEquals(-1, provider.lastGetMemberCastLibNumber);
+            assertEquals(-1, provider.lastGetMemberNumber);
         } finally {
             CastLibProvider.clearProvider();
         }

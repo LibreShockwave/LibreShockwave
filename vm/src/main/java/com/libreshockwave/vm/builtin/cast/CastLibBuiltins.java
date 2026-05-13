@@ -88,13 +88,17 @@ public final class CastLibBuiltins {
         // Get member by number or name
         if (memberArg.isInt() || memberArg.isFloat()) {
             int memberNumber = memberArg.toInt();
+            if (memberNumber == 0) {
+                return Datum.VOID;
+            }
+            int normalizedMemberNumber = Math.abs(memberNumber);
             if (castLibNumber > 0) {
-                return provider.getMember(castLibNumber, memberNumber);
+                return provider.getMember(castLibNumber, normalizedMemberNumber);
             }
 
             // Check if this is a slot number (castLib << 16 | memberNum) from member.number
-            int encodedCast = (memberNumber >> 16) & 0xFFFF;
-            int encodedMember = memberNumber & 0xFFFF;
+            int encodedCast = (normalizedMemberNumber >> 16) & 0xFFFF;
+            int encodedMember = normalizedMemberNumber & 0xFFFF;
             if (encodedCast > 0 && encodedMember > 0) {
                 // Decode slot number: direct lookup in the encoded cast lib
                 if (provider.memberExists(encodedCast, encodedMember)) {
@@ -105,19 +109,18 @@ public final class CastLibBuiltins {
             // No cast lib specified — search all casts for the member
             int totalCasts = provider.getCastLibCount();
             for (int i = 1; i <= totalCasts; i++) {
-                if (provider.memberExists(i, memberNumber)) {
-                    return provider.getMember(i, memberNumber);
+                if (provider.memberExists(i, normalizedMemberNumber)) {
+                    return provider.getMember(i, normalizedMemberNumber);
                 }
             }
             // Not found in any cast — return ref in cast 1 (Director fallback)
-            return provider.getMember(1, memberNumber);
+            return provider.getMember(1, normalizedMemberNumber);
         } else if (memberArg.isString() || memberArg.isSymbol()) {
             Datum found = provider.getMemberByName(castLibNumber, memberArg.toStr());
             if (!found.isVoid()) {
                 return found;
             }
-            int fallbackCast = castLibNumber > 0 ? castLibNumber : 1;
-            return provider.getMember(fallbackCast, 0);
+            return Datum.VOID;
         }
 
         return Datum.VOID;
