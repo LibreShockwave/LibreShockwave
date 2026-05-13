@@ -60,17 +60,21 @@ tasks.register('generateFontSources') {
 
     def macFontDir = rootProject.file('player-core/src/main/resources/fonts/mac')
     def winFontDir = rootProject.file('player-core/src/main/resources/fonts/windows')
+    def volterFontDir = rootProject.file('player-core/src/main/resources/fonts/volter')
     def outDir = generatedFontSrcDir.get().asFile
 
     inputs.dir macFontDir
     inputs.dir winFontDir
+    inputs.dir volterFontDir
     outputs.dir outDir
 
     doLast {
         def macOutDir = new File(outDir, 'com/libreshockwave/fonts/mac')
         def winOutDir = new File(outDir, 'com/libreshockwave/fonts/windows')
+        def volterOutDir = new File(outDir, 'com/libreshockwave/fonts/volter')
         macOutDir.mkdirs()
         winOutDir.mkdirs()
+        volterOutDir.mkdirs()
 
         macFontDir.listFiles()?.findAll { it.name.endsWith('.ttf') }?.each { ttfFile ->
             generateFontClass(ttfFile, macOutDir, 'com.libreshockwave.fonts.mac')
@@ -78,6 +82,10 @@ tasks.register('generateFontSources') {
 
         winFontDir.listFiles()?.findAll { it.name.endsWith('.ttf') }?.each { ttfFile ->
             generateFontClass(ttfFile, winOutDir, 'com.libreshockwave.fonts.windows')
+        }
+
+        volterFontDir.listFiles()?.findAll { it.name.endsWith('.ttf') }?.each { ttfFile ->
+            generateFontClass(ttfFile, volterOutDir, 'com.libreshockwave.fonts.volter')
         }
     }
 }

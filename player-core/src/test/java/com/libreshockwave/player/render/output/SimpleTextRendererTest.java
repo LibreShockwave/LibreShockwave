@@ -1,6 +1,7 @@
 package com.libreshockwave.player.render.output;
 
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.player.cast.FontRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -116,6 +117,24 @@ class SimpleTextRendererTest {
 
         assertTrue(findFirstNonBackgroundColumn(text, 0xFF000000) > 0,
                 "expected the first glyph to preserve its font bearing instead of touching the image edge");
+    }
+
+    @Test
+    void directorFontAliasUsesEmbeddedVolterBoldMetrics() {
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerFontAlias("vb", "Volter", true);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            int[] afterTitle = renderer.charPosToLoc("Hotel Navigator", 16,
+                    "vb", 9, "plain",
+                    10, "left", 200);
+
+            assertTrue(afterTitle[0] >= 90,
+                    "expected Director alias vb to resolve to the wider Volter bold metrics");
+        } finally {
+            FontRegistry.clear();
+        }
     }
 
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {

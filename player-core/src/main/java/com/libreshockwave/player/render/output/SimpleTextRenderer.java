@@ -4,6 +4,7 @@ import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.cast.XmedStyledText;
 import com.libreshockwave.font.BitmapFont;
 import com.libreshockwave.player.cast.FontRegistry;
+import com.libreshockwave.player.cast.VolterFontBundle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -115,6 +116,11 @@ public class SimpleTextRenderer implements TextRenderer {
                                                boolean bold, boolean italic,
                                                boolean[] usedRealBold) {
         if (fontName == null) return null;
+
+        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, true);
+        if (aliasFont != null) {
+            return aliasFont;
+        }
 
         // 1. Mac bitmap TTFs first — pixel-perfect at target size, best for small sizes
         BitmapFont macFont = com.libreshockwave.player.cast.MacFontBundle.getFont(
@@ -262,6 +268,11 @@ public class SimpleTextRenderer implements TextRenderer {
                                                     boolean[] usedRealBold) {
         if (fontName == null) return null;
 
+        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, false);
+        if (aliasFont != null) {
+            return aliasFont;
+        }
+
         // 1. Try Windows TTF font with real bold/italic variant
         BitmapFont winFont = com.libreshockwave.player.cast.WindowsFontBundle.getFont(
                 fontName, fontSize, bold, italic);
@@ -298,6 +309,53 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         return null;
+    }
+
+    private static BitmapFont resolveDirectorFontAlias(String fontName, int fontSize,
+                                                       boolean bold, boolean italic,
+                                                       boolean[] usedRealBold,
+                                                       boolean preferMacFonts) {
+        FontRegistry.FontAlias alias = FontRegistry.getFontAlias(fontName);
+        String resolvedName = alias != null ? alias.fontName() : fontName;
+        boolean resolvedBold = bold || (alias != null && alias.bold());
+
+        BitmapFont volter = VolterFontBundle.getFont(resolvedName, fontSize, resolvedBold);
+        if (volter != null) {
+            usedRealBold[0] = resolvedBold;
+            return volter;
+        }
+
+        if (alias == null) {
+            return null;
+        }
+
+        BitmapFont first = preferMacFonts
+                ? com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic)
+                : com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic);
+        if (first != null) {
+            usedRealBold[0] = resolvedBold && (preferMacFonts
+                    ? com.libreshockwave.player.cast.MacFontBundle.hasBoldVariant(resolvedName)
+                    : com.libreshockwave.player.cast.WindowsFontBundle.hasBoldVariant(resolvedName));
+            return first;
+        }
+
+        BitmapFont second = preferMacFonts
+                ? com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic)
+                : com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic);
+        if (second != null) {
+            usedRealBold[0] = resolvedBold && (preferMacFonts
+                    ? com.libreshockwave.player.cast.WindowsFontBundle.hasBoldVariant(resolvedName)
+                    : com.libreshockwave.player.cast.MacFontBundle.hasBoldVariant(resolvedName));
+            return second;
+        }
+
+        BitmapFont registered = FontRegistry.getBitmapFont(resolvedName, fontSize);
+        if (registered != null) {
+            return registered;
+        }
+
+        String resolved = FontRegistry.resolveFont(resolvedName);
+        return resolved != null ? FontRegistry.getBitmapFont(resolved, fontSize) : null;
     }
 
     /** Backward-compatible overload without bold/italic. */
