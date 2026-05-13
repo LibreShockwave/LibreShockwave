@@ -14,6 +14,21 @@ class SoftwareFrameRendererTransformTest {
 
     @Test
     void spriteBlendUsesPercentCompositingOverOpaqueStage() {
+        assertBlackThirtyPercentBlend(0x668085, 0xFF475A5D);
+    }
+
+    @Test
+    void spriteBlendUsesDirectorPercentRoundingForHalfFractions() {
+        assertBlackThirtyPercentBlend(0x005500, 0xFF003B00);
+    }
+
+    @Test
+    void spriteBlendUsesDirectorFixedPointOpacityForNavigatorShadowColors() {
+        assertBlackThirtyPercentBlend(0x53686C, 0xFF3A494B);
+        assertBlackThirtyPercentBlend(0x517900, 0xFF385500);
+    }
+
+    private static void assertBlackThirtyPercentBlend(int backgroundColor, int expectedColor) {
         Bitmap src = new Bitmap(1, 1, 32, new int[]{
                 0xFF000000
         });
@@ -36,7 +51,7 @@ class SoftwareFrameRendererTransformTest {
         );
 
         Bitmap rendered = new FrameSnapshot(
-                1, 1, 1, 0x668085,
+                1, 1, 1, backgroundColor,
                 List.of(sprite),
                 "",
                 null,
@@ -44,7 +59,7 @@ class SoftwareFrameRendererTransformTest {
                 RenderPipelineTrace.EMPTY
         ).renderFrame();
 
-        assertEquals(0xFF475A5D, rendered.getPixel(0, 0));
+        assertEquals(expectedColor, rendered.getPixel(0, 0));
     }
 
     @Test
