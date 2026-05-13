@@ -13,6 +13,41 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class SoftwareFrameRendererTransformTest {
 
     @Test
+    void spriteBlendUsesPercentCompositingOverOpaqueStage() {
+        Bitmap src = new Bitmap(1, 1, 32, new int[]{
+                0xFF000000
+        });
+        RenderSprite sprite = new RenderSprite(
+                1,
+                0, 0,
+                1, 1,
+                0,
+                true,
+                RenderSprite.SpriteType.BITMAP,
+                null,
+                null,
+                0, 0xFFFFFF,
+                false, false,
+                0, 30,
+                false, false,
+                0.0, 0.0,
+                src,
+                false
+        );
+
+        Bitmap rendered = new FrameSnapshot(
+                1, 1, 1, 0x668085,
+                List.of(sprite),
+                "",
+                null,
+                0,
+                RenderPipelineTrace.EMPTY
+        ).renderFrame();
+
+        assertEquals(0xFF475A5D, rendered.getPixel(0, 0));
+    }
+
+    @Test
     void directorMirrorTransformFlipsSpriteHorizontally() {
         Bitmap src = new Bitmap(2, 1, 32, new int[]{
                 0xFFFF0000,
