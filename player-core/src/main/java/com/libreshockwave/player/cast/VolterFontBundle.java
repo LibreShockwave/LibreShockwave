@@ -22,10 +22,13 @@ public final class VolterFontBundle {
     }
 
     public static BitmapFont getFont(String fontName, int fontSize, boolean bold) {
-        if (!isVolter(fontName) || fontSize <= 0) {
+        if (fontName == null || fontSize <= 0) {
             return null;
         }
-        String variant = bold ? "bold" : "regular";
+        String variant = bold || isVolterBoldAlias(fontName) ? "bold" : "regular";
+        if (!isVolter(fontName) && !isVolterAlias(fontName)) {
+            return null;
+        }
         String cacheKey = variant + ":" + fontSize;
         BitmapFont cached = cache.get(cacheKey);
         if (cached != null) {
@@ -44,5 +47,14 @@ public final class VolterFontBundle {
 
     public static boolean isVolter(String fontName) {
         return fontName != null && "volter".equalsIgnoreCase(fontName.trim());
+    }
+
+    private static boolean isVolterAlias(String fontName) {
+        String normalized = fontName.trim();
+        return "v".equalsIgnoreCase(normalized) || "vb".equalsIgnoreCase(normalized);
+    }
+
+    private static boolean isVolterBoldAlias(String fontName) {
+        return "vb".equalsIgnoreCase(fontName.trim());
     }
 }

@@ -100,6 +100,19 @@ class SimpleTextRendererTest {
     }
 
     @Test
+    void charPosToLocDoesNotReturnNegativeAlignedOverflow() {
+        FontRegistry.clear();
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        int[] afterTitle = renderer.charPosToLoc("Hotel Navigator", 16,
+                "VB", 9, "plain",
+                10, "center", 50);
+
+        assertTrue(afterTitle[0] >= 90,
+                "expected overflowing centered text to measure full content width");
+    }
+
+    @Test
     void findCharLineTreatsCrLfAsSingleLineBreak() {
         assertArrayEquals(new int[]{0, 1}, TextRenderer.findCharLine("A\r\nB", 2));
         assertArrayEquals(new int[]{1, 0}, TextRenderer.findCharLine("A\r\nB", 4));
@@ -135,6 +148,20 @@ class SimpleTextRendererTest {
         } finally {
             FontRegistry.clear();
         }
+    }
+
+    @Test
+    void directorVolterShortAliasFallsBackToBundledBoldMetrics() {
+        FontRegistry.clear();
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        Bitmap title = renderer.renderText("Hotel Navigator", 200, 15,
+                "VB", 9, "plain",
+                "left", 0xFFEEEEEE, 0xFF6794A7,
+                false, false, 10, 0);
+
+        assertEquals(284, countPixels(title, 0xFFEEEEEE),
+                "expected unregistered Director font alias VB to use bundled Volter bold");
     }
 
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {
@@ -174,5 +201,17 @@ class SimpleTextRendererTest {
             }
         }
         return -1;
+    }
+
+    private static int countPixels(Bitmap bitmap, int color) {
+        int count = 0;
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                if (bitmap.getPixel(x, y) == color) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 }
