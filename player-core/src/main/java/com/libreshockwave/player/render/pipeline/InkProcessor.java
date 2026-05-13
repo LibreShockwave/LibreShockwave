@@ -178,6 +178,9 @@ public final class InkProcessor {
         if (src.hasNativeMatteAlpha() && useAlpha) {
             return null;
         }
+        if (src.getBitDepth() == 32 && !src.isScriptModified()) {
+            return new Drawing.FloodFillMatte(0xFFFFFF, 0);
+        }
         return Drawing.resolveFloodFillMatte(src);
     }
 
