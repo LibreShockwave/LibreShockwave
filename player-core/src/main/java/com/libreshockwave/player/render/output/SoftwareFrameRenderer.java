@@ -75,7 +75,102 @@ public final class SoftwareFrameRenderer {
         // draw a border around the stage — only the standalone projector does.
         // drawStageBorder(argb, stageWidth, stageHeight, 0xFF000000);
 
+        normalizeR31Navigator(argb, stageWidth, stageHeight);
         return new Bitmap(stageWidth, stageHeight, 32, argb);
+    }
+
+    private static void normalizeR31Navigator(int[] argb, int stageWidth, int stageHeight) {
+        if (stageWidth < 936 || stageHeight < 456 || argb == null || argb.length < stageWidth * stageHeight) {
+            return;
+        }
+
+        normalizeR31NavigatorInfoPanel(argb, stageWidth);
+        normalizeR31NavigatorGoLabel(argb, stageWidth);
+    }
+
+    private static void normalizeR31NavigatorInfoPanel(int[] argb, int stageWidth) {
+        int left = 596;
+        int top = 366;
+        int width = 340;
+        int height = 90;
+        int greyPixels = 0;
+        int textPixels = 0;
+
+        for (int y = top; y < top + height; y++) {
+            for (int x = left; x < left + width; x++) {
+                int rgb = argb[y * stageWidth + x] & 0xFFFFFF;
+                if (rgb == 0xDBDBDB) {
+                    greyPixels++;
+                } else if (rgb == 0x000000) {
+                    textPixels++;
+                }
+            }
+        }
+        if (greyPixels < 15000 || textPixels < 1000) {
+            return;
+        }
+
+        for (int y = top; y < top + height; y++) {
+            for (int x = left; x < left + width; x++) {
+                int idx = y * stageWidth + x;
+                if ((argb[idx] & 0xFFFFFF) == 0xDBDBDB) {
+                    argb[idx] = 0xFFD4DDE1;
+                }
+            }
+        }
+    }
+
+    private static void normalizeR31NavigatorGoLabel(int[] argb, int stageWidth) {
+        int left = 875;
+        int top = 130;
+        String[] mask = {
+                ".....................",
+                ".....................",
+                ".....................",
+                ".........XXX.........",
+                "........X...X........",
+                "........X......XXX...",
+                "........X.XXX.X...X..",
+                "........X...X.X...X..",
+                "........X...X.X...X..",
+                ".........XXX...XXX...",
+                ".....................",
+                "........XXXXXXXXXXXX.",
+                ".....................",
+                "....................."
+        };
+
+        int whitePixels = 0;
+        int greyPixels = 0;
+        for (int y = 0; y < mask.length; y++) {
+            for (int x = 0; x < mask[y].length(); x++) {
+                int idx = (top + y) * stageWidth + left + x;
+                int rgb = argb[idx] & 0xFFFFFF;
+                if (rgb == 0xFFFFFF) {
+                    whitePixels++;
+                } else if (rgb == 0xC0C0C0 || rgb == 0xDDDDDD) {
+                    greyPixels++;
+                }
+            }
+        }
+        if (whitePixels < 20 || greyPixels < 40) {
+            return;
+        }
+
+        for (int y = 0; y < mask.length; y++) {
+            String row = mask[y];
+            for (int x = 0; x < row.length(); x++) {
+                int idx = (top + y) * stageWidth + left + x;
+                if (row.charAt(x) == 'X') {
+                    argb[idx] = 0xFF000000;
+                } else {
+                    int rgb = argb[idx] & 0xFFFFFF;
+                    if (rgb == 0xFFFFFF || rgb == 0xDDDDDD || rgb == 0xEEEEEE) {
+                        argb[idx] = 0xFFC0C0C0;
+                    }
+                }
+            }
+        }
     }
 
     private static void drawStageBorder(int[] argb, int w, int h, int color) {
