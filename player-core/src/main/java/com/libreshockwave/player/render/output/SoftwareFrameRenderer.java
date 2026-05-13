@@ -321,11 +321,9 @@ public final class SoftwareFrameRenderer {
         int dstG = (dst >> 8) & 0xFF;
         int dstB = dst & 0xFF;
 
-        // Use rounding (+ outA/2) instead of truncation for correct alpha blending
-        int half = outA / 2;
-        int outR = (srcR * srcA + dstR * dstA * invA / 255 + half) / outA;
-        int outG = (srcG * srcA + dstG * dstA * invA / 255 + half) / outA;
-        int outB = (srcB * srcA + dstB * dstA * invA / 255 + half) / outA;
+        int outR = (srcR * srcA + dstR * dstA * invA / 255) / outA;
+        int outG = (srcG * srcA + dstG * dstA * invA / 255) / outA;
+        int outB = (srcB * srcA + dstB * dstA * invA / 255) / outA;
 
         argb[dstIdx] = (outA << 24) | (outR << 16) | (outG << 8) | outB;
     }
