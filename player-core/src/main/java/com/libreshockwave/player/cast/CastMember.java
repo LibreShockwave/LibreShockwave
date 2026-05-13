@@ -810,8 +810,11 @@ public class CastMember {
                 yield new Datum.Rect(textRectLeft, textRectTop, textRectRight, textRectBottom);
             }
             case "image" -> {
-                // Render text content to a bitmap image
-                Bitmap img = renderTextToImage();
+                // Director's text member .image is used heavily as a monochrome mask
+                // source by window text wrappers. Keep it white-backed with black ink
+                // regardless of the member's display color so fake-alpha pipelines can
+                // tint it later via copyPixels/#maskImage.
+                Bitmap img = renderTextMaskImage();
                 if (img != null) {
                     yield new Datum.ImageRef(img);
                 }
@@ -847,11 +850,63 @@ public class CastMember {
      */
     public Bitmap renderTextToImage() {
         int width = textRectRight - textRectLeft;
+        if (textBoxType == 0 && !textWordWrap) {
+            width = Math.max(width, measureAutoTextWidth(getTextContent()));
+        }
         // For boxType=adjust (0), let the renderer auto-size the height to fit
         // the text content. Director auto-adjusts the rect height when text is set,
         // so the stored rectBottom may not reflect the actual content height.
         int height = textBoxType == 0 ? 0 : (textRectBottom - textRectTop);
         return renderTextToImage(width, height, textBgColor);
+    }
+
+    private Bitmap renderTextMaskImage() {
+        if (textRenderer == null) {
+            return null;
+        }
+        int width = textRectRight - textRectLeft;
+        if (textBoxType == 0 && !textWordWrap) {
+            width = Math.max(width, measureAutoTextWidth(getTextContent()));
+        }
+        int height = textBoxType == 0 ? 0 : (textRectBottom - textRectTop);
+        Bitmap maskImage = textRenderer.renderText(
+                getTextContent(),
+                width,
+                height,
+                textFont,
+                textFontSize,
+                textFontStyle,
+                textAlignment,
+                0xFF000000,
+                0xFFFFFFFF,
+                textWordWrap,
+                textAntialias,
+                textFixedLineSpace,
+                textTopSpacing);
+        if (maskImage != null && maskImage.hasTransparentPixels()) {
+            maskImage.setNativeAlpha(true);
+        }
+        return maskImage;
+    }
+
+    private int measureAutoTextWidth(String text) {
+        if (textRenderer == null) {
+            return Math.max(1, textRectRight - textRectLeft);
+        }
+        int maxWidth = 1;
+        for (String line : TextRenderer.splitLines(text == null ? "" : text)) {
+            int[] loc = textRenderer.charPosToLoc(
+                    line,
+                    line.length(),
+                    textFont,
+                    textFontSize,
+                    textFontStyle,
+                    textFixedLineSpace,
+                    "left",
+                    0);
+            maxWidth = Math.max(maxWidth, loc[0] + 2);
+        }
+        return maxWidth;
     }
 
     /**

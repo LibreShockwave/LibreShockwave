@@ -5,6 +5,7 @@ import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.player.render.output.SimpleTextRenderer;
+import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
@@ -93,6 +94,192 @@ class CastMemberTextImageTest {
                 "Temporary writer measurement rects should not make fake-alpha text images 480px tall");
     }
 
+    @Test
+    void rightAlignedCourierLinkStyleRendersVisibleTealUnderline() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("Courier"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fontstyle", Datum.of("underline"));
+        member.setProp("alignment", Datum.symbol("right"));
+        member.setProp("fixedlinespace", Datum.of(9));
+        member.setProp("rect", new Datum.Rect(0, 0, 165, 14));
+        member.setProp("color", new Datum.Color(0x7B, 0x94, 0x98));
+        member.setProp("bgcolor", new Datum.Color(0xFF, 0xFF, 0xFF));
+        member.setProp("text", Datum.of("Hide Full Rooms"));
+
+        Bitmap textImage = member.renderTextToImage();
+        int teal = 0xFF7B9498;
+
+        int firstTealColumn = findFirstColorColumn(textImage, teal);
+        int lastTealRow = findLastColorRow(textImage, teal);
+
+        assertTrue(countPixels(textImage, teal) > 0,
+                "expected rendered teal link pixels for Hide Full Rooms");
+        assertTrue(firstTealColumn > 0,
+                "expected right-aligned link ink to leave some leading whitespace");
+        assertTrue(findLastColorColumn(textImage, teal) >= textImage.getWidth() - 6,
+                "expected right-aligned link ink to reach the right edge of the field");
+        assertTrue(lastTealRow >= 0 && countColorPixelsOnRow(textImage, lastTealRow, teal) >= 20,
+                "expected a visible underline row in the teal link image");
+    }
+
+    @Test
+    void textMemberImageStaysBlackOnWhiteForWriterMaskPipelines() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("Courier"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fontstyle", Datum.of("underline"));
+        member.setProp("alignment", Datum.symbol("right"));
+        member.setProp("fixedlinespace", Datum.of(9));
+        member.setProp("rect", new Datum.Rect(0, 0, 165, 14));
+        member.setProp("color", new Datum.Color(0x7B, 0x94, 0x98));
+        member.setProp("bgcolor", new Datum.Color(0x00, 0x00, 0x00));
+        member.setProp("text", Datum.of("Hide Full Rooms"));
+
+        Datum imageDatum = member.getProp("image");
+        Bitmap image = ((Datum.ImageRef) imageDatum).bitmap();
+
+        assertTrue(countPixels(image, 0xFF000000) > 0,
+                "text member .image should expose black glyph ink for writer-generated masks");
+        assertTrue(countPixels(image, 0xFFFFFFFF) > 0,
+                "text member .image should keep a white matte background");
+        assertEquals(0, countPixels(image, 0xFF7B9498),
+                "text member .image should not bake the display color into the mask source");
+    }
+
+    @Test
+    void writerStyleMaskedTintedTextPipelineProducesVisibleTealLinkPixels() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("Courier"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fontstyle", Datum.of("underline"));
+        member.setProp("alignment", Datum.symbol("right"));
+        member.setProp("fixedlinespace", Datum.of(9));
+        member.setProp("rect", new Datum.Rect(0, 0, 165, 14));
+        member.setProp("color", new Datum.Color(0x7B, 0x94, 0x98));
+        member.setProp("text", Datum.of("Hide Full Rooms"));
+
+        Bitmap textMaskSource = ((Datum.ImageRef) member.getProp("image")).bitmap();
+        Bitmap mask = new Bitmap(textMaskSource.getWidth(), textMaskSource.getHeight(), 8);
+        mask.fill(0xFFFFFFFF);
+        Drawing.copyPixels(mask, textMaskSource, 0, 0, 0, 0,
+                textMaskSource.getWidth(), textMaskSource.getHeight(),
+                Palette.InkMode.MATTE, 255);
+
+        Bitmap tinted = new Bitmap(textMaskSource.getWidth(), textMaskSource.getHeight(), 32);
+        tinted.fill(0xFF7B9498);
+        Bitmap out = new Bitmap(textMaskSource.getWidth(), textMaskSource.getHeight(), 32);
+        out.fill(0xFFFFFFFF);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(out), "copyPixels",
+                java.util.List.of(
+                        new Datum.ImageRef(tinted),
+                        new Datum.Rect(0, 0, out.getWidth(), out.getHeight()),
+                        new Datum.Rect(0, 0, tinted.getWidth(), tinted.getHeight()),
+                        props));
+
+        assertTrue(countPixels(out, 0xFF7B9498) > 0,
+                "writer-style tinted mask copy should leave visible teal link pixels");
+    }
+
+    @Test
+    void fillWithSymbolicColorPropListAppliesRequestedTeal() {
+        Bitmap target = new Bitmap(4, 3, 32);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("color", new Datum.Color(0x7B, 0x94, 0x98), true);
+        props.add("shape", Datum.symbol("rect"), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(target), "fill",
+                java.util.List.of(new Datum.Rect(0, 0, 4, 3), props));
+
+        assertEquals(12, countPixels(target, 0xFF7B9498),
+                "fill(rect, [#color: teal]) should tint the entire target image");
+    }
+
+    @Test
+    void navigatorHideLinkPipelineSurvivesMaskingAndNegativeOffset() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("Courier"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fontstyle", Datum.of("underline"));
+        member.setProp("alignment", Datum.symbol("right"));
+        member.setProp("fixedlinespace", Datum.of(9));
+        member.setProp("rect", new Datum.Rect(0, 0, 165, 14));
+        member.setProp("color", new Datum.Color(0x7B, 0x94, 0x98));
+        member.setProp("text", Datum.of("Hide Full Rooms"));
+
+        Bitmap textMaskSource = ((Datum.ImageRef) member.getProp("image")).bitmap();
+        Bitmap mask = new Bitmap(textMaskSource.getWidth(), textMaskSource.getHeight(), 8);
+        mask.fill(0xFFFFFFFF);
+        Drawing.copyPixels(mask, textMaskSource, 0, 0, 0, 0,
+                textMaskSource.getWidth(), textMaskSource.getHeight(),
+                Palette.InkMode.MATTE, 255);
+
+        Bitmap tinted = new Bitmap(textMaskSource.getWidth(), textMaskSource.getHeight(), 32);
+        Datum.PropList fillProps = new Datum.PropList();
+        fillProps.add("color", new Datum.Color(0x7B, 0x94, 0x98), true);
+        fillProps.add("shape", Datum.symbol("rect"), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(tinted), "fill",
+                java.util.List.of(new Datum.Rect(0, 0, tinted.getWidth(), tinted.getHeight()), fillProps));
+
+        Bitmap wrapperImage = new Bitmap(165, 14, 32);
+        wrapperImage.fill(0xFFFFFFFF);
+        Datum.PropList maskProps = new Datum.PropList();
+        maskProps.add("maskImage", new Datum.ImageRef(mask), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(wrapperImage), "copyPixels",
+                java.util.List.of(
+                        new Datum.ImageRef(tinted),
+                        new Datum.Rect(0, 0, wrapperImage.getWidth(), wrapperImage.getHeight()),
+                        new Datum.Rect(0, 0, wrapperImage.getWidth(), wrapperImage.getHeight()),
+                        maskProps));
+
+        assertTrue(countPixels(wrapperImage, 0xFF7B9498) > 0,
+                "maskImage copy should create teal link pixels inside the wider wrapper image");
+
+        Bitmap stageBuffer = new Bitmap(165, 14, 32);
+        stageBuffer.fill(0xFFD4DDE1);
+        Datum.PropList wrapperProps = new Datum.PropList();
+        wrapperProps.add("ink", Datum.of(36), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(stageBuffer), "copyPixels",
+                java.util.List.of(
+                        new Datum.ImageRef(wrapperImage),
+                        new Datum.Rect(0, 0, stageBuffer.getWidth(), stageBuffer.getHeight()),
+                        new Datum.Rect(-67, 0, 98, 14),
+                        wrapperProps));
+
+        assertTrue(countPixels(stageBuffer, 0xFF7B9498) > 0,
+                "negative source offsets with ink 36 should keep the teal link visible");
+        assertTrue(findLastColorColumn(stageBuffer, 0xFF7B9498) >= stageBuffer.getWidth() - 6,
+                "the hide link should remain right-aligned after the wrapper offset is applied");
+    }
+
+    @Test
+    void adjustTextImageCanGrowWiderThanRectForUnwrappedCourierLinkText() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("font", Datum.of("Courier"));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("fontstyle", Datum.of("underline"));
+        member.setProp("alignment", Datum.symbol("right"));
+        member.setProp("fixedlinespace", Datum.of(9));
+        member.setProp("rect", new Datum.Rect(0, 0, 60, 14));
+        member.setProp("color", new Datum.Color(0x7B, 0x94, 0x98));
+        member.setProp("bgcolor", new Datum.Color(0xFF, 0xFF, 0xFF));
+        member.setProp("text", Datum.of("Hide Full Rooms"));
+
+        Bitmap textImage = member.renderTextToImage();
+
+        assertTrue(textImage.getWidth() > 60,
+                "adjust-to-fit link text images should grow wide enough for the actual glyph metrics");
+    }
+
     private static CastMember buildTextMember(String text) {
         CastMember.setTextRenderer(new SimpleTextRenderer());
         CastMember member = new CastMember(1, 1, MemberType.TEXT);
@@ -107,13 +294,58 @@ class CastMemberTextImageTest {
     }
 
     private static int countWhitePixels(Bitmap bitmap) {
+        return countPixels(bitmap, 0xFFFFFFFF);
+    }
+
+    private static int countPixels(Bitmap bitmap, int argb) {
         int count = 0;
         for (int y = 0; y < bitmap.getHeight(); y++) {
             for (int x = 0; x < bitmap.getWidth(); x++) {
                 int pixel = bitmap.getPixel(x, y);
-                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) == 0xFFFFFF) {
+                if (((pixel >>> 24) & 0xFF) != 0 && pixel == argb) {
                     count++;
                 }
+            }
+        }
+        return count;
+    }
+
+    private static int findFirstColorColumn(Bitmap bitmap, int argb) {
+        for (int x = 0; x < bitmap.getWidth(); x++) {
+            for (int y = 0; y < bitmap.getHeight(); y++) {
+                if (bitmap.getPixel(x, y) == argb) {
+                    return x;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findLastColorColumn(Bitmap bitmap, int argb) {
+        for (int x = bitmap.getWidth() - 1; x >= 0; x--) {
+            for (int y = 0; y < bitmap.getHeight(); y++) {
+                if (bitmap.getPixel(x, y) == argb) {
+                    return x;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findLastColorRow(Bitmap bitmap, int argb) {
+        for (int y = bitmap.getHeight() - 1; y >= 0; y--) {
+            if (countColorPixelsOnRow(bitmap, y, argb) > 0) {
+                return y;
+            }
+        }
+        return -1;
+    }
+
+    private static int countColorPixelsOnRow(Bitmap bitmap, int y, int argb) {
+        int count = 0;
+        for (int x = 0; x < bitmap.getWidth(); x++) {
+            if (bitmap.getPixel(x, y) == argb) {
+                count++;
             }
         }
         return count;

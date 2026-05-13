@@ -23,7 +23,6 @@ import com.libreshockwave.vm.builtin.sprite.SpritePropertyProvider;
  * - sprite(1).member = member("logo")
  */
 public class SpriteProperties implements SpritePropertyProvider {
-
     private final SpriteRegistry registry;
     private CastLibManager castLibManager;
 

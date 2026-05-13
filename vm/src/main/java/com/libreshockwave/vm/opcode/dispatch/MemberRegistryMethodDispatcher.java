@@ -32,6 +32,19 @@ public final class MemberRegistryMethodDispatcher {
                 Datum.PropList registry = getRegistry(instance);
                 if (registry != null) {
                     resolveRegisteredMemberSlot(instance, registry, args, true);
+                    return switch (methodName.toLowerCase(Locale.ROOT)) {
+                        case "getmemnum" -> new DispatchResult(
+                                true,
+                                Datum.of(resolveRegisteredMemberSlot(instance, registry, args, true)));
+                        case "exists", "memberexists" -> new DispatchResult(
+                                true,
+                                Math.abs(resolveRegisteredMemberSlot(instance, registry, args, true)) > 0
+                                        ? Datum.TRUE : Datum.FALSE);
+                        case "getmember" -> new DispatchResult(
+                                true,
+                                resolveRegisteredMember(instance, registry, args));
+                        default -> NOT_HANDLED;
+                    };
                 }
             }
             default -> {
@@ -149,11 +162,7 @@ public final class MemberRegistryMethodDispatcher {
             List<Datum> args) {
         int slotValue = resolveRegisteredMemberSlot(instance, registry, args, true);
         if (slotValue == 0) {
-            LingoVM vm = LingoVM.getCurrentVM();
-            if (vm != null) {
-                return vm.callBuiltin("member", List.of(Datum.ZERO));
-            }
-            return Datum.CastMemberRef.of(1, 0);
+            return Datum.VOID;
         }
 
         int normalizedSlot = Math.abs(slotValue);
@@ -189,7 +198,8 @@ public final class MemberRegistryMethodDispatcher {
         if (!(bootstrapRef instanceof Datum.CastMemberRef cmr) || cmr.castLibNum() < 1 || cmr.memberNum() < 1) {
             return 0;
         }
-        if (!isBootstrapDefinitionMember(provider, cmr.castLibNum(), cmr.memberNum())) {
+        boolean registryVisible = provider.isRegistryVisibleMember(cmr.castLibNum(), cmr.memberNum());
+        if (!registryVisible && !isBootstrapDefinitionMember(provider, cmr.castLibNum(), cmr.memberNum())) {
             return 0;
         }
         return SlotId.of(cmr.castLibNum(), cmr.memberNum()).value();

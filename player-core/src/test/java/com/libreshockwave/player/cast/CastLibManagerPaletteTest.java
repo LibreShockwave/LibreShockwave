@@ -14,6 +14,15 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class CastLibManagerPaletteTest {
 
     @Test
+    void globalHandlerLookupOnlyTreatsMovieScriptsAsGlobal() {
+        assertEquals(true, CastLibManager.isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType.MOVIE_SCRIPT));
+        assertEquals(false, CastLibManager.isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType.SCORE));
+        assertEquals(false, CastLibManager.isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType.BEHAVIOR));
+        assertEquals(false, CastLibManager.isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType.PARENT));
+        assertEquals(false, CastLibManager.isGlobalHandlerScriptType(com.libreshockwave.chunks.ScriptChunk.ScriptType.UNKNOWN));
+    }
+
+    @Test
     void duplicatePaletteMembersStayResolvableForWindowBuffers() throws Exception {
         CastLibManager manager = new CastLibManager(null, null);
         CastLib castLib = new CastLib(1, null, null);
