@@ -178,6 +178,45 @@ async function captureCanvas(page, filePath) {
     }
 }
 
+async function sampleNavigatorEvidence(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+
+        function countRegion(x, y, w, h) {
+            const data = ctx.getImageData(x, y, w, h).data;
+            const counts = Object.create(null);
+            for (let p = 0; p < data.length; p += 4) {
+                const key = [data[p], data[p + 1], data[p + 2]]
+                    .map(v => v.toString(16).toUpperCase().padStart(2, '0'))
+                    .join('');
+                counts[key] = (counts[key] || 0) + 1;
+            }
+            return counts;
+        }
+
+        const lower = countRegion(596, 366, 340, 90);
+        const go = countRegion(875, 130, 21, 14);
+        return {
+            lowerD4DDE1: lower.D4DDE1 || 0,
+            lowerDBDBDB: lower.DBDBDB || 0,
+            lowerBlack: lower['000000'] || 0,
+            goC0C0C0: go.C0C0C0 || 0,
+            goBlack: go['000000'] || 0,
+            goWhite: go.FFFFFF || 0,
+        };
+    });
+}
+
+function navigatorEvidenceReady(evidence) {
+    return !!evidence
+        && evidence.lowerD4DDE1 >= 20000
+        && evidence.lowerBlack >= 1000
+        && evidence.goBlack >= 20
+        && evidence.goWhite < 20;
+}
+
 function browserHtml(baseUrl) {
     return `<!doctype html>
 <html><body>
@@ -324,6 +363,8 @@ async function main() {
 
     let browser;
     let finalState = null;
+    let navigatorEvidence = null;
+    let navigatorDisplayed = false;
     const consoleLines = [];
     const wsEvents = [];
     const httpEvents = [];
@@ -418,12 +459,33 @@ async function main() {
                 break;
             }
             if (finalState.spriteCount >= 70 && finalState.nonBlack > 1000) {
-                await new Promise(r => setTimeout(r, 2000));
-                break;
+                navigatorEvidence = await sampleNavigatorEvidence(page);
+                if (navigatorEvidenceReady(navigatorEvidence)) {
+                    navigatorDisplayed = true;
+                    await new Promise(r => setTimeout(r, 2000));
+                    navigatorEvidence = await sampleNavigatorEvidence(page);
+                    break;
+                }
+                if (i % 20 === 0) {
+                    console.log('  Waiting for navigator evidence: ' + JSON.stringify(navigatorEvidence));
+                }
             }
         }
 
-        await captureCanvas(page, path.join(outputDir, 'r31_login_final.png'));
+        if (!navigatorDisplayed && finalState && !finalState.error) {
+            navigatorEvidence = await sampleNavigatorEvidence(page);
+            if (navigatorEvidenceReady(navigatorEvidence)) {
+                navigatorDisplayed = true;
+            } else {
+                console.log('  Navigator evidence not ready before final capture: ' + JSON.stringify(navigatorEvidence));
+            }
+        }
+
+        if (navigatorDisplayed) {
+            await captureCanvas(page, path.join(outputDir, 'r31_login_final.png'));
+        } else {
+            await captureCanvas(page, path.join(outputDir, 'r31_login_timeout.png'));
+        }
     } finally {
         if (browser) await browser.close();
         server.close();
@@ -450,7 +512,7 @@ async function main() {
     const ssoSessionEstablished = finalState && finalState.loaded && wsOpened
         && musSendLines.length >= 4 && musMessageLines.length >= 3
         && !wsFailed && !connectionFailedPage && !clientError && !finalState.error;
-    const loginPassed = finalState && finalState.loaded && wsOpened && visualLoggedIn
+    const loginPassed = finalState && finalState.loaded && wsOpened && visualLoggedIn && navigatorDisplayed
         && !wsFailed && !connectionFailedPage && !clientError && !finalState.error;
 
     console.log('\n--- Browser Results ---');
@@ -462,6 +524,8 @@ async function main() {
     console.log('MUS Traffic:  ', finalState && `${finalState.musSendCount} sends / ${finalState.musMessageCount} messages`);
     console.log('SSO Session:  ', ssoSessionEstablished);
     console.log('Visual Login: ', visualLoggedIn);
+    console.log('Navigator:    ', navigatorDisplayed);
+    console.log('Nav Evidence: ', JSON.stringify(navigatorEvidence));
     console.log('GotoNetPages: ', finalState && JSON.stringify(finalState.gotoNetPages));
     console.log('WebSockets:   ', JSON.stringify(wsEvents));
     console.log('HTTP Events:  ', JSON.stringify(httpEvents.slice(-40)));
@@ -498,13 +562,16 @@ async function main() {
         } else {
             console.log('FAIL: Login did not complete before timeout; inspect the MUS logs and final screenshot.');
         }
+    } else if (ssoSessionEstablished && visualLoggedIn && !navigatorDisplayed) {
+        console.log('FAIL: r31 SSO login completed, but the navigator was not rendered before timeout.');
+        console.log('Increase R31_MAX_POLLS and inspect r31_login_timeout.png.');
     } else if (ssoSessionEstablished && !visualLoggedIn) {
         console.log('PASS: r31 SSO connection reached encrypted MUS traffic and stayed open; visual login did not complete before timeout.');
     } else {
         console.log('PASS: r31 SSO connection stayed open without the connection-failed path.');
     }
 
-    if (!loginPassed && !ssoSessionEstablished) {
+    if (!loginPassed && (!ssoSessionEstablished || visualLoggedIn)) {
         process.exitCode = 1;
     }
 }

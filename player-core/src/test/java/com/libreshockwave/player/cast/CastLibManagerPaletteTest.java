@@ -69,6 +69,35 @@ class CastLibManagerPaletteTest {
         assertEquals(0x010203, resolvedByMember.getColor(0));
     }
 
+    @Test
+    void duplicatePaletteMembersCanCopyArgumentIntoEmptyReceiver() throws Exception {
+        CastLibManager manager = new CastLibManager(null, null);
+        CastLib castLib = new CastLib(1, null, null);
+        installCastLib(manager, castLib);
+
+        CastMember sourcePaletteMember = castLib.createDynamicMember("palette");
+        sourcePaletteMember.setProp("name", Datum.of("nav_ui_palette"));
+        Palette sourcePalette = new Palette(new int[]{0xD4DDE1, 0x9BBCC7}, "Navigator UI");
+        sourcePaletteMember.setPaletteData(sourcePalette);
+
+        CastMember duplicatePaletteMember = castLib.createDynamicMember("palette");
+        duplicatePaletteMember.setProp("name", Datum.of("nav_ui_paletteDuplicate"));
+
+        Datum sourceRef = Datum.CastMemberRef.of(1, sourcePaletteMember.getMemberNumber());
+        Datum duplicateResult = manager.callMemberMethod(
+                1,
+                duplicatePaletteMember.getMemberNumber(),
+                "duplicate",
+                java.util.List.of(sourceRef));
+
+        assertEquals(Datum.CastMemberRef.of(1, duplicatePaletteMember.getMemberNumber()), duplicateResult);
+
+        Palette resolvedByMember = manager.getMemberPalette(1, duplicatePaletteMember.getMemberNumber());
+        assertNotNull(resolvedByMember);
+        assertSame(sourcePalette, resolvedByMember);
+        assertEquals(0xD4DDE1, resolvedByMember.getColor(0));
+    }
+
     @SuppressWarnings("unchecked")
     private static void installCastLib(CastLibManager manager, CastLib castLib) throws Exception {
         Field initializedField = CastLibManager.class.getDeclaredField("initialized");

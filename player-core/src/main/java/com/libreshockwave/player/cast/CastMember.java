@@ -14,6 +14,7 @@ import com.libreshockwave.id.MemberId;
 import com.libreshockwave.player.render.RenderConfig;
 import com.libreshockwave.player.render.output.TextRenderer;
 import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.util.LingoValueParser;
 
@@ -101,6 +102,8 @@ public class CastMember {
     // Stores the castLib and memberNum of the palette cast member to use instead of the embedded one.
     private int paletteRefCastLib = -1;
     private int paletteRefMemberNum = -1;
+    private String paletteRefSystemName;
+    private com.libreshockwave.bitmap.Palette runtimePaletteOverride;
     private int paletteVersion = 0; // Incremented on each paletteRef change
     private int lastDecodedPaletteVersion = 0; // Tracks which paletteVersion the bitmap was decoded with
 
@@ -223,14 +226,14 @@ public class CastMember {
         if (sourceFile == null || chunk == null) return;
 
         try {
-            com.libreshockwave.bitmap.Palette palette = null;
+            com.libreshockwave.bitmap.Palette palette = runtimePaletteOverride;
 
-            if (paletteResolver != null && paletteRefCastLib >= 1 && paletteRefMemberNum >= 1) {
+            if (palette == null && paletteResolver != null && paletteRefCastLib >= 1 && paletteRefMemberNum >= 1) {
                 palette = paletteResolver.apply(paletteRefCastLib, paletteRefMemberNum);
             }
 
             // Fallback for same-file palettes when no cross-cast resolver is installed.
-            if (palette == null) {
+            if (palette == null && paletteRefMemberNum >= 1) {
                 palette = sourceFile.resolvePaletteByMemberNumber(paletteRefMemberNum);
             }
 
@@ -243,52 +246,73 @@ public class CastMember {
         }
     }
 
-    private com.libreshockwave.bitmap.Palette resolvePaletteDatum(Datum value) {
+    private ResolvedPalette resolvePaletteDatum(Datum value) {
         if (value instanceof Datum.CastMemberRef cmr) {
             if (paletteResolver != null) {
                 com.libreshockwave.bitmap.Palette resolved =
                         paletteResolver.apply(cmr.castLibNum(), cmr.memberNum());
                 if (resolved != null) {
-                    return resolved;
+                    return new ResolvedPalette(resolved, cmr.castLibNum(), cmr.memberNum(), null);
                 }
             }
             if (sourceFile != null) {
-                return sourceFile.resolvePaletteByMemberNumber(cmr.memberNum());
+                com.libreshockwave.bitmap.Palette resolved = sourceFile.resolvePaletteByMemberNumber(cmr.memberNum());
+                if (resolved != null) {
+                    return new ResolvedPalette(resolved, cmr.castLibNum(), cmr.memberNum(), null);
+                }
             }
         }
-        if (value instanceof Datum.Symbol sym) {
-            String name = sym.name().toLowerCase();
-            if ("systemmac".equals(name)) {
-                return com.libreshockwave.bitmap.Palette.SYSTEM_MAC_PALETTE;
+        String name = null;
+        if (value instanceof Datum.Str str) {
+            name = str.value();
+        } else if (value instanceof Datum.Symbol sym) {
+            name = sym.name();
+        }
+        if (name != null) {
+            String normalized = name.trim().toLowerCase();
+            if ("systemmac".equals(normalized)) {
+                return new ResolvedPalette(com.libreshockwave.bitmap.Palette.SYSTEM_MAC_PALETTE, -1, -1, "systemMac");
             }
-            if ("systemwin".equals(name) || "systemwindows".equals(name)) {
-                return com.libreshockwave.bitmap.Palette.SYSTEM_WIN_PALETTE;
+            if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
+                return new ResolvedPalette(com.libreshockwave.bitmap.Palette.SYSTEM_WIN_PALETTE, -1, -1, "systemWin");
+            }
+
+            CastLibProvider provider = CastLibProvider.getProvider();
+            if (provider != null) {
+                Datum refDatum = provider.getMemberByName(0, name);
+                if (refDatum instanceof Datum.CastMemberRef ref) {
+                    com.libreshockwave.bitmap.Palette resolved =
+                            provider.getMemberPalette(ref.castLibNum(), ref.memberNum());
+                    if (resolved != null) {
+                        return new ResolvedPalette(resolved, ref.castLibNum(), ref.memberNum(), null);
+                    }
+                }
+                com.libreshockwave.bitmap.Palette resolved = provider.resolvePaletteByName(name);
+                if (resolved != null) {
+                    return new ResolvedPalette(resolved, -1, -1, null);
+                }
             }
         }
         return null;
     }
 
     private boolean applyRuntimePaletteOverride(Datum value) {
-        int newCastLib = -1;
-        int newMemberNum = -1;
-        if (value instanceof Datum.CastMemberRef cmr) {
-            newCastLib = cmr.castLibNum();
-            newMemberNum = cmr.memberNum();
-        } else if (!(value instanceof Datum.Symbol)) {
+        ResolvedPalette resolved = resolvePaletteDatum(value);
+        if (resolved == null || resolved.palette() == null) {
             return false;
         }
 
-        com.libreshockwave.bitmap.Palette palette = resolvePaletteDatum(value);
-        if (palette == null) {
-            return false;
-        }
-
-        boolean changed = newCastLib != paletteRefCastLib || newMemberNum != paletteRefMemberNum;
-        paletteRefCastLib = newCastLib;
-        paletteRefMemberNum = newMemberNum;
+        boolean changed = resolved.castLib() != paletteRefCastLib
+                || resolved.memberNum() != paletteRefMemberNum
+                || !Objects.equals(resolved.systemName(), paletteRefSystemName)
+                || resolved.palette() != runtimePaletteOverride;
+        paletteRefCastLib = resolved.castLib();
+        paletteRefMemberNum = resolved.memberNum();
+        paletteRefSystemName = resolved.systemName();
+        runtimePaletteOverride = resolved.palette();
 
         if (bitmap != null && (sourceFile == null || chunk == null || bitmap.isScriptModified())) {
-            bitmap.remapImagePalette(palette);
+            bitmap.remapImagePalette(resolved.palette());
         }
 
         if (changed) {
@@ -296,6 +320,13 @@ public class CastMember {
             notifyMemberVisualChanged();
         }
         return true;
+    }
+
+    private record ResolvedPalette(
+            com.libreshockwave.bitmap.Palette palette,
+            int castLib,
+            int memberNum,
+            String systemName) {
     }
 
     private void loadBitmap() {
@@ -589,7 +620,9 @@ public class CastMember {
 
     /** Returns true if this member has a runtime palette override (from paletteRef). */
     public boolean hasPaletteOverride() {
-        return paletteRefCastLib >= 1 && paletteRefMemberNum >= 1;
+        return (paletteRefCastLib >= 1 && paletteRefMemberNum >= 1)
+                || paletteRefSystemName != null
+                || runtimePaletteOverride != null;
     }
 
     public int getPaletteRefCastLib() { return paletteRefCastLib; }
@@ -703,6 +736,9 @@ public class CastMember {
                 // Return the palette override if set, otherwise the embedded palette reference
                 if (paletteRefCastLib >= 1 && paletteRefMemberNum >= 1) {
                     yield Datum.CastMemberRef.of(paletteRefCastLib, paletteRefMemberNum);
+                }
+                if (paletteRefSystemName != null) {
+                    yield Datum.symbol(paletteRefSystemName);
                 }
                 // Default: derive from BitmapInfo embedded palette ID
                 if (chunk != null && chunk.specificData() != null && chunk.specificData().length >= 10) {
@@ -997,6 +1033,8 @@ public class CastMember {
                 this.bitmapAlphaThreshold = source.bitmapAlphaThreshold;
                 this.paletteRefCastLib = source.paletteRefCastLib;
                 this.paletteRefMemberNum = source.paletteRefMemberNum;
+                this.paletteRefSystemName = source.paletteRefSystemName;
+                this.runtimePaletteOverride = source.runtimePaletteOverride;
                 this.paletteVersion = source.paletteVersion;
                 this.lastDecodedPaletteVersion = source.lastDecodedPaletteVersion;
                 this.state = State.LOADED;
@@ -1310,6 +1348,8 @@ public class CastMember {
 
         paletteRefCastLib = -1;
         paletteRefMemberNum = -1;
+        paletteRefSystemName = null;
+        runtimePaletteOverride = null;
         paletteVersion++;
         lastDecodedPaletteVersion = 0;
     }
