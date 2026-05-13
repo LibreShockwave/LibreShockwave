@@ -897,7 +897,7 @@ public class CastMember {
         for (String line : TextRenderer.splitLines(text == null ? "" : text)) {
             int[] loc = textRenderer.charPosToLoc(
                     line,
-                    line.length(),
+                    line.length() + 1,
                     textFont,
                     textFontSize,
                     textFontStyle,

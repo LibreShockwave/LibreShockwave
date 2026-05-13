@@ -169,7 +169,7 @@ public class SimpleTextRenderer implements TextRenderer {
             String[] lines = TextRenderer.splitLines(text);
             String fullLine = (lineInfo[0] < lines.length) ? lines[lineInfo[0]] : "";
             String lineSubstr = (lineInfo[0] < lines.length) ? fullLine.substring(0, lineInfo[1]) : "";
-            int x = pfrFont.getStringWidth(lineSubstr);
+            int x = pfrFont.getStringWidth(lineSubstr) + (lineInfo[1] > 0 ? 1 : 0);
             int alignX = alignmentOffset(alignment, fieldWidth, pfrFont.getStringWidth(fullLine));
             int y = lineInfo[0] * lineHeight;
             return new int[]{x + alignX, y};
@@ -187,7 +187,7 @@ public class SimpleTextRenderer implements TextRenderer {
         int[] lineInfo = TextRenderer.findCharLine(text, charIndex);
         String[] lines = TextRenderer.splitLines(text);
         String fullLine = (lineInfo[0] < lines.length) ? lines[lineInfo[0]] : "";
-        int x = lineInfo[1] * charWidth;
+        int x = lineInfo[1] * charWidth + (lineInfo[1] > 0 ? 1 : 0);
         int alignX = alignmentOffset(alignment, fieldWidth, fullLine.length() * charWidth);
         int y = lineInfo[0] * lineHeight;
         return new int[]{x + alignX, y};
@@ -331,8 +331,7 @@ public class SimpleTextRenderer implements TextRenderer {
         //   member.topSpacing = requestedFixedLineSpace - fontSize
         // Total per-line advance = fontSize + topSpacing = requestedFixedLineSpace.
         int lineAdvance = lineHeight + topSpacing;
-        int extraUnderlineRows = underline ? Math.max(0, font.getLineHeight() - lineHeight) : 0;
-        int neededHeight = lines.size() * lineAdvance + extraUnderlineRows;
+        int neededHeight = lines.size() * lineAdvance;
         if (neededHeight > height) height = neededHeight;
 
         int[] pixels = new int[width * height];
@@ -362,7 +361,7 @@ public class SimpleTextRenderer implements TextRenderer {
             }
             if (underline && line.length() > 0) {
                 int inkBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
-                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 1));
+                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom));
                 drawUnderline(pixels, width, height, underlineY, lineStartX, x, textColor);
             }
             y += lineAdvance;
@@ -401,8 +400,7 @@ public class SimpleTextRenderer implements TextRenderer {
 
         // Per-line leading: topSpacing adds above each line (see renderWithBitmapFont comment)
         int lineAdvance = lineHeight + topSpacing;
-        int extraUnderlineRows = underline ? Math.max(0, builtinLineHeight(fontSize) - lineHeight) : 0;
-        int neededHeight = lines.size() * lineAdvance + extraUnderlineRows;
+        int neededHeight = lines.size() * lineAdvance;
         if (neededHeight > height) height = neededHeight;
 
         int[] pixels = new int[width * height];
@@ -424,7 +422,7 @@ public class SimpleTextRenderer implements TextRenderer {
             if (underline && line.length() > 0) {
                 int glyphTop = Math.max(0, y);
                 int glyphBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphTop, Math.min(height - 1, y + ascent));
-                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom + 1), lineStartX, x, textColor);
+                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom), lineStartX, x, textColor);
             }
             y += lineAdvance;
         }

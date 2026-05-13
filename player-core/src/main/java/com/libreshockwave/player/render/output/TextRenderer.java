@@ -110,7 +110,7 @@ public interface TextRenderer {
             return new int[]{0, 0};
         }
 
-        int idx = Math.max(0, Math.min(charIndex, text.length()));
+        int idx = Math.max(0, Math.min(charIndex - 1, text.length()));
         int lineNum = 0;
         int charsOnLine = 0;
 
