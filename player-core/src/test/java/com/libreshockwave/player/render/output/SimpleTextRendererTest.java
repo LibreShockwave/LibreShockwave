@@ -22,15 +22,16 @@ class SimpleTextRendererTest {
                 "left", 0xFF000000, 0x00FFFFFF,
                 false, false, 9, 1);
 
-        int plainLastRow = countOpaquePixelsOnRow(plain, underlined.getHeight() - 1);
-        int underlinedLastRow = countOpaquePixelsOnRow(underlined, underlined.getHeight() - 1);
+        int underlineRow = findLastOpaqueRow(underlined);
+        int plainPixelsOnUnderlineRow = countOpaquePixelsOnRow(plain, underlineRow);
+        int underlinedPixelsOnUnderlineRow = countOpaquePixelsOnRow(underlined, underlineRow);
 
-        assertTrue(underlined.getHeight() >= plain.getHeight());
-        assertTrue(underlinedLastRow > plainLastRow,
-                "expected underline to add pixels on the last row, plain=" + plainLastRow
-                        + " underlined=" + underlinedLastRow);
-        assertTrue(underlinedLastRow >= 20,
-                "expected visible underline coverage on last row, got " + underlinedLastRow);
+        assertEquals(plain.getHeight(), underlined.getHeight());
+        assertTrue(underlinedPixelsOnUnderlineRow > plainPixelsOnUnderlineRow,
+                "expected underline to add pixels on the glyph-bottom row, plain=" + plainPixelsOnUnderlineRow
+                        + " underlined=" + underlinedPixelsOnUnderlineRow);
+        assertTrue(underlinedPixelsOnUnderlineRow >= 20,
+                "expected visible underline coverage on glyph-bottom row, got " + underlinedPixelsOnUnderlineRow);
     }
 
     @Test
@@ -45,10 +46,8 @@ class SimpleTextRendererTest {
         int underlineRow = findLastOpaqueRow(underlined);
         int glyphBottom = findOpaqueRowBefore(underlined, underlineRow);
 
-        assertEquals(underlined.getHeight() - 1, underlineRow,
-                "expected underline on the bottom row of the auto-sized line box");
-        assertEquals(underlineRow - 2, glyphBottom,
-                "expected one clear row between glyph ink and underline");
+        assertEquals(underlineRow - 1, glyphBottom,
+                "expected underline to sit directly below the prior glyph ink row");
     }
 
     @Test
@@ -81,9 +80,28 @@ class SimpleTextRendererTest {
     }
 
     @Test
+    void charPosToLocUsesDirectorOneBasedCharacterPositions() {
+        SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+        int[] first = renderer.charPosToLoc("Go", 1,
+                "Courier", 9, "plain",
+                10, "left", 0);
+        int[] second = renderer.charPosToLoc("Go", 2,
+                "Courier", 9, "plain",
+                10, "left", 0);
+        int[] afterEnd = renderer.charPosToLoc("Go", 3,
+                "Courier", 9, "plain",
+                10, "left", 0);
+
+        assertEquals(0, first[0]);
+        assertEquals(6, second[0]);
+        assertEquals(11, afterEnd[0]);
+    }
+
+    @Test
     void findCharLineTreatsCrLfAsSingleLineBreak() {
-        assertArrayEquals(new int[]{1, 0}, TextRenderer.findCharLine("A\r\nB", 2));
-        assertArrayEquals(new int[]{1, 1}, TextRenderer.findCharLine("A\r\nB", 4));
+        assertArrayEquals(new int[]{0, 1}, TextRenderer.findCharLine("A\r\nB", 2));
+        assertArrayEquals(new int[]{1, 0}, TextRenderer.findCharLine("A\r\nB", 4));
         assertEquals(3, TextRenderer.lineStartIndex("A\r\nB", 1));
     }
 
