@@ -379,8 +379,7 @@ public class SpriteBaker {
             // alignment, font style, etc.) so rendering matches caret positioning.
             int width = sprite.getWidth() > 0 ? sprite.getWidth() : 200;
             int height = sprite.getHeight() > 0 ? sprite.getHeight() : 20;
-            int bgColor = (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT)
-                    ? 0x00000000 : member.getTextBgColor();
+            int bgColor = dynamicTextBgColor(sprite, member);
             textImage = member.renderTextToImage(width, height, bgColor);
         }
         // For file-loaded text members (no dynamic text), skip member.renderTextToImage()
@@ -413,6 +412,13 @@ public class SpriteBaker {
         }
 
         return textImage;
+    }
+
+    private int dynamicTextBgColor(RenderSprite sprite, CastMember member) {
+        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT) {
+            return 0x00000000;
+        }
+        return resolvePaletteColor(sprite.getBackColor());
     }
 
     /**

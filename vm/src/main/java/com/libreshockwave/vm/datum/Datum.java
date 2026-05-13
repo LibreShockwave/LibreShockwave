@@ -151,7 +151,8 @@ public sealed interface Datum {
             for (PropEntry e : entries) {
                 if (e.key().equalsIgnoreCase(key)) return e.value();
             }
-            return null;
+            String alias = textColorAlias(key);
+            return alias != null ? get(alias) : null;
         }
 
         /**
@@ -174,7 +175,21 @@ public sealed interface Datum {
                     }
                 }
             }
-            return fallback;
+            if (fallback != null) {
+                return fallback;
+            }
+            String alias = textColorAlias(key);
+            return alias != null ? get(alias, isSymbolKey) : null;
+        }
+
+        private static String textColorAlias(String key) {
+            if ("txtColor".equalsIgnoreCase(key)) {
+                return "color";
+            }
+            if ("txtBgColor".equalsIgnoreCase(key)) {
+                return "bgColor";
+            }
+            return null;
         }
 
         /** Get first value matching key, or default if not found. */
