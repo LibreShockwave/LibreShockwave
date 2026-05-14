@@ -80,6 +80,7 @@ public class CastMember {
 
     // Loaded media data (lazy)
     private Bitmap bitmap;
+    private boolean transparentPlaceholderBitmap;
     private ScriptChunk script;
     private String textContent;
     private com.libreshockwave.bitmap.Palette dynamicPalette;
@@ -239,7 +240,10 @@ public class CastMember {
 
             if (palette != null) {
                 sourceFile.decodeBitmap(chunk, palette)
-                        .ifPresent(b -> bitmap = b.copyWithNonNativeAlphaOpaque());
+                        .ifPresent(b -> {
+                            bitmap = b.copyWithNonNativeAlphaOpaque();
+                            transparentPlaceholderBitmap = false;
+                        });
                 lastDecodedPaletteVersion = paletteVersion;
             }
         } catch (Exception e) {
@@ -338,7 +342,10 @@ public class CastMember {
         // Use DirectorFile's decodeBitmap method which handles all bitmap types
         try {
             sourceFile.decodeBitmap(chunk)
-                    .ifPresent(b -> bitmap = b.copyWithNonNativeAlphaOpaque());
+                    .ifPresent(b -> {
+                        bitmap = b.copyWithNonNativeAlphaOpaque();
+                        transparentPlaceholderBitmap = false;
+                    });
         } catch (Exception e) {
             System.err.println("[CastMember] Failed to decode bitmap: " + e.getMessage());
         }
@@ -563,6 +570,9 @@ public class CastMember {
         if (bitmap == null && memberType == MemberType.BITMAP && chunk != null) {
             bitmap = createTransparentBitmapFromInfo();
         }
+        if (transparentPlaceholderBitmap) {
+            retryPlaceholderDecode();
+        }
         // If paletteRef has been set and the bitmap hasn't been re-decoded yet,
         // re-decode with the override palette.
         if (hasPaletteOverride() && bitmap != null && !bitmap.isScriptModified()
@@ -584,15 +594,32 @@ public class CastMember {
             }
             Bitmap fallback = new Bitmap(info.width(), info.height(), Math.max(info.bitDepth(), 32));
             fallback.setNativeAlpha(true);
+            transparentPlaceholderBitmap = true;
             return fallback;
         } catch (Exception ignored) {
             return null;
         }
     }
 
+    private void retryPlaceholderDecode() {
+        if (sourceFile == null || chunk == null || memberType != MemberType.BITMAP) {
+            return;
+        }
+        try {
+            sourceFile.decodeBitmap(chunk)
+                    .ifPresent(b -> {
+                        bitmap = b.copyWithNonNativeAlphaOpaque();
+                        transparentPlaceholderBitmap = false;
+                    });
+        } catch (Exception ignored) {
+            // Keep the placeholder until a later access can decode the media.
+        }
+    }
+
     /** Set bitmap directly (for initial load, not Lingo assignment). Does NOT mark as script-modified. */
     public void setBitmapDirectly(Bitmap bmp) {
         this.bitmap = bmp;
+        this.transparentPlaceholderBitmap = false;
         syncBitmapAnchorState();
     }
 
@@ -782,6 +809,7 @@ public class CastMember {
                 if (bmp == null && chunk == null) {
                     // Dynamic bitmap member - create a default 1x1 bitmap
                     bitmap = new Bitmap(1, 1, 32);
+                    transparentPlaceholderBitmap = false;
                     bitmap.fill(0xFFFFFFFF);
                 }
                 // Return a live ImageRef that always resolves to this member's current bitmap.
@@ -1041,6 +1069,7 @@ public class CastMember {
             Bitmap newBmp = sourceBitmap.copy();
             newBmp.markScriptModified();
             this.bitmap = newBmp;
+            this.transparentPlaceholderBitmap = false;
             if (!regPointPinnedToMember) {
                 if (sourceBitmap.hasAnchorPoint()) {
                     this.regPointX = sourceBitmap.getAnchorX();
@@ -1104,6 +1133,7 @@ public class CastMember {
                 Bitmap copy = srcBitmap.copy();
                 copy.markScriptModified();
                 this.bitmap = copy;
+                this.transparentPlaceholderBitmap = false;
                 this.regPointX = source.getRegPointX();
                 this.regPointY = source.getRegPointY();
                 this.regPointPinnedToMember = source.regPointPinnedToMember;
@@ -1293,6 +1323,7 @@ public class CastMember {
                 // Director copies the bitmap into the member (not a reference assignment).
                 if (value instanceof Datum.ImageRef ir) {
                     this.bitmap = ir.bitmap().copy();
+                    this.transparentPlaceholderBitmap = false;
                     this.textRenderedImage = this.bitmap;
                     this.textRenderedWidth = this.bitmap.getWidth();
                     this.textRenderedHeight = this.bitmap.getHeight();
@@ -1318,6 +1349,7 @@ public class CastMember {
                     Bitmap newBmp = sourceBitmap.copy();
                     newBmp.markScriptModified();
                     this.bitmap = newBmp;
+                    this.transparentPlaceholderBitmap = false;
                     if (!regPointPinnedToMember) {
                         if (sourceBitmap.hasAnchorPoint()) {
                             this.regPointX = sourceBitmap.getAnchorX();
@@ -1339,6 +1371,7 @@ public class CastMember {
                 int h = bitmap != null ? bitmap.getHeight() : 1;
                 if (newW > 0) {
                     this.bitmap = new Bitmap(newW, h, bitmap != null ? bitmap.getBitDepth() : 32);
+                    this.transparentPlaceholderBitmap = false;
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
                     notifyMemberVisualChanged();
@@ -1354,6 +1387,7 @@ public class CastMember {
                 int newH = value.toInt();
                 if (newH > 0) {
                     this.bitmap = new Bitmap(w, newH, bitmap != null ? bitmap.getBitDepth() : 32);
+                    this.transparentPlaceholderBitmap = false;
                     this.bitmap.fill(0xFFFFFFFF);
                     this.bitmap.markScriptModified();
                     notifyMemberVisualChanged();
@@ -1391,6 +1425,7 @@ public class CastMember {
     private void resetRuntimePayload() {
         name = "";
         bitmap = null;
+        transparentPlaceholderBitmap = false;
         script = null;
         textContent = "";
         dynamicText = null;

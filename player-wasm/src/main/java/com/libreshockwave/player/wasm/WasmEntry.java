@@ -10,7 +10,6 @@ import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.DebugConfig;
-import com.libreshockwave.vm.datum.Datum;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
