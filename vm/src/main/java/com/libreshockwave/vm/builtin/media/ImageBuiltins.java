@@ -22,6 +22,7 @@ public final class ImageBuiltins {
 
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
         builtins.put("image", ImageBuiltins::image);
+        builtins.put("importfileinto", ImageBuiltins::importFileInto);
     }
 
     /**
@@ -45,7 +46,7 @@ public final class ImageBuiltins {
 
         Bitmap bmp = new Bitmap(width, height, bitDepth);
         // Director's image() always creates white-filled bitmaps, opaque at all bit depths.
-        // "Creates a new image object filled with white." — Director docs.
+        // "Creates a new image object filled with white." - Director docs.
         bmp.fill(0xFFFFFFFF);
 
         // 4th argument: palette member reference (e.g., member("nav_ui_palette"))
@@ -66,6 +67,29 @@ public final class ImageBuiltins {
         }
 
         return new Datum.ImageRef(bmp);
+    }
+
+    /**
+     * importFileInto(memberRef, url [, options])
+     *
+     * Director uses this to import downloaded external media into an existing
+     * cast member. The player-side cast provider owns the actual media import
+     * because platform image decoding is environment-specific.
+     */
+    private static Datum importFileInto(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2 || !(args.get(0) instanceof Datum.CastMemberRef ref)) {
+            return Datum.FALSE;
+        }
+
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (provider == null) {
+            return Datum.FALSE;
+        }
+
+        String url = args.get(1).toStr();
+        Datum options = args.size() >= 3 ? args.get(2) : Datum.VOID;
+        boolean imported = provider.importFileIntoMember(ref.castLibNum(), ref.memberNum(), url, options);
+        return imported ? Datum.TRUE : Datum.FALSE;
     }
 
     /**

@@ -4,6 +4,8 @@ import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Drawing;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
+import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.id.ChunkId;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.pipeline.BitmapCache;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
@@ -24,6 +26,36 @@ import static org.junit.jupiter.api.Assertions.*;
  * to the renderer via SpriteBaker.
  */
 public class ScriptModifiedBitmapTest {
+
+    @Test
+    void bitmapMemberWithUnavailableMediaStillExposesImageDimensions() {
+        byte[] bitmapInfo = new byte[] {
+                (byte) 0x80, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F,
+                0x00, 0x11, 0x01, 0x00, 0x00, 0x00, (byte) 0xFF, 0x2A,
+                (byte) 0xFF, 0x5D, (byte) 0xFF, (byte) 0xCB, 0x00, 0x0A,
+                0x00, 0x20, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0x9B,
+        };
+        CastMemberChunk chunk = new CastMemberChunk(
+                null,
+                new ChunkId(1926),
+                MemberType.BITMAP,
+                0,
+                bitmapInfo.length,
+                new byte[0],
+                bitmapInfo,
+                "katalogi_ikoni.pets",
+                0,
+                10,
+                -53);
+        CastMember member = new CastMember(57, 480, chunk, null);
+
+        assertEquals(17, member.getProp("width").toInt());
+        assertEquals(15, member.getProp("height").toInt());
+        Datum image = member.getProp("image");
+        assertInstanceOf(Datum.ImageRef.class, image);
+        assertEquals(17, ImageMethodDispatcher.getProperty((Datum.ImageRef) image, "width").toInt());
+        assertEquals(15, ImageMethodDispatcher.getProperty((Datum.ImageRef) image, "height").toInt());
+    }
 
     @Test
     void scriptModifiedBitmapIsUsedByBaker() {
@@ -395,6 +427,38 @@ public class ScriptModifiedBitmapTest {
                 "Native-alpha transparent pixels should leave the destination unchanged");
         assertEquals(0xFF000000, dest.getPixel(1, 1),
                 "Native-alpha text pixels should not be erased by a matching #bgColor key");
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsKeysOpaqueWhiteMatteBorderOnNativeAlphaSource() {
+        Bitmap dest = new Bitmap(7, 5, 32);
+        dest.fill(0xFF99CC33);
+
+        Bitmap src = new Bitmap(7, 5, 32);
+        src.fill(0x00FFFFFF);
+        for (int x = 0; x < 7; x++) {
+            src.setPixel(x, 0, 0xFFFFFFFF);
+        }
+        src.setPixel(1, 1, 0xFFFFFFFF);
+        src.setPixel(2, 2, 0xFF000000);
+        src.setPixel(3, 3, 0xFFF0F0F0);
+        src.setNativeAlpha(true);
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 7, 5),
+                        new Datum.Rect(0, 0, 7, 5), props));
+
+        assertEquals(0xFF99CC33, dest.getPixel(0, 0),
+                "Opaque white matte borders should key out under ink 36");
+        assertEquals(0xFF99CC33, dest.getPixel(1, 1),
+                "Opaque white matte interiors should key out under ink 36");
+        assertEquals(0xFF000000, dest.getPixel(2, 2),
+                "Black arrow pixels should still copy");
+        assertEquals(0xFF99CC33, dest.getPixel(3, 3),
+                "Near-white matte antialias pixels should key out with the white border");
     }
 
     @Test

@@ -238,7 +238,8 @@ public class CastMember {
             }
 
             if (palette != null) {
-                sourceFile.decodeBitmap(chunk, palette).ifPresent(b -> bitmap = b);
+                sourceFile.decodeBitmap(chunk, palette)
+                        .ifPresent(b -> bitmap = b.copyWithNonNativeAlphaOpaque());
                 lastDecodedPaletteVersion = paletteVersion;
             }
         } catch (Exception e) {
@@ -336,7 +337,8 @@ public class CastMember {
 
         // Use DirectorFile's decodeBitmap method which handles all bitmap types
         try {
-            sourceFile.decodeBitmap(chunk).ifPresent(b -> bitmap = b);
+            sourceFile.decodeBitmap(chunk)
+                    .ifPresent(b -> bitmap = b.copyWithNonNativeAlphaOpaque());
         } catch (Exception e) {
             System.err.println("[CastMember] Failed to decode bitmap: " + e.getMessage());
         }
@@ -558,6 +560,9 @@ public class CastMember {
         if (!isLoaded()) {
             load();
         }
+        if (bitmap == null && memberType == MemberType.BITMAP && chunk != null) {
+            bitmap = createTransparentBitmapFromInfo();
+        }
         // If paletteRef has been set and the bitmap hasn't been re-decoded yet,
         // re-decode with the override palette.
         if (hasPaletteOverride() && bitmap != null && !bitmap.isScriptModified()
@@ -566,6 +571,23 @@ public class CastMember {
         }
         syncBitmapAnchorState();
         return bitmap;
+    }
+
+    private Bitmap createTransparentBitmapFromInfo() {
+        try {
+            int directorVersion = sourceFile != null && sourceFile.getConfig() != null
+                    ? sourceFile.getConfig().directorVersion()
+                    : 1200;
+            BitmapInfo info = BitmapInfo.parse(chunk.specificData(), directorVersion);
+            if (info.width() <= 0 || info.height() <= 0) {
+                return null;
+            }
+            Bitmap fallback = new Bitmap(info.width(), info.height(), Math.max(info.bitDepth(), 32));
+            fallback.setNativeAlpha(true);
+            return fallback;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /** Set bitmap directly (for initial load, not Lingo assignment). Does NOT mark as script-modified. */

@@ -104,6 +104,7 @@ public class BitmapCache {
             }
 
             Bitmap raw = bitmap.get();
+            raw = coerceNonNativeAlphaToOpaque(raw, useAlpha);
 
             // Director applies foreColor/backColor colorization BEFORE ink processing
             // for 1-bit bitmaps. This is critical for masks: a mask with foreColor=white
@@ -165,6 +166,13 @@ public class BitmapCache {
                 bmp,
                 bmp,
                 ink, foreColor, backColor, hasForeColor, hasBackColor, bmp.getImagePalette());
+    }
+
+    static Bitmap coerceNonNativeAlphaToOpaque(Bitmap raw, boolean useAlpha) {
+        if (raw == null || raw.getBitDepth() != 32 || useAlpha || !raw.hasTransparentPixels()) {
+            return raw;
+        }
+        return raw.copyWithNonNativeAlphaOpaque();
     }
 
     /**

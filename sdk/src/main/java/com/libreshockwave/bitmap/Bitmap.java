@@ -89,6 +89,23 @@ public class Bitmap {
     }
 
     /**
+     * Director treats 32-bit member pixels as opaque unless the member carries
+     * native alpha metadata. Some decoded assets retain RGB values with zero
+     * alpha from container formats; expose those authored colors as opaque.
+     */
+    public Bitmap copyWithNonNativeAlphaOpaque() {
+        if (bitDepth != 32 || nativeAlpha || !hasTransparentPixels()) {
+            return this;
+        }
+        Bitmap opaque = copy();
+        for (int i = 0; i < opaque.pixels.length; i++) {
+            opaque.pixels[i] = 0xFF000000 | (opaque.pixels[i] & 0x00FFFFFF);
+        }
+        opaque.nativeAlpha = false;
+        return opaque;
+    }
+
+    /**
      * Set the palette for this bitmap (for 8-bit images created with a palette
      * member).
      */

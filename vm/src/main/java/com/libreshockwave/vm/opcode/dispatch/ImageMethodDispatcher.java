@@ -660,7 +660,10 @@ public final class ImageMethodDispatcher {
         if (remapToAlphaMask) {
             effectiveInk = Palette.InkMode.COPY;
         }
-        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT && src.hasNativeMatteAlpha()) {
+        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT
+                && src.hasNativeMatteAlpha()
+                && !hasOpaqueBackgroundKeyBorder(effectiveSrc, effectiveSrcX, effectiveSrcY, srcW, srcH,
+                        backgroundKeyRgb)) {
             effectiveInk = Palette.InkMode.COPY;
         }
         if (effectiveInk == Palette.InkMode.DARKEN) {
@@ -866,7 +869,12 @@ public final class ImageMethodDispatcher {
         }
 
         Palette.InkMode effectiveInk = ink;
-        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT && transformed.hasNativeMatteAlpha()) {
+        if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT
+                && transformed.hasNativeMatteAlpha()
+                && !hasOpaqueBackgroundKeyBorder(transformed, 0, 0, destW, destH,
+                        ink == Palette.InkMode.BACKGROUND_TRANSPARENT
+                                ? Integer.valueOf(resolveBackgroundTransparentKey(-1))
+                                : null)) {
             effectiveInk = Palette.InkMode.COPY;
         }
         if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
@@ -985,6 +993,39 @@ public final class ImageMethodDispatcher {
         }
         // Director's copyPixels defaults #bgColor to white for ink 36.
         return 0xFFFFFF;
+    }
+
+    private static boolean hasOpaqueBackgroundKeyBorder(Bitmap src, int srcX, int srcY,
+                                                        int width, int height,
+                                                        Integer backgroundKeyRgb) {
+        if (src == null || backgroundKeyRgb == null || width <= 0 || height <= 0) {
+            return false;
+        }
+        int keyRgb = backgroundKeyRgb & 0xFFFFFF;
+        int maxX = src.getWidth() - 1;
+        int maxY = src.getHeight() - 1;
+        int left = clamp(srcX, 0, maxX);
+        int top = clamp(srcY, 0, maxY);
+        int right = clamp(srcX + width - 1, 0, maxX);
+        int bottom = clamp(srcY + height - 1, 0, maxY);
+
+        for (int x = left; x <= right; x++) {
+            if (isOpaqueKeyPixel(src.getPixel(x, top), keyRgb)
+                    || isOpaqueKeyPixel(src.getPixel(x, bottom), keyRgb)) {
+                return true;
+            }
+        }
+        for (int y = top + 1; y < bottom; y++) {
+            if (isOpaqueKeyPixel(src.getPixel(left, y), keyRgb)
+                    || isOpaqueKeyPixel(src.getPixel(right, y), keyRgb)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isOpaqueKeyPixel(int pixel, int keyRgb) {
+        return ((pixel >>> 24) & 0xFF) == 255 && (pixel & 0xFFFFFF) == keyRgb;
     }
 
     private static boolean isMostlyGrayscale(Bitmap src, Datum.Rect srcRect) {

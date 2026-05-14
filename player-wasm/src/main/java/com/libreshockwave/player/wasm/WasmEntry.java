@@ -3,6 +3,10 @@ package com.libreshockwave.player.wasm;
 import org.teavm.interop.Address;
 import org.teavm.interop.Export;
 
+import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.player.cast.CastMember;
+import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.DebugConfig;
 import com.libreshockwave.vm.datum.Datum;
@@ -943,6 +947,94 @@ public class WasmEntry {
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         return len;
+    }
+
+    /**
+     * Dump baked sprites intersecting the main window region for pixel-match diagnostics.
+     */
+    @Export(name = "getWindowSpriteDiagnostics")
+    public static int getWindowSpriteDiagnostics() {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return 0;
+        var renderer = wasmPlayer.getPlayer().getStageRenderer();
+        if (renderer == null || renderer.getLastBakedSprites() == null) return 0;
+
+        StringBuilder sb = new StringBuilder(32768);
+        for (RenderSprite sprite : renderer.getLastBakedSprites()) {
+            if (!intersects(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight(),
+                    40, 0, 930, 500)) {
+                continue;
+            }
+            Bitmap baked = sprite.getBakedBitmap();
+            int white = 0;
+            int f0 = 0;
+            int black = 0;
+            int transparent = 0;
+            int first = 0;
+            int bw = 0;
+            int bh = 0;
+            if (baked != null) {
+                bw = baked.getWidth();
+                bh = baked.getHeight();
+                int[] pixels = baked.getPixels();
+                if (pixels != null && pixels.length > 0) {
+                    first = pixels[0];
+                    for (int pixel : pixels) {
+                        int alpha = (pixel >>> 24) & 0xFF;
+                        int rgb = pixel & 0xFFFFFF;
+                        if (alpha == 0) {
+                            transparent++;
+                        } else if (rgb == 0xFFFFFF) {
+                            white++;
+                        } else if (rgb == 0xF0F0F0) {
+                            f0++;
+                        } else if (rgb == 0) {
+                            black++;
+                        }
+                    }
+                }
+            }
+            CastMemberChunk cast = sprite.getCastMember();
+            CastMember dyn = sprite.getDynamicMember();
+            Bitmap dynBitmap = dyn != null ? dyn.getBitmap() : null;
+            sb.append("ch=").append(sprite.getChannel())
+                    .append(" z=").append(sprite.getLocZ())
+                    .append(" loc=").append(sprite.getX()).append(',').append(sprite.getY())
+                    .append(' ').append(sprite.getWidth()).append('x').append(sprite.getHeight())
+                    .append(" type=").append(sprite.getType())
+                    .append(" ink=").append(sprite.getInk())
+                    .append(" blend=").append(sprite.getBlend())
+                    .append(" back=").append(Integer.toHexString(sprite.getBackColor() & 0xFFFFFF))
+                    .append(" dyn=").append(sprite.getDynamicMember() != null)
+                    .append(" member=").append(sprite.getMemberName())
+                    .append(" castName=").append(cast != null ? cast.name() : "")
+                    .append(" castId=").append(cast != null ? cast.id().value() : -1)
+                    .append(" dynName=").append(dyn != null ? dyn.getName() : "")
+                    .append(" dynNum=").append(dyn != null ? dyn.getMemberNumber() : -1)
+                    .append(" dynScript=").append(dynBitmap != null && dynBitmap.isScriptModified())
+                    .append(" dynBmp=").append(dynBitmap != null ? dynBitmap.getWidth() : 0)
+                    .append('x').append(dynBitmap != null ? dynBitmap.getHeight() : 0)
+                    .append(" dynFirst=").append(dynBitmap != null && dynBitmap.getPixels().length > 0
+                            ? Integer.toHexString(dynBitmap.getPixels()[0]) : "0")
+                    .append(" baked=").append(bw).append('x').append(bh)
+                    .append(" first=").append(Integer.toHexString(first))
+                    .append(" white=").append(white)
+                    .append(" f0=").append(f0)
+                    .append(" black=").append(black)
+                    .append(" transparent=").append(transparent)
+                    .append('\n');
+        }
+
+        byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+        int len = Math.min(bytes.length, stringBuffer.length);
+        System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        return len;
+    }
+
+    private static boolean intersects(int x, int y, int w, int h,
+                                      int rx, int ry, int rw, int rh) {
+        return w > 0 && h > 0
+                && x < rx + rw && x + w > rx
+                && y < ry + rh && y + h > ry;
     }
 
     /**
