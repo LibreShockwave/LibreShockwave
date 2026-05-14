@@ -1205,6 +1205,27 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void drawOnPaletteRefThirtyTwoBitImageResolvesSmallIntegersThroughImagePalette() {
+        Palette uiPalette = new Palette(new int[]{0xFFFFFF, 0xA6A6A6}, "ui");
+        Bitmap bmp = new Bitmap(3, 3, 32);
+        bmp.setImagePalette(uiPalette);
+        bmp.fill(0xFFFFFFFF);
+
+        Datum.PropList props = new Datum.PropList();
+        props.put("color", true, Datum.of(1));
+        props.put("shapeType", true, new Datum.Symbol("rect"));
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "draw",
+                List.of(new Datum.Rect(0, 0, 3, 3), props));
+
+        assertEquals(0xFFA6A6A6, bmp.getPixel(0, 0));
+        assertEquals(0xFFA6A6A6, bmp.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, bmp.getPixel(1, 1));
+        assertNull(bmp.getPaletteIndices(),
+                "32-bit paletteRef draw operations resolve colors through the palette but remain RGB images");
+    }
+
+    @Test
     void rgbFillOnPaletteRefThirtyTwoBitImageDoesNotQuantizeToNearestPaletteColor() {
         Palette uiPalette = new Palette(new int[]{0xFFFFFF, 0x669999}, "ui");
         Bitmap bmp = new Bitmap(2, 2, 32);

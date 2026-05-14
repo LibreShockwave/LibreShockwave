@@ -334,7 +334,7 @@ public final class ImageMethodDispatcher {
         if (propsArg instanceof Datum.PropList pl) {
             Datum colorDatum = getPropIgnoreCase(pl, "color", "Color");
             if (!colorDatum.isVoid()) {
-                colorArgb = Datum.datumToArgb(colorDatum);
+                colorArgb = Datum.datumToArgb(colorDatum, bmp);
             }
             Datum shapeDatum = getPropIgnoreCase(pl, "shapeType", "shapetype");
             if (shapeDatum instanceof Datum.Symbol s) {
@@ -342,7 +342,7 @@ public final class ImageMethodDispatcher {
             }
         } else {
             // Second arg is a color directly
-            colorArgb = Datum.datumToArgb(propsArg);
+            colorArgb = Datum.datumToArgb(propsArg, bmp);
         }
 
         int w = right - left;
