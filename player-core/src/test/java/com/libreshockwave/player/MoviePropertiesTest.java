@@ -1,6 +1,7 @@
 package com.libreshockwave.player;
 
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.player.input.InputState;
 import com.libreshockwave.vm.xtra.Xtra;
 import com.libreshockwave.vm.xtra.XtraManager;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,6 +45,23 @@ class MoviePropertiesTest {
         Datum.PropList entry = assertInstanceOf(Datum.PropList.class, xtraList.items().get(0));
         assertEquals("Multiusr", entry.get("name", true).toStr());
         assertEquals("Multiusr.x32", entry.get("fileName", true).toStr());
+    }
+
+    @Test
+    void settingKeyboardFocusSpriteRestartsCaretBlink() {
+        InputState inputState = new InputState();
+        inputState.setCaretBlinkRate(1);
+        inputState.setKeyboardFocusSprite(7);
+        inputState.incrementCaretBlink();
+
+        assertFalse(inputState.isCaretVisible());
+
+        MovieProperties properties = new MovieProperties(null, null);
+        properties.setInputState(inputState);
+        properties.setMovieProp("keyboardFocusSprite", Datum.of(9));
+
+        assertEquals(9, properties.getMovieProp("keyboardFocusSprite").toInt());
+        assertTrue(inputState.isCaretVisible());
     }
 
     private record FakeXtra(String name) implements Xtra {
