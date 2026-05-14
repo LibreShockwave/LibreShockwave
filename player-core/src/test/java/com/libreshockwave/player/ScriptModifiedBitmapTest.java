@@ -8,6 +8,7 @@ import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.id.ChunkId;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.pipeline.BitmapCache;
+import com.libreshockwave.player.render.pipeline.InkProcessor;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.SpriteBaker;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
@@ -688,13 +689,29 @@ public class ScriptModifiedBitmapTest {
     void imageSetAlphaAppliesFlatAlphaLevel() {
         Bitmap dest = new Bitmap(1, 1, 32);
         dest.fill(0xFF336699);
-        dest.setNativeAlpha(true);
 
         Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
                 List.of(Datum.of(96)));
 
         assertEquals(1, result.toInt());
         assertEquals(0x60336699, dest.getPixel(0, 0));
+        assertTrue(dest.isNativeAlpha(),
+                "setAlpha creates an authored alpha channel even on script-built 32-bit images");
+    }
+
+    @Test
+    void matteInkTrustsAlphaCreatedBySetAlphaOnScriptBuiltImages() {
+        Bitmap dest = new Bitmap(3, 1, 32);
+        dest.fill(0xFFBEBEBE);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "setAlpha",
+                List.of(Datum.of(255)));
+
+        Bitmap processed = InkProcessor.applyInk(dest, 8, 0xFFFFFF, dest.isNativeAlpha(), null);
+
+        assertEquals(0xFFBEBEBE, processed.getPixel(0, 0),
+                "MATTE ink should not flood-fill away opaque pixels after setAlpha supplied alpha");
+        assertEquals(0xFFBEBEBE, processed.getPixel(1, 0));
     }
 
     @Test
@@ -1173,6 +1190,36 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void fillOnPaletteRefThirtyTwoBitImageResolvesSmallIntegersThroughImagePalette() {
+        Palette uiPalette = new Palette(new int[]{0xFFFFFF, 0xBEBEBE}, "ui");
+        Bitmap bmp = new Bitmap(2, 2, 32);
+        bmp.setImagePalette(uiPalette);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                List.of(new Datum.Rect(0, 0, 2, 2), Datum.of(1)));
+
+        assertEquals(0xFFBEBEBE, bmp.getPixel(0, 0));
+        assertEquals(0xFFBEBEBE, bmp.getPixel(1, 1));
+        assertNull(bmp.getPaletteIndices(),
+                "32-bit paletteRef images resolve colors through the palette but remain RGB images");
+    }
+
+    @Test
+    void rgbFillOnPaletteRefThirtyTwoBitImageDoesNotQuantizeToNearestPaletteColor() {
+        Palette uiPalette = new Palette(new int[]{0xFFFFFF, 0x669999}, "ui");
+        Bitmap bmp = new Bitmap(2, 2, 32);
+        bmp.setImagePalette(uiPalette);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                List.of(new Datum.Rect(0, 0, 2, 2), new Datum.Color(0x67, 0x94, 0xA7)));
+
+        assertEquals(0xFF6794A7, bmp.getPixel(0, 0));
+        assertEquals(0xFF6794A7, bmp.getPixel(1, 1));
+        assertNull(bmp.getPaletteIndices(),
+                "RGB fills into 32-bit paletteRef images must keep authored RGB values");
+    }
+
+    @Test
     void palettedFillIndicesSurviveLaterIndexedCopyPixels() {
         Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xD4DDE1, 0xC0C0C0}, "nav-ui");
         Bitmap dest = new Bitmap(4, 1, 8);
@@ -1338,6 +1385,33 @@ public class ScriptModifiedBitmapTest {
         assertEquals(2, dest.getPaletteRefCastLib());
         assertEquals(77, dest.getPaletteRefMemberNum());
         assertEquals(0xFF6C5230, dest.getPixel(0, 0));
+    }
+
+    @Test
+    void copyPixelsDoesNotRemapCopiedIndicesThroughAnUnrelatedDestinationPalette() {
+        int[] systemMacLike = new int[256];
+        systemMacLike[248] = 0xBEBEBE;
+        Palette sourcePalette = new Palette(systemMacLike, "systemMac-like");
+        int[] windowPaletteColors = new int[256];
+        windowPaletteColors[248] = 0x000000;
+        Palette windowPalette = new Palette(windowPaletteColors, "window");
+
+        Bitmap src = new Bitmap(1, 1, 8);
+        src.setImagePalette(sourcePalette);
+        src.fillRectPaletteIndex(0, 0, 1, 1, 248, 0xFFBEBEBE);
+
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.setImagePalette(windowPalette);
+        dest.fill(0xFFFFFFFF);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1)));
+
+        assertEquals(0xFFBEBEBE, dest.getPixel(0, 0),
+                "Copied RGB must survive when source and destination palette refs differ");
+        assertNull(dest.getPaletteIndices(),
+                "Incompatible palette indices should not be preserved into the destination");
     }
 
     @Test

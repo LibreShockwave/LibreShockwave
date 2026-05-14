@@ -843,7 +843,6 @@ public sealed interface Datum {
             return 0xFF000000 | (rgb & 0xFFFFFF);
         }
         if (colorDatum instanceof Int i && targetBitmap != null
-                && targetBitmap.getBitDepth() <= 8
                 && targetBitmap.getImagePalette() != null) {
             int val = i.value();
             if (val >= 0 && val <= 255) {

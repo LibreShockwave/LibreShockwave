@@ -55,24 +55,24 @@ class BitmapAlphaTest {
     }
 
     @Test
-    void systemPaletteThirtyTwoBitFillQuantizesToImagePalette() {
+    void systemPaletteThirtyTwoBitFillKeepsAuthoredRgb() {
         Bitmap bitmap = new Bitmap(2, 1, 32);
         bitmap.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
 
         bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
 
-        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
-        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+        assertEquals(0xFFEEEEEE, bitmap.getPixel(0, 0));
+        assertEquals(0xFFEEEEEE, bitmap.getPixel(1, 0));
     }
 
     @Test
-    void customPaletteThirtyTwoBitFillQuantizesToImagePalette() {
+    void customPaletteThirtyTwoBitFillKeepsAuthoredRgb() {
         Bitmap bitmap = new Bitmap(2, 1, 32);
         bitmap.setImagePalette(new Palette(new int[] {0x000000, 0xF0F0F0}, "custom"));
 
         bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
 
-        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
-        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+        assertEquals(0xFFEEEEEE, bitmap.getPixel(0, 0));
+        assertEquals(0xFFEEEEEE, bitmap.getPixel(1, 0));
     }
 }

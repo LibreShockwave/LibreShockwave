@@ -429,7 +429,7 @@ public class Bitmap {
     }
 
     private boolean shouldQuantizeRgbFills() {
-        return imagePalette != null;
+        return bitDepth <= 8 && imagePalette != null;
     }
 
     /**
