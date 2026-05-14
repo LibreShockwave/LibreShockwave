@@ -469,6 +469,8 @@ public class Player implements UpdateProvider {
      */
     public void onNetFetchComplete(String url, byte[] data) {
         if (url == null || data == null) return;
+        castLibManager.cacheExternalData(url, data);
+
         String lower = url.toLowerCase();
         int qi = lower.indexOf('?');
         if (qi > 0) lower = lower.substring(0, qi);

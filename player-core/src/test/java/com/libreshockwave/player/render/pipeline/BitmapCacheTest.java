@@ -94,6 +94,26 @@ class BitmapCacheTest {
     }
 
     @Test
+    void nonNativeThirtyTwoBitMemberAlphaIsRenderedOpaque() {
+        Bitmap raw = new Bitmap(1, 1, 32, new int[] {0x00F0F0F0});
+
+        Bitmap coerced = BitmapCache.coerceNonNativeAlphaToOpaque(raw, false);
+
+        assertEquals(0xFFF0F0F0, coerced.getPixel(0, 0));
+    }
+
+    @Test
+    void nativeThirtyTwoBitMemberAlphaIsPreserved() {
+        Bitmap raw = new Bitmap(1, 1, 32, new int[] {0x00F0F0F0});
+        raw.setNativeAlpha(true);
+
+        Bitmap coerced = BitmapCache.coerceNonNativeAlphaToOpaque(raw, true);
+
+        assertSame(raw, coerced);
+        assertEquals(0x00F0F0F0, coerced.getPixel(0, 0));
+    }
+
+    @Test
     void quadCopiedPalettedWrapperKeepsIndicesAndDynamicMatteRemap() {
         Palette sourcePalette = new Palette(new int[] {0xFFFFFF, 0xFF808080, 0xFF000000}, "furni-ramp");
         Bitmap src = new Bitmap(2, 3, 8, new int[] {

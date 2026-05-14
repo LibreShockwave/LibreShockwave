@@ -1194,6 +1194,21 @@ var LibreShockwave = (function() {
         });
     };
 
+    ShockwavePlayer.prototype.getWindowSpriteDiagnostics = function() {
+        if (!this._worker || !this._workerReady) return Promise.resolve('');
+        var self = this;
+        return new Promise(function(resolve) {
+            var handler = function(e) {
+                if (e.data && e.data.type === 'windowSpriteDiagnostics') {
+                    self._worker.removeEventListener('message', handler);
+                    resolve(e.data.diagnostics || '');
+                }
+            };
+            self._worker.addEventListener('message', handler);
+            self._worker.postMessage({ type: 'getWindowSpriteDiagnostics' });
+        });
+    };
+
     /**
      * Trigger a test Lingo error to exercise the movie's alertHook error dialog.
      * Call this after the movie is playing to verify error dialog appearance.

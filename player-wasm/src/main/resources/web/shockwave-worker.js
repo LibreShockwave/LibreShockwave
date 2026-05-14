@@ -479,6 +479,9 @@ WasmEngine.prototype._fetchWithFallbacks = async function(taskId, url, method, p
         console.log('[WORKER] fetch: ' + tryUrl + (j === 0 && urls.length > 1 ? ' (+' + (urls.length - 1) + ' fallbacks)' : ''));
         try {
             var buf = await this._fetchOnce(tryUrl, method, postData);
+            if (_isImportableImageUrl(tryUrl)) {
+                buf = await _decodeImageForImport(buf, tryUrl);
+            }
             console.log('[WORKER] fetch OK: ' + tryUrl + ' (' + buf.byteLength + ' bytes)');
             return { data: buf, url: tryUrl, status: 200 };
         } catch (e) {
@@ -487,6 +490,46 @@ WasmEngine.prototype._fetchWithFallbacks = async function(taskId, url, method, p
     }
     return { error: true, status: 0 };
 };
+
+function _isImportableImageUrl(url) {
+    if (!url) return false;
+    var lower = String(url).toLowerCase();
+    var qi = lower.indexOf('?');
+    if (qi >= 0) lower = lower.substring(0, qi);
+    return lower.endsWith('.gif') || lower.endsWith('.png')
+        || lower.endsWith('.jpg') || lower.endsWith('.jpeg');
+}
+
+async function _decodeImageForImport(arrayBuffer, url) {
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') {
+        return arrayBuffer;
+    }
+    try {
+        var blob = new Blob([arrayBuffer]);
+        var bitmap = await createImageBitmap(blob);
+        var canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0);
+        if (bitmap.close) bitmap.close();
+        var rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        var out = new Uint8Array(12 + rgba.length);
+        out[0] = 0x4c; out[1] = 0x53; out[2] = 0x57; out[3] = 0x49; // LSWI
+        _writeU32BE(out, 4, canvas.width);
+        _writeU32BE(out, 8, canvas.height);
+        out.set(rgba, 12);
+        return out.buffer;
+    } catch (e) {
+        console.warn('[WORKER] image decode skipped for ' + url + ': ' + e);
+        return arrayBuffer;
+    }
+}
+
+function _writeU32BE(bytes, offset, value) {
+    bytes[offset] = (value >>> 24) & 0xFF;
+    bytes[offset + 1] = (value >>> 16) & 0xFF;
+    bytes[offset + 2] = (value >>> 8) & 0xFF;
+    bytes[offset + 3] = value & 0xFF;
+}
 
 /**
  * Deliver queued fetch results into WASM.
@@ -1261,6 +1304,19 @@ self.onmessage = async function(e) {
                     }
                 } catch (csErr) {}
                 self.postMessage({ type: 'callStack', callStack: stackStr });
+                break;
+            }
+
+            case 'getWindowSpriteDiagnostics': {
+                var diagStr = '';
+                try {
+                    var dlen = _e.exports.getWindowSpriteDiagnostics(); _e._clearEx();
+                    if (dlen > 0) {
+                        var daddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+                        diagStr = _e._readString(daddr, dlen);
+                    }
+                } catch (diagErr) {}
+                self.postMessage({ type: 'windowSpriteDiagnostics', diagnostics: diagStr });
                 break;
             }
 

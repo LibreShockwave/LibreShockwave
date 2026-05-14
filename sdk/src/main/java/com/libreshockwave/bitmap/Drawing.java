@@ -89,6 +89,9 @@ public class Drawing {
             effectiveSrcX = srcX;
             effectiveSrcY = srcY;
         }
+        boolean keyNearWhiteMatte = ink == InkMode.BACKGROUND_TRANSPARENT
+                && shouldKeyNearWhiteMatte(effectiveSrc, effectiveSrcX, effectiveSrcY, width, height,
+                        backgroundKeyRgb);
         for (int y = 0; y < height; y++) {
             int sy = effectiveSrcY + y;
             int dy = destY + y;
@@ -117,10 +120,56 @@ public class Drawing {
                 int srcPixel = effectiveSrc.getPixel(sx, sy);
                 int destPixel = dest.getPixel(dx, dy);
 
-                int resultPixel = applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
+                int resultPixel = keyNearWhiteMatte && isNearWhiteMattePixel(srcPixel)
+                        ? destPixel
+                        : applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
                 dest.setPixelPreservePaletteIndex(dx, dy, resultPixel);
             }
         }
+    }
+
+    private static boolean shouldKeyNearWhiteMatte(Bitmap src, int srcX, int srcY,
+                                                   int width, int height,
+                                                   Integer backgroundKeyRgb) {
+        if (src == null || src.getBitDepth() < 32 || !src.hasTransparentPixels()) {
+            return false;
+        }
+        int keyRgb = backgroundKeyRgb != null ? (backgroundKeyRgb & 0xFFFFFF) : 0xFFFFFF;
+        if (keyRgb != 0xFFFFFF || width <= 0 || height <= 0) {
+            return false;
+        }
+        int maxX = src.getWidth() - 1;
+        int maxY = src.getHeight() - 1;
+        int left = Math.max(0, Math.min(maxX, srcX));
+        int top = Math.max(0, Math.min(maxY, srcY));
+        int right = Math.max(0, Math.min(maxX, srcX + width - 1));
+        int bottom = Math.max(0, Math.min(maxY, srcY + height - 1));
+
+        for (int x = left; x <= right; x++) {
+            if (isNearWhiteMattePixel(src.getPixel(x, top))
+                    || isNearWhiteMattePixel(src.getPixel(x, bottom))) {
+                return true;
+            }
+        }
+        for (int y = top + 1; y < bottom; y++) {
+            if (isNearWhiteMattePixel(src.getPixel(left, y))
+                    || isNearWhiteMattePixel(src.getPixel(right, y))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isNearWhiteMattePixel(int pixel) {
+        if (((pixel >>> 24) & 0xFF) == 0) {
+            return false;
+        }
+        int r = (pixel >> 16) & 0xFF;
+        int g = (pixel >> 8) & 0xFF;
+        int b = pixel & 0xFF;
+        return r >= 240 && g >= 240 && b >= 240
+                && Math.abs(r - g) <= 2
+                && Math.abs(g - b) <= 2;
     }
 
     private static boolean copyMatteToMaskImage(Bitmap dest, Bitmap src,
@@ -202,7 +251,10 @@ public class Drawing {
             }
             opaquePixels++;
         }
-        return opaquePixels > 0;
+        // Text masks are sparse glyph ink on a matte background. Large filled
+        // grayscale UI artwork, such as 1px window strips scaled across a panel,
+        // must remain artwork rather than being converted into a luma mask.
+        return opaquePixels > 0 && opaquePixels * 4 <= pixels.length * 3;
     }
 
     private static boolean isWhiteBackedMaskSource(int[] pixels, boolean[] transparent, FloodFillMatte matteSpec) {

@@ -109,6 +109,16 @@ public interface CastLibProvider {
      */
     boolean setMemberProp(int castLibNumber, int memberNumber, String propName, Datum value);
 
+    /**
+     * Import an external file into an existing cast member.
+     * Runtime environments may decode and assign media here; returning true also
+     * acknowledges formats that cannot yet be decoded so Director download
+     * scripts can complete their bookkeeping.
+     */
+    default boolean importFileIntoMember(int castLibNumber, int memberNumber, String url, Datum options) {
+        return memberExists(castLibNumber, memberNumber);
+    }
+
     default String getCastLibName(int castLibNumber) {
         return null;
     }

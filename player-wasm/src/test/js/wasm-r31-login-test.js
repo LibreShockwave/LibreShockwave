@@ -34,6 +34,7 @@ const SSO_TICKET = 'vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5';
 
 const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 900);
 const TRACE_R31 = process.env.R31_TRACE === '1';
+const CLICK_CATALOGUE = process.env.R31_CLICK_CATALOGUE === '1';
 const POLL_MS = 500;
 
 function isAbsoluteUrl(value) {
@@ -176,6 +177,40 @@ async function captureCanvas(page, filePath) {
     if (dataUrl) {
         fs.writeFileSync(filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
     }
+}
+
+async function captureCanvasRegion(page, filePath, rect) {
+    const dataUrl = await page.evaluate(({ x, y, width, height }) => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const crop = document.createElement('canvas');
+        crop.width = width;
+        crop.height = height;
+        crop.getContext('2d').drawImage(canvas, x, y, width, height, 0, 0, width, height);
+        return crop.toDataURL('image/png');
+    }, rect);
+    if (dataUrl) {
+        fs.writeFileSync(filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
+    }
+}
+
+async function clickCanvasAt(page, x, y) {
+    await page.evaluate(({ x, y }) => {
+        const canvas = document.getElementById('beta-client-stage');
+        const rect = canvas.getBoundingClientRect();
+        const clientX = rect.left + x;
+        const clientY = rect.top + y;
+        for (const type of ['mousemove', 'mousedown', 'mouseup', 'click']) {
+            canvas.dispatchEvent(new MouseEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                clientX,
+                clientY,
+                button: 0,
+                buttons: type === 'mouseup' || type === 'click' ? 0 : 1,
+            }));
+        }
+    }, { x, y });
 }
 
 async function sampleNavigatorEvidence(page) {
@@ -483,6 +518,51 @@ async function main() {
 
         if (navigatorDisplayed) {
             await captureCanvas(page, path.join(outputDir, 'r31_login_final.png'));
+            await captureCanvasRegion(page, path.join(outputDir, 'navigator_libre.png'), {
+                x: 585,
+                y: 22,
+                width: 362,
+                height: 453,
+            });
+            if (CLICK_CATALOGUE) {
+                console.log('  Clicking catalogue icon after navigator evidence is ready');
+                await clickCanvasAt(page, 858, 512);
+                await new Promise(r => setTimeout(r, 5000));
+                await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_click.png'));
+                const windowSpriteDiagnostics = await page.evaluate(async () => {
+                    if (!window.betaClientPlayer || !window.betaClientPlayer.getWindowSpriteDiagnostics) return '';
+                    return await window.betaClientPlayer.getWindowSpriteDiagnostics();
+                });
+                fs.writeFileSync(path.join(outputDir, 'r31_window_sprite_diag.txt'), windowSpriteDiagnostics);
+                finalState = await page.evaluate(() => {
+                    const canvas = document.getElementById('beta-client-stage');
+                    const ctx = canvas.getContext('2d');
+                    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                    let nonBlack = 0;
+                    const buckets = new Set();
+                    for (let p = 0; p < data.length; p += 80) {
+                        const r = data[p], g = data[p + 1], b = data[p + 2];
+                        if (r > 10 || g > 10 || b > 10) nonBlack++;
+                        buckets.add((r >> 5) + ',' + (g >> 5) + ',' + (b >> 5));
+                    }
+                    return {
+                        loaded: window._testState.loaded,
+                        error: window._testState.error,
+                        tick: window._testState.tick,
+                        frame: window._testState.frame,
+                        gotoNetPages: window._testState.gotoNetPages.slice(),
+                        musOpened: window._testState.musOpened,
+                        musClosed: window._testState.musClosed,
+                        musErrored: window._testState.musErrored,
+                        musSendCount: window._testState.musSendCount,
+                        musMessageCount: window._testState.musMessageCount,
+                        debugLogs: window._testState.debugLogs.slice(-80),
+                        spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+                        nonBlack,
+                        colorBuckets: buckets.size,
+                    };
+                });
+            }
         } else {
             await captureCanvas(page, path.join(outputDir, 'r31_login_timeout.png'));
         }

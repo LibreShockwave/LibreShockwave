@@ -1,6 +1,7 @@
 package com.libreshockwave.player.cast;
 
 import com.libreshockwave.DirectorFile;
+import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.bitmap.Palette;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastChunk;
@@ -13,9 +14,12 @@ import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.LingoVM;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 /**
@@ -315,6 +319,69 @@ public class CastLibManager implements CastLibProvider {
     }
 
     @Override
+    public boolean importFileIntoMember(int castLibNumber, int memberNumber, String url, Datum options) {
+        CastLib castLib = getCastLib(castLibNumber);
+        if (castLib == null) {
+            return false;
+        }
+        CastMember member = castLib.getMember(memberNumber);
+        if (member == null) {
+            return false;
+        }
+        byte[] data = getCachedDownloadedData(url);
+        if (data == null || data.length == 0) {
+            return false;
+        }
+        Bitmap bitmap = decodeImportedImage(data);
+        if (bitmap == null) {
+            return false;
+        }
+        return member.setProp("image", new Datum.ImageRef(bitmap));
+    }
+
+    private static Bitmap decodeImportedImage(byte[] data) {
+        if (data.length < 12
+                || data[0] != 'L' || data[1] != 'S' || data[2] != 'W' || data[3] != 'I') {
+            return null;
+        }
+        int width = readU32BE(data, 4);
+        int height = readU32BE(data, 8);
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        int pixelBytes = width * height * 4;
+        if (pixelBytes / 4 != width * height || data.length < 12 + pixelBytes) {
+            return null;
+        }
+        Bitmap bitmap = new Bitmap(width, height, 32);
+        boolean hasAlpha = false;
+        int offset = 12;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int r = data[offset++] & 0xFF;
+                int g = data[offset++] & 0xFF;
+                int b = data[offset++] & 0xFF;
+                int a = data[offset++] & 0xFF;
+                if (a < 255) {
+                    hasAlpha = true;
+                }
+                bitmap.setPixel(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        if (hasAlpha) {
+            bitmap.setNativeAlpha(true);
+        }
+        return bitmap;
+    }
+
+    private static int readU32BE(byte[] data, int offset) {
+        return ((data[offset] & 0xFF) << 24)
+                | ((data[offset + 1] & 0xFF) << 16)
+                | ((data[offset + 2] & 0xFF) << 8)
+                | (data[offset + 3] & 0xFF);
+    }
+
+    @Override
     public Datum callMemberMethod(int castLibNumber, int memberNumber,
                                    String methodName, java.util.List<Datum> args) {
         CastLib castLib = getCastLib(castLibNumber);
@@ -603,8 +670,9 @@ public class CastLibManager implements CastLibProvider {
      * Cache raw external cast data by base name for later reuse.
      */
     public void cacheExternalData(String url, byte[] data) {
-        String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
-        castDataCache.put(baseName, data);
+        for (String key : downloadCacheKeys(url)) {
+            castDataCache.put(key, data);
+        }
         for (CastLib castLib : findCastLibsByUrl(url)) {
             castLib.cacheFetchedExternalData(data);
         }
@@ -615,6 +683,37 @@ public class CastLibManager implements CastLibProvider {
      */
     public byte[] getCachedExternalData(String baseName) {
         return castDataCache.get(baseName);
+    }
+
+    /**
+     * Look up cached downloaded bytes by URL or file name.
+     * Used by importFileInto for external image payloads as well as cast loading.
+     */
+    public byte[] getCachedDownloadedData(String url) {
+        for (String key : downloadCacheKeys(url)) {
+            byte[] data = castDataCache.get(key);
+            if (data != null) {
+                return data;
+            }
+        }
+        return null;
+    }
+
+    private static Set<String> downloadCacheKeys(String url) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        if (url == null || url.isEmpty()) {
+            return keys;
+        }
+        String fileName = FileUtil.getFileName(url);
+        if (fileName == null || fileName.isEmpty()) {
+            return keys;
+        }
+        keys.add(fileName.toLowerCase(Locale.ROOT));
+        String baseName = FileUtil.getFileNameWithoutExtension(fileName);
+        if (baseName != null && !baseName.isEmpty()) {
+            keys.add(baseName.toLowerCase(Locale.ROOT));
+        }
+        return keys;
     }
 
     public void clearPendingExternalLoad(int castLibNumber) {

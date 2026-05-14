@@ -394,6 +394,24 @@ class DrawingMatteTest {
     }
 
     @Test
+    void matteCopyOfDenseGrayscaleUiStripIntoEightBitImagePreservesArtwork() {
+        Bitmap dest = new Bitmap(5, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap src = new Bitmap(5, 3, 32, new int[] {
+                0xFF000000, 0xFFEEEEEE, 0xFFEEEEEE, 0xFFEEEEEE, 0xFF000000,
+                0xFF000000, 0xFFEEEEEE, 0xFFEEEEEE, 0xFFEEEEEE, 0xFF000000,
+                0xFF000000, 0xFFEEEEEE, 0xFFEEEEEE, 0xFFEEEEEE, 0xFF000000
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 5, 3, Palette.InkMode.MATTE, 255);
+
+        assertEquals(0xFFEEEEEE, dest.getPixel(2, 1));
+    }
+
+    @Test
     void matteCopyOfWhiteBackedColoredTextIntoEightBitImageBuildsLumaMask() {
         Bitmap mask = new Bitmap(3, 3, 8, new int[] {
                 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
