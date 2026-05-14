@@ -204,6 +204,9 @@ public class Bitmap {
         }
 
         if (oldPalette == null) {
+            if (shouldQuantizeRgbFills()) {
+                return quantizeToImagePalette();
+            }
             return 0;
         }
 
@@ -225,6 +228,31 @@ public class Bitmap {
                     }
                     break;
                 }
+            }
+        }
+        return changed;
+    }
+
+    private int quantizeToImagePalette() {
+        if (imagePalette == null || pixels == null) {
+            return 0;
+        }
+        if (paletteIndices == null || paletteIndices.length != pixels.length) {
+            paletteIndices = new byte[pixels.length];
+        }
+        int changed = 0;
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            int alpha = (pixel >>> 24) & 0xFF;
+            if (alpha == 0) {
+                continue;
+            }
+            int index = imagePalette.nearestIndex(pixel);
+            int quantized = (alpha << 24) | (imagePalette.getColor(index) & 0xFFFFFF);
+            paletteIndices[i] = (byte) (index & 0xFF);
+            if (pixels[i] != quantized) {
+                pixels[i] = quantized;
+                changed++;
             }
         }
         return changed;
@@ -362,6 +390,10 @@ public class Bitmap {
      * Fill the entire bitmap with a single color.
      */
     public void fill(int argb) {
+        if (shouldQuantizeRgbFills()) {
+            fillRectPaletteIndex(0, 0, width, height, imagePalette.nearestIndex(argb), quantizeArgb(argb));
+            return;
+        }
         clearPaletteIndices();
         java.util.Arrays.fill(pixels, argb);
     }
@@ -370,6 +402,10 @@ public class Bitmap {
      * Fill a rectangular region.
      */
     public void fillRect(int x, int y, int w, int h, int argb) {
+        if (shouldQuantizeRgbFills()) {
+            fillRectPaletteIndex(x, y, w, h, imagePalette.nearestIndex(argb), quantizeArgb(argb));
+            return;
+        }
         clearPaletteIndices();
         int x2 = Math.min(x + w, width);
         int y2 = Math.min(y + h, height);
@@ -381,6 +417,19 @@ public class Bitmap {
                 pixels[py * width + px] = argb;
             }
         }
+    }
+
+    private int quantizeArgb(int argb) {
+        if (imagePalette == null) {
+            return argb;
+        }
+        int alpha = (argb >>> 24) & 0xFF;
+        int index = imagePalette.nearestIndex(argb);
+        return (alpha << 24) | (imagePalette.getColor(index) & 0xFFFFFF);
+    }
+
+    private boolean shouldQuantizeRgbFills() {
+        return imagePalette != null;
     }
 
     /**
