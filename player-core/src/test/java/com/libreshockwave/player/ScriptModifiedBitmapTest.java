@@ -849,7 +849,7 @@ public class ScriptModifiedBitmapTest {
                 List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
                         new Datum.Rect(0, 0, 1, 1), props));
 
-        assertEquals(0xFF808080, dest.getPixel(0, 0),
+        assertEquals(0xFF7F7F7F, dest.getPixel(0, 0),
                 "Default copyPixels should honor #blend as source opacity over the destination");
     }
 
@@ -866,8 +866,25 @@ public class ScriptModifiedBitmapTest {
                 List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
                         new Datum.Rect(0, 0, 1, 1), props));
 
-        assertEquals(0xFFC0C0C0, dest.getPixel(0, 0),
+        assertEquals(0xFFBFBFBF, dest.getPixel(0, 0),
                 "copyPixels blend should scale, not replace, the source alpha");
+    }
+
+    @Test
+    void copyPixelsBackgroundTransparentBlendRoundsPercentageToNearestAlpha() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFEEEEEE });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+        props.add("blend", Datum.of(30), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFA6A6A6, dest.getPixel(0, 0),
+                "#blend:30 should map to alpha 77, matching Director's nearest-alpha rounding");
     }
 
     @Test
