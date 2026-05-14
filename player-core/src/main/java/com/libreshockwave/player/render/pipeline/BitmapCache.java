@@ -93,12 +93,16 @@ public class BitmapCache {
             // Decode with resolved palette to ensure pixel colors match the
             // palette used for InkProcessor backColor resolution.
             Optional<Bitmap> bitmap;
+            DirectorFile.clearJpegDecodePending();
             if (palette != null) {
                 bitmap = player.getBitmapResolver().decodeBitmap(member, palette);
             } else {
                 bitmap = player.getBitmapResolver().decodeBitmap(member);
             }
             if (bitmap.isEmpty()) {
+                if (DirectorFile.consumeJpegDecodePending()) {
+                    return null;
+                }
                 decodeFailed.add(memberId);
                 return null;
             }

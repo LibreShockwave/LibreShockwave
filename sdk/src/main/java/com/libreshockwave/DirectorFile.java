@@ -80,9 +80,24 @@ public class DirectorFile {
     }
 
     private static JpegDecoder jpegDecoder;
+    private static boolean jpegDecodePending;
 
     public static void setJpegDecoder(JpegDecoder decoder) {
         jpegDecoder = decoder;
+    }
+
+    public static void markJpegDecodePending() {
+        jpegDecodePending = true;
+    }
+
+    public static void clearJpegDecodePending() {
+        jpegDecodePending = false;
+    }
+
+    public static boolean consumeJpegDecodePending() {
+        boolean pending = jpegDecodePending;
+        jpegDecodePending = false;
+        return pending;
     }
 
     public record ChunkInfo(

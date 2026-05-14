@@ -99,6 +99,9 @@ var _musErrors = {};       // instanceId -> errorCode
 
 // --- Non-blocking fetch delivery queue ---
 var _fetchQueue = [];   // [{taskId, data: ArrayBuffer}] or [{taskId, error: number}]
+var _jpegDecodeQueue = []; // [{id, width, height, data: Uint8Array}]
+var _jpegDecodeInFlight = {}; // id -> true
+var _jpegDecodeSeq = 0; // increments per movie load to ignore stale async decodes
 var _loadStartTime = 0; // timestamp when loading began (for perf logging)
 var _networkSeq = 0;    // increments per movie load to ignore stale async fetches
 
@@ -524,6 +527,22 @@ async function _decodeImageForImport(arrayBuffer, url) {
     }
 }
 
+async function _decodeImageToRgba(arrayBuffer) {
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') {
+        return null;
+    }
+    var blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+    var bitmap = await createImageBitmap(blob);
+    var canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    if (bitmap.close) bitmap.close();
+    var rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    var copy = new Uint8Array(rgba.length);
+    copy.set(rgba);
+    return { width: canvas.width, height: canvas.height, data: copy };
+}
+
 function _writeU32BE(bytes, offset, value) {
     bytes[offset] = (value >>> 24) & 0xFF;
     bytes[offset + 1] = (value >>> 16) & 0xFF;
@@ -562,6 +581,81 @@ WasmEngine.prototype.deliverQueuedResults = function() {
         delivered++;
     }
     return delivered;
+};
+
+WasmEngine.prototype.deliverJpegDecodeResults = function() {
+    if (_jpegDecodeQueue.length === 0) return 0;
+    var delivered = 0;
+    while (_jpegDecodeQueue.length > 0) {
+        var item = _jpegDecodeQueue.shift();
+        try {
+            if (item.data.length > 0) {
+                var addr = this.exports.allocateNetBuffer(item.data.length); this._clearEx();
+                new Uint8Array(this._mem(), addr, item.data.length).set(item.data);
+            }
+            this.exports.deliverJpegDecodeResult(item.id, item.width, item.height, item.data.length);
+            this._clearEx();
+            delivered++;
+        } catch (e) {
+            console.error('[WORKER] deliverJpegDecodeResult error id=' + item.id + ': ' + e);
+            this._clearEx();
+        }
+    }
+    return delivered;
+};
+
+WasmEngine.prototype.pumpJpegDecodeRequests = function() {
+    if (this._wasmDead) return;
+    var count;
+    try {
+        count = this.exports.getPendingJpegDecodeCount(); this._clearEx();
+    } catch (e) { return; }
+    if (count === 0) return;
+
+    var engine = this;
+    var seq = _jpegDecodeSeq;
+    for (var i = 0; i < count; i++) {
+        var id = this.exports.getPendingJpegDecodeId(i); this._clearEx();
+        if (!id || _jpegDecodeInFlight[id]) continue;
+        var len = this.exports.getPendingJpegDecodeData(id); this._clearEx();
+        var addr = this.exports.getPendingJpegDecodeDataAddress(); this._clearEx();
+        if (!len || !addr) continue;
+        var bytes = new Uint8Array(len);
+        bytes.set(new Uint8Array(this._mem(), addr, len));
+        _jpegDecodeInFlight[id] = true;
+        (function(decodeId, data) {
+            _decodeImageToRgba(data.buffer).then(function(decoded) {
+                if (seq !== _jpegDecodeSeq) return;
+                if (decoded) {
+                    _jpegDecodeQueue.push({
+                        id: decodeId,
+                        width: decoded.width,
+                        height: decoded.height,
+                        data: decoded.data
+                    });
+                } else {
+                    _jpegDecodeQueue.push({
+                        id: decodeId,
+                        width: 0,
+                        height: 0,
+                        data: new Uint8Array(0)
+                    });
+                }
+            }).catch(function(e) {
+                if (seq !== _jpegDecodeSeq) return;
+                console.warn('[WORKER] embedded JPEG decode failed id=' + decodeId + ': ' + e);
+                _jpegDecodeQueue.push({
+                    id: decodeId,
+                    width: 0,
+                    height: 0,
+                    data: new Uint8Array(0)
+                });
+            }).finally(function() {
+                if (seq !== _jpegDecodeSeq) return;
+                delete _jpegDecodeInFlight[decodeId];
+            });
+        })(id, bytes);
+    }
 };
 
 function _isCastFileUrl(url) {
@@ -917,6 +1011,9 @@ self.onmessage = async function(e) {
                 _tickNum = 0;
                 _networkSeq++;
                 _fetchQueue = [];
+                _jpegDecodeSeq++;
+                _jpegDecodeQueue = [];
+                _jpegDecodeInFlight = {};
                 var info = _e.loadMovie(new Uint8Array(msg.data), msg.basePath);
                 _e.playing  = false;
                 _flushWasmDiagnostics();
@@ -1102,6 +1199,7 @@ self.onmessage = async function(e) {
                     if (!_e._wasmDead) {
                         try {
                             nDelivered = _e.deliverQueuedResults();
+                            _e.deliverJpegDecodeResults();
                         } catch (deliverErr) {
                             console.error('[WORKER] deliver error: ' + deliverErr);
                         }
@@ -1150,6 +1248,10 @@ self.onmessage = async function(e) {
                     try { _e.pumpAudioCommands(); }
                     catch (audioErr) { /* silent */ }
 
+                    // Phase 3.7: decode embedded JPEG/ediM bitmaps in the browser.
+                    try { _e.pumpJpegDecodeRequests(); }
+                    catch (jpegErr) { console.error('[WORKER] JPEG pump error: ' + jpegErr); }
+
                     // Always update frame metadata from WASM (needed for fast-loop detection)
                     try {
                         _e._lastFrame      = _e.exports.getCurrentFrame();
@@ -1161,6 +1263,7 @@ self.onmessage = async function(e) {
                     if (!msg.skipRender) {
                         try {
                             frame = _e.renderFrame();
+                            _e.pumpJpegDecodeRequests();
                         } catch (renderErr) {
                             console.error('[WORKER] render() error: ' + renderErr);
                         }
