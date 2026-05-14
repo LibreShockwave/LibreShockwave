@@ -117,7 +117,12 @@ public class InputState {
     // --- Keyboard focus ---
 
     public int getKeyboardFocusSprite() { return keyboardFocusSprite; }
-    public void setKeyboardFocusSprite(int channel) { this.keyboardFocusSprite = channel; }
+    public void setKeyboardFocusSprite(int channel) {
+        if (this.keyboardFocusSprite != channel) {
+            this.keyboardFocusSprite = channel;
+            resetCaretBlink();
+        }
+    }
 
     // --- Selection ---
 
