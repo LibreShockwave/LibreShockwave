@@ -959,6 +959,12 @@ public class WasmEntry {
         if (renderer == null || renderer.getLastBakedSprites() == null) return 0;
 
         StringBuilder sb = new StringBuilder(32768);
+        var file = wasmPlayer.getPlayer().getFile();
+        if (file != null && file.getConfig() != null) {
+            sb.append("movieColorDepth=").append(file.getConfig().bgColor())
+                    .append(" stageColor=").append(Integer.toHexString(file.getConfig().stageColorRGB() & 0xFFFFFF))
+                    .append('\n');
+        }
         for (RenderSprite sprite : renderer.getLastBakedSprites()) {
             if (!intersects(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight(),
                     40, 0, 930, 500)) {
@@ -1013,6 +1019,10 @@ public class WasmEntry {
                     .append(" dynScript=").append(dynBitmap != null && dynBitmap.isScriptModified())
                     .append(" dynBmp=").append(dynBitmap != null ? dynBitmap.getWidth() : 0)
                     .append('x').append(dynBitmap != null ? dynBitmap.getHeight() : 0)
+                    .append(" dynDepth=").append(dynBitmap != null ? dynBitmap.getBitDepth() : 0)
+                    .append(" dynPal=").append(dynBitmap != null && dynBitmap.getImagePalette() != null
+                            ? dynBitmap.getImagePalette().getName() : "")
+                    .append(" dynPalRef=").append(dynBitmap != null ? paletteRefSummary(dynBitmap) : "")
                     .append(" dynFirst=").append(dynBitmap != null && dynBitmap.getPixels().length > 0
                             ? Integer.toHexString(dynBitmap.getPixels()[0]) : "0")
                     .append(" baked=").append(bw).append('x').append(bh)
@@ -1035,6 +1045,16 @@ public class WasmEntry {
         return w > 0 && h > 0
                 && x < rx + rw && x + w > rx
                 && y < ry + rh && y + h > ry;
+    }
+
+    private static String paletteRefSummary(Bitmap bitmap) {
+        if (bitmap.getPaletteRefSystemName() != null) {
+            return bitmap.getPaletteRefSystemName();
+        }
+        if (bitmap.getPaletteRefCastLib() >= 1 && bitmap.getPaletteRefMemberNum() >= 1) {
+            return bitmap.getPaletteRefCastLib() + ":" + bitmap.getPaletteRefMemberNum();
+        }
+        return "";
     }
 
     /**

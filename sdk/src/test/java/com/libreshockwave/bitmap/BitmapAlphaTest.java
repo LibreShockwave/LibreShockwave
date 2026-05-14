@@ -30,4 +30,49 @@ class BitmapAlphaTest {
         assertSame(bitmap, result);
         assertEquals(0x00F0F0F0, result.getPixel(0, 0));
     }
+
+    @Test
+    void eightBitRgbFillQuantizesToImagePalette() {
+        Bitmap bitmap = new Bitmap(2, 1, 8);
+        bitmap.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+
+        bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
+
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+    }
+
+    @Test
+    void firstPaletteAssignmentQuantizesExistingEightBitRgbPixels() {
+        Bitmap bitmap = new Bitmap(2, 1, 8);
+        bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
+
+        int changed = bitmap.remapImagePalette(Palette.SYSTEM_WIN_PALETTE);
+
+        assertEquals(2, changed);
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+    }
+
+    @Test
+    void systemPaletteThirtyTwoBitFillQuantizesToImagePalette() {
+        Bitmap bitmap = new Bitmap(2, 1, 32);
+        bitmap.setImagePalette(Palette.SYSTEM_WIN_PALETTE);
+
+        bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
+
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+    }
+
+    @Test
+    void customPaletteThirtyTwoBitFillQuantizesToImagePalette() {
+        Bitmap bitmap = new Bitmap(2, 1, 32);
+        bitmap.setImagePalette(new Palette(new int[] {0x000000, 0xF0F0F0}, "custom"));
+
+        bitmap.fillRect(0, 0, 2, 1, 0xFFEEEEEE);
+
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(0, 0));
+        assertEquals(0xFFF0F0F0, bitmap.getPixel(1, 0));
+    }
 }

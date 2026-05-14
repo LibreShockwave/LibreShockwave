@@ -123,7 +123,7 @@ public final class ImageMethodDispatcher {
         Bitmap bmp = imageRef.bitmap();
         switch (propName.toLowerCase()) {
             case "paletteref" -> {
-                ResolvedPalette resolved = resolvePaletteFromDatum(value);
+                ResolvedPalette resolved = resolvePaletteFromDatum(value, bmp);
                 if (resolved != null && resolved.palette() != null) {
                     bmp.remapImagePalette(resolved.palette());
                     if (resolved.ref() != null) {
@@ -144,6 +144,10 @@ public final class ImageMethodDispatcher {
     }
 
     private static ResolvedPalette resolvePaletteFromDatum(Datum value) {
+        return resolvePaletteFromDatum(value, null);
+    }
+
+    private static ResolvedPalette resolvePaletteFromDatum(Datum value, Bitmap target) {
         CastLibProvider provider = CastLibProvider.getProvider();
         if (value instanceof Datum.CastMemberRef ref) {
             if (provider == null) return null;
@@ -163,7 +167,12 @@ public final class ImageMethodDispatcher {
 
         String normalized = name.trim().toLowerCase();
         if ("systemmac".equals(normalized)) {
-            return new ResolvedPalette(Palette.SYSTEM_MAC_PALETTE, null, "systemMac");
+            Palette palette = target != null
+                    && target.getBitDepth() > 8
+                    && target.getPaletteIndices() == null
+                    ? Palette.SYSTEM_WIN_PALETTE
+                    : Palette.SYSTEM_MAC_PALETTE;
+            return new ResolvedPalette(palette, null, "systemMac");
         }
         if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
             return new ResolvedPalette(Palette.SYSTEM_WIN_PALETTE, null, "systemWin");

@@ -43,6 +43,30 @@ public class Palette {
         return colors.length;
     }
 
+    public int nearestIndex(int rgb) {
+        int target = rgb & 0xFFFFFF;
+        int tr = (target >> 16) & 0xFF;
+        int tg = (target >> 8) & 0xFF;
+        int tb = target & 0xFF;
+        int bestIndex = 0;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int i = 0; i < colors.length; i++) {
+            int color = colors[i] & 0xFFFFFF;
+            int dr = tr - ((color >> 16) & 0xFF);
+            int dg = tg - ((color >> 8) & 0xFF);
+            int db = tb - (color & 0xFF);
+            int distance = (dr * dr) + (dg * dg) + (db * db);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+                if (distance == 0) {
+                    break;
+                }
+            }
+        }
+        return bestIndex;
+    }
+
     public String getName() {
         return name;
     }
