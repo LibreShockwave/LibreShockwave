@@ -3,6 +3,7 @@ package com.libreshockwave.player.wasm;
 import org.teavm.interop.Address;
 import org.teavm.interop.Export;
 
+import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.player.cast.CastMember;
@@ -84,6 +85,8 @@ public class WasmEntry {
     }
 
     public static void main(String[] args) {
+        DirectorFile.setJpegDecoder(WasmJpegDecoder::decode);
+
         // Replace System.out/err with non-synchronized PrintStream.
         // Java's PrintStream uses synchronized(this) on every println() call,
         // which triggers ClassCastException in TeaVM WASM's monitorEnterSync.
@@ -162,6 +165,9 @@ public class WasmEntry {
      */
     @Export(name = "loadMovie")
     public static int loadMovie(int movieSize, int basePathLen) {
+        DirectorFile.setJpegDecoder(WasmJpegDecoder::decode);
+        WasmJpegDecoder.reset();
+
         String basePath = "";
         if (basePathLen > 0) {
             basePath = new String(stringBuffer, 0, basePathLen);
@@ -720,6 +726,36 @@ public class WasmEntry {
     public static int allocateNetBuffer(int size) {
         netBuffer = new byte[size];
         return Address.ofData(netBuffer).toInt();
+    }
+
+    @Export(name = "getPendingJpegDecodeCount")
+    public static int getPendingJpegDecodeCount() {
+        return WasmJpegDecoder.pendingCount();
+    }
+
+    @Export(name = "getPendingJpegDecodeId")
+    public static int getPendingJpegDecodeId(int index) {
+        return WasmJpegDecoder.pendingId(index);
+    }
+
+    @Export(name = "getPendingJpegDecodeData")
+    public static int getPendingJpegDecodeData(int id) {
+        return WasmJpegDecoder.prepareData(id);
+    }
+
+    @Export(name = "getPendingJpegDecodeDataAddress")
+    public static int getPendingJpegDecodeDataAddress() {
+        byte[] data = WasmJpegDecoder.currentData();
+        return data != null ? Address.ofData(data).toInt() : 0;
+    }
+
+    @Export(name = "deliverJpegDecodeResult")
+    public static void deliverJpegDecodeResult(int id, int width, int height, int dataLen) {
+        byte[] rgba = new byte[Math.max(0, dataLen)];
+        if (netBuffer != null && dataLen > 0) {
+            System.arraycopy(netBuffer, 0, rgba, 0, Math.min(dataLen, netBuffer.length));
+        }
+        WasmJpegDecoder.deliverDecoded(id, width, height, rgba);
     }
 
     /**
