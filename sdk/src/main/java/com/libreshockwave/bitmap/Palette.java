@@ -17,6 +17,7 @@ public class Palette {
 
     private final int[] colors;
     private final String name;
+    private final java.util.Map<Integer, Integer> nearestCache = new java.util.HashMap<>();
 
     public Palette(int[] colors, String name) {
         this.colors = colors;
@@ -45,6 +46,10 @@ public class Palette {
 
     public int nearestIndex(int rgb) {
         int target = rgb & 0xFFFFFF;
+        Integer cached = nearestCache.get(target);
+        if (cached != null) {
+            return cached;
+        }
         int tr = (target >> 16) & 0xFF;
         int tg = (target >> 8) & 0xFF;
         int tb = target & 0xFF;
@@ -64,6 +69,7 @@ public class Palette {
                 }
             }
         }
+        nearestCache.put(target, bestIndex);
         return bestIndex;
     }
 
