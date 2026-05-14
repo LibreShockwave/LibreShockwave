@@ -397,6 +397,7 @@ public final class ImageMethodDispatcher {
                     bmp.setPixel(x, y, (alphaLevel << 24) | (pixel & 0x00FFFFFF));
                 }
             }
+            bmp.setNativeAlpha(true);
             return Datum.TRUE;
         }
 
@@ -407,6 +408,7 @@ public final class ImageMethodDispatcher {
                 bmp.setPixel(x, y, (alphaLevel << 24) | (pixel & 0x00FFFFFF));
             }
         }
+        bmp.setNativeAlpha(true);
         return Datum.TRUE;
     }
 
@@ -983,6 +985,7 @@ public final class ImageMethodDispatcher {
                 && src.getBitDepth() <= 8
                 && dest.getBitDepth() >= src.getBitDepth()
                 && src.getPaletteIndices() != null
+                && palettesAreCompatibleForIndexPreserve(dest, src)
                 && (ink == Palette.InkMode.COPY
                     || ink == Palette.InkMode.MATTE
                     || ink == Palette.InkMode.BACKGROUND_TRANSPARENT)
@@ -990,6 +993,12 @@ public final class ImageMethodDispatcher {
                 && mask == null
                 && colorRemap < 0
                 && bgColorRemap < 0;
+    }
+
+    private static boolean palettesAreCompatibleForIndexPreserve(Bitmap dest, Bitmap src) {
+        Palette destPalette = dest.getImagePalette();
+        Palette srcPalette = src.getImagePalette();
+        return destPalette == null || srcPalette == null || destPalette == srcPalette;
     }
 
     private static int clamp(int value, int min, int max) {
