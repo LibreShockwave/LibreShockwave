@@ -559,7 +559,7 @@ public final class ImageMethodDispatcher {
             // Check for #blend property
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
             if (!blendDatum.isVoid()) {
-                blend = (int) (blendDatum.toDouble() * 255.0 / 100.0);
+                blend = percentToBlendAlpha(blendDatum);
             }
             // Check for #color property (foreground color remap)
             // Resolve PaletteIndexColor through source bitmap's palette first, then
@@ -810,7 +810,7 @@ public final class ImageMethodDispatcher {
             }
             Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
             if (!blendDatum.isVoid()) {
-                blend = (int) (blendDatum.toDouble() * 255.0 / 100.0);
+                blend = percentToBlendAlpha(blendDatum);
             }
         }
 
@@ -1011,6 +1011,11 @@ public final class ImageMethodDispatcher {
         }
         // Director's copyPixels defaults #bgColor to white for ink 36.
         return 0xFFFFFF;
+    }
+
+    private static int percentToBlendAlpha(Datum blendDatum) {
+        int alpha = (int) Math.round(blendDatum.toDouble() * 255.0 / 100.0);
+        return Math.max(0, Math.min(255, alpha));
     }
 
     private static boolean hasOpaqueBackgroundKeyBorder(Bitmap src, int srcX, int srcY,
