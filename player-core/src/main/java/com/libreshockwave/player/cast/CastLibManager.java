@@ -1150,11 +1150,8 @@ public class CastLibManager implements CastLibProvider {
         String normalizedHandlerName = LingoVM.normalizeLookupName(handlerName);
         int scriptKey = handlerScriptKey(castLib.getNumber(), memberNumber);
         Map<String, HandlerLocation> cachedByName = handlerLookupCache.get(scriptKey);
-        if (cachedByName != null) {
-            HandlerLocation cached = cachedByName.get(normalizedHandlerName);
-            if (cached != null) {
-                return cached;
-            }
+        if (cachedByName != null && cachedByName.containsKey(normalizedHandlerName)) {
+            return cachedByName.get(normalizedHandlerName);
         }
 
         var defaultNames = castLib.getScriptNames();
@@ -1175,6 +1172,9 @@ public class CastLibManager implements CastLibProvider {
             }
         }
 
+        handlerLookupCache
+                .computeIfAbsent(scriptKey, ignored -> new HashMap<>())
+                .put(normalizedHandlerName, null);
         return null;
     }
 

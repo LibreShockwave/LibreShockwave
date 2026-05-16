@@ -86,7 +86,7 @@ public final class CallOpcodes {
                     // Handler does NOT count 'me' in params. Strip it from args so that
                     // param0 = first explicit arg. Pass 'me' as the receiver for property access.
                     receiver = args.get(0);
-                    args = new java.util.ArrayList<>(args.subList(1, args.size()));
+                    args = args.subList(1, args.size());
                 }
             }
             Datum result = safeExecuteHandler(ctx, ctx.getScript(), targetHandler, args, receiver);
@@ -135,7 +135,10 @@ public final class CallOpcodes {
         Datum argListDatum = ctx.pop();
         boolean noRet = argListDatum instanceof Datum.ArgListNoRet;
         List<Datum> args = getArgs(argListDatum);
-        Datum target = args.isEmpty() ? Datum.VOID : args.remove(0);
+        Datum target = args.isEmpty() ? Datum.VOID : args.get(0);
+        if (!args.isEmpty()) {
+            args = args.subList(1, args.size());
+        }
 
         Datum result = dispatchMethod(ctx, target, methodName, args);
 

@@ -31,7 +31,8 @@ class DatumTest {
         assertSame(Datum.ONE, one);
         assertSame(Datum.of(255), Datum.of(255));
         assertSame(Datum.of(-128), Datum.of(-128));
-        assertNotSame(Datum.of(2048), Datum.of(2048));
+        assertSame(Datum.of(10000), Datum.of(10000));
+        assertNotSame(Datum.of(10001), Datum.of(10001));
     }
 
     @Test

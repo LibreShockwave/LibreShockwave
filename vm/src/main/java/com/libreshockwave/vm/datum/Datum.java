@@ -99,7 +99,7 @@ public sealed interface Datum {
     /** Linear list [a, b, c] */
     record List(java.util.List<Datum> items) implements Datum {
         public List {
-            items = new ArrayList<>(items);
+            items = items instanceof OwnedList ? items : new ArrayList<>(items);
         }
         @Override
         public String toString() {
@@ -109,6 +109,16 @@ public sealed interface Datum {
                 sb.append(items.get(i));
             }
             return sb.append("]").toString();
+        }
+    }
+
+    /**
+     * ArrayList marker for lists whose backing storage was freshly allocated by
+     * the VM and can be transferred directly into a Datum.List.
+     */
+    final class OwnedList extends ArrayList<Datum> {
+        public OwnedList(int initialCapacity) {
+            super(initialCapacity);
         }
     }
 
@@ -584,7 +594,7 @@ public sealed interface Datum {
     Datum MOVIE = new MovieRef();
     Datum PLAYER = new PlayerRef();
     int INT_CACHE_LOW = -128;
-    int INT_CACHE_HIGH = 1024;
+    int INT_CACHE_HIGH = 10000;
     Datum[] SMALL_INTS = createSmallIntCache();
     Datum[] ASCII_STRINGS = createAsciiStringCache();
 

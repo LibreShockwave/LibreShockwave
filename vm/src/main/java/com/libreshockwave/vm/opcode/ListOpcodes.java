@@ -26,12 +26,12 @@ public final class ListOpcodes {
         Datum argListDatum = ctx.pop();
         List<Datum> items;
         if (argListDatum instanceof Datum.ArgList al) {
-            items = new ArrayList<>(al.items());
+            items = al.items();
         } else if (argListDatum instanceof Datum.ArgListNoRet al) {
-            items = new ArrayList<>(al.items());
+            items = al.items();
         } else {
             // Fallback: single item
-            items = new ArrayList<>();
+            items = new Datum.OwnedList(1);
             if (!argListDatum.isVoid()) {
                 items.add(argListDatum);
             }

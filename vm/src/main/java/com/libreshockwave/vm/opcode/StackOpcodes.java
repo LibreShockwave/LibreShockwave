@@ -58,7 +58,7 @@ public final class StackOpcodes {
 
     private static boolean pushCons(ExecutionContext ctx) {
         List<ScriptChunk.LiteralEntry> literals = ctx.getLiterals();
-        int arg = ctx.getArgument() / ctx.getVariableMultiplier();
+        int arg = ctx.getScaledArgument();
         if (arg >= 0 && arg < literals.size()) {
             ScriptChunk.LiteralEntry lit = literals.get(arg);
             Datum value = switch (lit.type()) {

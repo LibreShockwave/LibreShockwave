@@ -20,6 +20,7 @@ public final class Scope {
 
     private final ScriptChunk script;
     private final ScriptChunk.Handler handler;
+    private final List<ScriptChunk.Handler.Instruction> instructions;
     private final List<Datum> originalArguments;
     private final Datum[] locals;          // indexed by local variable index
     private Datum[] modifiedParams;        // lazy: null until first SET_PARAM
@@ -43,6 +44,7 @@ public final class Scope {
     public Scope(ScriptChunk script, ScriptChunk.Handler handler, List<Datum> arguments, Datum receiver) {
         this.script = script;
         this.handler = handler;
+        this.instructions = handler.instructions();
         this.originalArguments = arguments;  // trust callers — avoid List.copyOf allocation
         this.receiver = receiver != null ? receiver : Datum.VOID;
         this.bytecodeIndex = 0;
@@ -118,12 +120,12 @@ public final class Scope {
     }
 
     public boolean hasMoreInstructions() {
-        return bytecodeIndex < handler.instructions().size();
+        return bytecodeIndex < instructions.size();
     }
 
     public ScriptChunk.Handler.Instruction getCurrentInstruction() {
-        if (bytecodeIndex >= 0 && bytecodeIndex < handler.instructions().size()) {
-            return handler.instructions().get(bytecodeIndex);
+        if (bytecodeIndex >= 0 && bytecodeIndex < instructions.size()) {
+            return instructions.get(bytecodeIndex);
         }
         return null;
     }
@@ -135,6 +137,33 @@ public final class Scope {
             stack = Arrays.copyOf(stack, stack.length * 2);
         }
         stack[stackTop++] = value;
+    }
+
+    public void replaceTop(Datum value) {
+        if (stackTop <= 0) {
+            push(value);
+            return;
+        }
+        stack[stackTop - 1] = value;
+    }
+
+    public void replaceTopTwo(Datum value) {
+        if (stackTop >= 2) {
+            stack[stackTop - 2] = value;
+            stack[--stackTop] = null;
+        } else {
+            stackTop = 0;
+            push(value);
+        }
+    }
+
+    public void drop(int count) {
+        if (count <= 0 || stackTop <= 0) {
+            return;
+        }
+        int newTop = Math.max(0, stackTop - count);
+        Arrays.fill(stack, newTop, stackTop, null);
+        stackTop = newTop;
     }
 
     public Datum pop() {

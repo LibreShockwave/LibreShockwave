@@ -24,6 +24,7 @@ public final class ExecutionContext {
     private final LingoVM vm;
     private ScriptChunk.Handler.Instruction instruction;
     private int argument;
+    private int scaledArgument;
     private final BuiltinRegistry builtins;
     private final TraceListener traceListener;
 
@@ -79,6 +80,7 @@ public final class ExecutionContext {
         this.errorStateSetter = errorStateSetter;
         this.callStackFormatter = callStackFormatter;
         this.variableMultiplier = computeVariableMultiplier(scope.getScript());
+        this.scaledArgument = this.argument / this.variableMultiplier;
         this.scriptNames = resolveScriptNames(scope.getScript());
     }
 
@@ -89,6 +91,7 @@ public final class ExecutionContext {
     public void setInstruction(ScriptChunk.Handler.Instruction instr) {
         this.instruction = instr;
         this.argument = instr.argument();
+        this.scaledArgument = argument / variableMultiplier;
     }
 
     /**
@@ -113,6 +116,10 @@ public final class ExecutionContext {
 
     public int getArgument() {
         return argument;
+    }
+
+    public int getScaledArgument() {
+        return scaledArgument;
     }
 
     public ScriptChunk.Handler.Instruction getInstruction() {
@@ -312,9 +319,9 @@ public final class ExecutionContext {
     // Helper to pop multiple args in reverse order
 
     public List<Datum> popArgs(int count) {
-        if (count == 0) return new ArrayList<>(0);
+        if (count == 0) return new Datum.OwnedList(0);
         // Pop in stack order then reverse in-place — O(n) instead of O(n²) add(0)
-        ArrayList<Datum> args = new ArrayList<>(count);
+        ArrayList<Datum> args = new Datum.OwnedList(count);
         for (int i = 0; i < count; i++) {
             args.add(pop());
         }

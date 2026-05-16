@@ -2,6 +2,7 @@ package com.libreshockwave.vm;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.chunks.ScriptChunk;
+import com.libreshockwave.chunks.ScriptNamesChunk;
 import com.libreshockwave.lingo.Opcode;
 import com.libreshockwave.vm.builtin.BuiltinRegistry;
 import com.libreshockwave.vm.datum.Datum;
@@ -35,6 +36,9 @@ public class LingoVM {
     private final Map<String, HandlerRef> handlerCache = new HashMap<>();
     private final Set<String> missingHandlerCache = new HashSet<>();
     private final Map<ScriptChunk.Handler, String> handlerNameCache = new IdentityHashMap<>();
+    private final Map<ScriptChunk.Handler, Boolean> handlerFirstParamMeCache = new IdentityHashMap<>();
+    private final Map<ScriptChunk.LiteralEntry, Datum> literalDatumCache = new IdentityHashMap<>();
+    private final Map<String, Datum> symbolDatumCache = new HashMap<>();
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
     private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
     private boolean flushingDeferredScriptInstanceCalls = false;
@@ -495,12 +499,6 @@ public class LingoVM {
             return Datum.VOID;
         }
         String hn = normalizeLookupName(handlerName);
-        if ("powmod".equals(hn)) {
-            Datum accelerated = NativeBigIntAccelerator.tryPowMod(receiver, args);
-            if (accelerated != null) {
-                return accelerated;
-            }
-        }
 
         // Reentrancy guard: if deconstruct is already on the call stack for the
         // same receiver, skip re-entry. This prevents infinite recursion when
@@ -545,9 +543,11 @@ public class LingoVM {
         List<Datum> effectiveArgs = args;
         Datum scopeReceiver = receiver;
         if (receiver != null && !receiver.isVoid()) {
-            effectiveArgs = new ArrayList<>();
-            effectiveArgs.add(receiver);
-            effectiveArgs.addAll(args);
+            if (handlerDeclaresMeAsFirstParam(script, handler)) {
+                effectiveArgs = new ArrayList<>(args.size() + 1);
+                effectiveArgs.add(receiver);
+                effectiveArgs.addAll(args);
+            }
         } else {
             // No explicit receiver — derive from first arg if it's a ScriptInstance.
             // This handles LOCAL_CALL where the Lingo code explicitly passes 'me'
@@ -680,6 +680,27 @@ public class LingoVM {
             }
         }
         return result;
+    }
+
+    private boolean handlerDeclaresMeAsFirstParam(ScriptChunk script, ScriptChunk.Handler handler) {
+        Boolean cached = handlerFirstParamMeCache.get(handler);
+        if (cached != null) {
+            return cached;
+        }
+        boolean declaresMe = computeHandlerDeclaresMeAsFirstParam(script, handler);
+        handlerFirstParamMeCache.put(handler, declaresMe);
+        return declaresMe;
+    }
+
+    private static boolean computeHandlerDeclaresMeAsFirstParam(ScriptChunk script, ScriptChunk.Handler handler) {
+        if (handler.argNameIds().isEmpty() || script == null || script.file() == null) {
+            return false;
+        }
+        ScriptNamesChunk names = script.file().getScriptNamesForScript(script);
+        if (names == null) {
+            return false;
+        }
+        return "me".equalsIgnoreCase(names.getName(handler.argNameIds().getFirst()));
     }
 
     static String formatTraceArgument(Datum value) {
@@ -838,6 +859,9 @@ public class LingoVM {
         OpcodeHandler handler = opcodeRegistry.get(op);
         if (handler != null) {
             ctx.setInstruction(instr);
+            if (executeFastInstruction(scope, ctx, op)) {
+                return;
+            }
             boolean advance = handler.execute(ctx);
             if (advance) {
                 scope.advanceBytecodeIndex();
@@ -846,6 +870,344 @@ public class LingoVM {
             System.err.println("[LingoVM] Unimplemented opcode: " + op);
             scope.advanceBytecodeIndex();
         }
+    }
+
+    private boolean executeFastInstruction(Scope scope, ExecutionContext ctx, Opcode op) {
+        return switch (op) {
+            case PUSH_ZERO -> {
+                scope.push(Datum.ZERO);
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PUSH_INT8, PUSH_INT16, PUSH_INT32 -> {
+                scope.push(Datum.of(ctx.getArgument()));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PUSH_FLOAT32 -> {
+                scope.push(Datum.of(Float.intBitsToFloat(ctx.getArgument())));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PUSH_CONS -> {
+                scope.push(resolveLiteralDatum(scope, ctx.getScaledArgument()));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PUSH_SYMB -> {
+                scope.push(resolveSymbolDatum(ctx.resolveName(ctx.getArgument())));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case GET_LOCAL -> {
+                scope.push(scope.getLocal(ctx.getScaledArgument()));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case SET_LOCAL -> {
+                scope.setLocal(ctx.getScaledArgument(), scope.pop());
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case GET_PARAM -> {
+                scope.push(scope.getParam(ctx.getScaledArgument()));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case SET_PARAM -> {
+                scope.setParam(ctx.getScaledArgument(), scope.pop());
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case SWAP -> {
+                scope.swap();
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case POP -> {
+                int count = ctx.getArgument();
+                scope.drop(count <= 1 ? 1 : count);
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PEEK -> {
+                scope.push(scope.peek(ctx.getArgument()));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case RET -> {
+                scope.setReturnValue(scope.pop());
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case RET_FACTORY -> {
+                scope.setReturnValue(Datum.VOID);
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case JMP -> {
+                ctx.jumpTo(ctx.getInstructionOffset() + ctx.getArgument());
+                yield true;
+            }
+            case JMP_IF_Z -> {
+                Datum cond = scope.pop();
+                if (!cond.isTruthy()) {
+                    ctx.jumpTo(ctx.getInstructionOffset() + ctx.getArgument());
+                } else {
+                    scope.advanceBytecodeIndex();
+                }
+                yield true;
+            }
+            case END_REPEAT -> {
+                ctx.jumpTo(ctx.getInstructionOffset() - ctx.getArgument());
+                yield true;
+            }
+            case PUSH_ARG_LIST -> {
+                scope.push(new Datum.ArgList(ctx.popArgs(ctx.getArgument())));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case PUSH_ARG_LIST_NO_RET -> {
+                scope.push(new Datum.ArgListNoRet(ctx.popArgs(ctx.getArgument())));
+                scope.advanceBytecodeIndex();
+                yield true;
+            }
+            case ADD -> fastAdd(scope);
+            case SUB -> fastSub(scope);
+            case MUL -> fastMul(scope);
+            case DIV -> fastDiv(scope);
+            case MOD -> fastMod(scope);
+            case INV -> fastInv(scope);
+            case EQ -> fastEq(scope);
+            case NT_EQ -> fastNtEq(scope);
+            case LT -> fastCompare(scope, '<');
+            case LT_EQ -> fastCompare(scope, 'l');
+            case GT -> fastCompare(scope, '>');
+            case GT_EQ -> fastCompare(scope, 'g');
+            default -> false;
+        };
+    }
+
+    private Datum resolveLiteralDatum(Scope scope, int index) {
+        List<ScriptChunk.LiteralEntry> literals = scope.getScript().literals();
+        if (index < 0 || index >= literals.size()) {
+            return Datum.VOID;
+        }
+        ScriptChunk.LiteralEntry lit = literals.get(index);
+        Datum cached = literalDatumCache.get(lit);
+        if (cached != null) {
+            return cached;
+        }
+        Datum value = switch (lit.type()) {
+            case 1 -> Datum.of((String) lit.value());
+            case 4 -> Datum.of((Integer) lit.value());
+            case 9 -> Datum.of(lit.numericValue());
+            default -> Datum.VOID;
+        };
+        literalDatumCache.put(lit, value);
+        return value;
+    }
+
+    private Datum resolveSymbolDatum(String name) {
+        return symbolDatumCache.computeIfAbsent(name, Datum::symbol);
+    }
+
+    private static boolean fastAdd(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(ai.value() + bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(af.value() + bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(ai.value() + bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(af.value() + bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastSub(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(ai.value() - bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(af.value() - bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(ai.value() - bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(af.value() - bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastMul(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(ai.value() * bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(af.value() * bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            scope.replaceTopTwo(Datum.of(ai.value() * bf.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            scope.replaceTopTwo(Datum.of(af.value() * bi.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastDiv(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) throw new LingoException("Division by zero");
+            scope.replaceTopTwo(Datum.of(ai.value() / divisor));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            double divisor = bf.value();
+            if (divisor == 0) throw new LingoException("Division by zero");
+            scope.replaceTopTwo(Datum.of(af.value() / divisor));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            double divisor = bf.value();
+            if (divisor == 0) throw new LingoException("Division by zero");
+            scope.replaceTopTwo(Datum.of(ai.value() / divisor));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) throw new LingoException("Division by zero");
+            scope.replaceTopTwo(Datum.of(af.value() / divisor));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastMod(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) throw new LingoException("Modulo by zero");
+            scope.replaceTopTwo(Datum.of(ai.value() % divisor));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastInv(Scope scope) {
+        Datum a = scope.peek();
+        if (a instanceof Datum.Int ai) {
+            scope.replaceTop(Datum.of(-ai.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        if (a instanceof Datum.Float af) {
+            scope.replaceTop(Datum.of(-af.value()));
+            scope.advanceBytecodeIndex();
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean fastEq(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        Boolean result = fastNumericEquals(a, b);
+        if (result == null && a != b) return false;
+        scope.replaceTopTwo(Boolean.TRUE.equals(result) || a == b ? Datum.TRUE : Datum.FALSE);
+        scope.advanceBytecodeIndex();
+        return true;
+    }
+
+    private static boolean fastNtEq(Scope scope) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        Boolean result = fastNumericEquals(a, b);
+        if (result == null && a != b) return false;
+        scope.replaceTopTwo(Boolean.TRUE.equals(result) || a == b ? Datum.FALSE : Datum.TRUE);
+        scope.advanceBytecodeIndex();
+        return true;
+    }
+
+    private static Boolean fastNumericEquals(Datum a, Datum b) {
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) return ai.value() == bi.value();
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) return af.value() == bf.value();
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) return ai.value() == bf.value();
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) return af.value() == bi.value();
+        return null;
+    }
+
+    private static boolean fastCompare(Scope scope, char op) {
+        Datum b = scope.peek();
+        Datum a = scope.peek(1);
+        boolean result;
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            result = compare(ai.value(), bi.value(), op);
+        } else if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            result = compare(af.value(), bf.value(), op);
+        } else if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            result = compare(ai.value(), bf.value(), op);
+        } else if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            result = compare(af.value(), bi.value(), op);
+        } else {
+            return false;
+        }
+        scope.replaceTopTwo(result ? Datum.TRUE : Datum.FALSE);
+        scope.advanceBytecodeIndex();
+        return true;
+    }
+
+    private static boolean compare(double a, double b, char op) {
+        return switch (op) {
+            case '<' -> a < b;
+            case 'l' -> a <= b;
+            case '>' -> a > b;
+            case 'g' -> a >= b;
+            default -> false;
+        };
     }
 
     // Cached callbacks for ExecutionContext — allocated once, reused across all handlers.

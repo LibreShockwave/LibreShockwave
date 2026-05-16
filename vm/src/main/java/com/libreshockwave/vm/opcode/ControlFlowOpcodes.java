@@ -38,12 +38,8 @@ public final class ControlFlowOpcodes {
     }
 
     private static boolean jmpIfZ(ExecutionContext ctx) {
-        // Push current bytecode index for loop tracking before the conditional check
-        ctx.getScope().pushLoopReturnIndex(ctx.getScope().getBytecodeIndex());
         Datum cond = ctx.pop();
         if (!cond.isTruthy()) {
-            // Not entering the loop, remove the return index we just pushed
-            ctx.getScope().popLoopReturnIndex();
             int target = ctx.getInstructionOffset() + ctx.getArgument();
             ctx.jumpTo(target);
             return false; // Don't advance, we already set the position
