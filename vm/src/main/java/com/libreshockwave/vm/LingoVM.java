@@ -495,6 +495,12 @@ public class LingoVM {
             return Datum.VOID;
         }
         String hn = normalizeLookupName(handlerName);
+        if ("powmod".equals(hn)) {
+            Datum accelerated = NativeBigIntAccelerator.tryPowMod(receiver, args);
+            if (accelerated != null) {
+                return accelerated;
+            }
+        }
 
         // Reentrancy guard: if deconstruct is already on the call stack for the
         // same receiver, skip re-entry. This prevents infinite recursion when
