@@ -41,7 +41,12 @@ public final class ImageMethodDispatcher {
         Bitmap bmp = imageRef.bitmap();
 
         return switch (method) {
-            case "fill" -> { notifyImageMutation(bmp); yield fill(bmp, args); }
+            case "fill" -> {
+                if (fill(bmp, args)) {
+                    notifyImageMutation(bmp);
+                }
+                yield Datum.VOID;
+            }
             case "draw" -> { notifyImageMutation(bmp); yield draw(bmp, args); }
             case "copypixels" -> {
                 notifyImageMutation(bmp);
@@ -223,8 +228,8 @@ public final class ImageMethodDispatcher {
      * In Director: image.fill(destRect, color)
      * Also supports: image.fill(left, top, right, bottom, color)
      */
-    private static Datum fill(Bitmap bmp, List<Datum> args) {
-        if (args.size() < 2) return Datum.VOID;
+    private static boolean fill(Bitmap bmp, List<Datum> args) {
+        if (args.size() < 2) return false;
 
         Datum firstArg = args.get(0);
 
@@ -246,7 +251,7 @@ public final class ImageMethodDispatcher {
             bottom = args.get(3).toInt();
             colorDatum = args.get(4);
         } else {
-            return Datum.VOID;
+            return false;
         }
 
         if (colorDatum instanceof Datum.PropList pl) {
@@ -260,7 +265,7 @@ public final class ImageMethodDispatcher {
         // Native Director leaves those pixels untouched, allowing the already
         // rendered backing art to show through transparent elements.
         if (colorDatum.isVoid()) {
-            return Datum.VOID;
+            return false;
         }
         // Use bitmap-aware color resolution so paletteIndex() colors resolve
         // through the target bitmap's custom palette (e.g., nav_ui_palette).
@@ -275,9 +280,10 @@ public final class ImageMethodDispatcher {
             } else {
                 bmp.fillRect(left, top, w, h, colorArgb);
             }
+            return true;
         }
 
-        return Datum.VOID;
+        return false;
     }
 
     private static Integer resolvePaletteIndexFill(Datum colorDatum, Bitmap bmp) {

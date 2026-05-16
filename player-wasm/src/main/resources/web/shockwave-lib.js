@@ -51,7 +51,6 @@ var LibreShockwave = (function() {
      * @param {Object} [options]
      * @param {string}  [options.basePath]  - Directory containing WASM files.
      * @param {Object}  [options.params]    - External parameters (e.g. { sw1: "..." }).
-     * @param {string}  [options.musWebSocketUrl] - Optional WebSocket URL override for Multiuser Xtra.
      * @param {boolean} [options.autoplay]  - Start playing after load (default: true).
      * @param {boolean} [options.remember]  - Persist params/URL in localStorage (default: false).
      * @param {Function} [options.onLoad]   - Called with { width, height, frameCount, tempo }.
@@ -70,7 +69,6 @@ var LibreShockwave = (function() {
         this._opts        = opts;
         this._basePath    = opts.basePath || _autoBasePath;
         this._params      = opts.params ? _clone(opts.params) : {};
-        this._musWebSocketUrl = opts.musWebSocketUrl || '';
         this._autoplay    = opts.autoplay !== false;
         this._remember    = !!opts.remember;
         this._canvas      = el;
@@ -516,8 +514,7 @@ var LibreShockwave = (function() {
             worker.postMessage({
                 type: 'init',
                 basePath: absBase,
-                pageProtocol: location.protocol,
-                musWebSocketUrl: self._musWebSocketUrl
+                pageProtocol: location.protocol
             });
         }
 
@@ -981,19 +978,19 @@ var LibreShockwave = (function() {
             }
         }
 
-        // Preload external casts before starting. The worker queues async fetches
-        // and waits for the initial cast bytes so bootstrap movies have their
-        // startup scripts before onLoad/autoplay can call play().
-        this._worker.postMessage({ type: 'preloadCasts' });
-        await this._waitFor('castsDone');
-        if (this._loadSeq !== mySeq) return;
-
         // Pre-fetch sw1 URLs from main thread into relay cache in the background.
         // The worker cannot reliably fetch cross-origin URLs (Chrome hang bug),
         // so we do it here and serve from cache when the relay arrives. Cache
         // misses still fall through to an async relay fetch.
         this._relayCache = {};
         this._prefetchRelayCache(mySeq);
+
+        // Preload external casts before starting. The worker queues async fetches
+        // and returns immediately; completed network responses are delivered on
+        // subsequent ticks so HTTP I/O does not block rendering or input.
+        this._worker.postMessage({ type: 'preloadCasts' });
+        await this._waitFor('castsDone');
+        if (this._loadSeq !== mySeq) return;
 
         console.log('[LS] Ready to play after ' +
                     Math.round(performance.now() - this._loadStartTime) + 'ms');

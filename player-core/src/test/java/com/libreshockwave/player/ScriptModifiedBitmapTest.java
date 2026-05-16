@@ -219,12 +219,20 @@ public class ScriptModifiedBitmapTest {
     void fillWithVoidLeavesExistingPixelsUntouched() {
         Bitmap bmp = new Bitmap(3, 3, 32);
         bmp.fill(0xFF000066);
+        AtomicInteger callbackCount = new AtomicInteger();
 
-        ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
-                List.of(new Datum.Rect(0, 0, 3, 3), Datum.VOID));
+        ImageMethodDispatcher.setImageMutationCallback(callbackCount::incrementAndGet);
+        try {
+            ImageMethodDispatcher.dispatch(new Datum.ImageRef(bmp), "fill",
+                    List.of(new Datum.Rect(0, 0, 3, 3), Datum.VOID));
+        } finally {
+            ImageMethodDispatcher.setImageMutationCallback(null);
+        }
 
         assertEquals(0xFF000066, bmp.getPixel(1, 1),
                 "Director fill(rect, VOID) should not synthesize a white fill color");
+        assertFalse(bmp.isScriptModified(), "fill(rect, VOID) should not mark the image as script-modified");
+        assertEquals(0, callbackCount.get(), "fill(rect, VOID) should not fire image mutation callbacks");
     }
 
     @Test
