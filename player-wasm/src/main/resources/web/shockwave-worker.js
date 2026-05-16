@@ -58,7 +58,7 @@ function _musPreview(data) {
  * LibreShockwave Web Worker — runs the WASM engine off the main thread.
  *
  * Message protocol (main → worker):
- *   {type:'init',    basePath, musWebSocketUrl?}
+ *   {type:'init',    basePath}
  *   {type:'loadMovie', data:ArrayBuffer, basePath}
  *   {type:'setParam',  key, value}
  *   {type:'clearParams'}
@@ -87,8 +87,6 @@ var _e = null;          // WasmEngine instance
 var _isTicking = false; // guard against overlapping ticks
 var _pageProtocol = ''; // page protocol from main thread (e.g. 'https:')
 var _debugLogsEnabled = false;
-var _musWebSocketUrl = ''; // optional browser WebSocket URL override for Multiuser Xtra
-
 // --- Multiuser Xtra WebSocket connections ---
 var _musSockets = {};      // instanceId -> WebSocket
 var _musInbound = {};      // instanceId -> [Uint8Array] (raw MUS TCP chunks)
@@ -694,36 +692,6 @@ WasmEngine.prototype.pumpNetworkFire = function() {
     return reqs.length;
 };
 
-/**
- * Fetch and deliver the currently pending network requests before playback.
- *
- * Bootstrap-style Director movies often keep their startup scripts in external
- * casts. If play()/prepareMovie runs before those casts are delivered, the movie
- * can advance with no sprites or handlers registered and remain black forever.
- */
-WasmEngine.prototype.pumpNetworkAndWait = async function() {
-    var reqs = this._drainRequests();
-    if (!reqs) return 0;
-    var seq = _networkSeq;
-    var engine = this;
-    await Promise.all(reqs.map(async function(req) {
-        try {
-            var result = await engine._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || []);
-            if (seq !== _networkSeq) return;
-            if (result && result.data) {
-                engine._deliverResult(req.taskId, result.data, result.url || req.url);
-            } else {
-                engine._deliverError(req.taskId, result && result.status ? result.status : 0);
-            }
-        } catch (e) {
-            if (seq !== _networkSeq) return;
-            engine._deliverError(req.taskId, e && e.status ? e.status : 0);
-        }
-    }));
-    _flushWasmDiagnostics();
-    return reqs.length;
-};
-
 // ============================================================
 // Multiuser Xtra — WebSocket bridge
 // ============================================================
@@ -789,9 +757,6 @@ WasmEngine.prototype.pumpMusRequests = function() {
 };
 
 function _buildMusWebSocketUrl(host, port) {
-    if (_musWebSocketUrl) {
-        return _musWebSocketUrl;
-    }
     var protocol = _shouldUseSecureMusWebSocket(host, port) ? 'wss' : 'ws';
     return protocol + '://' + host + ':' + port;
 }
@@ -990,7 +955,6 @@ self.onmessage = async function(e) {
 
             case 'init': {
                 _pageProtocol = msg.pageProtocol || '';
-                _musWebSocketUrl = msg.musWebSocketUrl ? String(msg.musWebSocketUrl) : '';
                 // Fallback: detect protocol from worker's own location
                 // (e.g. blob:https://... when loaded as a blob URL worker)
                 if (!_pageProtocol && self.location && self.location.href) {
@@ -1054,8 +1018,8 @@ self.onmessage = async function(e) {
                 _loadStartTime = castT0;
                 var n = _e.preloadCasts();
                 console.log('[WORKER] preloadCasts: ' + n + ' casts queued');
-                var fired = await _e.pumpNetworkAndWait();
-                console.log('[WORKER] preloadCasts delivered ' + fired + ' fetches in ' +
+                var fired = _e.pumpNetworkFire();
+                console.log('[WORKER] preloadCasts fired ' + fired + ' async fetches in ' +
                             Math.round(performance.now() - castT0) + 'ms');
 
                 _flushWasmDiagnostics();
