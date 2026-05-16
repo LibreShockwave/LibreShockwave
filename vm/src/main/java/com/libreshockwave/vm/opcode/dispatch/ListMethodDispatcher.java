@@ -14,19 +14,66 @@ public final class ListMethodDispatcher {
     private ListMethodDispatcher() {}
 
     public static Datum dispatch(Datum.List list, String methodName, List<Datum> args) {
-        // Fast path for count (most common)
-        if ("count".equalsIgnoreCase(methodName)) return Datum.of(list.items().size());
+        java.util.List<Datum> items = list.items();
+        // Fast paths for common list methods used in numeric and collection-heavy scripts.
+        if ("getAt".equalsIgnoreCase(methodName)) {
+            if (args.isEmpty()) return Datum.VOID;
+            Datum indexDatum = args.get(0);
+            int index = (indexDatum instanceof Datum.Int i ? i.value() : indexDatum.toInt()) - 1;
+            if (index < 0 || index >= items.size()) {
+                throw new LingoException("getAt: index " + (index + 1)
+                    + " out of range (list size: " + items.size()
+                    + ", list: " + list + ")");
+            }
+            return items.get(index);
+        }
+        if ("setAt".equalsIgnoreCase(methodName)) {
+            if (args.size() < 2) return Datum.VOID;
+            Datum indexDatum = args.get(0);
+            int index = (indexDatum instanceof Datum.Int i ? i.value() : indexDatum.toInt()) - 1;
+            Datum value = args.get(1);
+            if (index < 0) return Datum.VOID;
+            if (index < items.size()) {
+                items.set(index, value);
+            } else {
+                while (items.size() < index) {
+                    items.add(Datum.VOID);
+                }
+                items.add(value);
+            }
+            return Datum.VOID;
+        }
+        if ("count".equalsIgnoreCase(methodName)) return Datum.of(items.size());
+        if ("append".equalsIgnoreCase(methodName) || "add".equalsIgnoreCase(methodName)) {
+            if (!args.isEmpty()) {
+                items.add(args.get(0));
+            }
+            return Datum.VOID;
+        }
+        if ("addAt".equalsIgnoreCase(methodName)) {
+            if (args.size() < 2) return Datum.VOID;
+            Datum indexDatum = args.get(0);
+            int index = (indexDatum instanceof Datum.Int i ? i.value() : indexDatum.toInt()) - 1;
+            Datum value = args.get(1);
+            if (index < 0) index = 0;
+            if (index >= items.size()) {
+                items.add(value);
+            } else {
+                items.add(index, value);
+            }
+            return Datum.VOID;
+        }
         String method = methodName.toLowerCase();
         return switch (method) {
             case "getat" -> {
                 if (args.isEmpty()) yield Datum.VOID;
                 int index = args.get(0).toInt() - 1; // 1-indexed
-                if (index < 0 || index >= list.items().size()) {
+                if (index < 0 || index >= items.size()) {
                     throw new LingoException("getAt: index " + (index + 1)
-                        + " out of range (list size: " + list.items().size()
+                        + " out of range (list size: " + items.size()
                         + ", list: " + list + ")");
                 }
-                yield list.items().get(index);
+                yield items.get(index);
             }
             case "setat" -> {
                 // setAt(list, position, value) - set value at position (1-indexed)
@@ -35,20 +82,20 @@ public final class ListMethodDispatcher {
                 int index = args.get(0).toInt() - 1; // Convert to 0-indexed
                 Datum value = args.get(1);
                 if (index < 0) yield Datum.VOID;
-                if (index < list.items().size()) {
-                    list.items().set(index, value);
+                if (index < items.size()) {
+                    items.set(index, value);
                 } else {
                     // Pad with VOID values up to the target index
-                    while (list.items().size() < index) {
-                        list.items().add(Datum.VOID);
+                    while (items.size() < index) {
+                        items.add(Datum.VOID);
                     }
-                    list.items().add(value);
+                    items.add(value);
                 }
                 yield Datum.VOID;
             }
             case "append", "add" -> {
                 if (args.isEmpty()) yield Datum.VOID;
-                list.items().add(args.get(0));
+                items.add(args.get(0));
                 yield Datum.VOID;
             }
             case "addat" -> {
@@ -57,18 +104,18 @@ public final class ListMethodDispatcher {
                 int index = args.get(0).toInt() - 1; // Convert to 0-indexed
                 Datum value = args.get(1);
                 if (index < 0) index = 0;
-                if (index >= list.items().size()) {
-                    list.items().add(value);
+                if (index >= items.size()) {
+                    items.add(value);
                 } else {
-                    list.items().add(index, value);
+                    items.add(index, value);
                 }
                 yield Datum.VOID;
             }
             case "deleteat" -> {
                 if (args.isEmpty()) yield Datum.VOID;
                 int index = args.get(0).toInt() - 1;
-                if (index >= 0 && index < list.items().size()) {
-                    list.items().remove(index);
+                if (index >= 0 && index < items.size()) {
+                    items.remove(index);
                 }
                 yield Datum.VOID;
             }
@@ -76,8 +123,8 @@ public final class ListMethodDispatcher {
                 // Find 1-based index of value, returns 0 if not found
                 if (args.isEmpty()) yield Datum.ZERO;
                 Datum value = args.get(0);
-                for (int i = 0; i < list.items().size(); i++) {
-                    if (list.items().get(i).lingoEquals(value)) {
+                for (int i = 0; i < items.size(); i++) {
+                    if (items.get(i).lingoEquals(value)) {
                         yield Datum.of(i + 1);
                     }
                 }
@@ -85,17 +132,17 @@ public final class ListMethodDispatcher {
             }
             case "getlast" -> {
                 // getLast(list) - return the last element
-                if (list.items().isEmpty()) yield Datum.VOID;
-                yield list.items().get(list.items().size() - 1);
+                if (items.isEmpty()) yield Datum.VOID;
+                yield items.get(items.size() - 1);
             }
             case "deleteone" -> {
                 // deleteOne(list, value) - remove first matching element
                 if (args.isEmpty()) yield Datum.FALSE;
                 Datum value = args.get(0);
                 boolean found = false;
-                for (int i = 0; i < list.items().size(); i++) {
-                    if (list.items().get(i).lingoEquals(value)) {
-                        list.items().remove(i);
+                for (int i = 0; i < items.size(); i++) {
+                    if (items.get(i).lingoEquals(value)) {
+                        items.remove(i);
                         found = true;
                         break;
                     }
@@ -106,15 +153,15 @@ public final class ListMethodDispatcher {
                 // join(list, separator) - concatenate elements into string
                 String separator = args.isEmpty() ? "&" : args.get(0).toStr();
                 StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < list.items().size(); i++) {
+                for (int i = 0; i < items.size(); i++) {
                     if (i > 0) sb.append(separator);
-                    sb.append(list.items().get(i).toStr());
+                    sb.append(items.get(i).toStr());
                 }
                 yield Datum.of(sb.toString());
             }
             case "sort" -> {
                 // Sort list in place (simple implementation)
-                list.items().sort((a, b) -> {
+                items.sort((a, b) -> {
                     if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
                         return Integer.compare(ai.value(), bi.value());
                     }

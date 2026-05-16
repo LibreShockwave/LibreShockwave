@@ -25,6 +25,23 @@ public final class ArithmeticOpcodes {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
 
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(ai.value() + bi.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(af.value() + bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(ai.value() + bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(af.value() + bi.value()));
+            return true;
+        }
+
         // Point + Point/List/scalar arithmetic (Director supports this)
         if (a instanceof Datum.Point pa) {
             int dx = 0, dy = 0;
@@ -66,7 +83,7 @@ public final class ArithmeticOpcodes {
             var itemsA = la.items();
             var itemsB = lb.items();
             int size = Math.min(itemsA.size(), itemsB.size());
-            var result = new java.util.ArrayList<Datum>(size);
+            var result = new Datum.OwnedList(size);
             for (int i = 0; i < size; i++) {
                 Datum ai = itemsA.get(i), bi = itemsB.get(i);
                 if (ai.isFloat() || bi.isFloat()) {
@@ -99,6 +116,23 @@ public final class ArithmeticOpcodes {
     private static boolean sub(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
+
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(ai.value() - bi.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(af.value() - bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(ai.value() - bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(af.value() - bi.value()));
+            return true;
+        }
 
         // Point - Point/List arithmetic
         if (a instanceof Datum.Point pa) {
@@ -136,7 +170,7 @@ public final class ArithmeticOpcodes {
             var itemsA = la.items();
             var itemsB = lb.items();
             int size = Math.min(itemsA.size(), itemsB.size());
-            var result = new java.util.ArrayList<Datum>(size);
+            var result = new Datum.OwnedList(size);
             for (int i = 0; i < size; i++) {
                 Datum ai = itemsA.get(i), bi = itemsB.get(i);
                 if (ai.isFloat() || bi.isFloat()) {
@@ -169,6 +203,23 @@ public final class ArithmeticOpcodes {
     private static boolean mul(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
+
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(ai.value() * bi.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(af.value() * bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            ctx.push(Datum.of(ai.value() * bf.value()));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            ctx.push(Datum.of(af.value() * bi.value()));
+            return true;
+        }
 
         // Point * scalar
         if (a instanceof Datum.Point pa) {
@@ -229,6 +280,38 @@ public final class ArithmeticOpcodes {
     private static boolean div(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) {
+                throw ctx.error("Division by zero");
+            }
+            ctx.push(Datum.of(ai.value() / divisor));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Float bf) {
+            double divisor = bf.value();
+            if (divisor == 0) {
+                throw ctx.error("Division by zero");
+            }
+            ctx.push(Datum.of(af.value() / divisor));
+            return true;
+        }
+        if (a instanceof Datum.Int ai && b instanceof Datum.Float bf) {
+            double divisor = bf.value();
+            if (divisor == 0) {
+                throw ctx.error("Division by zero");
+            }
+            ctx.push(Datum.of(ai.value() / divisor));
+            return true;
+        }
+        if (a instanceof Datum.Float af && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) {
+                throw ctx.error("Division by zero");
+            }
+            ctx.push(Datum.of(af.value() / divisor));
+            return true;
+        }
         double bVal = b.toDouble();
         if (bVal == 0) {
             throw ctx.error("Division by zero");
@@ -270,6 +353,14 @@ public final class ArithmeticOpcodes {
     private static boolean mod(ExecutionContext ctx) {
         Datum b = ctx.pop();
         Datum a = ctx.pop();
+        if (a instanceof Datum.Int ai && b instanceof Datum.Int bi) {
+            int divisor = bi.value();
+            if (divisor == 0) {
+                throw ctx.error("Modulo by zero");
+            }
+            ctx.push(Datum.of(ai.value() % divisor));
+            return true;
+        }
         int bVal = b.toInt();
         if (bVal == 0) {
             throw ctx.error("Modulo by zero");
@@ -280,12 +371,14 @@ public final class ArithmeticOpcodes {
 
     private static boolean inv(ExecutionContext ctx) {
         Datum a = ctx.pop();
-        if (a instanceof Datum.Point pa) {
+        if (a instanceof Datum.Int ai) {
+            ctx.push(Datum.of(-ai.value()));
+        } else if (a instanceof Datum.Float af) {
+            ctx.push(Datum.of(-af.value()));
+        } else if (a instanceof Datum.Point pa) {
             ctx.push(new Datum.Point(-pa.x(), -pa.y()));
         } else if (a instanceof Datum.Rect ra) {
             ctx.push(new Datum.Rect(-ra.left(), -ra.top(), -ra.right(), -ra.bottom()));
-        } else if (a.isFloat()) {
-            ctx.push(Datum.of(-a.toDouble()));
         } else {
             ctx.push(Datum.of(-a.toInt()));
         }
@@ -294,7 +387,7 @@ public final class ArithmeticOpcodes {
 
     private static Datum.List scaleList(Datum.List list, double scalar, boolean scalarIsFloat) {
         var items = list.items();
-        var result = new java.util.ArrayList<Datum>(items.size());
+        var result = new Datum.OwnedList(items.size());
         for (Datum item : items) {
             if (item.isFloat() || scalarIsFloat) {
                 result.add(Datum.of(item.toDouble() * scalar));
@@ -309,12 +402,13 @@ public final class ArithmeticOpcodes {
         var items = list.items();
         double scalar = divisor.toDouble();
         boolean divisorIsFloat = divisor.isFloat();
-        var result = new java.util.ArrayList<Datum>(items.size());
+        int intDivisor = divisorIsFloat ? 0 : divisor.toInt();
+        var result = new Datum.OwnedList(items.size());
         for (Datum item : items) {
             if (item.isFloat() || divisorIsFloat) {
                 result.add(Datum.of(item.toDouble() / scalar));
             } else {
-                result.add(Datum.of(item.toInt() / divisor.toInt()));
+                result.add(Datum.of(item.toInt() / intDivisor));
             }
         }
         return new Datum.List(result);
