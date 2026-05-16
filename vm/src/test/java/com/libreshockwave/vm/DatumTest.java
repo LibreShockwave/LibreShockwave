@@ -29,6 +29,9 @@ class DatumTest {
         // Singleton optimization
         assertSame(Datum.ZERO, zero);
         assertSame(Datum.ONE, one);
+        assertSame(Datum.of(255), Datum.of(255));
+        assertSame(Datum.of(-128), Datum.of(-128));
+        assertNotSame(Datum.of(2048), Datum.of(2048));
     }
 
     @Test
@@ -59,6 +62,9 @@ class DatumTest {
 
         // Empty string singleton
         assertSame(Datum.EMPTY_STRING, empty);
+        assertSame(Datum.of("A"), Datum.of("A"));
+        assertSame(Datum.of("\0"), Datum.of("\0"));
+        assertNotSame(Datum.of("\u0080"), Datum.of("\u0080"));
     }
 
     @Test

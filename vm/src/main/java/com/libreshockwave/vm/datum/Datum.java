@@ -583,6 +583,10 @@ public sealed interface Datum {
     Datum STAGE = new StageRef();
     Datum MOVIE = new MovieRef();
     Datum PLAYER = new PlayerRef();
+    int INT_CACHE_LOW = -128;
+    int INT_CACHE_HIGH = 1024;
+    Datum[] SMALL_INTS = createSmallIntCache();
+    Datum[] ASCII_STRINGS = createAsciiStringCache();
 
     // Common property key constants
     String PROP_ANCESTOR = "ancestor";
@@ -590,11 +594,10 @@ public sealed interface Datum {
 
     // Factory methods
     static Datum of(int value) {
-        return switch (value) {
-            case 0 -> ZERO;
-            case 1 -> ONE;
-            default -> new Int(value);
-        };
+        if (value >= INT_CACHE_LOW && value <= INT_CACHE_HIGH) {
+            return SMALL_INTS[value - INT_CACHE_LOW];
+        }
+        return new Int(value);
     }
 
     static Datum of(double value) {
@@ -603,7 +606,32 @@ public sealed interface Datum {
 
     static Datum of(String value) {
         if (value == null || value.isEmpty()) return EMPTY_STRING;
+        if (value.length() == 1) {
+            char ch = value.charAt(0);
+            if (ch < ASCII_STRINGS.length) return ASCII_STRINGS[ch];
+        }
         return new Str(value);
+    }
+
+    private static Datum[] createSmallIntCache() {
+        Datum[] cache = new Datum[INT_CACHE_HIGH - INT_CACHE_LOW + 1];
+        for (int i = 0; i < cache.length; i++) {
+            int value = INT_CACHE_LOW + i;
+            cache[i] = switch (value) {
+                case 0 -> ZERO;
+                case 1 -> ONE;
+                default -> new Int(value);
+            };
+        }
+        return cache;
+    }
+
+    private static Datum[] createAsciiStringCache() {
+        Datum[] cache = new Datum[128];
+        for (int i = 0; i < cache.length; i++) {
+            cache[i] = new Str(String.valueOf((char) i));
+        }
+        return cache;
     }
 
     static Datum symbol(String name) {
