@@ -542,6 +542,7 @@ public class CastMember {
     public int getTextFontSize() { return textFontSize; }
     public String getTextFontStyle() { return textFontStyle; }
     public int getTextFixedLineSpace() { return textFixedLineSpace; }
+    public boolean isTextWordWrap() { return textWordWrap; }
 
     /**
      * Convert a local pixel coordinate to a character index in the text.

@@ -120,6 +120,9 @@ public final class MathBuiltins {
     }
 
     private static Datum min(LingoVM vm, List<Datum> args) {
+        if (args.size() == 1 && args.get(0) instanceof Datum.List list) {
+            return minOrMaxList(list, false);
+        }
         if (args.size() < 2) return args.isEmpty() ? Datum.ZERO : args.get(0);
         Datum a = args.get(0), b = args.get(1);
         if (a.isFloat() || b.isFloat()) {
@@ -129,12 +132,36 @@ public final class MathBuiltins {
     }
 
     private static Datum max(LingoVM vm, List<Datum> args) {
+        if (args.size() == 1 && args.get(0) instanceof Datum.List list) {
+            return minOrMaxList(list, true);
+        }
         if (args.size() < 2) return args.isEmpty() ? Datum.ZERO : args.get(0);
         Datum a = args.get(0), b = args.get(1);
         if (a.isFloat() || b.isFloat()) {
             return Datum.of(Math.max(a.toDouble(), b.toDouble()));
         }
         return Datum.of(Math.max(a.toInt(), b.toInt()));
+    }
+
+    private static Datum minOrMaxList(Datum.List list, boolean max) {
+        if (list.items().isEmpty()) return Datum.ZERO;
+
+        Datum result = list.items().get(0);
+        boolean floatResult = result.isFloat();
+        for (int i = 1; i < list.items().size(); i++) {
+            Datum item = list.items().get(i);
+            floatResult |= item.isFloat();
+            if (floatResult) {
+                double current = result.toDouble();
+                double candidate = item.toDouble();
+                result = Datum.of(max ? Math.max(current, candidate) : Math.min(current, candidate));
+            } else {
+                int current = result.toInt();
+                int candidate = item.toInt();
+                result = Datum.of(max ? Math.max(current, candidate) : Math.min(current, candidate));
+            }
+        }
+        return result;
     }
 
     private static Datum power(LingoVM vm, List<Datum> args) {

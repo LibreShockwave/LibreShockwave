@@ -790,6 +790,123 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void darkenCopyPixelsTintsIndexedSourceByShadeNotPaletteHue() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFF990000 });
+        src.setPaletteIndices(new byte[] { 13 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xFF, 0x9B, 0xBD), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF985C70, dest.getPixel(0, 0),
+                "Indexed DARKEN previews should tint the source shade instead of preserving custom-palette red hue");
+    }
+
+    @Test
+    void darkenCopyPixelsTintsGrayscaleSourceByDirectorShadeMath() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC6C6C6 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xEE, 0x7E, 0xA4), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFB8617E, dest.getPixel(0, 0),
+                "DARKEN previews should multiply grayscale shade by #bgColor using Director's 8-bit fixed-point math");
+    }
+
+    @Test
+    void darkenCopyPixelsUsesInversePaletteIndexForIndexedGrayscaleSource() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFFCCCCCC });
+        src.setImagePalette(Palette.GRAYSCALE_PALETTE);
+        src.setPaletteIndices(new byte[] { 57 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xEE, 0x7E, 0xA4), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFB8617E, dest.getPixel(0, 0),
+                "Indexed grayscale DARKEN should use Director's inverse palette index shade");
+    }
+
+    @Test
+    void maskedDarkenCopyPixelsUsesInversePaletteIndexForIndexedSource() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFFCC6666 });
+        src.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        src.setPaletteIndices(new byte[] { 57 });
+        Bitmap mask = new Bitmap(1, 1, 8, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xEE, 0x7E, 0xA4), true);
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFB8617E, dest.getPixel(0, 0),
+                "Masked indexed DARKEN preview layers should use the source index as the shade mask");
+    }
+
+    @Test
+    void maskedDarkenCopyPixelsPreservesFullTintChannelForIndexedShadeSource() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFFCC6666 });
+        src.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        src.setPaletteIndices(new byte[] { 107 });
+        Bitmap mask = new Bitmap(1, 1, 8, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xFF, 0x9B, 0xBD), true);
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF94596D, dest.getPixel(0, 0),
+                "Index-shade DARKEN should preserve a 255 tint channel while using fixed-point math for partial channels");
+    }
+
+    @Test
+    void maskedDarkenCopyPixelsUsesPaletteColorShadeForCustomIndexedSource() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFFBDBABC });
+        src.setImagePalette(new Palette(new int[] { 0xFFBDBABC }, "Custom Palette"));
+        src.setPaletteIndices(new byte[] { 34 });
+        Bitmap mask = new Bitmap(1, 1, 8, new int[] { 0xFF000000 });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0xFF, 0xDD, 0xEF), true);
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFBDA0AF, dest.getPixel(0, 0),
+                "Custom-palette indexed DARKEN should multiply each palette pixel channel, not collapse to one shade");
+    }
+
+    @Test
     void repeatedDarkenCopyPixelsDoesNotKeepGhostOfPreviousPattern() {
         Bitmap persistentDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
         Bitmap freshDest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });

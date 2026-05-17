@@ -68,4 +68,18 @@ class MathBuiltinsReferenceCoercionTest {
         assertTrue(color.isFloat());
         assertEquals(0x123456, color.toDouble(), 0.001);
     }
+
+    @Test
+    void minAndMaxBuiltinsReduceSingleListArgument() {
+        LingoVM vm = new LingoVM(null);
+        Datum.List values = new Datum.List(List.of(Datum.of(-2), Datum.of(3), Datum.ZERO));
+
+        Datum min = vm.callHandler("min", List.of(values));
+        Datum max = vm.callHandler("max", List.of(values));
+
+        assertTrue(min.isInt());
+        assertEquals(-2, min.toInt());
+        assertTrue(max.isInt());
+        assertEquals(3, max.toInt());
+    }
 }
