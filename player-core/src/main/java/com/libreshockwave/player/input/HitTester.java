@@ -15,7 +15,8 @@ import java.util.function.IntPredicate;
  * Tests from front-to-back (highest locZ/channel first).
  * Director-style hit testing is bounds-based by default.
  * Per-pixel alpha hit testing is reserved for true 32-bit bitmap members with
- * native alpha, using the member's alphaThreshold.
+ * native alpha, using the member's alphaThreshold. Runtime-created members
+ * also respect transparency introduced by their current ink processing.
  */
 public final class HitTester {
 
@@ -174,6 +175,9 @@ public final class HitTester {
             if (memberBitmap.getBitDepth() == 32 && memberBitmap.isNativeAlpha()) {
                 return new AlphaHitRule(true, dynamicMember.getBitmapAlphaThreshold());
             }
+            if (usesDynamicInkTransparency(sprite)) {
+                return new AlphaHitRule(true, 1);
+            }
             return AlphaHitRule.DISABLED;
         }
 
@@ -193,6 +197,15 @@ public final class HitTester {
         }
 
         return new AlphaHitRule(true, info.alphaThreshold());
+    }
+
+    private static boolean usesDynamicInkTransparency(RenderSprite sprite) {
+        return switch (sprite.getInkMode()) {
+            case TRANSPARENT, REVERSE, GHOST, NOT_COPY, NOT_TRANSPARENT, NOT_REVERSE,
+                 NOT_GHOST, MATTE, MASK, ADD_PIN, ADD, SUBTRACT_PIN, SUBTRACT,
+                 BACKGROUND_TRANSPARENT, BLEND, LIGHTEN, DARKEN -> true;
+            default -> false;
+        };
     }
 
     private record AlphaHitRule(boolean enabled, int threshold) {
