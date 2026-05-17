@@ -28,3 +28,4 @@ Thumbs.db
 /player-wasm/frames_registration
 /player-wasm/frames_update_routing_trace
 /player-wasm/frames_r31_login
+player-wasm/package-lock.json
