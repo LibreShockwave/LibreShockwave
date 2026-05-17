@@ -35,6 +35,9 @@ const SSO_TICKET = 'vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5';
 const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 900);
 const TRACE_R31 = process.env.R31_TRACE === '1';
 const CLICK_CATALOGUE = process.env.R31_CLICK_CATALOGUE === '1';
+const CLICK_CATALOGUE_CANDY = process.env.R31_CLICK_CATALOGUE_CANDY === '1';
+const CLICK_CATALOGUE_CANDY_PRODUCT = process.env.R31_CLICK_CATALOGUE_CANDY_PRODUCT === '1';
+const CATALOGUE_CANDY_WAIT_MS = Number(process.env.R31_CATALOGUE_CANDY_WAIT_MS || 15000);
 const POLL_MS = 500;
 
 function isAbsoluteUrl(value) {
@@ -172,7 +175,16 @@ async function loadBrowser() {
 async function captureCanvas(page, filePath) {
     const dataUrl = await page.evaluate(() => {
         const canvas = document.getElementById('beta-client-stage');
-        return canvas ? canvas.toDataURL('image/png') : null;
+        if (!canvas) return null;
+        const baseFrame = window.betaClientPlayer && window.betaClientPlayer._baseFrame;
+        if (baseFrame) {
+            const copy = document.createElement('canvas');
+            copy.width = baseFrame.width;
+            copy.height = baseFrame.height;
+            copy.getContext('2d').putImageData(baseFrame, 0, 0);
+            return copy.toDataURL('image/png');
+        }
+        return canvas.toDataURL('image/png');
     });
     if (dataUrl) {
         fs.writeFileSync(filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
@@ -250,6 +262,118 @@ function navigatorEvidenceReady(evidence) {
         && evidence.lowerBlack >= 1000
         && evidence.goBlack >= 20
         && evidence.goWhite < 20;
+}
+
+async function sampleCandyProductEvidence(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+        const centers = [
+            [211, 247],
+            [250, 247],
+            [289, 247],
+            [211, 288],
+            [250, 288],
+            [289, 288],
+            [211, 327],
+            [250, 327],
+        ];
+        const samples = centers.map(([cx, cy]) => {
+            const data = ctx.getImageData(cx - 6, cy - 6, 13, 13).data;
+            let dark = 0;
+            let paleGray = 0;
+            const colors = new Set();
+            for (let p = 0; p < data.length; p += 4) {
+                const r = data[p], g = data[p + 1], b = data[p + 2];
+                colors.add(`${r},${g},${b}`);
+                if (r < 50 && g < 50 && b < 50) dark++;
+                if (r >= 200 && r <= 245 && g >= 200 && g <= 245 && b >= 200 && b <= 245
+                        && Math.max(r, g, b) - Math.min(r, g, b) < 12) {
+                    paleGray++;
+                }
+            }
+            return { dark, paleGray, colors: colors.size };
+        });
+        const header = ctx.getImageData(200, 48, 290, 62).data;
+        let headerPink = 0;
+        for (let p = 0; p < header.length; p += 4) {
+            const r = header[p], g = header[p + 1], b = header[p + 2];
+            if (r > 200 && g >= 70 && g <= 180 && b >= 120 && b <= 220) {
+                headerPink++;
+            }
+        }
+        return {
+            loadingPlaceholders: samples.filter(sample =>
+                sample.dark >= 70 && sample.paleGray >= 80 && sample.colors <= 3).length,
+            candyHeaderVisible: headerPink >= 1000,
+            headerPink,
+            samples,
+        };
+    });
+}
+
+async function sampleFurniShopEvidence(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+        const data = ctx.getImageData(526, 267, 128, 22).data;
+        let dark = 0;
+        let lightGray = 0;
+        for (let p = 0; p < data.length; p += 4) {
+            const r = data[p], g = data[p + 1], b = data[p + 2];
+            if (r < 40 && g < 40 && b < 40) dark++;
+            if (r >= 170 && r <= 230 && g >= 170 && g <= 230 && b >= 170 && b <= 230
+                    && Math.max(r, g, b) - Math.min(r, g, b) < 12) {
+                lightGray++;
+            }
+        }
+        return {
+            candyRowVisible: dark >= 15 && lightGray >= 1000,
+            dark,
+            lightGray,
+        };
+    });
+}
+
+async function waitForFurniShop(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let evidence = null;
+    do {
+        evidence = await sampleFurniShopEvidence(page);
+        if (evidence && evidence.candyRowVisible) {
+            return evidence;
+        }
+        await new Promise(r => setTimeout(r, 250));
+    } while (Date.now() < deadline);
+    return evidence;
+}
+
+async function waitForCandyProducts(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let evidence = null;
+    do {
+        evidence = await sampleCandyProductEvidence(page);
+        if (evidence && evidence.candyHeaderVisible && evidence.loadingPlaceholders === 0) {
+            return evidence;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    } while (Date.now() < deadline);
+    return evidence;
+}
+
+async function waitForCandyHeader(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let evidence = null;
+    do {
+        evidence = await sampleCandyProductEvidence(page);
+        if (evidence && evidence.candyHeaderVisible) {
+            return evidence;
+        }
+        await new Promise(r => setTimeout(r, 250));
+    } while (Date.now() < deadline);
+    return evidence;
 }
 
 function browserHtml(baseUrl) {
@@ -400,6 +524,7 @@ async function main() {
     let finalState = null;
     let navigatorEvidence = null;
     let navigatorDisplayed = false;
+    let candyEvidence = null;
     const consoleLines = [];
     const wsEvents = [];
     const httpEvents = [];
@@ -529,6 +654,19 @@ async function main() {
                 await clickCanvasAt(page, 858, 512);
                 await new Promise(r => setTimeout(r, 5000));
                 await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_click.png'));
+                if (CLICK_CATALOGUE_CANDY) {
+                    console.log('  Clicking Furni Shop and Candy catalogue entries');
+                    await clickCanvasAt(page, 585, 88);
+                    await waitForFurniShop(page, 5000);
+                    await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_furni_click.png'));
+                    await clickCanvasAt(page, 552, 278);
+                    candyEvidence = await waitForCandyHeader(page, 10000);
+                    if (CLICK_CATALOGUE_CANDY_PRODUCT && candyEvidence && candyEvidence.candyHeaderVisible) {
+                        await clickCanvasAt(page, 211, 247);
+                    }
+                    candyEvidence = await waitForCandyProducts(page, CATALOGUE_CANDY_WAIT_MS);
+                    await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_candy_click.png'));
+                }
                 const windowSpriteDiagnostics = await page.evaluate(async () => {
                     if (!window.betaClientPlayer || !window.betaClientPlayer.getWindowSpriteDiagnostics) return '';
                     return await window.betaClientPlayer.getWindowSpriteDiagnostics();
@@ -594,6 +732,8 @@ async function main() {
         && !wsFailed && !connectionFailedPage && !clientError && !finalState.error;
     const loginPassed = finalState && finalState.loaded && wsOpened && visualLoggedIn && navigatorDisplayed
         && !wsFailed && !connectionFailedPage && !clientError && !finalState.error;
+    const candyPassed = !CLICK_CATALOGUE_CANDY
+        || (candyEvidence && candyEvidence.candyHeaderVisible && candyEvidence.loadingPlaceholders === 0);
 
     console.log('\n--- Browser Results ---');
     console.log('Loaded:       ', finalState && finalState.loaded);
@@ -606,6 +746,10 @@ async function main() {
     console.log('Visual Login: ', visualLoggedIn);
     console.log('Navigator:    ', navigatorDisplayed);
     console.log('Nav Evidence: ', JSON.stringify(navigatorEvidence));
+    if (CLICK_CATALOGUE_CANDY) {
+        console.log('Candy Page:   ', candyPassed);
+        console.log('Candy Evidence:', JSON.stringify(candyEvidence));
+    }
     console.log('GotoNetPages: ', finalState && JSON.stringify(finalState.gotoNetPages));
     console.log('WebSockets:   ', JSON.stringify(wsEvents));
     console.log('HTTP Events:  ', JSON.stringify(httpEvents.slice(-40)));
@@ -647,11 +791,16 @@ async function main() {
         console.log('Increase R31_MAX_POLLS and inspect r31_login_timeout.png.');
     } else if (ssoSessionEstablished && !visualLoggedIn) {
         console.log('PASS: r31 SSO connection reached encrypted MUS traffic and stayed open; visual login did not complete before timeout.');
+    } else if (!candyPassed) {
+        console.log('FAIL: Candy catalogue still has loading placeholders after waiting for dynamic furniture casts.');
     } else {
         console.log('PASS: r31 SSO connection stayed open without the connection-failed path.');
     }
 
     if (!loginPassed && (!ssoSessionEstablished || visualLoggedIn)) {
+        process.exitCode = 1;
+    }
+    if (!candyPassed) {
         process.exitCode = 1;
     }
 }

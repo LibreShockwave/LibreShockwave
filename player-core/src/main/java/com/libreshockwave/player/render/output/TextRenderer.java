@@ -182,6 +182,8 @@ public interface TextRenderer {
                 String candidate = current + " " + word;
                 if (measureWidth.applyAsInt(candidate) <= maxWidth) {
                     current.append(" ").append(word);
+                } else if (appendHyphenSplitIfFits(current, word, measureWidth, maxWidth, out)) {
+                    // split was appended and current was reset by the helper
                 } else {
                     out.add(current.toString());
                     current = new StringBuilder(word);
@@ -191,5 +193,24 @@ public interface TextRenderer {
         if (current.length() > 0) {
             out.add(current.toString());
         }
+    }
+
+    private static boolean appendHyphenSplitIfFits(StringBuilder current, String word,
+                                                   ToIntFunction<String> measureWidth,
+                                                   int maxWidth, List<String> out) {
+        int split = word.lastIndexOf('-');
+        while (split > 0 && split < word.length() - 1) {
+            String head = word.substring(0, split + 1);
+            String tail = word.substring(split + 1);
+            String candidate = current + " " + head;
+            if (measureWidth.applyAsInt(candidate) <= maxWidth) {
+                out.add(candidate);
+                current.setLength(0);
+                current.append(tail);
+                return true;
+            }
+            split = word.lastIndexOf('-', split - 1);
+        }
+        return false;
     }
 }

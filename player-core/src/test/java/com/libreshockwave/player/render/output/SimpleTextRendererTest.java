@@ -150,6 +150,18 @@ class SimpleTextRendererTest {
     }
 
     @Test
+    void wordWrapCanBreakHyphenatedWordsAtFittingHyphen() {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+
+        TextRenderer.wrapLine("Relax! It's faux-fur",
+                s -> s.length(),
+                "Relax! It's faux-".length(),
+                lines);
+
+        assertArrayEquals(new String[]{"Relax! It's faux-", "fur"}, lines.toArray(String[]::new));
+    }
+
+    @Test
     void leftAlignedBitmapFontTextKeepsInkOffTheImageEdge() {
         SimpleTextRenderer renderer = new SimpleTextRenderer();
 
