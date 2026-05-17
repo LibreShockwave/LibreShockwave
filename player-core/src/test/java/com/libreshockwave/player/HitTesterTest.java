@@ -48,6 +48,15 @@ class HitTesterTest {
         assertEquals(42, HitTester.hitTest(renderer, 1, 11, 11));
     }
 
+    @Test
+    void dynamicTransparencyInkLetsTransparentPixelsFallThrough() {
+        StageRenderer renderer = new StageRenderer(null);
+        renderer.setLastBakedSprites(List.of(createLowerSprite(), createDynamicTransparencyInkSprite()));
+
+        assertEquals(40, HitTester.hitTest(renderer, 1, 11, 11));
+        assertEquals(43, HitTester.hitTest(renderer, 1, 10, 10));
+    }
+
     private static RenderSprite createCopyInkAlphaSprite() {
         Bitmap bitmap = new Bitmap(3, 3, 32);
         bitmap.fill(0xFFFF0000);
@@ -115,6 +124,34 @@ class HitTesterTest {
                 InkMode.COPY.code(), 100,
                 false, false,
                 bitmap,
+                true);
+    }
+
+    private static RenderSprite createDynamicTransparencyInkSprite() {
+        Bitmap source = new Bitmap(3, 3, 8);
+        source.fill(0xFFFF0000);
+
+        Bitmap baked = new Bitmap(3, 3, 8);
+        baked.fill(0xFFFF0000);
+        baked.setPixel(1, 1, 0x00000000);
+
+        CastMember member = new CastMember(1, 43, MemberType.BITMAP);
+        member.setBitmapDirectly(source);
+
+        return new RenderSprite(
+                43,
+                10, 10,
+                3, 3,
+                0,
+                true,
+                RenderSprite.SpriteType.BITMAP,
+                null,
+                member,
+                0, 0,
+                false, false,
+                InkMode.MATTE.code(), 100,
+                false, false,
+                baked,
                 true);
     }
 }
