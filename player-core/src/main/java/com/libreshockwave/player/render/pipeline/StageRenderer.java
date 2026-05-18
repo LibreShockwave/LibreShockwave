@@ -357,7 +357,7 @@ public class StageRenderer {
             // Fallback auto-size: if sprite still has 0x0 dimensions, derive from member
             if (width == 0 && height == 0 && member.isBitmap()
                     && member.specificData() != null && member.specificData().length >= 10) {
-                var bi = com.libreshockwave.cast.BitmapInfo.parse(member.specificData());
+                var bi = com.libreshockwave.cast.BitmapInfo.parse(member);
                 width = bi.width();
                 height = bi.height();
             }
@@ -453,7 +453,7 @@ public class StageRenderer {
     private RegPoint scaledRegPoint(CastMemberChunk member, int spriteWidth, int spriteHeight,
                                      int posX, int posY, boolean flipH, boolean flipV) {
         if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
-            var bi = com.libreshockwave.cast.BitmapInfo.parse(member.specificData());
+            var bi = com.libreshockwave.cast.BitmapInfo.parse(member);
             // ScummVM's getRegistrationOffset() uses bitmap-local coordinates
             // (_regX - _initialRect.left, _regY - _initialRect.top) for sprite rendering.
             int regX = bi.regXLocal();

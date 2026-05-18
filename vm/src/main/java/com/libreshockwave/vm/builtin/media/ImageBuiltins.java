@@ -114,12 +114,9 @@ public final class ImageBuiltins {
             name = sym.name();
         }
         if (name != null) {
-            String normalized = name.trim().toLowerCase();
-            if ("systemmac".equals(normalized)) {
-                return new ResolvedPalette(Palette.SYSTEM_MAC_PALETTE, null, "systemMac");
-            }
-            if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
-                return new ResolvedPalette(Palette.SYSTEM_WIN_PALETTE, null, "systemWin");
+            Palette builtIn = Palette.getBuiltInBySymbolName(name);
+            if (builtIn != null) {
+                return new ResolvedPalette(builtIn, null, Palette.normalizeBuiltInSymbolName(name));
             }
             if (provider != null) {
                 Datum refDatum = provider.getMemberByName(0, name);
