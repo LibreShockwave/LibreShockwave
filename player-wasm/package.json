@@ -1,5 +1,9 @@
 {
   "private": true,
+  "scripts": {
+    "serve:isolated": "node src/test/js/wasm-dev-server.js build/dist 4173",
+    "test:isolation": "node src/test/js/wasm-isolation-test.js build/dist"
+  },
   "devDependencies": {
     "puppeteer": "^24.0.0"
   }
