@@ -19,29 +19,57 @@ const tls = require('tls');
 
 const distPath = process.argv[2] || path.resolve(__dirname, '../../../build/dist');
 const htdocsRoot = process.argv[3] || 'C:/xampp/htdocs';
-const dcrUrlPath = process.argv[4] || 'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
+const dcrUrlPath = process.argv[4] || 'http://localhost/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
 const outputDir = process.argv[5] || path.resolve(process.cwd(), 'frames_r31_login');
 
-const INFO_HOST = 'verysecret.classichabbo.com';
-const INFO_PORT = 30100;
-const MUS_HOST = 'verysecret.classichabbo.com';
-const MUS_PORT = 39101;
-const GAME_WEBSOCKET_URL = `wss://${INFO_HOST}:${INFO_PORT}`;
-const MUS_WEBSOCKET_URL = `wss://${MUS_HOST}:${MUS_PORT}`;
+const INFO_HOST = process.env.R31_INFO_HOST || '127.0.0.1';
+const INFO_PORT = Number(process.env.R31_INFO_PORT || 30100);
+const MUS_HOST = process.env.R31_MUS_HOST || '127.0.0.1';
+const MUS_PORT = Number(process.env.R31_MUS_PORT || 39101);
+const GAME_WEBSOCKET_URL = process.env.R31_GAME_WEBSOCKET_URL || buildWebSocketUrl(INFO_HOST, INFO_PORT);
+const MUS_WEBSOCKET_URL = process.env.R31_MUS_WEBSOCKET_URL || buildWebSocketUrl(MUS_HOST, MUS_PORT);
 const GAME_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(GAME_WEBSOCKET_URL);
 const MUS_WEBSOCKET_ENDPOINT = parseWebSocketEndpoint(MUS_WEBSOCKET_URL);
-const SSO_TICKET = 'vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5';
+const SSO_TICKET = process.env.R31_SSO_TICKET || 'vibe-sso-admin-ada3abaf-dfdb-4110-be88-6a22495f109b';
+const USE_SSO = process.env.R31_USE_SSO !== '0';
+const LOGIN_USERNAME = process.env.R31_LOGIN_USERNAME || 'admin';
+const LOGIN_PASSWORD = process.env.R31_LOGIN_PASSWORD || 'admin';
+const MANUAL_LOGIN_DELAY_MS = Number(process.env.R31_MANUAL_LOGIN_DELAY_MS || 18000);
+const EXTERNAL_VARIABLES_URL = process.env.R31_EXTERNAL_VARIABLES_URL || 'http://localhost/gamedata/external_variables.txt?';
+const EXTERNAL_TEXTS_URL = process.env.R31_EXTERNAL_TEXTS_URL || 'http://localhost/gamedata/external_texts.txt?';
 
 const MAX_POLLS = Number(process.env.R31_MAX_POLLS || 900);
 const TRACE_R31 = process.env.R31_TRACE === '1';
 const CLICK_CATALOGUE = process.env.R31_CLICK_CATALOGUE === '1';
 const CLICK_CATALOGUE_CANDY = process.env.R31_CLICK_CATALOGUE_CANDY === '1';
+const CLICK_CATALOGUE_ASIAN = process.env.R31_CLICK_CATALOGUE_ASIAN === '1';
 const CLICK_CATALOGUE_CANDY_PRODUCT = process.env.R31_CLICK_CATALOGUE_CANDY_PRODUCT === '1';
 const CATALOGUE_CANDY_WAIT_MS = Number(process.env.R31_CATALOGUE_CANDY_WAIT_MS || 15000);
+const CATALOGUE_ASIAN_WAIT_MS = Number(process.env.R31_CATALOGUE_ASIAN_WAIT_MS || 30000);
+const EXIT_AFTER_ASIAN_CAPTURE = process.env.R31_EXIT_AFTER_ASIAN_CAPTURE === '1';
+const ASIAN_CAPTURE_HOVER_X = process.env.R31_ASIAN_CAPTURE_HOVER_X;
+const ASIAN_CAPTURE_HOVER_Y = process.env.R31_ASIAN_CAPTURE_HOVER_Y;
+const ASIAN_POST_WAIT_MS = Number(process.env.R31_ASIAN_POST_WAIT_MS || 0);
 const POLL_MS = 500;
 
 function isAbsoluteUrl(value) {
     return /^https?:\/\//i.test(String(value || ''));
+}
+
+function resolveBrowserUrl(value, baseUrl) {
+    if (isAbsoluteUrl(value)) {
+        return value;
+    }
+    return baseUrl + '/' + String(value || '').replace(/^\/+/, '');
+}
+
+function jsString(value) {
+    return JSON.stringify(String(value));
+}
+
+function writeProgress(label, details) {
+    const line = `${new Date().toISOString()} ${label}${details === undefined ? '' : ' ' + details}\n`;
+    fs.appendFileSync(path.join(outputDir, 'r31_progress.log'), line);
 }
 
 function parseWebSocketEndpoint(value) {
@@ -173,18 +201,47 @@ async function loadBrowser() {
 }
 
 async function captureCanvas(page, filePath) {
-    const dataUrl = await page.evaluate(() => {
+    const dataUrl = await page.evaluate(({ preferDisplayedCanvas }) => {
         const canvas = document.getElementById('beta-client-stage');
         if (!canvas) return null;
+        const copy = document.createElement('canvas');
+        copy.width = 960;
+        copy.height = 540;
+        const ctx = copy.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, copy.width, copy.height);
         const baseFrame = window.betaClientPlayer && window.betaClientPlayer._baseFrame;
-        if (baseFrame) {
-            const copy = document.createElement('canvas');
-            copy.width = baseFrame.width;
-            copy.height = baseFrame.height;
-            copy.getContext('2d').putImageData(baseFrame, 0, 0);
-            return copy.toDataURL('image/png');
+        if (preferDisplayedCanvas || !baseFrame) {
+            ctx.drawImage(canvas, 0, 0);
+        } else {
+            ctx.putImageData(baseFrame, 0, 0);
         }
-        return canvas.toDataURL('image/png');
+        return copy.toDataURL('image/png');
+    }, { preferDisplayedCanvas: process.env.R31_CAPTURE_DISPLAYED_CANVAS === '1' });
+    if (dataUrl) {
+        fs.writeFileSync(filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
+    }
+}
+
+async function captureCanvasBoth(page, basePath, displayedPath) {
+    await captureCanvas(page, basePath);
+    const previous = process.env.R31_CAPTURE_DISPLAYED_CANVAS;
+    process.env.R31_CAPTURE_DISPLAYED_CANVAS = '1';
+    try {
+        await captureCanvas(page, displayedPath);
+    } finally {
+        if (previous === undefined) {
+            delete process.env.R31_CAPTURE_DISPLAYED_CANVAS;
+        } else {
+            process.env.R31_CAPTURE_DISPLAYED_CANVAS = previous;
+        }
+    }
+}
+
+async function captureCanvasDirect(page, filePath) {
+    const dataUrl = await page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        return canvas ? canvas.toDataURL('image/png') : null;
     });
     if (dataUrl) {
         fs.writeFileSync(filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
@@ -207,22 +264,67 @@ async function captureCanvasRegion(page, filePath, rect) {
 }
 
 async function clickCanvasAt(page, x, y) {
-    await page.evaluate(({ x, y }) => {
+    await page.evaluate(async ({ x, y }) => {
         const canvas = document.getElementById('beta-client-stage');
         const rect = canvas.getBoundingClientRect();
         const clientX = rect.left + x;
         const clientY = rect.top + y;
-        for (const type of ['mousemove', 'mousedown', 'mouseup', 'click']) {
+        const dispatch = (type, buttons) => canvas.dispatchEvent(new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX,
+            clientY,
+            button: 0,
+            buttons,
+        }));
+        dispatch('mousemove', 0);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        for (const [type, buttons] of [['mousedown', 1], ['mouseup', 0], ['click', 0]]) {
             canvas.dispatchEvent(new MouseEvent(type, {
                 bubbles: true,
                 cancelable: true,
                 clientX,
                 clientY,
                 button: 0,
-                buttons: type === 'mouseup' || type === 'click' ? 0 : 1,
+                buttons,
             }));
         }
     }, { x, y });
+}
+
+async function moveCanvasAt(page, x, y) {
+    await page.evaluate(({ x, y }) => {
+        const canvas = document.getElementById('beta-client-stage');
+        const rect = canvas.getBoundingClientRect();
+        canvas.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + x,
+            clientY: rect.top + y,
+            button: 0,
+            buttons: 0,
+        }));
+    }, { x, y });
+}
+
+
+async function typeCanvasText(page, text) {
+    const value = String(text || '');
+    await page.evaluate((value) => {
+        const player = window.betaClientPlayer || window.player;
+        if (!player || !player._worker || !player._workerReady) return;
+        player._worker.postMessage({ type: 'paste', text: value });
+    }, value);
+    await new Promise(r => setTimeout(r, 100));
+}
+
+async function performPasswordLogin(page) {
+    console.log(`  Typing legacy login credentials for ${LOGIN_USERNAME}`);
+    await clickCanvasAt(page, 550, 303);
+    await typeCanvasText(page, LOGIN_USERNAME);
+    await clickCanvasAt(page, 550, 359);
+    await typeCanvasText(page, LOGIN_PASSWORD);
+    await clickCanvasAt(page, 549, 397);
 }
 
 async function sampleNavigatorEvidence(page) {
@@ -376,14 +478,122 @@ async function waitForCandyHeader(page, timeoutMs) {
     return evidence;
 }
 
+async function sampleCatalogueWindowEvidence(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+        const title = ctx.getImageData(166, 22, 356, 20).data;
+        let paleGray = 0;
+        let black = 0;
+        for (let p = 0; p < title.length; p += 4) {
+            const r = title[p], g = title[p + 1], b = title[p + 2];
+            if (r >= 220 && r <= 250 && g >= 220 && g <= 250 && b >= 220 && b <= 250
+                    && Math.max(r, g, b) - Math.min(r, g, b) < 8) {
+                paleGray++;
+            }
+            if (r < 30 && g < 30 && b < 30) {
+                black++;
+            }
+        }
+        return {
+            catalogueVisible: paleGray > 4000 && black < 500,
+            paleGray,
+            black,
+        };
+    });
+}
+
+async function waitForCatalogueWindow(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let evidence = null;
+    do {
+        evidence = await sampleCatalogueWindowEvidence(page);
+        if (evidence && evidence.catalogueVisible) {
+            return evidence;
+        }
+        await new Promise(r => setTimeout(r, 250));
+    } while (Date.now() < deadline);
+    return evidence;
+}
+
+function buildWebSocketUrl(host, port) {
+    const local = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i.test(String(host || ''));
+    return `${local ? 'ws' : 'wss'}://${host}:${port}`;
+}
+
+async function sampleAsianPageEvidence(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+
+        const header = ctx.getImageData(190, 48, 310, 65).data;
+        let asianHeaderPixels = 0;
+        for (let p = 0; p < header.length; p += 4) {
+            const r = header[p], g = header[p + 1], b = header[p + 2];
+            if (r >= 180 && g < 80 && b < 80) {
+                asianHeaderPixels++;
+            }
+        }
+
+        const cells = [
+            [196, 193, 30, 33], [235, 193, 30, 33], [273, 193, 30, 33],
+            [196, 231, 30, 33], [235, 231, 30, 33], [273, 231, 30, 33],
+            [196, 270, 30, 33], [235, 270, 30, 33], [273, 270, 30, 33],
+        ];
+        const cellSaturatedPixels = [];
+        let loadedCells = 0;
+        for (const [x, y, w, h] of cells) {
+            const product = ctx.getImageData(x, y, w, h).data;
+            let saturatedPixels = 0;
+            for (let p = 0; p < product.length; p += 4) {
+                const r = product[p], g = product[p + 1], b = product[p + 2];
+                if (Math.max(r, g, b) - Math.min(r, g, b) > 40) {
+                    saturatedPixels++;
+                }
+            }
+            cellSaturatedPixels.push(saturatedPixels);
+            if (saturatedPixels > 80) {
+                loadedCells++;
+            }
+        }
+        return {
+            asianHeaderVisible: asianHeaderPixels > 600,
+            asianHeaderPixels,
+            loadedCells,
+            cellSaturatedPixels,
+        };
+    });
+}
+
+async function waitForAsianPage(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let evidence = null;
+    do {
+        evidence = await sampleAsianPageEvidence(page);
+        if (evidence && evidence.asianHeaderVisible && evidence.loadedCells === 9) {
+            return evidence;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    } while (Date.now() < deadline);
+    return evidence;
+}
+
 function browserHtml(baseUrl) {
+    const movieUrl = resolveBrowserUrl(dcrUrlPath, baseUrl);
+    const externalVariables = resolveBrowserUrl(EXTERNAL_VARIABLES_URL, baseUrl);
+    const externalTexts = resolveBrowserUrl(EXTERNAL_TEXTS_URL, baseUrl);
+    const authParamEntry = USE_SSO
+        ? `,"sw8":${jsString(`use.sso.ticket=1;sso.ticket=${SSO_TICKET}`)}`
+        : '';
     return `<!doctype html>
 <html><body>
 <canvas id="beta-client-stage" width="960" height="540"></canvas>
 <script src="${baseUrl}/shockwave-lib.js"><\/script>
 <script>
-var betaClientMovieUrl = "https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?";
-var betaClientParams = {"sw1":"client.allow.cross.domain=1;client.notify.cross.domain=0","sw2":"connection.info.host=verysecret.classichabbo.com;connection.info.port=30100","sw3":"connection.mus.host=verysecret.classichabbo.com;connection.mus.port=39101","sw4":"site.url=;url.prefix=","sw5":"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error","sw6":"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?","sw7":"external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?","sw8":"use.sso.ticket=1;sso.ticket=vibe-sso-admin-58fd0324-2a2f-4c49-be58-afd4c95085c5"};
+var betaClientMovieUrl = ${jsString(movieUrl)};
+var betaClientParams = {"sw1":"client.allow.cross.domain=1;client.notify.cross.domain=0","sw2":"connection.info.host=${INFO_HOST};connection.info.port=${INFO_PORT}","sw3":"connection.mus.host=${MUS_HOST};connection.mus.port=${MUS_PORT}","sw4":"site.url=;url.prefix=","sw5":"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error","sw6":"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=${externalVariables}","sw7":"external.texts.txt=${externalTexts}"${authParamEntry}};
 window._testState = {
     loaded: false,
     error: null,
@@ -509,6 +719,8 @@ async function main() {
     }
 
     fs.mkdirSync(outputDir, { recursive: true });
+    try { fs.unlinkSync(path.join(outputDir, 'r31_progress.log')); } catch (e) {}
+    writeProgress('start');
 
     const gameTcp = { ok: true };
     const gameWs = { ok: true };
@@ -575,7 +787,13 @@ async function main() {
             console.log('  [pageerror] ' + err.message);
         });
 
+        writeProgress('before-page-goto', `${baseUrl}/_test_r31_login.html`);
         await page.goto(`${baseUrl}/_test_r31_login.html`, { waitUntil: 'domcontentloaded' });
+        writeProgress('after-page-goto');
+        if (!USE_SSO) {
+            await new Promise(r => setTimeout(r, MANUAL_LOGIN_DELAY_MS));
+            await performPasswordLogin(page);
+        }
 
         for (let i = 0; i < MAX_POLLS; i++) {
             await new Promise(r => setTimeout(r, POLL_MS));
@@ -611,6 +829,23 @@ async function main() {
             if (i % 10 === 0) {
                 console.log(`  poll=${i} loaded=${finalState.loaded} tick=${finalState.tick} frame=${finalState.frame} ` +
                     `sprites=${finalState.spriteCount} nonBlack=${finalState.nonBlack} colors=${finalState.colorBuckets}`);
+                writeProgress('poll', JSON.stringify({
+                    i,
+                    loaded: finalState.loaded,
+                    error: finalState.error,
+                    tick: finalState.tick,
+                    frame: finalState.frame,
+                    sprites: finalState.spriteCount,
+                    nonBlack: finalState.nonBlack,
+                    colors: finalState.colorBuckets,
+                    musOpened: finalState.musOpened,
+                    musClosed: finalState.musClosed,
+                    musErrored: finalState.musErrored,
+                    musSendCount: finalState.musSendCount,
+                    musMessageCount: finalState.musMessageCount,
+                    gotoNetPages: finalState.gotoNetPages.slice(-3),
+                    debugLogs: finalState.debugLogs.slice(-5),
+                }));
             }
 
             const failedPage = finalState.gotoNetPages.some(entry => entry.url.includes('connection_failed'));
@@ -642,6 +877,7 @@ async function main() {
         }
 
         if (navigatorDisplayed) {
+            writeProgress('navigator-ready');
             await captureCanvas(page, path.join(outputDir, 'r31_login_final.png'));
             await captureCanvasRegion(page, path.join(outputDir, 'navigator_libre.png'), {
                 x: 585,
@@ -651,8 +887,18 @@ async function main() {
             });
             if (CLICK_CATALOGUE) {
                 console.log('  Clicking catalogue icon after navigator evidence is ready');
+                writeProgress('before-catalogue-click');
                 await clickCanvasAt(page, 858, 512);
-                await new Promise(r => setTimeout(r, 5000));
+                writeProgress('after-catalogue-click');
+                let catalogueEvidence = await waitForCatalogueWindow(page, 5000);
+                if (!catalogueEvidence || !catalogueEvidence.catalogueVisible) {
+                    console.log('  Catalogue evidence after first click: ' + JSON.stringify(catalogueEvidence));
+                    writeProgress('catalogue-retry', JSON.stringify(catalogueEvidence));
+                    await clickCanvasAt(page, 850, 512);
+                    catalogueEvidence = await waitForCatalogueWindow(page, 5000);
+                }
+                console.log('  Catalogue Evidence: ' + JSON.stringify(catalogueEvidence));
+                writeProgress('catalogue-evidence', JSON.stringify(catalogueEvidence));
                 await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_click.png'));
                 if (CLICK_CATALOGUE_CANDY) {
                     console.log('  Clicking Furni Shop and Candy catalogue entries');
@@ -666,6 +912,47 @@ async function main() {
                     }
                     candyEvidence = await waitForCandyProducts(page, CATALOGUE_CANDY_WAIT_MS);
                     await captureCanvas(page, path.join(outputDir, 'r31_catalogue_after_candy_click.png'));
+                }
+                if (CLICK_CATALOGUE_ASIAN) {
+                    console.log('  Clicking Furni Shop and Asian catalogue entries');
+                    writeProgress('before-furni-click');
+                    await clickCanvasAt(page, 585, 88);
+                    writeProgress('after-furni-click');
+                    await waitForFurniShop(page, 5000);
+                    writeProgress('after-furni-wait');
+                    await clickCanvasAt(page, 552, 300);
+                    writeProgress('after-asian-click');
+                    const asianEvidence = await waitForAsianPage(page, CATALOGUE_ASIAN_WAIT_MS);
+                    console.log('  Asian Evidence: ' + JSON.stringify(asianEvidence));
+                    writeProgress('asian-evidence', JSON.stringify(asianEvidence));
+                    if (ASIAN_POST_WAIT_MS > 0) {
+                        writeProgress('asian-post-wait', ASIAN_POST_WAIT_MS);
+                        await new Promise(r => setTimeout(r, ASIAN_POST_WAIT_MS));
+                    }
+                    if (ASIAN_CAPTURE_HOVER_X !== undefined && ASIAN_CAPTURE_HOVER_Y !== undefined) {
+                        await moveCanvasAt(page, Number(ASIAN_CAPTURE_HOVER_X), Number(ASIAN_CAPTURE_HOVER_Y));
+                        await new Promise(r => setTimeout(r, 250));
+                    }
+                    writeProgress('before-asian-capture');
+                    await captureCanvasBoth(page,
+                        path.join(outputDir, 'r31_catalogue_after_asian_click.png'),
+                        path.join(outputDir, 'r31_catalogue_after_asian_click_displayed.png'));
+                    await captureCanvasDirect(page,
+                        path.join(outputDir, 'r31_catalogue_after_asian_click_direct.png'));
+                    writeProgress('after-asian-capture');
+                    const windowSpriteDiagnostics = await page.evaluate(async () => {
+                        if (!window.betaClientPlayer || !window.betaClientPlayer.getWindowSpriteDiagnostics) return '';
+                        return await window.betaClientPlayer.getWindowSpriteDiagnostics();
+                    });
+                    fs.writeFileSync(path.join(outputDir, 'r31_window_sprite_diag.txt'), windowSpriteDiagnostics);
+                    if (EXIT_AFTER_ASIAN_CAPTURE) {
+                        writeProgress('exit-after-asian-capture');
+                        return;
+                    }
+                    const stage = await page.$('#beta-client-stage');
+                    if (stage) {
+                        await stage.screenshot({ path: path.join(outputDir, 'r31_catalogue_after_asian_click_element.png') });
+                    }
                 }
                 const windowSpriteDiagnostics = await page.evaluate(async () => {
                     if (!window.betaClientPlayer || !window.betaClientPlayer.getWindowSpriteDiagnostics) return '';
@@ -705,6 +992,7 @@ async function main() {
             await captureCanvas(page, path.join(outputDir, 'r31_login_timeout.png'));
         }
     } finally {
+        fs.writeFileSync(path.join(outputDir, 'r31_console_lines.txt'), consoleLines.join('\n'));
         if (browser) await browser.close();
         server.close();
         try { fs.unlinkSync(htmlPath); } catch (e) {}

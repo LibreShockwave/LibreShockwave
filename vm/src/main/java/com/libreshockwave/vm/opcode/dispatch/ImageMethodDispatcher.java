@@ -170,17 +170,16 @@ public final class ImageMethodDispatcher {
             return null;
         }
 
-        String normalized = name.trim().toLowerCase();
-        if ("systemmac".equals(normalized)) {
-            Palette palette = target != null
+        String normalizedName = Palette.normalizeBuiltInSymbolName(name);
+        if (normalizedName != null) {
+            Palette palette = Palette.getBuiltInBySymbolName(name);
+            if ("systemMac".equals(normalizedName)
+                    && target != null
                     && target.getBitDepth() > 8
-                    && target.getPaletteIndices() == null
-                    ? Palette.SYSTEM_WIN_PALETTE
-                    : Palette.SYSTEM_MAC_PALETTE;
-            return new ResolvedPalette(palette, null, "systemMac");
-        }
-        if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
-            return new ResolvedPalette(Palette.SYSTEM_WIN_PALETTE, null, "systemWin");
+                    && target.getPaletteIndices() == null) {
+                palette = Palette.SYSTEM_WIN_PALETTE;
+            }
+            return new ResolvedPalette(palette, null, normalizedName);
         }
         if (provider == null) {
             return null;

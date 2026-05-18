@@ -16,6 +16,18 @@ import java.util.List;
  * with a built-in fallback font for when PFR fonts aren't available yet.
  */
 public class SimpleTextRenderer implements TextRenderer {
+    private static final List<String> RECENT_RENDER_PROBES = new ArrayList<>();
+
+    public static List<String> getRecentRenderProbes() {
+        return new ArrayList<>(RECENT_RENDER_PROBES);
+    }
+
+    private static void addRenderProbe(String probe) {
+        if (RECENT_RENDER_PROBES.size() >= 40) {
+            RECENT_RENDER_PROBES.remove(0);
+        }
+        RECENT_RENDER_PROBES.add(probe);
+    }
 
     @Override
     public Bitmap renderText(String text, int width, int height,
@@ -26,6 +38,19 @@ public class SimpleTextRenderer implements TextRenderer {
         if (text == null) text = "";
         if (width <= 0) width = 200;
         if (height <= 0) height = 1; // auto-size: neededHeight will expand to fit
+        if (width >= 100 && width <= 400
+                && (text.length() > 20 || "right".equalsIgnoreCase(alignment))) {
+            addRenderProbe("width=" + width
+                    + " height=" + height
+                    + " font=" + fontName
+                    + " size=" + fontSize
+                    + " style=" + fontStyle
+                    + " align=" + alignment
+                    + " wrap=" + wordWrap
+                    + " fixedLineSpace=" + fixedLineSpace
+                    + " topSpacing=" + topSpacing
+                    + " text=\"" + text.replace("\r", "\\r").replace("\n", "\\n") + "\"");
+        }
 
         String style = fontStyle != null ? fontStyle.toLowerCase() : "";
         boolean wantsBold = style.contains("bold");
@@ -37,10 +62,9 @@ public class SimpleTextRenderer implements TextRenderer {
         BitmapFont pfrFont = resolveBitmapFont(fontName, fontSize, wantsBold, wantsItalic, usedRealBold);
         if (pfrFont != null) {
             boolean syntheticBold = wantsBold && !usedRealBold[0];
-            boolean directorRegularWrap = usesDirectorRegularVolterWrapInset(fontName, wantsBold);
             Bitmap result = renderWithBitmapFont(pfrFont, text, width, height,
                     alignment, textColor, bgColor, wordWrap,
-                    fixedLineSpace, topSpacing, syntheticBold, underline, directorRegularWrap);
+                    fixedLineSpace, topSpacing, syntheticBold, underline);
             if (antialias && result != null) {
                 result = applyTextAA(result, bgColor);
             }
@@ -91,7 +115,7 @@ public class SimpleTextRenderer implements TextRenderer {
             boolean syntheticBold = wantsBold && !usedRealBold[0];
             Bitmap result = renderWithBitmapFont(font, text, width, height,
                     alignment, textColor, bgColor, wordWrap,
-                    fixedLineSpace, 0, syntheticBold, underline, false);
+                    fixedLineSpace, 0, syntheticBold, underline);
             if (antialias && result != null) {
                 result = applyTextAA(result, bgColor);
             }
@@ -367,17 +391,15 @@ public class SimpleTextRenderer implements TextRenderer {
     private Bitmap renderWithBitmapFont(BitmapFont font, String text, int width, int height,
                                          String alignment, int textColor, int bgColor,
                                          boolean wordWrap, int fixedLineSpace, int topSpacing,
-                                         boolean syntheticBold, boolean underline,
-                                         boolean directorRegularWrap) {
+                                         boolean syntheticBold, boolean underline) {
         int lineHeight = fixedLineSpace > 0 ? fixedLineSpace : font.getLineHeight();
 
         String[] rawLines = TextRenderer.splitLines(text);
 
         List<String> lines = new ArrayList<>();
         if (wordWrap) {
-            int wrapWidth = directorWrapWidth(width, font.getFontName(), directorRegularWrap);
             for (String rawLine : rawLines) {
-                TextRenderer.wrapLine(rawLine, font::getStringWidth, wrapWidth, lines);
+                TextRenderer.wrapLine(rawLine, font::getStringWidth, width, lines);
             }
         } else {
             for (String rawLine : rawLines) {
@@ -593,25 +615,6 @@ public class SimpleTextRenderer implements TextRenderer {
     private static int builtinAscent(int fontSize) {
         int scale = builtinScale(fontSize);
         return 7 * scale;
-    }
-
-    private static int directorWrapWidth(int width, String resolvedFontName, boolean regular) {
-        if (regular && "volter".equalsIgnoreCase(resolvedFontName)) {
-            return Math.max(1, width - 9);
-        }
-        return width;
-    }
-
-    private static boolean usesDirectorRegularVolterWrapInset(String fontName, boolean wantsBold) {
-        if (fontName == null || wantsBold) {
-            return false;
-        }
-        String trimmed = fontName.trim();
-        if (!"v".equalsIgnoreCase(trimmed)) {
-            return false;
-        }
-        FontRegistry.FontAlias alias = FontRegistry.getFontAlias(trimmed);
-        return alias == null || (!alias.bold() && "volter".equalsIgnoreCase(alias.fontName()));
     }
 
     // --- Built-in 5x7 pixel font ---

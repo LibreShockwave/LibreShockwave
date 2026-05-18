@@ -620,7 +620,7 @@ public class SpriteBaker {
             int sy = data.posY();
             if (subMember.isBitmap() && subMember.specificData() != null
                     && subMember.specificData().length >= 10) {
-                var bi = com.libreshockwave.cast.BitmapInfo.parse(subMember.specificData());
+                var bi = com.libreshockwave.cast.BitmapInfo.parse(subMember);
                 sx -= bi.regXLocal();
                 sy -= bi.regYLocal();
             } else {

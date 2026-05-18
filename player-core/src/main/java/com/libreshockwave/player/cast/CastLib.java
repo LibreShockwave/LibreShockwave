@@ -915,8 +915,15 @@ public class CastLib {
                 this.scripts.clear();
                 load();
 
-                // Restore dynamic members
-                this.members.putAll(dynamicMembers);
+                // Restore dynamic members that do not collide with authored
+                // members in the newly loaded external cast. Some Director
+                // casts use high minMember ranges, so runtime-created slots
+                // starting at 10000 must not shadow file-backed members.
+                for (Map.Entry<Integer, CastMember> entry : dynamicMembers.entrySet()) {
+                    if (!memberChunks.containsKey(entry.getKey())) {
+                        this.members.put(entry.getKey(), entry.getValue());
+                    }
+                }
 
                 return true;
             }
@@ -988,6 +995,9 @@ public class CastLib {
         };
 
         for (int memberNum = 10000; memberNum < nextDynamicMember; memberNum++) {
+            if (memberChunks.containsKey(memberNum)) {
+                continue;
+            }
             CastMember existing = members.get(memberNum);
             if (existing != null && existing.isReusableDynamicSlot()) {
                 existing.reuseAs(type);
@@ -996,6 +1006,9 @@ public class CastLib {
         }
 
         int memberNum = nextDynamicMember++;
+        while (memberChunks.containsKey(memberNum)) {
+            memberNum = nextDynamicMember++;
+        }
         CastMember member = new CastMember(castLibId.value(), memberNum, type);
         members.put(memberNum, member);
         return member;

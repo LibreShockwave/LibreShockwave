@@ -169,7 +169,7 @@ public class SpriteProperties implements SpritePropertyProvider {
                 CastMemberChunk member = castLibManager.getCastMember(castLib, memberNum);
                 if (member != null) {
                     if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
-                        BitmapInfo bi = BitmapInfo.parse(member.specificData());
+                        BitmapInfo bi = BitmapInfo.parse(member);
                         int bmpWidth = bi.width();
                         int bmpHeight = bi.height();
                         regX = bi.regXLocal();
@@ -531,7 +531,7 @@ public class SpriteProperties implements SpritePropertyProvider {
         CastMemberChunk chunk = castLibManager.getCastMember(castLib, memberNum);
         if (chunk != null) {
             if (chunk.isBitmap() && chunk.specificData() != null && chunk.specificData().length >= 10) {
-                BitmapInfo bi = BitmapInfo.parse(chunk.specificData());
+                BitmapInfo bi = BitmapInfo.parse(chunk);
                 sprite.applyIntrinsicSize(bi.width(), bi.height());
                 return;
             }

@@ -1,6 +1,7 @@
 package com.libreshockwave.cast;
 
 import com.libreshockwave.io.BinaryReader;
+import com.libreshockwave.chunks.CastMemberChunk;
 
 import java.nio.ByteOrder;
 
@@ -34,6 +35,17 @@ public record BitmapInfo(
      */
     public static BitmapInfo parse(byte[] data) {
         return parse(data, 1200); // Default to D6+ parsing
+    }
+
+    /**
+     * Parse BitmapInfo from a cast member using the owning file's Director version.
+     */
+    public static BitmapInfo parse(CastMemberChunk member) {
+        int directorVersion = 1200;
+        if (member != null && member.file() != null && member.file().getConfig() != null) {
+            directorVersion = member.file().getConfig().directorVersion();
+        }
+        return parse(member != null ? member.specificData() : null, directorVersion);
     }
 
     /**

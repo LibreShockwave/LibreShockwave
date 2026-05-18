@@ -70,6 +70,17 @@ public class Bitmap {
         return false;
     }
 
+    public boolean hasTranslucentPixels() {
+        if (pixels == null || bitDepth < 32)
+            return false;
+        for (int pixel : pixels) {
+            int alpha = (pixel >>> 24) & 0xFF;
+            if (alpha > 0 && alpha < 255)
+                return true;
+        }
+        return false;
+    }
+
     /** Returns true when this bitmap carries authored/native 32-bit alpha. */
     public boolean hasNativeMatteAlpha() {
         return bitDepth == 32 && nativeAlpha;

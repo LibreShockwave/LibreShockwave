@@ -191,7 +191,7 @@ public final class HitTester {
             return AlphaHitRule.DISABLED;
         }
 
-        BitmapInfo info = BitmapInfo.parse(castMember.specificData());
+        BitmapInfo info = BitmapInfo.parse(castMember);
         if (info.bitDepth() != 32) {
             return AlphaHitRule.DISABLED;
         }

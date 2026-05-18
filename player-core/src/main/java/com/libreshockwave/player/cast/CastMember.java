@@ -160,13 +160,13 @@ public class CastMember {
         // Fallback: parse regPoint from BitmapInfo for members that may have bypassed CastMemberChunk.read()
         if (regPointX == 0 && regPointY == 0 && chunk.isBitmap()
                 && chunk.specificData() != null && chunk.specificData().length >= 22) {
-            BitmapInfo bi = BitmapInfo.parse(chunk.specificData());
+            BitmapInfo bi = BitmapInfo.parse(chunk);
             regPointX = bi.regX();
             regPointY = bi.regY();
             bitmapAlphaThreshold = bi.alphaThreshold();
         } else if (chunk != null && chunk.isBitmap()
                 && chunk.specificData() != null && chunk.specificData().length >= 10) {
-            bitmapAlphaThreshold = BitmapInfo.parse(chunk.specificData()).alphaThreshold();
+            bitmapAlphaThreshold = BitmapInfo.parse(chunk).alphaThreshold();
         }
     }
 
@@ -274,12 +274,11 @@ public class CastMember {
             name = sym.name();
         }
         if (name != null) {
-            String normalized = name.trim().toLowerCase();
-            if ("systemmac".equals(normalized)) {
-                return new ResolvedPalette(com.libreshockwave.bitmap.Palette.SYSTEM_MAC_PALETTE, -1, -1, "systemMac");
-            }
-            if ("systemwin".equals(normalized) || "systemwindows".equals(normalized)) {
-                return new ResolvedPalette(com.libreshockwave.bitmap.Palette.SYSTEM_WIN_PALETTE, -1, -1, "systemWin");
+            com.libreshockwave.bitmap.Palette builtIn =
+                    com.libreshockwave.bitmap.Palette.getBuiltInBySymbolName(name);
+            if (builtIn != null) {
+                String symbolName = com.libreshockwave.bitmap.Palette.normalizeBuiltInSymbolName(name);
+                return new ResolvedPalette(builtIn, -1, -1, symbolName);
             }
 
             CastLibProvider provider = CastLibProvider.getProvider();
@@ -792,7 +791,12 @@ public class CastMember {
                 }
                 // Default: derive from BitmapInfo embedded palette ID
                 if (chunk != null && chunk.specificData() != null && chunk.specificData().length >= 10) {
-                    BitmapInfo info = BitmapInfo.parse(chunk.specificData());
+                    BitmapInfo info = BitmapInfo.parse(chunk);
+                    String builtInSymbol = com.libreshockwave.bitmap.Palette.getBuiltInSymbolName(info.paletteId());
+                    if (builtInSymbol != null
+                            && info.paletteId() != com.libreshockwave.bitmap.Palette.SYSTEM_MAC) {
+                        yield Datum.symbol(builtInSymbol);
+                    }
                     int palMemberNum = info.paletteId() + 1;
                     if (palMemberNum >= 1) {
                         yield Datum.CastMemberRef.of(castLibId.value(), palMemberNum);

@@ -1000,6 +1000,10 @@ public class WasmEntry {
                     .append(" stageColor=").append(Integer.toHexString(file.getConfig().stageColorRGB() & 0xFFFFFF))
                     .append('\n');
         }
+        appendAsianCatalogueProbe(sb);
+        for (String probe : com.libreshockwave.player.render.output.SimpleTextRenderer.getRecentRenderProbes()) {
+            sb.append("textRender ").append(probe).append('\n');
+        }
         for (RenderSprite sprite : renderer.getLastBakedSprites()) {
             if (!intersects(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight(),
                     40, 0, 930, 500)) {
@@ -1010,6 +1014,9 @@ public class WasmEntry {
             int f0 = 0;
             int black = 0;
             int transparent = 0;
+            int translucent = 0;
+            int minAlpha = 255;
+            int maxAlpha = 0;
             int first = 0;
             int bw = 0;
             int bh = 0;
@@ -1022,8 +1029,12 @@ public class WasmEntry {
                     for (int pixel : pixels) {
                         int alpha = (pixel >>> 24) & 0xFF;
                         int rgb = pixel & 0xFFFFFF;
+                        minAlpha = Math.min(minAlpha, alpha);
+                        maxAlpha = Math.max(maxAlpha, alpha);
                         if (alpha == 0) {
                             transparent++;
+                        } else if (alpha < 255) {
+                            translucent++;
                         } else if (rgb == 0xFFFFFF) {
                             white++;
                         } else if (rgb == 0xF0F0F0) {
@@ -1062,17 +1073,401 @@ public class WasmEntry {
                             ? Integer.toHexString(dynBitmap.getPixels()[0]) : "0")
                     .append(" baked=").append(bw).append('x').append(bh)
                     .append(" first=").append(Integer.toHexString(first))
+                    .append(" alpha=").append(minAlpha).append('-').append(maxAlpha)
+                    .append(" translucent=").append(translucent)
                     .append(" white=").append(white)
                     .append(" f0=").append(f0)
                     .append(" black=").append(black)
                     .append(" transparent=").append(transparent)
                     .append('\n');
+            appendCatalogueTextProbe(sb, dyn);
+            appendCatalogueBitmapBounds(sb, dyn, dynBitmap);
+            appendCataloguePixelSamples(sb, sprite, dyn, dynBitmap, baked);
         }
 
         byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         return len;
+    }
+
+    private static void appendCatalogueBitmapBounds(StringBuilder sb, CastMember dyn, Bitmap bitmap) {
+        if (dyn == null || bitmap == null || dyn.getName() == null) {
+            return;
+        }
+        String name = dyn.getName();
+        if (!name.startsWith("Catalogue_catalog_")
+                && !name.equals("Catalogue_ctlg_pages")
+                && !name.equals("Catalogue_ctlg_productstrip")
+                && !name.equals("Catalogue_ctlg_header_text")
+                && !name.equals("Catalogue_ctlg_header_img")) {
+            return;
+        }
+
+        int minX = bitmap.getWidth();
+        int minY = bitmap.getHeight();
+        int maxX = -1;
+        int maxY = -1;
+        int opaque = 0;
+        int translucent = 0;
+        int black = 0;
+        int nonWhite = 0;
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int pixel = bitmap.getPixel(x, y);
+                int alpha = (pixel >>> 24) & 0xFF;
+                int rgb = pixel & 0xFFFFFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                if (alpha == 255) {
+                    opaque++;
+                } else {
+                    translucent++;
+                }
+                if (rgb == 0) {
+                    black++;
+                }
+                if (rgb != 0xFFFFFF) {
+                    nonWhite++;
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        sb.append("bounds ").append(name)
+                .append(" nonWhite=").append(nonWhite)
+                .append(" black=").append(black)
+                .append(" opaque=").append(opaque)
+                .append(" translucent=").append(translucent)
+                .append(" box=");
+        if (maxX >= 0) {
+            sb.append(minX).append(',').append(minY).append('-').append(maxX).append(',').append(maxY);
+        } else {
+            sb.append("empty");
+        }
+        sb.append('\n');
+    }
+
+    private static void appendCatalogueTextProbe(StringBuilder sb, CastMember dyn) {
+        if (dyn == null || dyn.getName() == null) {
+            return;
+        }
+        String name = dyn.getName();
+        if (!name.equals("Catalogue_ctlg_header_text")
+                && !name.equals("Catalogue_ctlg_description")
+                && !name.equals("Catalogue_ctlg_selectproduct")
+                && !name.startsWith("Catalogue_catalog_")) {
+            return;
+        }
+        String text = dyn.getTextContent();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        sb.append("text ").append(name)
+                .append(" font=").append(dyn.getProp("font"))
+                .append(" size=").append(dyn.getProp("fontSize"))
+                .append(" style=").append(dyn.getProp("fontStyle"))
+                .append(" wrap=").append(dyn.getProp("wordWrap"))
+                .append(" fixedLineSpace=").append(dyn.getProp("fixedLineSpace"))
+                .append(" topSpacing=").append(dyn.getProp("topSpacing"))
+                .append(" len=").append(text.length())
+                .append(" value=\"").append(text.replace("\r", "\\r").replace("\n", "\\n")).append('"')
+                .append('\n');
+    }
+
+    private static void appendCataloguePixelSamples(StringBuilder sb, RenderSprite sprite, CastMember dyn,
+                                                    Bitmap dynBitmap, Bitmap baked) {
+        if (sprite == null || dyn == null || dyn.getName() == null) {
+            return;
+        }
+        String name = dyn.getName();
+        if (!name.startsWith("Catalogue_")) {
+            return;
+        }
+        int[][] points = {
+                {523, 36}, {524, 37}, {315, 51}, {235, 117},
+                {241, 195}, {405, 203}, {360, 455}
+        };
+        boolean wroteHeader = false;
+        for (int[] point : points) {
+            int x = point[0];
+            int y = point[1];
+            if (x < sprite.getX() || y < sprite.getY()
+                    || x >= sprite.getX() + sprite.getWidth()
+                    || y >= sprite.getY() + sprite.getHeight()) {
+                continue;
+            }
+            if (!wroteHeader) {
+                sb.append("samples ").append(name)
+                        .append(" loc=").append(sprite.getX()).append(',').append(sprite.getY())
+                        .append(" size=").append(sprite.getWidth()).append('x').append(sprite.getHeight())
+                        .append(" ink=").append(sprite.getInk()).append(" blend=").append(sprite.getBlend());
+                wroteHeader = true;
+            }
+            int lx = x - sprite.getX();
+            int ly = y - sprite.getY();
+            int dynPixel = dynBitmap != null && lx >= 0 && ly >= 0
+                    && lx < dynBitmap.getWidth() && ly < dynBitmap.getHeight()
+                    ? dynBitmap.getPixel(lx, ly) : 0;
+            int bakedPixel = baked != null && lx >= 0 && ly >= 0
+                    && lx < baked.getWidth() && ly < baked.getHeight()
+                    ? baked.getPixel(lx, ly) : 0;
+            sb.append(" p").append(x).append(',').append(y)
+                    .append(" dyn=").append(Integer.toHexString(dynPixel))
+                    .append(" baked=").append(Integer.toHexString(bakedPixel));
+        }
+        if (wroteHeader) {
+            sb.append('\n');
+        }
+    }
+
+    private static void appendAsianCatalogueProbe(StringBuilder sb) {
+        try {
+            var metallic = com.libreshockwave.bitmap.Palette.getBuiltIn(
+                    com.libreshockwave.bitmap.Palette.METALLIC);
+            sb.append("probe metallic64=")
+                    .append(Integer.toHexString(metallic.getColor(64) & 0xFFFFFF))
+                    .append(" metallic110=")
+                    .append(Integer.toHexString(metallic.getColor(110) & 0xFFFFFF))
+                    .append('\n');
+
+            var castLibManager = wasmPlayer.getPlayer().getCastLibManager();
+            CastMember member = castLibManager != null
+                    ? castLibManager.findCastMemberByName("cn_sofa_small")
+                    : null;
+            Bitmap bitmap = member != null ? member.getBitmap() : null;
+            CastMemberChunk chunk = member != null ? member.getChunk() : null;
+            DirectorFile sourceFile = chunk != null ? chunk.file() : null;
+            com.libreshockwave.cast.BitmapInfo info = chunk != null
+                    ? com.libreshockwave.cast.BitmapInfo.parse(chunk)
+                    : null;
+            var resolvedPalette = sourceFile != null && info != null
+                    ? sourceFile.resolvePalette(info.paletteId())
+                    : null;
+            sb.append("probe cn_sofa_small member=")
+                    .append(member != null ? member.getCastLibNumber() : -1)
+                    .append(':')
+                    .append(member != null ? member.getMemberNumber() : -1)
+                    .append(" dir=")
+                    .append(sourceFile != null && sourceFile.getConfig() != null
+                            ? sourceFile.getConfig().directorVersion() : -1)
+                    .append(" infoPal=")
+                    .append(info != null ? info.paletteId() : 0)
+                    .append(" resolved=")
+                    .append(resolvedPalette != null ? resolvedPalette.getName() : "")
+                    .append(" pal=")
+                    .append(bitmap != null && bitmap.getImagePalette() != null
+                            ? bitmap.getImagePalette().getName() : "")
+                    .append(" size=")
+                    .append(bitmap != null ? bitmap.getWidth() : 0)
+                    .append('x')
+                    .append(bitmap != null ? bitmap.getHeight() : 0);
+            if (bitmap != null) {
+                appendProbeColorCount(sb, bitmap, 0x33FFFF);
+                appendProbeColorCount(sb, bitmap, 0xFFE1C2);
+                appendProbeColorCount(sb, bitmap, 0xD9BBA1);
+                appendProbeColorCount(sb, bitmap, 0x51201F);
+            }
+            sb.append('\n');
+            appendNamedBitmapProbe(sb, castLibManager, "ctlg.pagelist.left");
+            appendNamedBitmapProbe(sb, castLibManager, "ctlg.pagelist.left.active");
+            appendNamedBitmapProbe(sb, castLibManager, "tree_basicslot_unselected");
+            appendNamedBitmapProbe(sb, castLibManager, "tree_basicslot_selected");
+            appendNamedBitmapProbe(sb, castLibManager, "tree_col1_unselected");
+            appendNamedBitmapProbe(sb, castLibManager, "tree_col1_selected");
+            appendNamedBitmapProbe(sb, castLibManager, "katalogi_ikoni.furni");
+            appendNamedBitmapProbe(sb, castLibManager, "testarrow.down");
+            appendNamedBitmapProbe(sb, castLibManager, "testarrow.right");
+
+            CastMemberChunk fileChunk = castLibManager != null
+                    ? castLibManager.getCastMemberByName("cn_sofa_small")
+                    : null;
+            DirectorFile fileSource = fileChunk != null ? fileChunk.file() : null;
+            com.libreshockwave.cast.BitmapInfo fileInfo = fileChunk != null
+                    ? com.libreshockwave.cast.BitmapInfo.parse(fileChunk)
+                    : null;
+            Bitmap fileBitmap = null;
+            if (fileSource != null && fileChunk != null) {
+                fileBitmap = fileSource.decodeBitmap(fileChunk).orElse(null);
+            }
+            sb.append("probe file cn_sofa_small chunk=")
+                    .append(fileChunk != null ? fileChunk.id().value() : -1)
+                    .append(" dir=")
+                    .append(fileSource != null && fileSource.getConfig() != null
+                            ? fileSource.getConfig().directorVersion() : -1)
+                    .append(" infoPal=")
+                    .append(fileInfo != null ? fileInfo.paletteId() : 0)
+                    .append(" pal=")
+                    .append(fileBitmap != null && fileBitmap.getImagePalette() != null
+                            ? fileBitmap.getImagePalette().getName() : "")
+                    .append(" size=")
+                    .append(fileBitmap != null ? fileBitmap.getWidth() : 0)
+                    .append('x')
+                    .append(fileBitmap != null ? fileBitmap.getHeight() : 0);
+            if (fileBitmap != null) {
+                appendProbeColorCount(sb, fileBitmap, 0x33FFFF);
+                appendProbeColorCount(sb, fileBitmap, 0xFFE1C2);
+                appendProbeColorCount(sb, fileBitmap, 0xD9BBA1);
+                appendProbeColorCount(sb, fileBitmap, 0x51201F);
+            }
+            sb.append('\n');
+
+            if (castLibManager != null) {
+                var cast3 = castLibManager.getCastLib(3);
+                if (cast3 != null) {
+                    sb.append("probe castlib3 name=")
+                            .append(cast3.getName())
+                            .append(" file=")
+                            .append(cast3.getFileName())
+                            .append(" state=")
+                            .append(cast3.getState())
+                            .append(" count=")
+                            .append(cast3.getMemberCount())
+                            .append(" chunks=")
+                            .append(cast3.getMemberChunks().size())
+                            .append('\n');
+                    int shown = 0;
+                    for (var memberEntry : cast3.getMemberChunks().entrySet()) {
+                        int memberNumber = memberEntry.getKey();
+                        if (memberNumber >= 10240 && memberNumber <= 10310 && shown++ < 20) {
+                            CastMemberChunk candidate = memberEntry.getValue();
+                            sb.append("probe castlib3chunk ")
+                                    .append(memberNumber)
+                                    .append(':')
+                                    .append(candidate != null ? candidate.name() : "")
+                                    .append("#")
+                                    .append(candidate != null ? candidate.id().value() : -1)
+                                    .append('\n');
+                        }
+                    }
+                }
+                for (var entry : castLibManager.getCastLibs().entrySet()) {
+                    var castLib = entry.getValue();
+                    if (castLib == null || !castLib.isLoaded()) {
+                        continue;
+                    }
+                    int hits = 0;
+                    StringBuilder names = new StringBuilder();
+                    for (var memberEntry : castLib.getMemberChunks().entrySet()) {
+                        CastMemberChunk candidate = memberEntry.getValue();
+                        String name = candidate != null ? candidate.name() : null;
+                        if (name != null && name.toLowerCase().contains("sofa")) {
+                            if (hits++ > 0) {
+                                names.append(',');
+                            }
+                            names.append(memberEntry.getKey())
+                                    .append(':')
+                                    .append(name)
+                                    .append("#")
+                                    .append(candidate.id().value());
+                        }
+                    }
+                    if (hits > 0 || (castLib.getName() != null
+                            && castLib.getName().toLowerCase().contains("sofa"))) {
+                        sb.append("probe castlib ")
+                                .append(entry.getKey())
+                                .append(" name=")
+                                .append(castLib.getName())
+                                .append(" file=")
+                                .append(castLib.getFileName())
+                                .append(" chunks=")
+                                .append(names)
+                                .append('\n');
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            sb.append("probe error=").append(t.getClass().getSimpleName()).append('\n');
+        }
+    }
+
+    private static void appendProbeColorCount(StringBuilder sb, Bitmap bitmap, int rgb) {
+        int count = 0;
+        for (int pixel : bitmap.getPixels()) {
+            if ((pixel & 0xFFFFFF) == (rgb & 0xFFFFFF)
+                    && ((pixel >>> 24) & 0xFF) != 0) {
+                count++;
+            }
+        }
+        sb.append(' ')
+                .append(Integer.toHexString(rgb & 0xFFFFFF))
+                .append('=')
+                .append(count);
+    }
+
+    private static void appendNamedBitmapProbe(StringBuilder sb, com.libreshockwave.player.cast.CastLibManager castLibManager,
+                                               String name) {
+        try {
+            CastMember member = castLibManager != null ? castLibManager.findCastMemberByName(name) : null;
+            Bitmap bitmap = member != null ? member.getBitmap() : null;
+            CastMemberChunk chunk = member != null ? member.getChunk() : null;
+            DirectorFile sourceFile = chunk != null ? chunk.file() : null;
+            com.libreshockwave.cast.BitmapInfo info = chunk != null && chunk.isBitmap()
+                    ? com.libreshockwave.cast.BitmapInfo.parse(chunk)
+                    : null;
+            com.libreshockwave.bitmap.Palette resolvedPalette = sourceFile != null && info != null
+                    ? sourceFile.resolvePalette(info.paletteId())
+                    : null;
+            sb.append("probe bitmap ").append(name)
+                    .append(" member=")
+                    .append(member != null ? member.getCastLibNumber() : -1)
+                    .append(':')
+                    .append(member != null ? member.getMemberNumber() : -1)
+                    .append(" infoPal=")
+                    .append(info != null ? info.paletteId() : 0)
+                    .append(" resolved=")
+                    .append(resolvedPalette != null ? resolvedPalette.getName() : "")
+                    .append(" imagePal=")
+                    .append(bitmap != null && bitmap.getImagePalette() != null
+                            ? bitmap.getImagePalette().getName() : "")
+                    .append(" size=")
+                    .append(bitmap != null ? bitmap.getWidth() : 0)
+                    .append('x')
+                    .append(bitmap != null ? bitmap.getHeight() : 0)
+                    .append(" depth=")
+                    .append(bitmap != null ? bitmap.getBitDepth() : 0)
+                    .append(" nativeAlpha=")
+                    .append(bitmap != null && bitmap.isNativeAlpha())
+                    .append(" transparent=")
+                    .append(bitmap != null && bitmap.hasTransparentPixels())
+                    .append(" translucent=")
+                    .append(bitmap != null && bitmap.hasTranslucentPixels());
+            if (bitmap != null) {
+                byte[] paletteIndices = bitmap.getPaletteIndices();
+                for (int x = 0; x < Math.min(4, bitmap.getWidth()); x++) {
+                    sb.append(" p").append(x).append('=')
+                            .append(Integer.toHexString(bitmap.getPixel(x, 0)));
+                    if (paletteIndices != null && x < paletteIndices.length) {
+                        sb.append("/i").append(paletteIndices[x] & 0xFF);
+                    }
+                }
+                com.libreshockwave.bitmap.Palette imagePalette = bitmap.getImagePalette();
+                if (imagePalette != null && ("tree_basicslot_unselected".equals(name)
+                        || "tree_col1_unselected".equals(name))) {
+                    appendNearestPaletteProbe(sb, imagePalette, 0x000000);
+                    appendNearestPaletteProbe(sb, imagePalette, 0xF0F0F0);
+                    appendNearestPaletteProbe(sb, imagePalette, 0xE4E4E4);
+                    appendNearestPaletteProbe(sb, imagePalette, 0xFFE6DF);
+                    appendNearestPaletteProbe(sb, imagePalette, 0x67A7A8);
+                }
+            }
+            sb.append('\n');
+        } catch (Exception ignored) {
+            sb.append("probe bitmap ").append(name).append(" error\n");
+        }
+    }
+
+    private static void appendNearestPaletteProbe(StringBuilder sb, com.libreshockwave.bitmap.Palette palette, int rgb) {
+        int index = palette.nearestIndex(rgb);
+        sb.append(" nearest")
+                .append(Integer.toHexString(rgb & 0xFFFFFF))
+                .append("=i")
+                .append(index)
+                .append('/')
+                .append(Integer.toHexString(palette.getColor(index) & 0xFFFFFF));
     }
 
     private static boolean intersects(int x, int y, int w, int h,
