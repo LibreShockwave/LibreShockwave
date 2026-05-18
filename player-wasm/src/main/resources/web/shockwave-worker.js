@@ -102,6 +102,10 @@ var _jpegDecodeInFlight = {}; // id -> true
 var _jpegDecodeSeq = 0; // increments per movie load to ignore stale async decodes
 var _loadStartTime = 0; // timestamp when loading began (for perf logging)
 var _networkSeq = 0;    // increments per movie load to ignore stale async fetches
+var _sharedFrameBytes = null;
+var _sharedFrameControl = null;
+var _sharedFrameCapacity = 0;
+var _sharedFrameSeq = 0;
 
 // --- Cross-origin fetch relay (main thread fetches on behalf of worker) ---
 var _fetchRelayMap = {};  // relayId -> { engine, taskId, url, fallbacks }
@@ -955,6 +959,11 @@ self.onmessage = async function(e) {
 
             case 'init': {
                 _pageProtocol = msg.pageProtocol || '';
+                if (msg.sharedFrameBuffer && msg.sharedFrameControl && typeof Atomics === 'object') {
+                    _sharedFrameBytes = new Uint8ClampedArray(msg.sharedFrameBuffer);
+                    _sharedFrameControl = new Int32Array(msg.sharedFrameControl);
+                    _sharedFrameCapacity = msg.sharedFrameCapacity || _sharedFrameBytes.length;
+                }
                 // Fallback: detect protocol from worker's own location
                 // (e.g. blob:https://... when loaded as a blob URL worker)
                 if (!_pageProtocol && self.location && self.location.href) {
@@ -1302,9 +1311,22 @@ self.onmessage = async function(e) {
                     _relayLastError();
                     _drainGotoNetPages();
 
+                    var sharedFrame = false;
+                    var sharedSeq = 0;
+                    if (frame && _sharedFrameBytes && frame.rgba.length <= _sharedFrameCapacity) {
+                        _sharedFrameBytes.set(frame.rgba);
+                        sharedSeq = ++_sharedFrameSeq;
+                        Atomics.store(_sharedFrameControl, 0, sharedSeq);
+                        Atomics.store(_sharedFrameControl, 1, frame.rgba.length);
+                        Atomics.store(_sharedFrameControl, 2, frame.w);
+                        Atomics.store(_sharedFrameControl, 3, frame.h);
+                        Atomics.notify(_sharedFrameControl, 0, 1);
+                        sharedFrame = true;
+                    }
+
                     // Always send a frame response to unblock main thread
                     var transferList = [];
-                    if (frame) transferList.push(frame.rgba.buffer);
+                    if (frame && !sharedFrame) transferList.push(frame.rgba.buffer);
                     if (cursorBitmap) transferList.push(cursorBitmap.rgba.buffer);
                     self.postMessage({
                         type:          'frame',
@@ -1313,7 +1335,9 @@ self.onmessage = async function(e) {
                         tempo:         _e._lastTempo,
                         lastFrame:     _e._lastFrame,
                         frameCount:    _e._lastFrameCount,
-                        rgba:          frame ? frame.rgba : null,
+                        rgba:          frame && !sharedFrame ? frame.rgba : null,
+                        sharedFrame:   sharedFrame,
+                        sharedSeq:     sharedSeq,
                         width:         frame ? frame.w : 0,
                         height:        frame ? frame.h : 0,
                         spriteCount:   spriteCount,

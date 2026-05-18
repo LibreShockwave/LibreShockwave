@@ -81,6 +81,10 @@ var LibreShockwave = (function() {
         this._workerReady = false;
         this._pendingUrl  = null;
         this._pendingFile = null;
+        this._sharedFrameBuffer = null;
+        this._sharedFrameControl = null;
+        this._sharedFrameBytes = null;
+        this._sharedFrameCapacity = 0;
 
         // Playback state (mirrors worker)
         this._playing     = false;
@@ -510,17 +514,39 @@ var LibreShockwave = (function() {
                 console.error('[LS] Worker error:', e.message);
                 if (self._opts.onError) self._opts.onError(e.message);
             };
-            // Send init with absolute base path so importScripts/fetch work from the worker
-            worker.postMessage({
+            var initMessage = {
                 type: 'init',
                 basePath: absBase,
                 pageProtocol: location.protocol
-            });
+            };
+            self._initSharedFrameTransport(initMessage);
+            // Send init with absolute base path so importScripts/fetch work from the worker.
+            worker.postMessage(initMessage);
         }
 
         // Create worker from file URL (most reliable, works on all mobile browsers).
         // Bundled deployments override this to try blob URL first with file URL fallback.
         setupWorker(new Worker(absBase + 'shockwave-worker.js'));
+    };
+
+    ShockwavePlayer.prototype._initSharedFrameTransport = function(initMessage) {
+        this._sharedFrameBuffer = null;
+        this._sharedFrameControl = null;
+        this._sharedFrameBytes = null;
+        this._sharedFrameCapacity = 0;
+        if (!window.crossOriginIsolated || typeof SharedArrayBuffer !== 'function' ||
+                typeof Atomics !== 'object') {
+            return;
+        }
+        // Enough for 2048x2048 RGBA frames; larger movies fall back to transferables.
+        var capacity = 2048 * 2048 * 4;
+        this._sharedFrameBuffer = new SharedArrayBuffer(capacity);
+        this._sharedFrameControl = new Int32Array(new SharedArrayBuffer(16));
+        this._sharedFrameBytes = new Uint8ClampedArray(this._sharedFrameBuffer);
+        this._sharedFrameCapacity = capacity;
+        initMessage.sharedFrameBuffer = this._sharedFrameBuffer;
+        initMessage.sharedFrameControl = this._sharedFrameControl.buffer;
+        initMessage.sharedFrameCapacity = capacity;
     };
 
     ShockwavePlayer.prototype._onWorkerMessage = function(msg) {
@@ -1310,8 +1336,19 @@ var LibreShockwave = (function() {
         this._lastFrameCount  = result.frameCount  || this._lastFrameCount;
         this._lastSpriteCount = result.spriteCount || 0;
 
-        // Cache the base frame (no cursor) for 60fps cursor compositing
-        if (result.rgba && result.width > 0 && result.height > 0) {
+        // Cache the base frame (no cursor) for 60fps cursor compositing.
+        if (result.sharedFrame && this._sharedFrameBytes && result.width > 0 && result.height > 0) {
+            var sharedLen = result.width * result.height * 4;
+            var sharedSeq = Atomics.load(this._sharedFrameControl, 0);
+            if (sharedSeq === result.sharedSeq && sharedLen <= this._sharedFrameCapacity) {
+                this._baseFrame = new ImageData(
+                    new Uint8ClampedArray(this._sharedFrameBuffer, 0, sharedLen),
+                    result.width,
+                    result.height
+                );
+                this._cursorDirty = true;
+            }
+        } else if (result.rgba && result.width > 0 && result.height > 0) {
             this._baseFrame = new ImageData(result.rgba, result.width, result.height);
             this._cursorDirty = true;
         }

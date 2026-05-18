@@ -546,9 +546,23 @@ This compiles the Java player to WebAssembly and assembles all files (WASM binar
 
 ```bash
 ./gradlew :player-wasm:generateWasm
-npx serve player-wasm/build/dist
+npx serve --cors player-wasm/build/dist
 # Open http://localhost:3000
 ```
+
+For the SharedArrayBuffer/Atomics frame transport, serve `player-wasm/build/dist/`
+with cross-origin isolation enabled:
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: same-origin
+```
+
+The dist directory includes a `_headers` file for hosts that support it. On
+other servers, configure equivalent headers for `index.html`, JavaScript,
+CSS, and `.wasm` assets. Without these headers the player falls back to normal
+transferable frame buffers.
 
 ### Deploying
 

@@ -17,7 +17,7 @@ dependencies {
     // Depend on the player-core module (which depends on VM and SDK)
     implementation project(':player-core')
 
-    // TeaVM interop for @Export (standard WASM target)
+    // TeaVM interop for @Export (standard WASM target) and browser isolation probes.
     implementation 'org.teavm:teavm-interop:0.13.0'
 
     // Test dependencies
@@ -39,6 +39,17 @@ teavm {
         // Reduced from 64MB to help mobile devices; memory.grow handles expansion on demand.
         minHeapSize = 512
         maxHeapSize = 2048
+    }
+
+    // Wasm GC target configured for browser thread prerequisites. TeaVM exposes
+    // imported SharedArrayBuffer-backed memory on this target.
+    wasmGC {
+        mainClass = 'com.libreshockwave.player.wasm.WasmEntry'
+        targetFileName = 'player-wasm-gc.wasm'
+        debugInformation = true
+        minDirectBuffersSize = 32
+        maxDirectBuffersSize = 128
+        importedWasmMemory = true
     }
 
     all {
@@ -226,6 +237,21 @@ tasks.register('runWasmChromiumTest', Exec) {
         dcrFile,
         castDir,
         outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
+tasks.register('runWasmIsolationTest', Exec) {
+    group       = 'verification'
+    description = 'Verify COOP/COEP headers enable SharedArrayBuffer and Atomics'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+
+    commandLine 'node',
+        file('src/test/js/wasm-isolation-test.js').absolutePath,
+        distPath
 
     standardOutput = System.out
     errorOutput    = System.err
