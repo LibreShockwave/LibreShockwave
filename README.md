@@ -576,10 +576,14 @@ Include `shockwave-lib.js` and add a `<canvas>`. That's it.
 <canvas id="stage" width="640" height="480"></canvas>
 <script src="shockwave-lib.js"></script>
 <script>
-  var player = LibreShockwave.create("stage");
+  var player = LibreShockwave.create("stage", { websocketMode: "ws" });
   player.load("http://example.com/movie.dcr");
 </script>
 ```
+
+Set `websocketMode` to `ws` or `wss` when you want to explicitly control MUS
+WebSocket scheme selection instead of relying on the runtime protocol
+detection.
 
 The following files must be served from the same directory as the script:
 
@@ -598,6 +602,7 @@ The following files must be served from the same directory as the script:
 var player = LibreShockwave.create("my-canvas", {
     basePath:      "/wasm/",                 // where the WASM files live (auto-detected by default)
     params:        { sw1: "key=value" },     // Shockwave <PARAM> tags
+    websocketMode: "wss",                    // force MUS websocket scheme (optional)
     autoplay:      true,                     // start playing after load (default: true)
     remember:      true,                     // persist params in localStorage (default: false)
     debugPlayback: true,                     // enable put/error logging (default: true)

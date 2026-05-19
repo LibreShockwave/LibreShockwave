@@ -97,6 +97,13 @@ var LibreShockwave = (function() {
         this._blockedGotoNetPages = Object.create(null);
         this._loadedMovieUrl = null;
 
+        if (opts.websocketMode) {
+            var websocketMode = String(opts.websocketMode).toLowerCase();
+            if (websocketMode === 'ws' || websocketMode === 'wss') {
+                this._params['websocket.mode'] = websocketMode;
+            }
+        }
+
         // Cursor compositing state (decoupled from game tick for smooth movement)
         this._baseFrame      = null;  // last base frame ImageData (no cursor)
         this._cursorBitmap   = null;  // {rgba, w, h, regX, regY} or null
