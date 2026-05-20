@@ -168,11 +168,7 @@ public final class ScriptInstanceMethodDispatcher {
         // SECOND: For registry-owner script instances, prefill stable entries
         // before their authored handlers run. This mirrors Director's member
         // registry semantics without forcing movie-specific reindex hooks.
-        MemberRegistryMethodDispatcher.DispatchResult prefillResult =
-                MemberRegistryMethodDispatcher.prefill(instance, methodName, args);
-        if (prefillResult.handled()) {
-            return prefillResult.value();
-        }
+        MemberRegistryMethodDispatcher.prefill(instance, methodName, args);
 
         // THIRD: Check for Lingo handlers in the script (and ancestor chain)
         // This is for non-built-in methods like create(), dump(), etc.
