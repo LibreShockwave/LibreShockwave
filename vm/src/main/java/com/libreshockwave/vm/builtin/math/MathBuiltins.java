@@ -62,13 +62,11 @@ public final class MathBuiltins {
 
     /**
      * integer(value)
-     * Converts a value to an integer by truncating toward zero.
-     * - For floats: truncates fractional digits
-     * - For numeric strings: converts to integer
-     * - For empty strings: returns 0 (Director-compatible coercion used by protocol parsers)
-     * - For non-numeric strings: returns the original string unchanged
-     *   This matches float() and allows integerp(integer(val)) to distinguish
-     *   real numeric values from arbitrary text.
+     * Converts a value to the nearest whole integer.
+     * - For floats: rounds to nearest whole integer
+     * - For numeric strings: converts and rounds the parsed numeric value
+     * - For empty strings: returns 0
+     * - For non-numeric strings: returns VOID
      */
     private static Datum integer(LingoVM vm, List<Datum> args) {
         if (args.isEmpty()) return Datum.ZERO;
@@ -88,15 +86,14 @@ public final class MathBuiltins {
                 return Datum.of(Integer.parseInt(trimmed));
             } catch (NumberFormatException e) {
                 try {
-                    return Datum.of((int) Double.parseDouble(trimmed));
+                    return Datum.of((int) Math.round(Double.parseDouble(trimmed)));
                 } catch (NumberFormatException e2) {
-                    return arg;
+                    return Datum.VOID;
                 }
             }
         }
 
-        // For other numeric types, truncate toward zero.
-        return Datum.of((int) arg.toDouble());
+        return Datum.of((int) Math.round(arg.toDouble()));
     }
 
     private static Datum bitAnd(LingoVM vm, List<Datum> args) {
