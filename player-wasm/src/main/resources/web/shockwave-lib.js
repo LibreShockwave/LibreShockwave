@@ -232,9 +232,13 @@ var LibreShockwave = (function() {
             var r = canvas.getBoundingClientRect();
             var scaleX = r.width > 0 ? (canvas.width / r.width) : 1;
             var scaleY = r.height > 0 ? (canvas.height / r.height) : 1;
+            var x = Math.floor((clientX - r.left) * scaleX);
+            var y = Math.floor((clientY - r.top) * scaleY);
+            x = Math.max(0, Math.min(canvas.width - 1, x));
+            y = Math.max(0, Math.min(canvas.height - 1, y));
             return {
-                x: Math.round((clientX - r.left) * scaleX),
-                y: Math.round((clientY - r.top) * scaleY)
+                x: x,
+                y: y
             };
         }
 

@@ -64,7 +64,7 @@ public class InputHandler {
                 if (sprite != null) {
                     int memberNum = sprite.getEffectiveCastMember();
                     if (memberNum > 0) {
-                        CastMember member = castLibManager.getDynamicMember(
+                        CastMember member = castLibManager.resolveMember(
                                 sprite.getEffectiveCastLib(), memberNum);
                         if (member != null && member.isEditable()) {
                             int spriteX = sprite.getLocH() - member.getRegPointX();
@@ -294,7 +294,7 @@ public class InputHandler {
                 int castLibNum = sprite.getEffectiveCastLib();
                 int memberNum = sprite.getEffectiveCastMember();
                 if (memberNum > 0) {
-                    CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+                    CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
                     if (member != null && member.isEditable()
                             && (member.getMemberType() == MemberType.TEXT)) {
                         inputState.setKeyboardFocusSprite(hitChannel);
@@ -414,7 +414,7 @@ public class InputHandler {
             if (s == null) continue;
             int memberNum = s.getEffectiveCastMember();
             if (memberNum <= 0) continue;
-            CastMember m = castLibManager.getDynamicMember(s.getEffectiveCastLib(), memberNum);
+            CastMember m = castLibManager.resolveMember(s.getEffectiveCastLib(), memberNum);
             if (m != null && m.isEditable() && m.getMemberType() == MemberType.TEXT) {
                 editableChannels.add(ch);
             }
@@ -431,7 +431,7 @@ public class InputHandler {
         }
         int nextChannel = editableChannels.get(next);
         inputState.setKeyboardFocusSprite(nextChannel);
-        CastMember nextMember = castLibManager.getDynamicMember(
+        CastMember nextMember = castLibManager.resolveMember(
                 stageRenderer.getSpriteRegistry().get(nextChannel).getEffectiveCastLib(),
                 stageRenderer.getSpriteRegistry().get(nextChannel).getEffectiveCastMember());
         if (nextMember != null) {
@@ -454,7 +454,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null) return;
 
         MemberType type = member.getMemberType();
@@ -525,7 +525,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return null;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null || !member.isEditable()) return null;
 
         return new Object[]{sprite, member};
@@ -656,7 +656,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null || !member.isEditable()) return;
 
         String text = member.getTextContent();
@@ -690,7 +690,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return null;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null) return null;
 
         String text = member.getTextContent();
@@ -720,7 +720,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return null;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null || !member.isEditable()) return null;
 
         String text = member.getTextContent();
@@ -763,7 +763,7 @@ public class InputHandler {
         int memberNum = sprite.getEffectiveCastMember();
         if (memberNum <= 0) return;
 
-        CastMember member = castLibManager.getDynamicMember(castLibNum, memberNum);
+        CastMember member = castLibManager.resolveMember(castLibNum, memberNum);
         if (member == null) return;
 
         String text = member.getTextContent();
