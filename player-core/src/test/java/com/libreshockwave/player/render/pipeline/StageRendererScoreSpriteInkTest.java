@@ -12,7 +12,9 @@ import java.lang.reflect.Method;
 import java.nio.ByteOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StageRendererScoreSpriteInkTest {
 
@@ -122,6 +124,22 @@ class StageRendererScoreSpriteInkTest {
 
         assertNotNull(sprite);
         assertEquals(0x123456, sprite.getForeColor());
+    }
+
+    @Test
+    void scoreBehaviorChannelsMarkRenderedSpriteAsBehaviorBacked() throws Exception {
+        StageRenderer renderer = new StageRenderer(newEmptyDirectorFile());
+        ScoreChunk.ChannelData data = channelData(InkMode.MATTE.code(), 0, 0, 0);
+
+        RenderSprite before = invokeCreateRenderSprite(renderer, 12, data);
+        assertNotNull(before);
+        assertFalse(before.hasBehaviors());
+
+        renderer.getSpriteRegistry().markScoreBehaviorChannel(12);
+        RenderSprite after = invokeCreateRenderSprite(renderer, 12, data);
+
+        assertNotNull(after);
+        assertTrue(after.hasBehaviors());
     }
 
     @Test

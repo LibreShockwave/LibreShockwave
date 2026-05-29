@@ -3,8 +3,10 @@ package com.libreshockwave.player.render;
 import com.libreshockwave.chunks.ScoreChunk;
 import com.libreshockwave.player.sprite.SpriteState;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -15,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SpriteRegistry {
 
     private final Map<Integer, SpriteState> sprites = new ConcurrentHashMap<>();
+    private final Set<Integer> scoreBehaviorChannels = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private int revision;
 
     /**
@@ -45,6 +48,14 @@ public class SpriteRegistry {
         return state;
     }
 
+    public void markScoreBehaviorChannel(int channel) {
+        scoreBehaviorChannels.add(channel);
+    }
+
+    public boolean hasScoreBehaviorChannel(int channel) {
+        return scoreBehaviorChannels.contains(channel);
+    }
+
     /**
      * Get a sprite state by channel, or null if not registered.
      */
@@ -72,6 +83,7 @@ public class SpriteRegistry {
      */
     public void remove(int channel) {
         sprites.remove(channel);
+        scoreBehaviorChannels.remove(channel);
     }
 
     /**
@@ -79,6 +91,7 @@ public class SpriteRegistry {
      */
     public void clear() {
         sprites.clear();
+        scoreBehaviorChannels.clear();
     }
 
     /**
