@@ -109,6 +109,26 @@ class SimpleTextRendererTest {
     }
 
     @Test
+    void explicitBitmapFontTopSpacingAddsDirectorLeadingBeforeGlyphInk() {
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerFontAlias("vb", "Volter", true);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            Bitmap text = renderer.renderText("Copyright Habbo Ltd 2001",
+                    170, 54,
+                    "vb", 9, "plain",
+                    "left", 0xFFFFFFFF, 0xFF000000,
+                    true, false, 9, 2);
+
+            assertEquals(3, findFirstNonBackgroundRow(text, 0xFF000000),
+                    "expected explicit two-pixel topSpacing to reserve Director leading above glyph ink");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
+    @Test
     void locToCharPosTreatsLfAsLineBreak() {
         SimpleTextRenderer renderer = new SimpleTextRenderer();
 
@@ -255,6 +275,17 @@ class SimpleTextRendererTest {
         for (int y = bitmap.getHeight() - 1; y >= 0; y--) {
             if (countOpaquePixelsOnRow(bitmap, y) > 0) {
                 return y;
+            }
+        }
+        return -1;
+    }
+
+    private static int findFirstNonBackgroundRow(Bitmap bitmap, int bgColor) {
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                if (bitmap.getPixel(x, y) != bgColor) {
+                    return y;
+                }
             }
         }
         return -1;
