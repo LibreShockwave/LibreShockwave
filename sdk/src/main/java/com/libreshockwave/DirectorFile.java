@@ -58,6 +58,7 @@ public class DirectorFile {
     private final List<CastMemberChunk> castMembers = new ArrayList<>();
     private final List<ScriptChunk> scripts = new ArrayList<>();
     private final List<PaletteChunk> palettes = new ArrayList<>();
+    private final List<FontMapChunk> fontMaps = new ArrayList<>();
     private boolean capitalX = false;  // True if file uses LctX (capital X) format
 
     // Raw file bytes kept so evicted chunks (BITD etc.) can be re-parsed on demand
@@ -194,12 +195,25 @@ public class DirectorFile {
 
     public List<ScriptChunk> getScripts() { return Collections.unmodifiableList(scripts); }
     public List<PaletteChunk> getPalettes() { return Collections.unmodifiableList(palettes); }
+    public List<FontMapChunk> getFontMaps() { return Collections.unmodifiableList(fontMaps); }
     public Collection<ChunkInfo> getAllChunkInfo() { return Collections.unmodifiableCollection(chunkInfo.values()); }
     public ChunkInfo getChunkInfo(ChunkId id) { return chunkInfo.get(id); }
     public String getBasePath() { return basePath; }
     public ScoreChunk getScoreChunk() { return scoreChunk; }
     public FrameLabelsChunk getFrameLabelsChunk() { return frameLabelsChunk; }
     public void setBasePath(String basePath) { this.basePath = basePath != null ? basePath : ""; }
+
+    public String getFontNameForId(int fontId) {
+        List<FontMapChunk> maps = new ArrayList<>(fontMaps);
+        maps.sort((left, right) -> Integer.compare(right.entries().size(), left.entries().size()));
+        for (FontMapChunk map : maps) {
+            String fontName = map.fontNameForId(fontId);
+            if (fontName != null && !fontName.isEmpty()) {
+                return fontName;
+            }
+        }
+        return null;
+    }
 
     public Chunk getChunk(ChunkId id) {
         Chunk chunk = chunks.get(id);
@@ -1158,6 +1172,7 @@ public class DirectorFile {
             case BITD -> BitmapChunk.read(this, reader, info.id(), version);
             case CLUT -> PaletteChunk.read(this, reader, info.id(), version);
             case STXT -> TextChunk.read(this, reader, info.id());
+            case Fmap -> FontMapChunk.read(this, reader, info.id());
             case snd_ -> SoundChunk.read(this, reader, info.id());
             case ediM -> MediaChunk.read(this, reader, info.id());
             default -> new RawChunk(this, info.id(), type, reader.readBytes(reader.bytesLeft()));
@@ -1216,6 +1231,7 @@ public class DirectorFile {
             case ScoreChunk sc -> this.scoreChunk = sc;
             case FrameLabelsChunk fl -> this.frameLabelsChunk = fl;
             case PaletteChunk p -> this.palettes.add(p);
+            case FontMapChunk fm -> this.fontMaps.add(fm);
             default -> {}
         }
     }

@@ -449,6 +449,10 @@ public class SpriteBaker {
         int runColorR = -1, runColorG = -1, runColorB = -1;
         if (!textChunk.runs().isEmpty()) {
             var run = textChunk.runs().get(0);
+            String mappedFont = file.getFontNameForId(run.fontId());
+            if (mappedFont != null && !mappedFont.isEmpty()) {
+                fontName = mappedFont;
+            }
             fontSize = run.fontSize();
             fontStyle = run.fontStyle();
             runColorR = run.colorR();
