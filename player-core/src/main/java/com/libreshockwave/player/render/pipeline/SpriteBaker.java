@@ -443,7 +443,7 @@ public class SpriteBaker {
         var textInfo = com.libreshockwave.cast.TextInfo.parse(castMember.specificData());
 
         // Get font info from STXT formatting runs (first run determines primary font)
-        String fontName = "Arial";
+        String fontName = defaultStxtFontName(file);
         int fontSize = 12;
         int fontStyle = 0;
         int runColorR = -1, runColorG = -1, runColorB = -1;
@@ -492,6 +492,15 @@ public class SpriteBaker {
                 textInfo.isWordWrap(), false,
                 0, 0);
         return insetTextBitmap(rendered, width, height, horizontalInset, bgColor);
+    }
+
+    private static String defaultStxtFontName(DirectorFile file) {
+        if (file != null && file.getConfig() != null
+                && file.getConfig().directorVersion() > 0
+                && file.getConfig().directorVersion() <= 1600) {
+            return "Geneva";
+        }
+        return "Arial";
     }
 
     private Bitmap insetTextBitmap(Bitmap source, int width, int height, int insetX, int bgColor) {

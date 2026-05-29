@@ -57,9 +57,15 @@ public record TextChunk(
                 int startOffset = reader.readI32();
                 int fontId = reader.readI16();
                 int fontStyle = reader.readU8();
-                reader.skip(1);
-                int fontSize = reader.readI16();
-                reader.skip(2); // unknown
+                int fontSize;
+                if (usesLegacyRunLayout(file)) {
+                    reader.skip(3);
+                    fontSize = reader.readI16();
+                } else {
+                    reader.skip(1);
+                    fontSize = reader.readI16();
+                    reader.skip(2); // unknown
+                }
                 int colorR = reader.readU8();
                 int colorG = reader.readU8();
                 int colorB = reader.readU8();
@@ -74,5 +80,11 @@ public record TextChunk(
         reader.setOrder(originalOrder);
 
         return new TextChunk(file, id, text, runs);
+    }
+
+    private static boolean usesLegacyRunLayout(DirectorFile file) {
+        return file != null && file.getConfig() != null
+                && file.getConfig().directorVersion() > 0
+                && file.getConfig().directorVersion() <= 1600;
     }
 }
