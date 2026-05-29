@@ -284,6 +284,9 @@ public class FrameContext {
 
                 // Create behavior instances for this sprite
                 for (ScoreBehaviorRef behaviorRef : span.getBehaviors()) {
+                    if (spriteRegistry != null) {
+                        spriteRegistry.markScoreBehaviorChannel(channel);
+                    }
                     behaviorManager.createInstance(behaviorRef, channel);
                 }
 

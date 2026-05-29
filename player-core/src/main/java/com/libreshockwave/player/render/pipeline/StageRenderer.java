@@ -279,7 +279,7 @@ public class StageRenderer {
             state.hasForeColor(), state.hasBackColor(),
             state.getInk(), state.getBlend(),
             state.isFlipH(), state.isFlipV(), null,
-            state.hasScriptBehaviors()
+            state.hasScriptBehaviors() || spriteRegistry.hasScoreBehaviorChannel(channel)
         );
     }
 
@@ -315,7 +315,7 @@ public class StageRenderer {
                         true, state.hasBackColor(),
                         0, state.getBlend(), // COPY ink for solid fill
                         state.isFlipH(), state.isFlipV(),
-                        null, state.hasScriptBehaviors());
+                        null, hasAnyBehavior(state));
                 }
             }
             return null;
@@ -404,8 +404,13 @@ public class StageRenderer {
             state.isFlipH(), state.isFlipV(),
             state.getRotation(), state.getSkew(),
             null,
-            state.hasScriptBehaviors()
+            hasAnyBehavior(state)
         );
+    }
+
+    private boolean hasAnyBehavior(SpriteState state) {
+        return state != null && (state.hasScriptBehaviors()
+                || spriteRegistry.hasScoreBehaviorChannel(state.getChannel()));
     }
 
     /**
