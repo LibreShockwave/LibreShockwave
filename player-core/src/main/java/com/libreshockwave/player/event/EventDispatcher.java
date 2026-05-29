@@ -147,6 +147,21 @@ public class EventDispatcher {
     }
 
     /**
+     * Dispatch an event to one score-authored behavior instance.
+     */
+    public void dispatchBehaviorEvent(BehaviorInstance instance, PlayerEvent event, List<Datum> args) {
+        dispatchBehaviorEvent(instance, event.getHandlerName(), args);
+    }
+
+    /**
+     * Dispatch an event to one score-authored behavior instance.
+     */
+    public void dispatchBehaviorEvent(BehaviorInstance instance, String handlerName, List<Datum> args) {
+        vm.resetErrorState();
+        invokeHandler(instance, handlerName, args);
+    }
+
+    /**
      * Dispatch an event to a specific sprite's behaviors.
      * Dispatches to both Score-based behaviors (BehaviorManager) and
      * dynamically attached behaviors (sprite.scriptInstanceList).
