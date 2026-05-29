@@ -3,7 +3,10 @@ package com.libreshockwave.player.score;
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.chunks.FrameLabelsChunk;
 import com.libreshockwave.chunks.ScoreChunk;
+import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.util.LingoValueParser;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -48,8 +51,10 @@ public class ScoreNavigator {
                 ScoreChunk.FrameIntervalSecondary secondary = interval.secondary();
                 int secCastLib = secondary.castLib();
                 int secMember = secondary.castMember();
+                List<Datum> parameters = List.of();
                 if (secCastLib >= 1 && secMember >= 1) {
-                    ScoreBehaviorRef behavior = new ScoreBehaviorRef(secCastLib, secMember);
+                    parameters = parseBehaviorParameters(score.entries(), secondary.unk0());
+                    ScoreBehaviorRef behavior = new ScoreBehaviorRef(secCastLib, secMember, parameters);
                     span.addBehavior(behavior);
                 }
 
@@ -57,7 +62,8 @@ public class ScoreNavigator {
                     String type = channel == 0 ? "frame script" : "sprite behavior";
                     System.out.println("[ScoreNavigator] " + type + ": channel=" + channel +
                         " frames=" + startFrame + "-" + endFrame +
-                        " -> castLib=" + secondary.castLib() + " member=" + secondary.castMember());
+                        " -> castLib=" + secondary.castLib() + " member=" + secondary.castMember() +
+                        " params=" + parameters);
                 }
             }
 
@@ -67,6 +73,31 @@ public class ScoreNavigator {
         if (debug) {
             System.out.println("[ScoreNavigator] Built " + spriteSpans.size() + " sprite spans");
         }
+    }
+
+    static List<Datum> parseBehaviorParameters(List<byte[]> entries, int parameterEntryIndex) {
+        if (entries == null || parameterEntryIndex <= 0 || parameterEntryIndex >= entries.size()) {
+            return List.of();
+        }
+
+        String text = decodeScoreTextEntry(entries.get(parameterEntryIndex));
+        if (text.isEmpty() || text.charAt(0) != '[') {
+            return List.of();
+        }
+
+        Datum parsed = LingoValueParser.parseLiteral(text);
+        return parsed instanceof Datum.PropList ? List.of(parsed) : List.of();
+    }
+
+    private static String decodeScoreTextEntry(byte[] data) {
+        if (data == null || data.length == 0) {
+            return "";
+        }
+        int end = data.length;
+        while (end > 0 && data[end - 1] == 0) {
+            end--;
+        }
+        return new String(data, 0, end, StandardCharsets.ISO_8859_1).trim();
     }
 
     /**
