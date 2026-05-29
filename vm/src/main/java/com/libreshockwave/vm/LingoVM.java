@@ -42,6 +42,8 @@ public class LingoVM {
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
     private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
     private Random random = new Random();
+    private boolean explicitRandomSeed = false;
+    private long randomState = 0;
     private int randomSeed = 0;
     private boolean flushingDeferredScriptInstanceCalls = false;
     private boolean flushingDeferredTasks = false;
@@ -120,7 +122,10 @@ public class LingoVM {
         if (max <= 0) {
             return 1;
         }
-        return random.nextInt(max) + 1;
+        if (!explicitRandomSeed) {
+            return random.nextInt(max) + 1;
+        }
+        return nextSeededRandomInt(max) + 1;
     }
 
     public int getRandomSeed() {
@@ -129,7 +134,31 @@ public class LingoVM {
 
     public void setRandomSeed(int seed) {
         this.randomSeed = seed;
-        this.random = new Random(seed);
+        this.explicitRandomSeed = true;
+        this.randomState = scrambleRandomSeed(seed);
+    }
+
+    private int nextSeededRandomInt(int bound) {
+        if ((bound & -bound) == bound) {
+            return (int) ((bound * (long) nextRandomBits(31)) >> 31);
+        }
+
+        int bits;
+        int value;
+        do {
+            bits = nextRandomBits(31);
+            value = bits % bound;
+        } while (bits - value + (bound - 1) < 0);
+        return value;
+    }
+
+    private int nextRandomBits(int bits) {
+        randomState = (randomState * 0x5DEECE66DL + 0xBL) & ((1L << 48) - 1);
+        return (int) (randomState >>> (48 - bits));
+    }
+
+    private static long scrambleRandomSeed(long seed) {
+        return (seed ^ 0x5DEECE66DL) & ((1L << 48) - 1);
     }
 
     private record DeferredScriptInstanceCall(Datum.ScriptInstance instance, String methodName, List<Datum> args) {}
