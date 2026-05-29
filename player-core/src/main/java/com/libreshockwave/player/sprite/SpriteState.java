@@ -236,8 +236,8 @@ public class SpriteState {
         if (!inkExplicitlySet) {
             this.inkMode = InkMode.fromCode(data.ink());
         }
-        if (!blendExplicitlySet && this.inkMode == InkMode.BLEND && data.blendByte() > 0) {
-            this.blend = Math.round((255 - data.blendByte()) * 100f / 255f);
+        if (!blendExplicitlySet) {
+            this.blend = scoreBlendPercent(data.blendByte());
         }
         if (!trailsExplicitlySet) {
             this.trails = data.trails();
@@ -270,8 +270,8 @@ public class SpriteState {
         if (!inkExplicitlySet) {
             this.inkMode = InkMode.fromCode(data.ink());
         }
-        if (!blendExplicitlySet && InkMode.fromCode(data.ink()) == InkMode.BLEND && data.blendByte() > 0) {
-            this.blend = Math.round((255 - data.blendByte()) * 100f / 255f);
+        if (!blendExplicitlySet) {
+            this.blend = scoreBlendPercent(data.blendByte());
         }
         if (!trailsExplicitlySet) {
             this.trails = data.trails();
@@ -311,10 +311,7 @@ public class SpriteState {
         this.visible = true;
         this.puppet = false;
         this.inkMode = InkMode.fromCode(data.ink());
-        this.blend = 100;
-        if (this.inkMode == InkMode.BLEND && data.blendByte() > 0) {
-            this.blend = Math.round((255 - data.blendByte()) * 100f / 255f);
-        }
+        this.blend = scoreBlendPercent(data.blendByte());
         this.trails = data.trails();
         this.stretch = data.stretch();
         this.foreColor = data.resolvedForeColor();
@@ -353,4 +350,14 @@ public class SpriteState {
     }
 
     public ScoreChunk.ChannelData getInitialData() { return scoreData; }
+
+    private static int scoreBlendPercent(int blendByte) {
+        if (blendByte <= 0) {
+            return 100;
+        }
+        if (blendByte >= 255) {
+            return 0;
+        }
+        return Math.round((255 - blendByte) * 100f / 255f);
+    }
 }
