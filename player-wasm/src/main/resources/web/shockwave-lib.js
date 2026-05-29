@@ -1004,6 +1004,16 @@ var LibreShockwave = (function() {
             : !!this._opts.onDebugLog;
         this._worker.postMessage({ type: 'setDebugPlayback', enabled: dbg });
 
+        if (this._opts.initialBuiltinSymbols) {
+            for (var symKey in this._opts.initialBuiltinSymbols) {
+                this._worker.postMessage({
+                    type: 'setInitialBuiltinSymbol',
+                    key: symKey,
+                    value: this._opts.initialBuiltinSymbols[symKey]
+                });
+            }
+        }
+
         // Restore trace handlers after movie load
         if (this._traceHandlers && this._traceHandlers.length > 0) {
             for (var i = 0; i < this._traceHandlers.length; i++) {
@@ -1236,6 +1246,36 @@ var LibreShockwave = (function() {
             };
             self._worker.addEventListener('message', handler);
             self._worker.postMessage({ type: 'getWindowSpriteDiagnostics' });
+        });
+    };
+
+    ShockwavePlayer.prototype.getVisibleTextDiagnostics = function() {
+        if (!this._worker || !this._workerReady) return Promise.resolve('');
+        var self = this;
+        return new Promise(function(resolve) {
+            var handler = function(e) {
+                if (e.data && e.data.type === 'visibleTextDiagnostics') {
+                    self._worker.removeEventListener('message', handler);
+                    resolve(e.data.diagnostics || '');
+                }
+            };
+            self._worker.addEventListener('message', handler);
+            self._worker.postMessage({ type: 'getVisibleTextDiagnostics' });
+        });
+    };
+
+    ShockwavePlayer.prototype.getBootstrapDiagnostics = function() {
+        if (!this._worker || !this._workerReady) return Promise.resolve('');
+        var self = this;
+        return new Promise(function(resolve) {
+            var handler = function(e) {
+                if (e.data && e.data.type === 'bootstrapDiagnostics') {
+                    self._worker.removeEventListener('message', handler);
+                    resolve(e.data.diagnostics || '');
+                }
+            };
+            self._worker.addEventListener('message', handler);
+            self._worker.postMessage({ type: 'getBootstrapDiagnostics' });
         });
     };
 

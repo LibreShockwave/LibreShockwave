@@ -7,9 +7,11 @@ import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.player.cast.CastMember;
+import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.util.FileUtil;
 import com.libreshockwave.vm.DebugConfig;
+import com.libreshockwave.vm.datum.Datum;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -113,6 +115,14 @@ public class WasmEntry {
     @Export(name = "getStringBufferAddress")
     public static int getStringBufferAddress() {
         return Address.ofData(stringBuffer).toInt();
+    }
+
+    @Export(name = "setInitialBuiltinSymbol")
+    public static void setInitialBuiltinSymbol(int keyLen, int valueLen) {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null || keyLen <= 0 || valueLen <= 0) return;
+        String key = new String(stringBuffer, 0, keyLen, StandardCharsets.UTF_8);
+        String value = new String(stringBuffer, keyLen, valueLen, StandardCharsets.UTF_8);
+        wasmPlayer.getPlayer().setInitialBuiltinVariable(key, Datum.symbol(value));
     }
 
     @Export(name = "readNextGotoNetPage")
@@ -1084,11 +1094,156 @@ public class WasmEntry {
             appendCatalogueBitmapBounds(sb, dyn, dynBitmap);
             appendCataloguePixelSamples(sb, sprite, dyn, dynBitmap, baked);
         }
+        byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+        int len = Math.min(bytes.length, stringBuffer.length);
+        System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        return len;
+    }
+
+    /**
+     * Dump visible text-like sprite contents for browser visual tests.
+     */
+    @Export(name = "getVisibleTextDiagnostics")
+    public static int getVisibleTextDiagnostics() {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return 0;
+        var renderer = wasmPlayer.getPlayer().getStageRenderer();
+        if (renderer == null || renderer.getLastBakedSprites() == null) return 0;
+
+        StringBuilder sb = new StringBuilder(32768);
+        for (RenderSprite sprite : renderer.getLastBakedSprites()) {
+            CastMemberChunk cast = sprite.getCastMember();
+            CastMember dyn = sprite.getDynamicMember();
+            sb.append("ch=").append(sprite.getChannel())
+                    .append(" loc=").append(sprite.getX()).append(',').append(sprite.getY())
+                    .append(' ').append(sprite.getWidth()).append('x').append(sprite.getHeight())
+                    .append(" type=").append(sprite.getType())
+                    .append(" ink=").append(sprite.getInk())
+                    .append(" fore=").append(sprite.getForeColor())
+                    .append(" back=").append(sprite.getBackColor())
+                    .append(" hasFore=").append(sprite.hasForeColor())
+                    .append(" hasBack=").append(sprite.hasBackColor())
+                    .append(" member=").append(sprite.getMemberName())
+                    .append(" castName=").append(cast != null ? cast.name() : "")
+                    .append(" dynName=").append(dyn != null ? dyn.getName() : "")
+                    .append(" dynType=").append(dyn != null ? dyn.getMemberType() : "")
+                    .append('\n');
+            String text = dyn != null ? dyn.getTextContent() : null;
+            if (text == null || text.isEmpty()) {
+                continue;
+            }
+            sb.append("  text=\"").append(escapeDiagnosticText(text)).append('"')
+                    .append('\n');
+        }
+        byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+        int len = Math.min(bytes.length, stringBuffer.length);
+        System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        return len;
+    }
+
+    /**
+     * Dump startup state that explains why Habbo component threads did or did not initialize.
+     */
+    @Export(name = "getBootstrapDiagnostics")
+    public static int getBootstrapDiagnostics() {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null) return 0;
+        StringBuilder sb = new StringBuilder(32768);
+        var player = wasmPlayer.getPlayer();
+        var castManager = player.getCastLibManager();
+
+        sb.append("state=").append(player.getState())
+                .append(" frame=").append(player.getCurrentFrame())
+                .append(" casts=").append(castManager.getCastLibCount())
+                .append('\n');
+        String systemProps = castManager.getFieldValue("System Props", 0);
+        String threadIndexField = findVariableValue(systemProps, "thread.index.field");
+        sb.append("thread.index.field=").append(threadIndexField).append('\n');
+        appendTruncated(sb, "System Props", systemProps, 3000);
+
+        for (int i = 1; i <= castManager.getCastLibCount(); i++) {
+            CastLib castLib = castManager.getCastLib(i);
+            if (castLib == null) {
+                continue;
+            }
+            sb.append("cast#").append(i)
+                    .append(" name=").append(castLib.getName())
+                    .append(" file=").append(castLib.getFileName())
+                    .append(" loaded=").append(castLib.isLoaded())
+                    .append(" fetched=").append(castLib.isFetched())
+                    .append(" members=").append(safeMemberCount(castLib))
+                    .append('\n');
+            if (!threadIndexField.isEmpty()) {
+                String threadIndex = castManager.getFieldValue(threadIndexField, i);
+                if (!threadIndex.isEmpty()) {
+                    appendTruncated(sb, "cast#" + i + " " + threadIndexField, threadIndex, 3000);
+                }
+            }
+        }
+
+        if (!player.getVM().getGlobals().isEmpty()) {
+            sb.append("globals:\n");
+            int count = 0;
+            for (var entry : player.getVM().getGlobals().entrySet()) {
+                if (count++ >= 80) {
+                    sb.append("  ...\n");
+                    break;
+                }
+                sb.append("  ").append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+            }
+        }
 
         byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         return len;
+    }
+
+    private static int safeMemberCount(CastLib castLib) {
+        try {
+            return castLib.getMemberCount();
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    private static void appendTruncated(StringBuilder sb, String title, String value, int maxChars) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        sb.append(title).append(":\n");
+        String normalized = value.replace('\r', '\n');
+        if (normalized.length() > maxChars) {
+            sb.append(normalized, 0, maxChars).append("\n...\n");
+        } else {
+            sb.append(normalized).append('\n');
+        }
+    }
+
+    private static String findVariableValue(String text, String key) {
+        if (text == null || text.isEmpty() || key == null || key.isEmpty()) {
+            return "";
+        }
+        String[] lines = text.replace('\r', '\n').split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#")) {
+                continue;
+            }
+            int eq = trimmed.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            if (trimmed.substring(0, eq).trim().equalsIgnoreCase(key)) {
+                return trimmed.substring(eq + 1).trim();
+            }
+        }
+        return "";
+    }
+
+    private static String escapeDiagnosticText(String text) {
+        return text.replace("\\", "\\\\")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\"", "\\\"");
     }
 
     private static void appendCatalogueBitmapBounds(StringBuilder sb, CastMember dyn, Bitmap bitmap) {

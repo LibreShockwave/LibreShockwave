@@ -865,11 +865,7 @@ public class CastMember {
                 yield new Datum.Rect(textRectLeft, textRectTop, textRectRight, textRectBottom);
             }
             case "image" -> {
-                // Director's text member .image is used heavily as a monochrome mask
-                // source by window text wrappers. Keep it white-backed with black ink
-                // regardless of the member's display color so fake-alpha pipelines can
-                // tint it later via copyPixels/#maskImage.
-                Bitmap img = renderTextMaskImage();
+                Bitmap img = renderTextToImage();
                 if (img != null) {
                     yield new Datum.ImageRef(img);
                 }
