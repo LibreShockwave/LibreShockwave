@@ -29,7 +29,8 @@ public final class VolterFontBundle {
         if (!isVolter(fontName) && !isVolterAlias(fontName)) {
             return null;
         }
-        String cacheKey = variant + ":" + fontSize;
+        int effectiveSize = effectiveDirectorSize(fontSize);
+        String cacheKey = variant + ":" + effectiveSize;
         BitmapFont cached = cache.get(cacheKey);
         if (cached != null) {
             return cached;
@@ -38,11 +39,15 @@ public final class VolterFontBundle {
         if (supplier == null) {
             return null;
         }
-        BitmapFont font = TtfBitmapRasterizer.rasterize(supplier.get(), fontSize, "Volter");
+        BitmapFont font = TtfBitmapRasterizer.rasterize(supplier.get(), effectiveSize, "Volter");
         if (font != null) {
             cache.put(cacheKey, font);
         }
         return font;
+    }
+
+    private static int effectiveDirectorSize(int fontSize) {
+        return fontSize >= 11 ? fontSize - 1 : fontSize;
     }
 
     public static boolean isVolter(String fontName) {
