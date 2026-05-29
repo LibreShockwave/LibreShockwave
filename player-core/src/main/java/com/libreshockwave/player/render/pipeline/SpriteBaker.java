@@ -550,7 +550,33 @@ public class SpriteBaker {
 
         String styleStr = styledText.fontStyleString();
 
-        return renderer.renderXmedText(styledText, width, height, textColor, bgColor);
+        Bitmap rendered = renderer.renderXmedText(styledText, width, height, textColor, bgColor);
+        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT) {
+            rendered = shiftBitmapDown(rendered, 2, bgColor);
+        }
+        return rendered;
+    }
+
+    static Bitmap shiftBitmapDown(Bitmap source, int dy, int bgColor) {
+        if (source == null || dy <= 0) {
+            return source;
+        }
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int[] pixels = new int[width * height];
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = bgColor;
+        }
+        int[] src = source.getPixels();
+        for (int y = 0; y < height - dy; y++) {
+            System.arraycopy(src, y * width, pixels, (y + dy) * width, width);
+        }
+        Bitmap shifted = new Bitmap(width, height, source.getBitDepth(), pixels);
+        shifted.markScriptModified();
+        if (source.isNativeAlpha()) {
+            shifted.setNativeAlpha(true);
+        }
+        return shifted;
     }
 
     /**
