@@ -37,6 +37,9 @@ public class FontRegistry {
     /** Director font cast members can alias short names such as "v" to a platform font name. */
     private static final ConcurrentHashMap<String, FontAlias> aliases = new ConcurrentHashMap<>();
 
+    /** First bundled pixel font name, used when no runtime PFR font has loaded yet. */
+    private static volatile String firstEmbeddedTtfFont;
+
     public record FontAlias(String fontName, boolean bold) {
     }
 
@@ -147,6 +150,9 @@ public class FontRegistry {
         String key = fontName.toLowerCase();
         embeddedTtfFonts.put(key, new TtfVariants(regular, bold, italic, boldItalic));
         canonicalIndex.put(canonicalFontName(fontName), key);
+        if (firstEmbeddedTtfFont == null) {
+            firstEmbeddedTtfFont = fontName;
+        }
     }
 
     public static BitmapFont getEmbeddedBitmapFont(String fontName, int fontSize,
@@ -240,6 +246,18 @@ public class FontRegistry {
     }
 
     /**
+     * Preferred pixel font for legacy Director text runs that request an
+     * embedded face without a font-map id. Bundled Director pixel fonts take
+     * precedence so runtime font registration order cannot change the default.
+     */
+    public static String getPreferredDirectorPixelFont() {
+        if (firstEmbeddedTtfFont != null && !firstEmbeddedTtfFont.isBlank()) {
+            return firstEmbeddedTtfFont;
+        }
+        return firstRegisteredFont;
+    }
+
+    /**
      * Normalize a font name to a canonical form for fuzzy matching.
      * Lowercases, replaces _ and * with space, strips trailing digit-only segments.
      * e.g. "Volter_400_0" → "volter", "Arial*Bold" → "arial bold"
@@ -316,6 +334,7 @@ public class FontRegistry {
         canonicalIndex.clear();
         aliases.clear();
         firstRegisteredFont = null;
+        firstEmbeddedTtfFont = null;
         registerEmbeddedTtfFont("Volter",
                 com.libreshockwave.fonts.volter.volter::getData,
                 com.libreshockwave.fonts.volter.volter_bold::getData,

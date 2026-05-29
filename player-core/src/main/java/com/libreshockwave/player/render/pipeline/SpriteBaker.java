@@ -10,6 +10,7 @@ import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.id.InkMode;
 import com.libreshockwave.player.cast.CastMember;
+import com.libreshockwave.player.cast.FontRegistry;
 import com.libreshockwave.chunks.ScoreChunk;
 
 import java.util.ArrayList;
@@ -446,12 +447,19 @@ public class SpriteBaker {
         String fontName = defaultStxtFontName(file);
         int fontSize = 12;
         int fontStyle = 0;
+        boolean legacyEmbeddedTextFont = false;
         int runColorR = -1, runColorG = -1, runColorB = -1;
         if (!textChunk.runs().isEmpty()) {
             var run = textChunk.runs().get(0);
             String mappedFont = file.getFontNameForId(run.fontId());
             if (mappedFont != null && !mappedFont.isEmpty()) {
                 fontName = mappedFont;
+            } else if (usesLegacyEmbeddedTextFont(file, run.fontId(), run.fontStyle())) {
+                String embeddedFontName = FontRegistry.getPreferredDirectorPixelFont();
+                if (embeddedFontName != null && !embeddedFontName.isEmpty()) {
+                    fontName = embeddedFontName;
+                    legacyEmbeddedTextFont = true;
+                }
             }
             fontSize = run.fontSize();
             fontStyle = run.fontStyle();
@@ -461,7 +469,7 @@ public class SpriteBaker {
         }
 
         String styleStr = "";
-        if ((fontStyle & 1) != 0) styleStr += "bold";
+        if ((fontStyle & 1) != 0 || legacyEmbeddedTextFont) styleStr += "bold";
         if ((fontStyle & 2) != 0) styleStr += (styleStr.isEmpty() ? "" : ",") + "italic";
         if ((fontStyle & 4) != 0) styleStr += (styleStr.isEmpty() ? "" : ",") + "underline";
 
@@ -489,13 +497,24 @@ public class SpriteBaker {
 
         int horizontalInset = Math.min(textInfo.gutterSize(), Math.max(0, width - 1));
         int renderWidth = Math.max(1, width - horizontalInset * 2);
+        int fixedLineSpace = textInfo.textHeight() > fontSize ? fontSize : 0;
+        int topSpacing = textInfo.textHeight() > fontSize ? textInfo.textHeight() - fontSize : 0;
         Bitmap rendered = renderer.renderText(
                 textChunk.text(), renderWidth, height,
                 fontName, fontSize, styleStr,
                 alignment, textColor, bgColor,
                 textInfo.isWordWrap(), false,
-                0, 0);
+                fixedLineSpace, topSpacing);
         return insetTextBitmap(rendered, width, height, horizontalInset, bgColor);
+    }
+
+    private static boolean usesLegacyEmbeddedTextFont(DirectorFile file, int fontId, int fontStyle) {
+        return fontId == 0
+                && (fontStyle & 0x80) != 0
+                && file != null
+                && file.getConfig() != null
+                && file.getConfig().directorVersion() > 0
+                && file.getConfig().directorVersion() <= 1600;
     }
 
     private static String defaultStxtFontName(DirectorFile file) {
