@@ -57,6 +57,23 @@ class HitTesterTest {
         assertEquals(43, HitTester.hitTest(renderer, 1, 10, 10));
     }
 
+    @Test
+    void forcedBoundingBoxKeepsInteractiveTransparentDynamicSpriteClickable() {
+        StageRenderer renderer = new StageRenderer(null);
+        renderer.setLastBakedSprites(List.of(createLowerSprite(), createDynamicTransparencyInkSprite()));
+
+        assertEquals(43, HitTester.hitTest(renderer, 1, 11, 11, channel -> channel == 43));
+    }
+
+    @Test
+    void hitTestAllHonorsForcedBoundingBoxForSelectedInteractiveChannelsOnly() {
+        StageRenderer renderer = new StageRenderer(null);
+        renderer.setLastBakedSprites(List.of(createLowerSprite(), createDynamicTransparencyInkSprite()));
+
+        assertEquals(List.of(43, 40), HitTester.hitTestAll(renderer, 1, 11, 11, channel -> channel == 43));
+        assertEquals(List.of(40), HitTester.hitTestAll(renderer, 1, 11, 11, channel -> false));
+    }
+
     private static RenderSprite createCopyInkAlphaSprite() {
         Bitmap bitmap = new Bitmap(3, 3, 32);
         bitmap.fill(0xFFFF0000);
