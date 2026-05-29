@@ -122,6 +122,11 @@ class StageRendererScoreSpriteInkTest {
         assertEquals(0x123456, sprite.getForeColor());
     }
 
+    @Test
+    void oldScoreRgbExpansionMatchesNativeFiveBitChannels() {
+        assertEquals(0x84CEEF, StageRenderer.expandScoreRgb555(0x84CCE8));
+    }
+
     private static RenderSprite invokeCreateRenderSprite(StageRenderer renderer, int channel,
                                                          ScoreChunk.ChannelData data) throws Exception {
         Method method = StageRenderer.class.getDeclaredMethod(
