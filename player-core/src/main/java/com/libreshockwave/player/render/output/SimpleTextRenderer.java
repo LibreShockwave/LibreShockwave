@@ -499,7 +499,7 @@ public class SimpleTextRenderer implements TextRenderer {
         // Leading goes above the text within each line.
         int leading = Math.max(0, lineHeight - font.getLineHeight());
         int verticalOverflow = Math.max(0, font.getLineHeight() - lineHeight);
-        int y = topSpacing;
+        int y = topSpacing + (topSpacing > 1 ? 1 : 0);
         for (String line : lines) {
             if (y >= height) break;
             int x = 0;
