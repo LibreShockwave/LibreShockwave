@@ -125,7 +125,7 @@ class CastMemberTextImageTest {
     }
 
     @Test
-    void textMemberImageStaysBlackOnWhiteForWriterMaskPipelines() {
+    void textMemberImageUsesMemberTextAndBackgroundColors() {
         CastMember.setTextRenderer(new SimpleTextRenderer());
         CastMember member = new CastMember(1, 1, MemberType.TEXT);
         member.setProp("font", Datum.of("Courier"));
@@ -141,12 +141,12 @@ class CastMemberTextImageTest {
         Datum imageDatum = member.getProp("image");
         Bitmap image = ((Datum.ImageRef) imageDatum).bitmap();
 
+        assertTrue(countPixels(image, 0xFF7B9498) > 0,
+                "text member .image should preserve the member display text color");
         assertTrue(countPixels(image, 0xFF000000) > 0,
-                "text member .image should expose black glyph ink for writer-generated masks");
-        assertTrue(countPixels(image, 0xFFFFFFFF) > 0,
-                "text member .image should keep a white matte background");
-        assertEquals(0, countPixels(image, 0xFF7B9498),
-                "text member .image should not bake the display color into the mask source");
+                "text member .image should preserve the member background color");
+        assertEquals(0, countPixels(image, 0xFFFFFFFF),
+                "text member .image should not force a white mask background");
     }
 
     @Test

@@ -271,6 +271,14 @@ WasmEngine.prototype.clearExternalParams = function() {
     this.exports.clearExternalParams(); this._clearEx();
 };
 
+WasmEngine.prototype.setInitialBuiltinSymbol = function(key, value) {
+    var kb = new TextEncoder().encode(key), vb = new TextEncoder().encode(value);
+    var sbuf = new Uint8Array(this._mem(), this.exports.getStringBufferAddress(), 4096);
+    sbuf.set(kb); sbuf.set(vb, kb.length);
+    this.exports.setInitialBuiltinSymbol(kb.length, vb.length);
+    this._clearEx();
+};
+
 WasmEngine.prototype.addTraceHandler = function(name) {
     var nb = new TextEncoder().encode(name);
     var sbuf = new Uint8Array(this._mem(), this.exports.getStringBufferAddress(), 4096);
@@ -1027,6 +1035,10 @@ self.onmessage = async function(e) {
                 _params = {};
                 break;
 
+            case 'setInitialBuiltinSymbol':
+                _e.setInitialBuiltinSymbol(msg.key, msg.value);
+                break;
+
             case 'preloadCasts': {
                 var castT0 = performance.now();
                 _loadStartTime = castT0;
@@ -1413,6 +1425,32 @@ self.onmessage = async function(e) {
                     }
                 } catch (diagErr) {}
                 self.postMessage({ type: 'windowSpriteDiagnostics', diagnostics: diagStr });
+                break;
+            }
+
+            case 'getVisibleTextDiagnostics': {
+                var textDiagStr = '';
+                try {
+                    var textDiagLen = _e.exports.getVisibleTextDiagnostics(); _e._clearEx();
+                    if (textDiagLen > 0) {
+                        var textDiagAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+                        textDiagStr = _e._readString(textDiagAddr, textDiagLen);
+                    }
+                } catch (textDiagErr) {}
+                self.postMessage({ type: 'visibleTextDiagnostics', diagnostics: textDiagStr });
+                break;
+            }
+
+            case 'getBootstrapDiagnostics': {
+                var bootstrapDiagStr = '';
+                try {
+                    var bootstrapDiagLen = _e.exports.getBootstrapDiagnostics(); _e._clearEx();
+                    if (bootstrapDiagLen > 0) {
+                        var bootstrapDiagAddr = _e.exports.getStringBufferAddress(); _e._clearEx();
+                        bootstrapDiagStr = _e._readString(bootstrapDiagAddr, bootstrapDiagLen);
+                    }
+                } catch (bootstrapDiagErr) {}
+                self.postMessage({ type: 'bootstrapDiagnostics', diagnostics: bootstrapDiagStr });
                 break;
             }
 
