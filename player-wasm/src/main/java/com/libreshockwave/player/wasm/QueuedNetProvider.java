@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Polling-based network provider for WASM.
@@ -31,6 +32,7 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
 
     /** Called when a fetch completes with data, allowing Player to cache external cast data. */
     private java.util.function.BiConsumer<String, byte[]> fetchCompleteCallback;
+    private Predicate<String> satisfiedFetchPredicate;
 
     public QueuedNetProvider(String basePath) {
         this.basePath = basePath;
@@ -40,17 +42,39 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         this.fetchCompleteCallback = callback;
     }
 
+    public void setSatisfiedFetchPredicate(Predicate<String> predicate) {
+        this.satisfiedFetchPredicate = predicate;
+    }
+
     @Override
     public int preloadNetThing(String url) {
         int taskId = nextTaskId++;
         lastTaskId = taskId;
 
+        if (url == null || url.isEmpty()) {
+            NetTask task = new NetTask(taskId, url);
+            task.done = true;
+            tasks.put(taskId, task);
+            return taskId;
+        }
+
         String resolvedUrl = resolveUrl(url);
+        if (isDirectoryOnlyUrl(resolvedUrl)) {
+            NetTask task = new NetTask(taskId, resolvedUrl);
+            task.done = true;
+            tasks.put(taskId, task);
+            return taskId;
+        }
         String[] fallbacks = withMovieDirectoryCastFallbacks(resolvedUrl, FileUtil.getUrlsWithFallbacks(resolvedUrl));
 
         NetTask task = new NetTask(taskId, resolvedUrl);
         task.fallbackUrls = fallbacks;
         tasks.put(taskId, task);
+
+        if (isFetchAlreadySatisfied(url, resolvedUrl, fallbacks)) {
+            task.done = true;
+            return taskId;
+        }
 
         byte[] cached = findCachedData(url, resolvedUrl);
         if (cached != null) {
@@ -65,6 +89,28 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
 
         pendingRequests.add(new PendingRequest(taskId, fallbacks[0], "GET", null, fallbacks));
         return taskId;
+    }
+
+    private boolean isDirectoryOnlyUrl(String url) {
+        String fileName = FileUtil.getFileName(url);
+        return fileName == null || fileName.isEmpty();
+    }
+
+    private boolean isFetchAlreadySatisfied(String originalUrl, String resolvedUrl, String[] fallbacks) {
+        if (satisfiedFetchPredicate == null) {
+            return false;
+        }
+        if (satisfiedFetchPredicate.test(originalUrl) || satisfiedFetchPredicate.test(resolvedUrl)) {
+            return true;
+        }
+        if (fallbacks != null) {
+            for (String fallback : fallbacks) {
+                if (satisfiedFetchPredicate.test(fallback)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override
@@ -116,6 +162,20 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
     @Override
     public Datum getStreamStatusDatum(Integer taskId) {
         NetTask task = getTask(taskId);
+        return streamStatusDatum(task);
+    }
+
+    @Override
+    public Datum getStreamStatusDatum(String url) {
+        NetTask task = getTask(url);
+        if (task == null && isDirectoryOnlyUrl(url)) {
+            task = new NetTask(0, url);
+            task.done = true;
+        }
+        return streamStatusDatum(task);
+    }
+
+    private Datum streamStatusDatum(NetTask task) {
         java.util.LinkedHashMap<String, Datum> props = new java.util.LinkedHashMap<>();
         if (task == null) {
             props.put("URL",        Datum.EMPTY_STRING);
@@ -137,7 +197,7 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
             byteCount = task.pollCount;
         }
         String state  = task.done ? (task.errorCode == 0 ? "Complete" : "Error") : "Loading";
-        props.put("URL",        Datum.EMPTY_STRING);
+        props.put("URL",        Datum.of(task.url != null ? task.url : ""));
         props.put("state",      Datum.of(state));
         props.put("bytesSoFar", Datum.of(byteCount));
         props.put("bytesTotal", Datum.of(task.done ? task.byteCount : 0));
@@ -224,6 +284,37 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
             return lastTaskId > 0 ? tasks.get(lastTaskId) : null;
         }
         return tasks.get(taskId);
+    }
+
+    private NetTask getTask(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (NetTask task : tasks.values()) {
+            if (taskMatchesUrl(task, url)) {
+                return task;
+            }
+        }
+        return null;
+    }
+
+    private boolean taskMatchesUrl(NetTask task, String url) {
+        if (task == null) {
+            return false;
+        }
+        for (String key : buildCacheKeys(url, url)) {
+            if (buildCacheKeys(task.url, task.url).contains(key)) {
+                return true;
+            }
+            if (task.fallbackUrls != null) {
+                for (String fallback : task.fallbackUrls) {
+                    if (buildCacheKeys(fallback, fallback).contains(key)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private String resolveUrl(String url) {

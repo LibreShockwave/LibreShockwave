@@ -649,6 +649,10 @@ public class Player implements UpdateProvider {
         return frameContext.getCurrentFrame();
     }
 
+    public int getEffectiveFrame() {
+        return frameContext.getEffectiveFrame();
+    }
+
     /**
      * Get the effective tempo (frames per second).
      * Priority: puppetTempo > score tempo channel > config tempo.

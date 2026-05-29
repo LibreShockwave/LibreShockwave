@@ -128,8 +128,19 @@ public class CastLib {
             return;
         }
 
+        if (sourceFile != null && isExternal()) {
+            // Once an external cast has been fetched, its own cast table is
+            // authoritative. The parent movie may only carry a placeholder
+            // mapping whose chunk IDs do not exist in the external file.
+            if (!sourceFile.getCasts().isEmpty()) {
+                loadFromExternalFile();
+            }
+            scanXmedFonts();
+            state = State.LOADED;
+            return;
+        }
+
         if (castChunk == null && sourceFile != null) {
-            // For external casts, use the first cast from the loaded file
             if (!sourceFile.getCasts().isEmpty()) {
                 loadFromExternalFile();
             }

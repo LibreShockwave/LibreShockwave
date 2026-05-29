@@ -58,6 +58,70 @@ class StageRendererScoreSpriteInkTest {
         assertEquals(77, registry.get(4).getBlend());
     }
 
+    @Test
+    void scoreSpriteResolvesPaletteColorNumbers() throws Exception {
+        StageRenderer renderer = new StageRenderer(newEmptyDirectorFile());
+        ScoreChunk.ChannelData data = new ScoreChunk.ChannelData(
+            1,
+            InkMode.COPY.code(),
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            10,
+            10,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        );
+
+        RenderSprite sprite = invokeCreateRenderSprite(renderer, 5, data);
+
+        assertNotNull(sprite);
+        assertEquals(0x000000, sprite.getForeColor());
+    }
+
+    @Test
+    void scoreSpriteKeepsExplicitRgbColors() throws Exception {
+        StageRenderer renderer = new StageRenderer(newEmptyDirectorFile());
+        ScoreChunk.ChannelData data = new ScoreChunk.ChannelData(
+            1,
+            InkMode.COPY.code(),
+            0,
+            0,
+            0x12,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            10,
+            10,
+            10,
+            1,
+            0,
+            0x34,
+            0,
+            0x56,
+            0
+        );
+
+        RenderSprite sprite = invokeCreateRenderSprite(renderer, 6, data);
+
+        assertNotNull(sprite);
+        assertEquals(0x123456, sprite.getForeColor());
+    }
+
     private static RenderSprite invokeCreateRenderSprite(StageRenderer renderer, int channel,
                                                          ScoreChunk.ChannelData data) throws Exception {
         Method method = StageRenderer.class.getDeclaredMethod(

@@ -3,6 +3,8 @@ package com.libreshockwave.player.wasm;
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.player.Player;
 import com.libreshockwave.player.PlayerState;
+import com.libreshockwave.player.cast.CastLib;
+import com.libreshockwave.util.FileUtil;
 
 /**
  * Thin wrapper around Player for WASM execution.
@@ -43,6 +45,7 @@ public class WasmPlayer {
         // available immediately when Lingo sets castLib.fileName.
         netProvider.setFetchCompleteCallback((fetchUrl, fetchData) ->
                 player.onNetFetchComplete(fetchUrl, fetchData));
+        netProvider.setSatisfiedFetchPredicate(this::isAlreadyLoadedCastRequest);
 
         musBridge = new WasmMultiuserBridge();
         player.registerMultiuserXtra(musBridge);
@@ -52,6 +55,31 @@ public class WasmPlayer {
         castRevision = 0;
 
         return true;
+    }
+
+    private boolean isAlreadyLoadedCastRequest(String url) {
+        if (player == null || url == null || url.isEmpty()) {
+            return false;
+        }
+        String fileName = FileUtil.getFileName(url);
+        String baseName = FileUtil.getFileNameWithoutExtension(fileName);
+        if (baseName == null || baseName.isEmpty()) {
+            return false;
+        }
+        for (CastLib castLib : player.getCastLibManager().getCastLibs().values()) {
+            if (!castLib.isLoaded()) {
+                continue;
+            }
+            if (baseName.equalsIgnoreCase(castLib.getName())) {
+                return true;
+            }
+            String castFileName = FileUtil.getFileName(castLib.getFileName());
+            String castBaseName = FileUtil.getFileNameWithoutExtension(castFileName);
+            if (castBaseName != null && baseName.equalsIgnoreCase(castBaseName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String toMovieDirectory(String basePath) {

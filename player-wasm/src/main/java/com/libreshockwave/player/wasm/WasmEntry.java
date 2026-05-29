@@ -1188,6 +1188,11 @@ public class WasmEntry {
                     break;
                 }
                 sb.append("  ").append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+                if (entry.getValue() instanceof Datum.ScriptInstance instance && !instance.properties().isEmpty()) {
+                    for (var prop : instance.properties().entrySet()) {
+                        sb.append("    .").append(prop.getKey()).append('=').append(prop.getValue()).append('\n');
+                    }
+                }
             }
         }
 

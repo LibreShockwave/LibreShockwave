@@ -81,6 +81,10 @@ public class FrameContext {
         return currentFrame;
     }
 
+    public int getEffectiveFrame() {
+        return pendingFrame != null ? pendingFrame : currentFrame;
+    }
+
     public int getFrameCount() {
         return navigator.getFrameCount();
     }

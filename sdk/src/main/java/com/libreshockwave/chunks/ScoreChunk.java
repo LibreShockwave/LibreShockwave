@@ -137,8 +137,8 @@ public record ScoreChunk(
             int castMember = reader.readU16();
             int unk1 = reader.readU16();
             int unk2 = reader.readU16();
-            int posY = reader.readU16();
-            int posX = reader.readU16();
+            int posY = reader.readI16();
+            int posX = reader.readI16();
             int height = reader.readU16();
             int width = reader.readU16();
             // 20 bytes read so far
