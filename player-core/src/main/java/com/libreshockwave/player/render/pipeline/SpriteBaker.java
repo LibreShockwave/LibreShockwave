@@ -499,12 +499,22 @@ public class SpriteBaker {
         int renderWidth = Math.max(1, width - horizontalInset * 2);
         int fixedLineSpace = textInfo.textHeight() > fontSize ? fontSize : 0;
         int topSpacing = textInfo.textHeight() > fontSize ? textInfo.textHeight() - fontSize : 0;
-        Bitmap rendered = renderer.renderText(
-                textChunk.text(), renderWidth, height,
-                fontName, fontSize, styleStr,
-                alignment, textColor, bgColor,
-                textInfo.isWordWrap(), false,
-                fixedLineSpace, topSpacing);
+        Bitmap rendered;
+        if (legacyEmbeddedTextFont && renderer instanceof com.libreshockwave.player.render.output.SimpleTextRenderer simpleRenderer) {
+            rendered = simpleRenderer.renderLegacyStxtText(
+                    textChunk.text(), renderWidth, height,
+                    fontName, fontSize, styleStr,
+                    alignment, textColor, bgColor,
+                    textInfo.isWordWrap(), false,
+                    fixedLineSpace, topSpacing);
+        } else {
+            rendered = renderer.renderText(
+                    textChunk.text(), renderWidth, height,
+                    fontName, fontSize, styleStr,
+                    alignment, textColor, bgColor,
+                    textInfo.isWordWrap(), false,
+                    fixedLineSpace, topSpacing);
+        }
         return insetTextBitmap(rendered, width, height, horizontalInset, bgColor);
     }
 

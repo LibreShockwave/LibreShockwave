@@ -34,6 +34,27 @@ public class SimpleTextRenderer implements TextRenderer {
                              String alignment, int textColor, int bgColor,
                              boolean wordWrap, boolean antialias,
                              int fixedLineSpace, int topSpacing) {
+        return renderTextInternal(text, width, height, fontName, fontSize, fontStyle,
+                alignment, textColor, bgColor, wordWrap, antialias,
+                fixedLineSpace, topSpacing, false);
+    }
+
+    public Bitmap renderLegacyStxtText(String text, int width, int height,
+                                       String fontName, int fontSize, String fontStyle,
+                                       String alignment, int textColor, int bgColor,
+                                       boolean wordWrap, boolean antialias,
+                                       int fixedLineSpace, int topSpacing) {
+        return renderTextInternal(text, width, height, fontName, fontSize, fontStyle,
+                alignment, textColor, bgColor, wordWrap, antialias,
+                fixedLineSpace, topSpacing, true);
+    }
+
+    private Bitmap renderTextInternal(String text, int width, int height,
+                                      String fontName, int fontSize, String fontStyle,
+                                      String alignment, int textColor, int bgColor,
+                                      boolean wordWrap, boolean antialias,
+                                      int fixedLineSpace, int topSpacing,
+                                      boolean preferRegisteredDirectorFonts) {
         if (text == null) text = "";
         if (width <= 0) width = 200;
         if (height <= 0) height = 1; // auto-size: neededHeight will expand to fit
@@ -58,7 +79,8 @@ public class SimpleTextRenderer implements TextRenderer {
 
         // Check for PFR bitmap font (or Windows TTF, or Mac BDF)
         boolean[] usedRealBold = {false};
-        BitmapFont pfrFont = resolveBitmapFont(fontName, fontSize, wantsBold, wantsItalic, usedRealBold);
+        BitmapFont pfrFont = resolveBitmapFont(fontName, fontSize, wantsBold, wantsItalic,
+                usedRealBold, preferRegisteredDirectorFonts);
         if (pfrFont != null) {
             boolean syntheticBold = wantsBold && !usedRealBold[0];
             Bitmap result = renderWithBitmapFont(pfrFont, text, width, height,
@@ -213,7 +235,8 @@ public class SimpleTextRenderer implements TextRenderer {
                                                boolean[] usedRealBold) {
         if (fontName == null) return null;
 
-        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, true);
+        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic,
+                usedRealBold, true, false);
         if (aliasFont != null) {
             return aliasFont;
         }
@@ -361,10 +384,12 @@ public class SimpleTextRenderer implements TextRenderer {
      */
     private static BitmapFont resolveBitmapFont(String fontName, int fontSize,
                                                     boolean bold, boolean italic,
-                                                    boolean[] usedRealBold) {
+                                                    boolean[] usedRealBold,
+                                                    boolean preferRegisteredDirectorFonts) {
         if (fontName == null) return null;
 
-        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, false);
+        BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic,
+                usedRealBold, false, preferRegisteredDirectorFonts);
         if (aliasFont != null) {
             return aliasFont;
         }
@@ -410,11 +435,20 @@ public class SimpleTextRenderer implements TextRenderer {
     private static BitmapFont resolveDirectorFontAlias(String fontName, int fontSize,
                                                        boolean bold, boolean italic,
                                                        boolean[] usedRealBold,
-                                                       boolean preferMacFonts) {
+                                                       boolean preferMacFonts,
+                                                       boolean preferRegisteredDirectorFonts) {
         FontRegistry.FontAlias alias = FontRegistry.getFontAlias(fontName);
         String resolvedName = alias != null ? alias.fontName() : fontName;
         boolean resolvedBold = bold || (alias != null && alias.bold());
         int aliasSize = directorAliasFontSize(fontSize);
+
+        if (preferRegisteredDirectorFonts) {
+            BitmapFont registered = resolveRegisteredDirectorFont(fontName, resolvedName,
+                    aliasSize, resolvedBold, italic, usedRealBold);
+            if (registered != null) {
+                return registered;
+            }
+        }
 
         BitmapFont bundled = FontRegistry.getEmbeddedBitmapFont(resolvedName, aliasSize, resolvedBold, italic);
         if (bundled != null) {
@@ -455,13 +489,51 @@ public class SimpleTextRenderer implements TextRenderer {
         return resolved != null ? FontRegistry.getBitmapFont(resolved, aliasSize) : null;
     }
 
+    private static BitmapFont resolveRegisteredDirectorFont(String originalName, String resolvedName,
+                                                            int fontSize, boolean bold, boolean italic,
+                                                            boolean[] usedRealBold) {
+        if (italic) {
+            return null;
+        }
+        if (bold) {
+            BitmapFont boldFont = resolveRegisteredPfrCandidate(originalName + "-Bold", fontSize);
+            if (boldFont == null) {
+                boldFont = resolveRegisteredPfrCandidate(originalName + " Bold", fontSize);
+            }
+            if (boldFont == null && !originalName.equals(resolvedName)) {
+                boldFont = resolveRegisteredPfrCandidate(resolvedName + "-Bold", fontSize);
+                if (boldFont == null) {
+                    boldFont = resolveRegisteredPfrCandidate(resolvedName + " Bold", fontSize);
+                }
+            }
+            if (boldFont != null) {
+                usedRealBold[0] = true;
+                return boldFont;
+            }
+        }
+
+        BitmapFont exact = resolveRegisteredPfrCandidate(originalName, fontSize);
+        if (exact == null && !originalName.equals(resolvedName)) {
+            exact = resolveRegisteredPfrCandidate(resolvedName, fontSize);
+        }
+        return exact;
+    }
+
+    private static BitmapFont resolveRegisteredPfrCandidate(String fontName, int fontSize) {
+        String resolved = FontRegistry.resolveFont(fontName);
+        if (resolved == null || !FontRegistry.hasPfrFont(resolved)) {
+            return null;
+        }
+        return FontRegistry.getBitmapFont(resolved, fontSize);
+    }
+
     private static int directorAliasFontSize(int fontSize) {
         return fontSize >= 11 ? fontSize - 1 : fontSize;
     }
 
     /** Backward-compatible overload without bold/italic. */
     private static BitmapFont resolveBitmapFont(String fontName, int fontSize) {
-        return resolveBitmapFont(fontName, fontSize, false, false, new boolean[]{false});
+        return resolveBitmapFont(fontName, fontSize, false, false, new boolean[]{false}, false);
     }
 
     private Bitmap renderWithBitmapFont(BitmapFont font, String text, int width, int height,
