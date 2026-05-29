@@ -95,7 +95,7 @@ public class MovieProperties implements MoviePropertyProvider {
 
         return switch (prop) {
             // Frame and playback
-            case "frame" -> Datum.of(player.getCurrentFrame());
+            case "frame" -> Datum.of(player.getEffectiveFrame());
             case "lastframe" -> Datum.of(player.getFrameCount());
             case "lastchannel" -> Datum.of(file != null ? file.getChannelCount() : 0);
 

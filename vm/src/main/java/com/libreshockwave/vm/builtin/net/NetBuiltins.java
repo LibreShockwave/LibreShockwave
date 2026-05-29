@@ -45,6 +45,10 @@ public final class NetBuiltins {
             props.put("error", Datum.of("OK"));
             return Datum.propList(props);
         }
+
+        default Datum getStreamStatusDatum(String url) {
+            return getStreamStatusDatum((Integer) null);
+        }
     }
 
     // Thread-local provider for VM access
@@ -208,6 +212,10 @@ public final class NetBuiltins {
             props.put("bytesTotal", Datum.ZERO);
             props.put("error", Datum.of("OK"));
             return Datum.propList(props);
+        }
+
+        if (!args.isEmpty() && (args.get(0).isString() || args.get(0).isSymbol())) {
+            return provider.getStreamStatusDatum(args.get(0).toStr());
         }
 
         Integer taskId = args.isEmpty() ? null : args.get(0).toInt();

@@ -265,10 +265,17 @@ public class StageRenderer {
             type = RenderSprite.SpriteType.SHAPE;
         }
 
+        int foreColor = state.hasForeColor()
+                ? state.getForeColor()
+                : resolveScoreColor(data.resolvedForeColor(), data.isForeColorRGB());
+        int backColor = state.hasBackColor()
+                ? state.getBackColor()
+                : resolveScoreColor(data.resolvedBackColor(), data.isBackColorRGB());
+
         return new RenderSprite(
             channel, x, y, width, height, locZ, visible, type, member, null,
-            state.hasForeColor() ? state.getForeColor() : data.resolvedForeColor(),
-            state.hasBackColor() ? state.getBackColor() : data.resolvedBackColor(),
+            foreColor,
+            backColor,
             state.hasForeColor(), state.hasBackColor(),
             state.getInk(), state.getBlend(),
             state.isFlipH(), state.isFlipV(), null,
@@ -523,9 +530,8 @@ public class StageRenderer {
      * If the color is already RGB (colorFlag set), return it directly.
      * Otherwise, treat it as a Director color number and look up through the default palette.
      *
-     * Director's score foreColor/backColor bytes use inverted palette indexing:
-     * foreColor 0 = black (palette index 255), foreColor 255 = white (palette index 0).
-     * This is the standard Director color model for D5+ movies.
+     * Director score color bytes are palette color numbers. In the default
+     * Director palette used by Habbo v1, color number 255 resolves to black.
      */
     private int resolveScoreColor(int color, boolean isRGB) {
         if (isRGB) {
@@ -535,8 +541,7 @@ public class StageRenderer {
         if (color >= 0 && color <= 255 && file != null) {
             Palette palette = file.resolvePalette(-1); // Default palette
             if (palette != null) {
-                int paletteIndex = 255 - color;
-                return palette.getColor(paletteIndex);
+                return palette.getColor(color);
             }
         }
         return color;

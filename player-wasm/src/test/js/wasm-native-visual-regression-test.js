@@ -9,10 +9,24 @@ const distPath = process.argv[2] || path.resolve(__dirname, '../../../build/dist
 const outputDir = process.argv[3] || path.resolve(process.cwd(), 'frames_native_visual');
 const referenceDir = process.env.LS_NATIVE_REFERENCE_DIR || '/opt/git/v14_v31_compare';
 const v14Root = process.env.LS_V14_HTDOCS_ROOT || '/opt/git/Kepler-www';
-const cases = (process.env.LS_NATIVE_VISUAL_CASES || 'v14,v31')
+const cases = (process.env.LS_NATIVE_VISUAL_CASES || 'v1,v14,v31')
     .split(',')
     .map(value => value.trim().toLowerCase())
     .filter(Boolean);
+
+const V1 = {
+    name: 'v1',
+    width: 719,
+    height: 540,
+    nativePath: path.join(referenceDir, 'v1_native.png'),
+    movieUrl: 'http://192.168.122.1/dcr0910/loader.dcr',
+    params: {},
+    waitText: "Haven't got a Habbo yet?",
+    maxPolls: Number(process.env.LS_V1_NATIVE_MAX_POLLS || 360),
+    pollMs: 250,
+    maxMeanDelta: Number(process.env.LS_V1_NATIVE_MAX_MEAN_DELTA || 38),
+    maxBadFraction: Number(process.env.LS_V1_NATIVE_MAX_BAD_FRACTION || 0.28),
+};
 
 const V14 = {
     name: 'v14',
@@ -124,6 +138,9 @@ function createServer() {
     return new Promise(resolve => {
         const server = http.createServer((req, res) => {
             const urlPath = decodeURIComponent(req.url.split('?')[0]);
+            if (urlPath.startsWith('/__native_proxy/')) {
+                return proxyHttpFixture(req, res);
+            }
             const candidates = [
                 path.join(distPath, urlPath),
                 path.join(referenceDir, path.basename(urlPath)),
@@ -140,6 +157,29 @@ function createServer() {
             res.end('Not found: ' + urlPath);
         });
         server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+    });
+}
+
+function proxyHttpFixture(req, res) {
+    const targetUrl = 'http://' + req.url.substring('/__native_proxy/'.length);
+    http.get(targetUrl, proxyRes => {
+        const chunks = [];
+        proxyRes.on('data', chunk => chunks.push(chunk));
+        proxyRes.on('end', () => {
+            const body = Buffer.concat(chunks);
+            res.writeHead(proxyRes.statusCode || 502, {
+                'Content-Type': proxyRes.headers['content-type'] || 'application/octet-stream',
+                'Content-Length': body.length,
+                'Access-Control-Allow-Origin': '*',
+            });
+            res.end(body);
+        });
+    }).on('error', err => {
+        res.writeHead(502, {
+            'Content-Type': 'text/plain',
+            'Access-Control-Allow-Origin': '*',
+        });
+        res.end(`Could not proxy ${targetUrl}: ${err.message}`);
     });
 }
 
@@ -165,6 +205,7 @@ async function loadBrowser() {
 function assertLoaderMarkdownMatches() {
     const loaderPath = path.join(referenceDir, 'loader.md');
     const text = fs.readFileSync(loaderPath, 'utf8');
+    const v1MovieUrl = extract(text, /v1_native\.png output below\s*(https?:\/\/\S+)/, 'v1 movie URL');
     const v14Section = extract(text, /v14_native\.png output below([\s\S]*)$/m, 'v14 loader section');
     const v14Size = extract(v14Section, /id="habbo" width="(\d+)" height="(\d+)"/i, 'v14 object size', 0);
     const v14Width = Number(extract(v14Size, /width="(\d+)"/i, 'v14 width'));
@@ -180,6 +221,7 @@ function assertLoaderMarkdownMatches() {
     const v31MovieUrl = extract(text, /var betaClientMovieUrl = "([^"]+)";/, 'v31 movie URL');
     const v31Params = JSON.parse(extract(text, /var betaClientParams = (\{[^\n]+\});/, 'v31 params JSON'));
 
+    assertEqual('v1 movie URL', V1.movieUrl, v1MovieUrl);
     assertEqual('v14 width', V14.width, v14Width);
     assertEqual('v14 height', V14.height, v14Height);
     assertEqual('v14 movie URL', V14.movieUrl, v14MovieUrl);
@@ -221,6 +263,7 @@ function assertFiles() {
     for (const filePath of [
         path.join(distPath, 'shockwave-lib.js'),
         path.join(distPath, 'shockwave-worker.js'),
+        V1.nativePath,
         V14.nativePath,
         V31.nativePath,
         path.join(v14Root, 'dcr/14.1_b8/habbo.dcr'),
@@ -236,7 +279,7 @@ function jsString(value) {
 }
 
 function legacyFetchRewriteScript(baseUrl, fixture) {
-    if (fixture.name !== 'v14') {
+    if (fixture.name !== 'v1' && fixture.name !== 'v14') {
         return '';
     }
     return `<script>
@@ -246,7 +289,7 @@ function legacyFetchRewriteScript(baseUrl, fixture) {
     window.fetch = function(input, init) {
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         if (url.indexOf('http://192.168.122.1/') === 0) {
-            var rewritten = baseUrl + '/' + url.substring('http://192.168.122.1/'.length);
+            var rewritten = ${fixture.name === 'v1' ? "baseUrl + '/__native_proxy/' + url.substring('http://'.length)" : "baseUrl + '/' + url.substring('http://192.168.122.1/'.length)"};
             return originalFetch(rewritten, init);
         }
         return originalFetch(input, init);
@@ -350,6 +393,114 @@ function v14LoginEvidenceReady(evidence) {
         && evidence.firstTextBlack >= 650
         && evidence.loginPanelWhite >= 25000
         && evidence.loginPanelBlue >= 12000;
+}
+
+function v1LoginEvidenceReady(evidence) {
+    return !!evidence
+        && evidence.topLogoNonBlack >= 1500
+        && evidence.heroNonBlack >= 20000
+        && evidence.firstPanelWhite >= 2000
+        && evidence.firstPanelBlue >= 2000
+        && evidence.firstPanelBlack >= 500
+        && evidence.loginPanelWhite >= 11000
+        && evidence.loginPanelBlue >= 12000;
+}
+
+async function waitForV1Login(page) {
+    let lastState = null;
+    let lastEvidence = null;
+    let lastBootstrapDiagnostics = '';
+    for (let i = 0; i < V1.maxPolls; i++) {
+        await new Promise(resolve => setTimeout(resolve, V1.pollMs));
+        const result = await page.evaluate(async expectedText => {
+            const canvas = document.getElementById('beta-client-stage');
+            const ctx = canvas.getContext('2d');
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let nonBlack = 0;
+            const buckets = new Set();
+            for (let p = 0; p < data.length; p += 80) {
+                const r = data[p], g = data[p + 1], b = data[p + 2];
+                if (r > 10 || g > 10 || b > 10) nonBlack++;
+                buckets.add((r >> 5) + ',' + (g >> 5) + ',' + (b >> 5));
+            }
+            function countRegion(x, y, w, h) {
+                const region = ctx.getImageData(x, y, w, h).data;
+                let black = 0;
+                let white = 0;
+                let blue = 0;
+                let nonBlackRegion = 0;
+                for (let p = 0; p < region.length; p += 4) {
+                    const r = region[p], g = region[p + 1], b = region[p + 2];
+                    if (r < 35 && g < 35 && b < 35) black++;
+                    if (r > 235 && g > 235 && b > 235) white++;
+                    if (r > 60 && r < 160 && g > 100 && g < 190 && b > 130 && b < 215) blue++;
+                    if (r > 10 || g > 10 || b > 10) nonBlackRegion++;
+                }
+                return { black, white, blue, nonBlack: nonBlackRegion };
+            }
+            const diagnostics = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
+                ? await window.betaClientPlayer.getVisibleTextDiagnostics()
+                : '';
+            const topLogo = countRegion(18, 18, 230, 120);
+            const hero = countRegion(0, 100, 360, 350);
+            const firstPanel = countRegion(437, 109, 214, 95);
+            const loginPanel = countRegion(437, 225, 214, 220);
+            const footer = countRegion(8, 500, 220, 25);
+            return {
+                state: {
+                    loaded: window._testState.loaded,
+                    error: window._testState.error,
+                    tick: window._testState.tick,
+                    frame: window._testState.frame,
+                    spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+                    nonBlack,
+                    colorBuckets: buckets.size,
+                    hasExpectedText: diagnostics.indexOf(expectedText) >= 0,
+                    gotoNetPages: window._testState.gotoNetPages.slice(),
+                    debugLogs: window._testState.debugLogs.slice(-80),
+                },
+                evidence: {
+                    topLogoNonBlack: topLogo.nonBlack,
+                    heroNonBlack: hero.nonBlack,
+                    firstPanelWhite: firstPanel.white,
+                    firstPanelBlue: firstPanel.blue,
+                    firstPanelBlack: firstPanel.black,
+                    loginPanelWhite: loginPanel.white,
+                    loginPanelBlue: loginPanel.blue,
+                    footerWhite: footer.white,
+                },
+                diagnostics,
+            };
+        }, V1.waitText);
+        lastState = result.state;
+        lastEvidence = result.evidence;
+        if (i % 40 === 0) {
+            lastBootstrapDiagnostics = await page.evaluate(async () => {
+                return window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
+                    ? await window.betaClientPlayer.getBootstrapDiagnostics()
+                    : '';
+            });
+        }
+        if (i % 20 === 0) {
+            console.log(`  v1 poll=${i} loaded=${lastState.loaded} tick=${lastState.tick} frame=${lastState.frame} ` +
+                `sprites=${lastState.spriteCount} evidence=${JSON.stringify(lastEvidence)}`);
+        }
+        if (lastState.error) break;
+        if (lastState.loaded && v1LoginEvidenceReady(lastEvidence) &&
+                lastState.nonBlack > 2000 && lastState.colorBuckets > 30) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return { state: lastState, evidence: lastEvidence };
+        }
+    }
+    lastBootstrapDiagnostics = await page.evaluate(async () => {
+        return window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
+            ? await window.betaClientPlayer.getBootstrapDiagnostics()
+            : '';
+    });
+    throw new Error('v1 login screen was not visible before timeout. Last state: ' +
+        JSON.stringify(lastState) + ' evidence=' + JSON.stringify(lastEvidence) +
+        '\nBootstrap diagnostics:\n' + lastBootstrapDiagnostics +
+        '\nDebug logs:\n' + ((lastState && lastState.debugLogs) || []).join('\n'));
 }
 
 async function waitForV14Login(page) {
@@ -664,7 +815,7 @@ async function runCase(browserHandle, baseUrl, fixture) {
     });
     page.on('response', response => {
         const url = response.url();
-        if (/shockwave|player-wasm|habbo\.dcr|external_/i.test(url)) {
+        if (/shockwave|player-wasm|__native_proxy|\.dcr|\.cst|\.cct|\.gif|\.jpe?g|\.png|external_/i.test(url)) {
             const line = `${response.status()} ${url}`;
             requestEvents.push('response ' + line);
             console.log('  [response] ' + line);
@@ -677,9 +828,11 @@ async function runCase(browserHandle, baseUrl, fixture) {
             await installV14RequestMap(page);
         }
         await page.evaluate(() => window.startNativeVisualCase());
-        const waitResult = fixture.name === 'v14'
-            ? await waitForV14Login(page)
-            : await waitForV31Navigator(page);
+        const waitResult = fixture.name === 'v1'
+            ? await waitForV1Login(page)
+            : fixture.name === 'v14'
+                ? await waitForV14Login(page)
+                : await waitForV31Navigator(page);
         const comparison = await captureAndCompare(page, fixture, baseUrl, `${fixture.name}_wasm_native_compare`);
         console.log(`  state=${JSON.stringify(compactState(waitResult.state))}`);
         if (waitResult.evidence) {
@@ -725,7 +878,9 @@ async function main() {
         const loaded = await loadBrowser();
         browser = loaded.browser;
         for (const name of cases) {
-            if (name === 'v14') {
+            if (name === 'v1') {
+                await runCase(loaded, baseUrl, V1);
+            } else if (name === 'v14') {
                 await runCase(loaded, baseUrl, V14);
             } else if (name === 'v31') {
                 await runCase(loaded, baseUrl, V31);

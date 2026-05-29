@@ -475,13 +475,9 @@ public class SpriteBaker {
         var renderer = CastMember.getTextRendererStatic();
         if (renderer == null) return null;
 
-        // Text color: prefer STXT run color, fall back to palette-resolved sprite foreColor
-        int textColor;
-        if (runColorR >= 0) {
-            textColor = 0xFF000000 | (runColorR << 16) | (runColorG << 8) | runColorB;
-        } else {
-            textColor = resolvePaletteColor(sprite.getForeColor());
-        }
+        // Score-placed text uses the sprite foreground color. Member run colors
+        // are defaults; the score channel can recolor the same text member.
+        int textColor = resolvePaletteColor(sprite.getForeColor());
         // Use transparent background for BACKGROUND_TRANSPARENT ink
         int bgColor = (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT)
                 ? 0x00000000
@@ -514,13 +510,8 @@ public class SpriteBaker {
         int width = styledText.width() > 0 ? styledText.width() : (sprite.getWidth() > 0 ? sprite.getWidth() : 200);
         int height = styledText.height() > 0 ? styledText.height() : (sprite.getHeight() > 0 ? sprite.getHeight() : 20);
 
-        // ARGB format — text color from XMED data if available, fall back to palette-resolved foreColor
-        int textColor;
-        if (styledText.colorR() >= 0) {
-            textColor = styledText.textColorARGB();
-        } else {
-            textColor = resolvePaletteColor(sprite.getForeColor());
-        }
+        // Score-placed XMED text also uses the sprite foreground color.
+        int textColor = resolvePaletteColor(sprite.getForeColor());
         // Use transparent background for BACKGROUND_TRANSPARENT ink so the text
         // can be composited directly without ink processing removing the text pixels.
         int bgColor = (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT)
@@ -535,24 +526,10 @@ public class SpriteBaker {
     }
 
     /**
-     * Resolve a score color value (palette index 0-255) to packed ARGB for text rendering.
-     * Values > 255 are already RGB (from script-set colors).
-     * Values 0-255 are palette indices looked up through the default palette.
+     * RenderSprite colors are resolved to packed RGB before baking.
      */
     private int resolvePaletteColor(int color) {
-        if (color > 255) {
-            // Already packed RGB (script-set)
-            return 0xFF000000 | (color & 0xFFFFFF);
-        }
-        // Palette index lookup
-        Palette palette = player != null && player.getFile() != null
-                ? player.getFile().resolvePalette(-1) : null;
-        if (palette != null) {
-            return 0xFF000000 | (palette.getColor(color) & 0xFFFFFF);
-        }
-        // Fallback: Director grayscale ramp (0=white, 255=black)
-        int gray = 255 - color;
-        return 0xFF000000 | (gray << 16) | (gray << 8) | gray;
+        return 0xFF000000 | (color & 0xFFFFFF);
     }
 
     /**
