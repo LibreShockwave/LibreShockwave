@@ -16,6 +16,10 @@ public final class LingoValueParser {
 
     private LingoValueParser() {}
 
+    public static Datum parseLiteral(String expr) {
+        return parseWithPartial(expr, null);
+    }
+
     public static Datum parseWithPartial(String expr, LingoVM vm) {
         if (expr == null) {
             return Datum.VOID;
@@ -138,13 +142,15 @@ public final class LingoValueParser {
             if (expr.equalsIgnoreCase("VOID")) return Datum.VOID;
             if (expr.equalsIgnoreCase("EMPTY")) return Datum.of("");
 
-            Datum globalValue = vm.getGlobal(expr);
-            if (!globalValue.isVoid()) {
-                return globalValue;
-            }
-            HandlerRef ref = vm.findHandler(expr);
-            if (ref != null) {
-                return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
+            if (vm != null) {
+                Datum globalValue = vm.getGlobal(expr);
+                if (!globalValue.isVoid()) {
+                    return globalValue;
+                }
+                HandlerRef ref = vm.findHandler(expr);
+                if (ref != null) {
+                    return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
+                }
             }
             return Datum.VOID;
         }
@@ -255,13 +261,15 @@ public final class LingoValueParser {
             if (identifier.equalsIgnoreCase("VOID")) return Datum.VOID;
             if (identifier.equalsIgnoreCase("EMPTY")) return Datum.of("");
 
-            Datum globalValue = vm.getGlobal(identifier);
-            if (!globalValue.isVoid()) {
-                return globalValue;
-            }
-            HandlerRef ref = vm.findHandler(identifier);
-            if (ref != null) {
-                return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
+            if (vm != null) {
+                Datum globalValue = vm.getGlobal(identifier);
+                if (!globalValue.isVoid()) {
+                    return globalValue;
+                }
+                HandlerRef ref = vm.findHandler(identifier);
+                if (ref != null) {
+                    return vm.executeHandler(ref.script(), ref.handler(), List.of(), null);
+                }
             }
             return Datum.VOID;
         }
