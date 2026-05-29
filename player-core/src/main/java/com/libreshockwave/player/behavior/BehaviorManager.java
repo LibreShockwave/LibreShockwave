@@ -210,7 +210,7 @@ public class BehaviorManager {
             if (debugEnabled) {
                 System.out.println("[BehaviorManager] Looking for script id=" + scriptId + " (member name: " + member.name() + ")");
             }
-            ScriptChunk script = file.getScriptByContextId(scriptId);
+            ScriptChunk script = selectBehaviorScript(file.getScriptsByContextId(scriptId));
             if (script != null) {
                 if (debugEnabled) {
                     System.out.println("[BehaviorManager] Found script \"" + member.name() + "\" #" + script.id() + " type=" + script.getScriptType());
@@ -237,6 +237,50 @@ public class BehaviorManager {
             System.err.println("[BehaviorManager] No script found for castLib=" + castLibNum + " member=" + castMember);
         }
         return null;
+    }
+
+    private ScriptChunk selectBehaviorScript(List<ScriptChunk> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        if (usesLegacyDuplicateScriptContexts()) {
+            for (ScriptChunk script : candidates) {
+                if (hasBehaviorLifecycleHandler(script)) {
+                    return script;
+                }
+            }
+        }
+        return candidates.get(0);
+    }
+
+    private boolean usesLegacyDuplicateScriptContexts() {
+        return file != null
+                && file.getConfig() != null
+                && file.getConfig().directorVersion() > 0
+                && file.getConfig().directorVersion() <= 1600;
+    }
+
+    private boolean hasBehaviorLifecycleHandler(ScriptChunk script) {
+        if (script == null || script.file() == null) {
+            return false;
+        }
+        ScriptNamesChunk names = script.file().getScriptNamesForScript(script);
+        if (names == null) {
+            return false;
+        }
+        return script.findHandler(PlayerEventName.BEGIN_SPRITE, names) != null
+                || script.findHandler(PlayerEventName.ENTER_FRAME, names) != null
+                || script.findHandler(PlayerEventName.EXIT_FRAME, names) != null
+                || script.findHandler(PlayerEventName.MOUSE_DOWN, names) != null
+                || script.findHandler(PlayerEventName.MOUSE_UP, names) != null;
+    }
+
+    private static final class PlayerEventName {
+        private static final String BEGIN_SPRITE = "beginSprite";
+        private static final String ENTER_FRAME = "enterFrame";
+        private static final String EXIT_FRAME = "exitFrame";
+        private static final String MOUSE_DOWN = "mouseDown";
+        private static final String MOUSE_UP = "mouseUp";
     }
 
     private void applyParameters(BehaviorInstance instance, ScoreBehaviorRef behaviorRef) {
