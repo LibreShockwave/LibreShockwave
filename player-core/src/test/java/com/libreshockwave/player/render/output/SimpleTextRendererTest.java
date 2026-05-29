@@ -71,31 +71,41 @@ class SimpleTextRendererTest {
     @Test
     void onePixelDefaultLeadingDoesNotExpandBitmapFontLineAdvance() {
         FontRegistry.clear();
-        SimpleTextRenderer renderer = new SimpleTextRenderer();
+        try {
+            FontRegistry.registerFontAlias("V", "Volter", false);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
 
-        Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
-                160, 0,
-                "V", 9, "plain",
-                "left", 0xFF000000, 0x00FFFFFF,
-                false, false, 9, 1);
+            Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
+                    160, 0,
+                    "V", 9, "plain",
+                    "left", 0xFF000000, 0x00FFFFFF,
+                    false, false, 9, 1);
 
-        assertEquals(19, text.getHeight(),
-                "expected one-pixel default leading to affect image height without adding interline spacing");
+            assertEquals(19, text.getHeight(),
+                    "expected one-pixel default leading to affect image height without adding interline spacing");
+        } finally {
+            FontRegistry.clear();
+        }
     }
 
     @Test
     void explicitBitmapFontLineSpacingStillExpandsLineAdvance() {
         FontRegistry.clear();
-        SimpleTextRenderer renderer = new SimpleTextRenderer();
+        try {
+            FontRegistry.registerFontAlias("V", "Volter", false);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
 
-        Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
-                160, 0,
-                "V", 9, "plain",
-                "left", 0xFF000000, 0x00FFFFFF,
-                false, false, 9, 9);
+            Bitmap text = renderer.renderText("Public Spaces\n(0/0)",
+                    160, 0,
+                    "V", 9, "plain",
+                    "left", 0xFF000000, 0x00FFFFFF,
+                    false, false, 9, 9);
 
-        assertEquals(36, text.getHeight(),
-                "expected explicit extra leading to keep the larger Director line advance");
+            assertEquals(36, text.getHeight(),
+                    "expected explicit extra leading to keep the larger Director line advance");
+        } finally {
+            FontRegistry.clear();
+        }
     }
 
     @Test
@@ -175,7 +185,7 @@ class SimpleTextRendererTest {
     }
 
     @Test
-    void directorFontAliasUsesEmbeddedVolterBoldMetrics() {
+    void directorFontAliasUsesEmbeddedBoldMetrics() {
         FontRegistry.clear();
         try {
             FontRegistry.registerFontAlias("vb", "Volter", true);
@@ -186,28 +196,33 @@ class SimpleTextRendererTest {
                     10, "left", 200);
 
             assertTrue(afterTitle[0] >= 90,
-                    "expected Director alias vb to resolve to the wider Volter bold metrics");
+                    "expected Director alias vb to resolve to the wider embedded bold metrics");
         } finally {
             FontRegistry.clear();
         }
     }
 
     @Test
-    void directorVolterShortAliasFallsBackToBundledBoldMetrics() {
+    void directorFontAliasCanResolveBundledBoldFace() {
         FontRegistry.clear();
-        SimpleTextRenderer renderer = new SimpleTextRenderer();
+        try {
+            FontRegistry.registerFontAlias("VB", "Volter", true);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
 
-        Bitmap title = renderer.renderText("Hotel Navigator", 200, 15,
-                "VB", 9, "plain",
-                "left", 0xFFEEEEEE, 0xFF6794A7,
-                false, false, 10, 0);
+            Bitmap title = renderer.renderText("Hotel Navigator", 200, 15,
+                    "VB", 9, "plain",
+                    "left", 0xFFEEEEEE, 0xFF6794A7,
+                    false, false, 10, 0);
 
-        assertEquals(284, countPixels(title, 0xFFEEEEEE),
-                "expected unregistered Director font alias VB to use bundled Volter bold");
+            assertEquals(284, countPixels(title, 0xFFEEEEEE),
+                    "expected Director font alias VB to use the bundled bold face");
+        } finally {
+            FontRegistry.clear();
+        }
     }
 
     @Test
-    void directorVolterAliasUsesDirectorSizedMetricsForWrapping() {
+    void directorFontAliasUsesDirectorSizedMetricsForWrapping() {
         FontRegistry.clear();
         try {
             FontRegistry.registerFontAlias("Volter (goldfish)", "Volter", false);
@@ -220,7 +235,7 @@ class SimpleTextRendererTest {
                     true, false, 12, 0);
 
             assertEquals(24, text.getHeight(),
-                    "expected Director Volter size 12 to fit the v1 two-line panel text");
+                    "expected Director alias size 12 to fit the v1 two-line panel text");
         } finally {
             FontRegistry.clear();
         }

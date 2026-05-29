@@ -4,7 +4,6 @@ import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.cast.XmedStyledText;
 import com.libreshockwave.font.BitmapFont;
 import com.libreshockwave.player.cast.FontRegistry;
-import com.libreshockwave.player.cast.VolterFontBundle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -343,11 +342,12 @@ public class SimpleTextRenderer implements TextRenderer {
         FontRegistry.FontAlias alias = FontRegistry.getFontAlias(fontName);
         String resolvedName = alias != null ? alias.fontName() : fontName;
         boolean resolvedBold = bold || (alias != null && alias.bold());
+        int aliasSize = directorAliasFontSize(fontSize);
 
-        BitmapFont volter = VolterFontBundle.getFont(resolvedName, fontSize, resolvedBold);
-        if (volter != null) {
-            usedRealBold[0] = resolvedBold;
-            return volter;
+        BitmapFont bundled = FontRegistry.getEmbeddedBitmapFont(resolvedName, aliasSize, resolvedBold, italic);
+        if (bundled != null) {
+            usedRealBold[0] = resolvedBold && FontRegistry.hasEmbeddedBoldVariant(resolvedName);
+            return bundled;
         }
 
         if (alias == null) {
@@ -355,8 +355,8 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         BitmapFont first = preferMacFonts
-                ? com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic)
-                : com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic);
+                ? com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, aliasSize, resolvedBold, italic)
+                : com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, aliasSize, resolvedBold, italic);
         if (first != null) {
             usedRealBold[0] = resolvedBold && (preferMacFonts
                     ? com.libreshockwave.player.cast.MacFontBundle.hasBoldVariant(resolvedName)
@@ -365,8 +365,8 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         BitmapFont second = preferMacFonts
-                ? com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic)
-                : com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, fontSize, resolvedBold, italic);
+                ? com.libreshockwave.player.cast.WindowsFontBundle.getFont(resolvedName, aliasSize, resolvedBold, italic)
+                : com.libreshockwave.player.cast.MacFontBundle.getFont(resolvedName, aliasSize, resolvedBold, italic);
         if (second != null) {
             usedRealBold[0] = resolvedBold && (preferMacFonts
                     ? com.libreshockwave.player.cast.WindowsFontBundle.hasBoldVariant(resolvedName)
@@ -374,13 +374,17 @@ public class SimpleTextRenderer implements TextRenderer {
             return second;
         }
 
-        BitmapFont registered = FontRegistry.getBitmapFont(resolvedName, fontSize);
+        BitmapFont registered = FontRegistry.getBitmapFont(resolvedName, aliasSize);
         if (registered != null) {
             return registered;
         }
 
         String resolved = FontRegistry.resolveFont(resolvedName);
-        return resolved != null ? FontRegistry.getBitmapFont(resolved, fontSize) : null;
+        return resolved != null ? FontRegistry.getBitmapFont(resolved, aliasSize) : null;
+    }
+
+    private static int directorAliasFontSize(int fontSize) {
+        return fontSize >= 11 ? fontSize - 1 : fontSize;
     }
 
     /** Backward-compatible overload without bold/italic. */
