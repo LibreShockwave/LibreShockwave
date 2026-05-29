@@ -1,6 +1,7 @@
 package com.libreshockwave.player.render.pipeline;
 
 import com.libreshockwave.DirectorFile;
+import com.libreshockwave.chunks.ConfigChunk;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.format.ChunkType;
@@ -9,6 +10,7 @@ import com.libreshockwave.player.sprite.SpriteState;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -57,6 +59,26 @@ class StageRendererRegPointFlipTest {
         assertTrue((boolean) method.invoke(renderer, state));
     }
 
+    @Test
+    void legacyDirectorMoviesRoundStretchedBitmapRegistrationScale() throws Exception {
+        StageRenderer renderer = new StageRenderer(newDirectorFileWithVersion(1600));
+        CastMemberChunk member = bitmapMember(rendererFile(renderer), bitmapSpecificData(214, 2, 0, 1));
+
+        Object scaled = invokeScaledRegPoint(renderer, member, 214, 67, false, false);
+
+        assertEquals(34, regY(scaled));
+    }
+
+    @Test
+    void modernDirectorMoviesTruncateStretchedBitmapRegistrationScale() throws Exception {
+        StageRenderer renderer = new StageRenderer(newDirectorFileWithVersion(1858));
+        CastMemberChunk member = bitmapMember(rendererFile(renderer), bitmapSpecificData(214, 2, 0, 1));
+
+        Object scaled = invokeScaledRegPoint(renderer, member, 214, 67, false, false);
+
+        assertEquals(33, regY(scaled));
+    }
+
     private static Object invokeScaledRegPoint(StageRenderer renderer, CastMemberChunk member,
                                                int width, int height,
                                                boolean flipH, boolean flipV) throws Exception {
@@ -87,15 +109,19 @@ class StageRendererRegPointFlipTest {
     }
 
     private static byte[] bitmapSpecificData() {
+        return bitmapSpecificData(20, 40, 6, 5);
+    }
+
+    private static byte[] bitmapSpecificData(int width, int height, int regX, int regY) {
         ByteBuffer buffer = ByteBuffer.allocate(28).order(ByteOrder.BIG_ENDIAN);
         buffer.putShort((short) 0x8001); // rawPitch with color flag
         buffer.putShort((short) 0);      // top
         buffer.putShort((short) 0);      // left
-        buffer.putShort((short) 40);     // bottom
-        buffer.putShort((short) 20);     // right
+        buffer.putShort((short) height); // bottom
+        buffer.putShort((short) width);  // right
         buffer.putLong(0L);              // skipped D6+ fields
-        buffer.putShort((short) 5);      // regY
-        buffer.putShort((short) 6);      // regX
+        buffer.putShort((short) regY);   // regY
+        buffer.putShort((short) regX);   // regX
         buffer.put((byte) 0);            // updateFlags
         buffer.put((byte) 8);            // bitsPerPixel
         buffer.putShort((short) 0);      // paletteCastLib
@@ -103,10 +129,43 @@ class StageRendererRegPointFlipTest {
         return buffer.array();
     }
 
+    private static CastMemberChunk bitmapMember(DirectorFile file, byte[] specificData) {
+        return new CastMemberChunk(
+                file,
+                new ChunkId(77),
+                MemberType.BITMAP,
+                0,
+                specificData.length,
+                new byte[0],
+                specificData,
+                "window_middle",
+                0,
+                0,
+                1
+        );
+    }
+
     private static DirectorFile newEmptyDirectorFile() throws Exception {
         Constructor<DirectorFile> ctor = DirectorFile.class.getDeclaredConstructor(
                 ByteOrder.class, boolean.class, int.class, ChunkType.class);
         ctor.setAccessible(true);
         return ctor.newInstance(ByteOrder.BIG_ENDIAN, false, 0, ChunkType.RIFX);
+    }
+
+    private static DirectorFile newDirectorFileWithVersion(int directorVersion) throws Exception {
+        DirectorFile file = newEmptyDirectorFile();
+        ConfigChunk config = new ConfigChunk(file, new ChunkId(1), directorVersion,
+                0, 0, 540, 720, 1, 1, 12, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, (short) 0);
+        Field configField = DirectorFile.class.getDeclaredField("config");
+        configField.setAccessible(true);
+        configField.set(file, config);
+        return file;
+    }
+
+    private static DirectorFile rendererFile(StageRenderer renderer) throws Exception {
+        Field fileField = StageRenderer.class.getDeclaredField("file");
+        fileField.setAccessible(true);
+        return (DirectorFile) fileField.get(renderer);
     }
 }
