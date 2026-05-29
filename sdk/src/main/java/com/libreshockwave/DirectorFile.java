@@ -166,6 +166,10 @@ public class DirectorFile {
         return getCastMemberLookup().getByNumber(castLib, memberNumber);
     }
 
+    public CastChunk getMappedCastChunk(int castLib) {
+        return getCastMemberLookup().getMappedCast(castLib);
+    }
+
     /**
      * Get a script by its context ID (the scriptId stored in cast members).
      * This uses the ScriptContextChunk (Lctx) to map scriptId to chunk ID.
