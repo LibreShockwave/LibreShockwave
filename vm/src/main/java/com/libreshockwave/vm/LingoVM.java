@@ -41,6 +41,8 @@ public class LingoVM {
     private final Map<String, Datum> symbolDatumCache = new HashMap<>();
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
     private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
+    private Random random = new Random();
+    private int randomSeed = 0;
     private boolean flushingDeferredScriptInstanceCalls = false;
     private boolean flushingDeferredTasks = false;
     private static final ThreadLocal<LingoVM> CURRENT_VM = new ThreadLocal<>();
@@ -112,6 +114,22 @@ public class LingoVM {
         this.consolePrinter = new ConsoleTracePrinter();
         this.cachedBuiltinInvoker = (name, args) -> builtins.invoke(name, this, args);
         registerPassBuiltin();
+    }
+
+    public int randomInt(int max) {
+        if (max <= 0) {
+            return 1;
+        }
+        return random.nextInt(max) + 1;
+    }
+
+    public int getRandomSeed() {
+        return randomSeed;
+    }
+
+    public void setRandomSeed(int seed) {
+        this.randomSeed = seed;
+        this.random = new Random(seed);
     }
 
     private record DeferredScriptInstanceCall(Datum.ScriptInstance instance, String methodName, List<Datum> args) {}
