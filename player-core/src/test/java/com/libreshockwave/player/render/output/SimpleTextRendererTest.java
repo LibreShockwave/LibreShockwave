@@ -4,6 +4,9 @@ import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.player.cast.FontRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -123,6 +126,31 @@ class SimpleTextRendererTest {
 
             assertEquals(3, findFirstNonBackgroundRow(text, 0xFF000000),
                     "expected explicit two-pixel topSpacing to reserve Director leading above glyph ink");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
+    @Test
+    void registeredPfrVariantTakesPrecedenceOverBundledDirectorFallback() throws Exception {
+        Path v1BoldVolter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03731_Volter-Bold_GoldFish__3968_XMED.bin");
+        if (!Files.isRegularFile(v1BoldVolter)) {
+            return;
+        }
+
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerPfr1Font("Volter-Bold (GoldFish)", Files.readAllBytes(v1BoldVolter));
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            Bitmap text = renderer.renderLegacyStxtText("Copyright Habbo Ltd 2001",
+                    170, 54,
+                    "Volter", 9, "bold",
+                    "left", 0xFFFFFFFF, 0xFF000000,
+                    true, false, 9, 2);
+
+            assertEquals(153, findLastNonBackgroundColumn(text, 0xFF000000),
+                    "expected legacy Volter bold text to use the wider movie-registered PFR metrics");
         } finally {
             FontRegistry.clear();
         }
@@ -302,6 +330,17 @@ class SimpleTextRendererTest {
 
     private static int findFirstNonBackgroundColumn(Bitmap bitmap, int bgColor) {
         for (int x = 0; x < bitmap.getWidth(); x++) {
+            for (int y = 0; y < bitmap.getHeight(); y++) {
+                if (bitmap.getPixel(x, y) != bgColor) {
+                    return x;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findLastNonBackgroundColumn(Bitmap bitmap, int bgColor) {
+        for (int x = bitmap.getWidth() - 1; x >= 0; x--) {
             for (int y = 0; y < bitmap.getHeight(); y++) {
                 if (bitmap.getPixel(x, y) != bgColor) {
                     return x;
