@@ -70,8 +70,16 @@ public class CastLibManager implements CastLibProvider {
                 // Cast lib number is 1-based index
                 int castLibNumber = i + 1;
 
-                // Get the corresponding CastChunk if available
-                CastChunk castChunk = (i < casts.size()) ? casts.get(i) : null;
+                boolean isExternal = listEntry.path() != null && !listEntry.path().isEmpty();
+
+                // Internal cast entries in older Afterburner movies can have
+                // non-positional CASp chunks. Score lookup already maps those
+                // by MCsL member count; use that mapping for internal cast
+                // libraries so broad member("name") lookup sees the same
+                // namespace as score sprites.
+                CastChunk castChunk = !isExternal
+                        ? file.getMappedCastChunk(castLibNumber)
+                        : (i < casts.size() ? casts.get(i) : null);
 
                 CastLib castLib = new CastLib(castLibNumber, castChunk, listEntry);
 
@@ -82,7 +90,6 @@ public class CastLibManager implements CastLibProvider {
                 castLib.setBasePath(basePath);
 
                 // For internal casts (no external fileName), set the source file directly
-                boolean isExternal = listEntry.path() != null && !listEntry.path().isEmpty();
                 if (!isExternal) {
                     castLib.setSourceFile(file);
                 }

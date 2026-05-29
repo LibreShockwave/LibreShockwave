@@ -1,10 +1,13 @@
 package com.libreshockwave.player.cast;
 
+import com.libreshockwave.DirectorFile;
 import com.libreshockwave.chunks.CastListChunk;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -241,6 +244,24 @@ class CastLibManagerExternalLoadTest {
         Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
         assertEquals(36, ref.castLibNum());
         assertEquals(stableMember.getMemberNumber(), ref.memberNum());
+    }
+
+    @Test
+    void internalCastLookupUsesMappedCaspForNonPositionalCastLibraries() throws Exception {
+        Path v1Movie = Path.of("/opt/git/v1_assets/projectorrays_lingo/habbo_entry/habbo_entry.dir");
+        if (!Files.isRegularFile(v1Movie)) {
+            return;
+        }
+
+        DirectorFile file = DirectorFile.load(v1Movie);
+        CastLibManager manager = new CastLibManager(file, (castLibNumber, fileName) -> {});
+
+        Datum found = manager.getMemberByName(0, "car1");
+
+        assertTrue(found instanceof Datum.CastMemberRef);
+        Datum.CastMemberRef ref = (Datum.CastMemberRef) found;
+        assertEquals(11, ref.castLibNum());
+        assertEquals(41, ref.memberNum());
     }
 
     private static final class RecordingCastLibManager extends CastLibManager {

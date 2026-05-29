@@ -33,6 +33,10 @@ public final class CastMemberLookup {
         this.castLibToCASp = buildCastLibMapping();
     }
 
+    public CastChunk getMappedCast(int castLib) {
+        return castLibToCASp.get(castLib);
+    }
+
     /**
      * Build mapping from castLib number to CASp chunk.
      * CASp chunks in Afterburner files may not be ordered by cast library.
