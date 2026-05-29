@@ -535,7 +535,7 @@ public class StageRenderer {
      */
     private int resolveScoreColor(int color, boolean isRGB) {
         if (isRGB) {
-            return color;
+            return usesRgb555ScoreColors() ? expandScoreRgb555(color) : color;
         }
         // Director color number → palette index (inverted mapping)
         if (color >= 0 && color <= 255 && file != null) {
@@ -545,6 +545,26 @@ public class StageRenderer {
             }
         }
         return color;
+    }
+
+    private boolean usesRgb555ScoreColors() {
+        // Older Shockwave-era movies render score RGB colors through a 15-bit
+        // display path; newer Habbo clients match their authored 24-bit values.
+        return file != null
+                && file.getConfig() != null
+                && file.getConfig().directorVersion() <= 1600;
+    }
+
+    static int expandScoreRgb555(int color) {
+        int r = expand5Bit((color >> 16) & 0xFF);
+        int g = expand5Bit((color >> 8) & 0xFF);
+        int b = expand5Bit(color & 0xFF);
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private static int expand5Bit(int value) {
+        int fiveBit = value >> 3;
+        return (fiveBit << 3) | (fiveBit >> 2);
     }
 
     public void reset() {
