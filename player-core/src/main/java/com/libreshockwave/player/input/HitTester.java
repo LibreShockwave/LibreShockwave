@@ -83,7 +83,7 @@ public final class HitTester {
             int bottom = top + sprite.getHeight();
 
             if (stageX >= left && stageX < right && stageY >= top && stageY < bottom
-                    && hitTestSpritePixel(sprite, stageX, stageY)) {
+                    && (filter.test(sprite.getChannel()) || hitTestSpritePixel(sprite, stageX, stageY))) {
                 result.add(sprite.getChannel());
             }
         }
@@ -113,7 +113,7 @@ public final class HitTester {
             int bottom = top + sprite.getHeight();
 
             if (stageX >= left && stageX < right && stageY >= top && stageY < bottom
-                    && hitTestSpritePixel(sprite, stageX, stageY)) {
+                    && (forceBoundingBox.test(sprite.getChannel()) || hitTestSpritePixel(sprite, stageX, stageY))) {
                 return sprite;
             }
         }
