@@ -55,6 +55,15 @@ class XmedTextParserTest {
     }
 
     @Test
+    void referencedStyleRunSelectsConcreteFontSize() {
+        byte[] xmed = xmedWithReferencedStyleSize();
+
+        XmedStyledText styled = XmedTextParser.parseStyled(xmed, textXtraSpecificData(120, 20));
+
+        assertEquals(9, styled.fontSize());
+    }
+
+    @Test
     void wideFontSizeTiesKeepFirstCommonSize() {
         byte[] xmed = xmedWithFontSizes("C0000", "C0000", "90000", "90000");
 
@@ -118,6 +127,38 @@ class XmedTextParserTest {
         writeAscii(out, "0006");
         writeAscii(out, "%08X".formatted(body.size()));
         writeAscii(out, "%08X".formatted(sizes.length));
+        out.writeBytes(body.toByteArray());
+        out.write(3);
+        return out.toByteArray();
+    }
+
+    private static byte[] xmedWithReferencedStyleSize() {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        for (String size : new String[]{"C0000", "C0000", "A0000", "A0000", "90000"}) {
+            body.write(2);
+            writeAscii(body, size);
+            body.write(2);
+            writeAscii(body, "0");
+        }
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeAscii(out, "0002");
+        out.write(0);
+        writeAscii(out, "12,Name of your Habbo");
+        out.write(3);
+        writeAscii(out, "00040000000A00000002");
+        out.write(2);
+        writeAscii(out, "0");
+        out.write(1);
+        writeAscii(out, "4");
+        out.write(2);
+        writeAscii(out, "12");
+        out.write(1);
+        writeAscii(out, "4");
+        out.write(3);
+        writeAscii(out, "0006");
+        writeAscii(out, "%08X".formatted(body.size()));
+        writeAscii(out, "%08X".formatted(5));
         out.writeBytes(body.toByteArray());
         out.write(3);
         return out.toByteArray();

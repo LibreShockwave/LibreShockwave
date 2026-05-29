@@ -51,7 +51,8 @@ public class XmedTextParser {
 
         String text = extractText(xmedData, ascii);
         String fontName = extractFont(xmedData, ascii);
-        int[] fontSizeAndStyle = extractFontSizeAndStyle(xmedData, ascii);
+        int[] fontSizeAndStyle = extractFontSizeAndStyle(xmedData, ascii,
+                text != null ? text.length() : 0);
         int[] color = extractColor(xmedData, ascii);
         String alignment = extractAlignment(xmedData, ascii);
 
@@ -203,7 +204,8 @@ public class XmedTextParser {
 
         String text = extractText(data, ascii);
         String fontName = extractFont(data, ascii);
-        int[] fontSizeAndStyle = extractFontSizeAndStyle(data, ascii);
+        int[] fontSizeAndStyle = extractFontSizeAndStyle(data, ascii,
+                text != null ? text.length() : 0);
         int[] color = extractColor(data, ascii);
         String alignment = extractAlignment(data, ascii);
 
@@ -419,7 +421,7 @@ public class XmedTextParser {
      *
      * @return int[]{fontSize, fontStyle}
      */
-    private static int[] extractFontSizeAndStyle(byte[] data, String ascii) {
+    private static int[] extractFontSizeAndStyle(byte[] data, String ascii, int textLen) {
         // Find section 0006 — search after [03] delimiter
         int idx0006 = findSection(data, "0006");
         if (idx0006 < 0) return new int[]{9, 0};
@@ -428,6 +430,12 @@ public class XmedTextParser {
         int secStart = idx0006 + 20;
         int secLen = parseSectionLength(ascii, idx0006);
         int secEnd = secLen > 0 ? Math.min(secStart + secLen, data.length) : data.length;
+
+        java.util.List<Integer> styleRecordSizes = extractStyleRecordFontSizes(data, secStart, secEnd);
+        int referencedSize = chooseReferencedStyleFontSize(data, ascii, textLen, styleRecordSizes);
+        if (referencedSize > 0) {
+            return new int[]{referencedSize, 0};
+        }
 
         // Extract font sizes from [02]<hexSize>"0000"[02] pattern within section 0006
         // Each run has a font size encoded as fixed-point: "C0000" = 12.0pt, "90000" = 9.0pt
@@ -479,6 +487,73 @@ public class XmedTextParser {
         }
 
         return new int[]{fontSize, fontStyle};
+    }
+
+    private static java.util.List<Integer> extractStyleRecordFontSizes(byte[] data, int secStart, int secEnd) {
+        java.util.ArrayList<Integer> sizes = new java.util.ArrayList<>();
+        for (int i = secStart; i < secEnd - 6; i++) {
+            if (data[i] != 0x02) {
+                continue;
+            }
+            StringBuilder hexStr = new StringBuilder();
+            int j = i + 1;
+            while (j < secEnd && isHexDigit(data[j] & 0xFF)) {
+                hexStr.append((char) data[j]);
+                j++;
+            }
+            String hex = hexStr.toString();
+            if (hex.length() >= 5 && hex.endsWith("0000") && j < secEnd && data[j] == 0x02) {
+                try {
+                    int size = Integer.parseInt(hex.substring(0, hex.length() - 4), 16);
+                    if (size >= 6 && size <= 200) {
+                        sizes.add(size);
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignore malformed style entries.
+                }
+            }
+        }
+        return sizes;
+    }
+
+    private static int chooseReferencedStyleFontSize(byte[] data, String ascii, int textLen,
+                                                     java.util.List<Integer> styleRecordSizes) {
+        if (styleRecordSizes.isEmpty() || textLen <= 0) {
+            return -1;
+        }
+
+        List<StyleRun> runs = extractStyleRuns(data, ascii, textLen);
+        if (runs.isEmpty()) {
+            return -1;
+        }
+
+        java.util.Map<Integer, Integer> coveredCharsBySize = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < runs.size(); i++) {
+            StyleRun run = runs.get(i);
+            int styleIndex = run.style();
+            if (styleIndex < 0 || styleIndex >= styleRecordSizes.size()) {
+                continue;
+            }
+            int start = Math.max(0, Math.min(textLen, run.offset()));
+            int end = i + 1 < runs.size() ? runs.get(i + 1).offset() : textLen;
+            end = Math.max(start, Math.min(textLen, end));
+            int coverage = end - start;
+            if (coverage <= 0) {
+                continue;
+            }
+            int size = styleRecordSizes.get(styleIndex);
+            coveredCharsBySize.put(size, coveredCharsBySize.getOrDefault(size, 0) + coverage);
+        }
+
+        int bestSize = -1;
+        int bestCoverage = 0;
+        for (var entry : coveredCharsBySize.entrySet()) {
+            if (entry.getValue() > bestCoverage) {
+                bestSize = entry.getKey();
+                bestCoverage = entry.getValue();
+            }
+        }
+        return bestSize;
     }
 
     private static int findSection(byte[] data, String tag) {
