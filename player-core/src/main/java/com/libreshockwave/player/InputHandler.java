@@ -213,6 +213,7 @@ public class InputHandler {
         switch (event.type()) {
             case MOUSE_DOWN -> {
                 int hitSprite = hitTestExact(event.stageX(), event.stageY());
+                int stageHitSprite = hitTest(event.stageX(), event.stageY());
                 // Director D6+: if the previously clicked sprite is different from
                 // the current one, send mouseUpOutSide to the old sprite (ScummVM behavior).
                 int lastClicked = inputState.getClickOnSprite();
@@ -224,7 +225,7 @@ public class InputHandler {
                 // Built-in Director behavior: clicking on an editable text/field sprite
                 // automatically sets keyboardFocusSprite to that sprite's channel.
                 // Clicking elsewhere clears the keyboard focus.
-                autoFocusEditableField(hitSprite, event.stageX(), event.stageY());
+                autoFocusEditableField(stageHitSprite, event.stageX(), event.stageY());
                 dispatcher.resetEventStopped();
                 if (hitSprite > 0) {
                     dispatcher.dispatchSpriteEvent(hitSprite, PlayerEvent.MOUSE_DOWN, List.of());
@@ -315,7 +316,11 @@ public class InputHandler {
     }
 
     private int hitTest(int stageX, int stageY) {
-        return hitTestExact(stageX, stageY);
+        return HitTester.hitTest(
+                stageRenderer,
+                currentFrameSupplier.getAsInt(),
+                stageX,
+                stageY);
     }
 
     /*private List<Integer> hitTestAll(int stageX, int stageY) {
