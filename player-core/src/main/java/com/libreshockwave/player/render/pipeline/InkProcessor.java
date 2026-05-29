@@ -86,6 +86,9 @@ public final class InkProcessor {
             if (matteSpec == null) {
                 return src;
             }
+            if (matteSpec.usesPaletteIndex()) {
+                return applyIndexedMatte(src, matteSpec.mattePaletteIndex());
+            }
             return applyMatte(src, matteSpec.matteColorRgb(), matteSpec.tolerance());
         } else if (ink == InkMode.MASK) {
             // Mask ink derives sprite opacity from source brightness. Convert the
@@ -360,6 +363,24 @@ public final class InkProcessor {
             }
         }
 
+        return newDerivedBitmap(src, result);
+    }
+
+    static Bitmap applyIndexedMatte(Bitmap src, int mattePaletteIndex) {
+        byte[] paletteIndices = src.getPaletteIndices();
+        if (paletteIndices == null || paletteIndices.length != src.getWidth() * src.getHeight()) {
+            return src;
+        }
+        int[] pixels = src.getPixels();
+        int[] result = new int[pixels.length];
+        int matteIndex = mattePaletteIndex & 0xFF;
+        for (int i = 0; i < pixels.length; i++) {
+            if ((paletteIndices[i] & 0xFF) == matteIndex || ((pixels[i] >>> 24) & 0xFF) == 0) {
+                result[i] = 0x00000000;
+            } else {
+                result[i] = pixels[i];
+            }
+        }
         return newDerivedBitmap(src, result);
     }
 

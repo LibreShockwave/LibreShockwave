@@ -768,22 +768,19 @@ public class Drawing {
     }
 
     private static FloodFillMatte resolveIndexedFloodFillMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
+        if (matteIndex != null) {
+            int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex);
+            return new FloodFillMatte(matteIndex, matteRgb, 0);
+        }
+
         if (edgeContainsPaletteIndex(paletteIndices, w, h, 0)) {
             int indexZeroRgb = resolvePaletteIndexRgb(pixels, paletteIndices, 0);
             if (indexZeroRgb == 0x000000 || indexZeroRgb == DEFAULT_RGB_MATTE) {
                 return new FloodFillMatte(0, indexZeroRgb, 0);
             }
         }
-
-        Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
-        if (matteIndex == null) {
-            return null;
-        }
-        int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex);
-        if (matteRgb != 0x000000 && matteRgb != DEFAULT_RGB_MATTE) {
-            return null;
-        }
-        return new FloodFillMatte(matteIndex, matteRgb, 0);
+        return null;
     }
 
     private static boolean hasPaletteIndices(byte[] paletteIndices, int w, int h) {
