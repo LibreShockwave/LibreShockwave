@@ -468,10 +468,10 @@ public class StageRenderer {
             int bmpW = bi.width();
             int bmpH = bi.height();
             if (spriteWidth > 0 && bmpW > 0 && bmpW != spriteWidth) {
-                regX = regX * spriteWidth / bmpW;
+                regX = scaleRegistrationOffset(regX, spriteWidth, bmpW);
             }
             if (spriteHeight > 0 && bmpH > 0 && bmpH != spriteHeight) {
-                regY = regY * spriteHeight / bmpH;
+                regY = scaleRegistrationOffset(regY, spriteHeight, bmpH);
             }
             regX = mirrorOffset(regX, spriteWidth > 0 ? spriteWidth : bmpW, flipH);
             regY = mirrorOffset(regY, spriteHeight > 0 ? spriteHeight : bmpH, flipV);
@@ -507,6 +507,19 @@ public class StageRenderer {
             return reg;
         }
         return span - reg;
+    }
+
+    private int scaleRegistrationOffset(int reg, int spriteSpan, int bitmapSpan) {
+        if (usesLegacyRoundedRegistrationScale()) {
+            return Math.round((float) reg * spriteSpan / bitmapSpan);
+        }
+        return reg * spriteSpan / bitmapSpan;
+    }
+
+    private boolean usesLegacyRoundedRegistrationScale() {
+        return file != null
+                && file.getConfig() != null
+                && file.getConfig().directorVersion() <= 1600;
     }
 
     private boolean effectiveFlipH(SpriteState state) {
