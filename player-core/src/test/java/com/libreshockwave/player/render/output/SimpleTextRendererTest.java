@@ -206,6 +206,26 @@ class SimpleTextRendererTest {
                 "expected unregistered Director font alias VB to use bundled Volter bold");
     }
 
+    @Test
+    void directorVolterAliasUsesDirectorSizedMetricsForWrapping() {
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerFontAlias("Volter (goldfish)", "Volter", false);
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            Bitmap text = renderer.renderText("Haven't got a Habbo yet?\rYou can create one here.",
+                    175, 24,
+                    "Volter (goldfish)", 12, "plain",
+                    "center", 0xFF000000, 0x00FFFFFF,
+                    true, false, 12, 0);
+
+            assertEquals(24, text.getHeight(),
+                    "expected Director Volter size 12 to fit the v1 two-line panel text");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {
         int count = 0;
         for (int x = 0; x < bitmap.getWidth(); x++) {
