@@ -10,6 +10,7 @@ public record TextInfo(
     int width, int height,
     int borderSize,
     int gutterSize,
+    int textHeight,
     boolean isWordWrap
 ) {
     /**
@@ -18,7 +19,7 @@ public record TextInfo(
      */
     public static TextInfo parse(byte[] data) {
         if (data == null || data.length < 4) {
-            return new TextInfo(0, 255, 255, 255, 0, 0, 0, 0, true);
+            return new TextInfo(0, 255, 255, 255, 0, 0, 0, 0, 0, true);
         }
 
         int textAlign = 0;
@@ -26,6 +27,7 @@ public record TextInfo(
         int width = 0, height = 0;
         int borderSize = 0;
         int gutterSize = 0;
+        int textHeight = 0;
         boolean wordWrap = true;
 
         if (data.length >= 48) {
@@ -48,6 +50,7 @@ public record TextInfo(
             bgR = data[7] & 0xFF;
             bgG = data[9] & 0xFF;
             bgB = data[11] & 0xFF;
+            textHeight = ((data[22] & 0xFF) << 8) | (data[23] & 0xFF);
         } else {
             textAlign = (short) (((data[0] & 0xFF) << 8) | (data[1] & 0xFF));
             if (data.length >= 8) {
@@ -57,6 +60,7 @@ public record TextInfo(
             }
         }
 
-        return new TextInfo(textAlign, bgR, bgG, bgB, width, height, borderSize, gutterSize, wordWrap);
+        return new TextInfo(textAlign, bgR, bgG, bgB, width, height,
+                borderSize, gutterSize, textHeight, wordWrap);
     }
 }

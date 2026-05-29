@@ -30,5 +30,6 @@ class TextInfoTest {
         assertEquals(0xEE, info.bgBlue());
         assertEquals(0, info.borderSize());
         assertEquals(5, info.gutterSize());
+        assertEquals(11, info.textHeight());
     }
 }
