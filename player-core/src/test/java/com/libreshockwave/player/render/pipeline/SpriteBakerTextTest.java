@@ -8,6 +8,7 @@ import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpriteBakerTextTest {
 
@@ -33,5 +34,26 @@ class SpriteBakerTextTest {
                 .getBakedBitmap();
 
         assertEquals(0xFF6794A7, baked.getPixel(0, 0));
+    }
+
+    @Test
+    void shiftBitmapDownPreservesSizeAndClearsLeadingRows() {
+        Bitmap source = new Bitmap(3, 4, 32, new int[] {
+                0xFF000001, 0xFF000002, 0xFF000003,
+                0xFF000004, 0xFF000005, 0xFF000006,
+                0xFF000007, 0xFF000008, 0xFF000009,
+                0xFF00000A, 0xFF00000B, 0xFF00000C
+        });
+        source.setNativeAlpha(true);
+
+        Bitmap shifted = SpriteBaker.shiftBitmapDown(source, 2, 0x00000000);
+
+        assertEquals(3, shifted.getWidth());
+        assertEquals(4, shifted.getHeight());
+        assertEquals(0x00000000, shifted.getPixel(0, 0));
+        assertEquals(0x00000000, shifted.getPixel(2, 1));
+        assertEquals(0xFF000001, shifted.getPixel(0, 2));
+        assertEquals(0xFF000006, shifted.getPixel(2, 3));
+        assertTrue(shifted.isNativeAlpha());
     }
 }
