@@ -483,12 +483,39 @@ public class SpriteBaker {
                 ? 0x00000000
                 : 0xFF000000 | ((textInfo.bgRed() << 16) | (textInfo.bgGreen() << 8) | textInfo.bgBlue());
 
-        return renderer.renderText(
-                textChunk.text(), width, height,
+        int horizontalInset = Math.min(textInfo.gutterSize(), Math.max(0, width - 1));
+        int renderWidth = Math.max(1, width - horizontalInset * 2);
+        Bitmap rendered = renderer.renderText(
+                textChunk.text(), renderWidth, height,
                 fontName, fontSize, styleStr,
                 alignment, textColor, bgColor,
                 textInfo.isWordWrap(), false,
                 0, 0);
+        return insetTextBitmap(rendered, width, height, horizontalInset, bgColor);
+    }
+
+    private Bitmap insetTextBitmap(Bitmap source, int width, int height, int insetX, int bgColor) {
+        if (source == null || insetX <= 0 || source.getWidth() == width) {
+            return source;
+        }
+        int[] pixels = new int[width * height];
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = bgColor;
+        }
+        int[] src = source.getPixels();
+        int copyW = Math.min(source.getWidth(), Math.max(0, width - insetX));
+        int copyH = Math.min(source.getHeight(), height);
+        for (int y = 0; y < copyH; y++) {
+            for (int x = 0; x < copyW; x++) {
+                pixels[y * width + x + insetX] = src[y * source.getWidth() + x];
+            }
+        }
+        Bitmap bitmap = new Bitmap(width, height, source.getBitDepth(), pixels);
+        bitmap.markScriptModified();
+        if (source.isNativeAlpha()) {
+            bitmap.setNativeAlpha(true);
+        }
+        return bitmap;
     }
 
     /**
