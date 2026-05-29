@@ -192,8 +192,15 @@ public final class InkProcessor {
                                  boolean useAlpha, Palette palette) {
         int bitDepth = src.getBitDepth();
 
-        // Native 32-bit alpha already defines transparency when the sprite uses alpha.
+        // Native 32-bit alpha usually defines transparency when the sprite uses
+        // alpha. Some Director assets still carry an opaque background-color
+        // rim in BACKGROUND_TRANSPARENT ink; key that border color as well so
+        // stale matte pixels do not render as white seams.
         if (src.hasNativeMatteAlpha() && useAlpha) {
+            int alphaBackColor = resolveBackColorIgnoringAlpha(src, backColor, palette);
+            if (ink == InkMode.BACKGROUND_TRANSPARENT && hasOpaqueBorderColor(src, alphaBackColor)) {
+                return alphaBackColor;
+            }
             return -1;
         }
 
@@ -220,6 +227,35 @@ public final class InkProcessor {
         // Fallback: Director grayscale ramp (0 = white, 255 = black)
         int gray = 255 - backColor;
         return (gray << 16) | (gray << 8) | gray;
+    }
+
+    private static int resolveBackColorIgnoringAlpha(Bitmap src, int backColor, Palette palette) {
+        if (backColor > 255) {
+            return backColor & 0xFFFFFF;
+        }
+        if (palette != null && backColor >= 0 && backColor < palette.size()) {
+            return palette.getColor(backColor) & 0xFFFFFF;
+        }
+        int gray = 255 - backColor;
+        return (gray << 16) | (gray << 8) | gray;
+    }
+
+    private static boolean hasOpaqueBorderColor(Bitmap src, int colorRgb) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        for (int x = 0; x < w; x++) {
+            if (isOpaqueColor(src.getPixel(x, 0), colorRgb)) return true;
+            if (isOpaqueColor(src.getPixel(x, h - 1), colorRgb)) return true;
+        }
+        for (int y = 1; y < h - 1; y++) {
+            if (isOpaqueColor(src.getPixel(0, y), colorRgb)) return true;
+            if (isOpaqueColor(src.getPixel(w - 1, y), colorRgb)) return true;
+        }
+        return false;
+    }
+
+    private static boolean isOpaqueColor(int argb, int colorRgb) {
+        return ((argb >>> 24) & 0xFF) == 0xFF && (argb & 0xFFFFFF) == colorRgb;
     }
 
     /**

@@ -88,6 +88,21 @@ class InkProcessorTest {
     }
 
     @Test
+    void backgroundTransparentKeysOpaqueBorderColorEvenWithNativeAlpha() {
+        Bitmap src = new Bitmap(3, 2, 32, new int[] {
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+            0x00000000, 0xFF336699, 0x00000000
+        });
+        src.setNativeAlpha(true);
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.BACKGROUND_TRANSPARENT,
+                0xFFFFFF, true, null);
+
+        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFF336699, result.getPixel(1, 1));
+    }
+
+    @Test
     void darkenKeepsOpaqueWhitePixelsFor32BitBitmapWithoutNativeAlpha() {
         Bitmap src = new Bitmap(3, 1, 32, new int[] {
             0xFFFFFFFF,
