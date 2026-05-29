@@ -15,6 +15,9 @@ class SpriteStateBlendMappingTest {
 
         sprite = new SpriteState(1, channelData(InkMode.BLEND.code(), 128));
         assertEquals(Math.round((255 - 128) * 100f / 255f), sprite.getBlend());
+
+        sprite = new SpriteState(1, channelData(InkMode.BACKGROUND_TRANSPARENT.code(), 204));
+        assertEquals(Math.round((255 - 204) * 100f / 255f), sprite.getBlend());
     }
 
     @Test
@@ -24,7 +27,7 @@ class SpriteStateBlendMappingTest {
         assertEquals(0, sprite.getBlend());
 
         SpriteState partial = new SpriteState(1);
-        partial.applyScoreDefaults(channelData(InkMode.BLEND.code(), 64));
+        partial.applyScoreDefaults(channelData(InkMode.MATTE.code(), 64));
         assertEquals(Math.round((255 - 64) * 100f / 255f), partial.getBlend());
     }
 
