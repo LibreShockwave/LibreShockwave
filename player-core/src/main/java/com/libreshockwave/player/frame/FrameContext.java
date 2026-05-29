@@ -402,7 +402,7 @@ public class FrameContext {
             List<BehaviorInstance> instances = behaviorManager.getInstancesForChannel(channel);
             for (BehaviorInstance instance : instances) {
                 if (!instance.isBeginSpriteCalled()) {
-                    eventDispatcher.dispatchSpriteEvent(channel, PlayerEvent.BEGIN_SPRITE, List.of());
+                    eventDispatcher.dispatchBehaviorEvent(instance, PlayerEvent.BEGIN_SPRITE, List.of());
                     instance.setBeginSpriteCalled(true);
                 }
             }
