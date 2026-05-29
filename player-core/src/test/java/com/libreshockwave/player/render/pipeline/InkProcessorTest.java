@@ -244,6 +244,31 @@ class InkProcessorTest {
     }
 
     @Test
+    void matteUsesDominantIndexedEdgeColorAndPreservesInteriorWhiteContent() {
+        Bitmap src = new Bitmap(4, 4, 8, new int[] {
+            0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00,
+            0xFFFFCC00, 0xFFFFFFFF, 0xFFCCCCCC, 0xFFFFCC00,
+            0xFFFFCC00, 0xFF000000, 0xFFFFFFFF, 0xFFFFCC00,
+            0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00
+        });
+        src.setPaletteIndices(new byte[] {
+            (byte) 200, (byte) 200, (byte) 200, (byte) 200,
+            (byte) 200, 0, 1, (byte) 200,
+            (byte) 200, (byte) 255, 0, (byte) 200,
+            (byte) 200, (byte) 200, (byte) 200, (byte) 200
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, false, null);
+
+        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, result.getPixel(1, 1));
+        assertEquals(0xFFCCCCCC, result.getPixel(2, 1));
+        assertEquals(0xFF000000, result.getPixel(1, 2));
+        assertEquals(0xFFFFFFFF, result.getPixel(2, 2));
+        assertEquals(0x00000000, result.getPixel(3, 3));
+    }
+
+    @Test
     void indexedColorRemapUsesOriginalPaletteIndicesAfterMatteMasking() {
         Bitmap raw = new Bitmap(3, 1, 8, new int[] {
             0xFFFFFFFF,
