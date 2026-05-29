@@ -52,6 +52,7 @@ class SpriteStateBlendMappingTest {
             0,
             0,
             0,
+            0,
             0
         );
     }

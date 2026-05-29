@@ -88,7 +88,7 @@ class SpritePropertiesLifecycleTest {
                 1, 0, 0, 0, 0, 0,
                 4, 88,
                 0, 0, 10, 20, 30, 40,
-                0, 0, 0, 0, 0, 0
+                0, 0, 0, 0, 0, 0, 0
         ));
 
         assertTrue(props.setSpriteProp(31, "member", Datum.ZERO));
@@ -97,6 +97,19 @@ class SpritePropertiesLifecycleTest {
         assertTrue(state.hasDynamicMember());
         assertEquals(0, state.getEffectiveCastLib());
         assertEquals(0, state.getEffectiveCastMember());
+    }
+
+    @Test
+    void scoreThicknessFlagsInitializeSpriteFlips() {
+        SpriteState state = new SpriteState(12, new ScoreChunk.ChannelData(
+                1, 0, 0, 0, 0, 0,
+                1, 1,
+                0, 0, 10, 20, 30, 40,
+                0, 0, 0x60, 0, 0, 0, 0
+        ));
+
+        assertTrue(state.isFlipH());
+        assertTrue(state.isFlipV());
     }
 
     @Test
@@ -204,7 +217,7 @@ class SpritePropertiesLifecycleTest {
                 1, 0, 0, 0, 0, 0,
                 3, 40,
                 0, 0, 10, 20, 30, 40,
-                0, 0, 0, 0, 0, 0
+                0, 0, 0, 0, 0, 0, 0
         ));
 
         CastMember first = castLib.createDynamicMember("bitmap");
@@ -262,7 +275,7 @@ class SpritePropertiesLifecycleTest {
                 1, 0, 0, 0, 0, 0,
                 3, 40,
                 0, 0, 10, 20, 30, 40,
-                0, 0, 0, 0, 0, 0
+                0, 0, 0, 0, 0, 0, 0
         ));
 
         Datum.ScriptInstance scriptInstance = new Datum.ScriptInstance(77, new LinkedHashMap<>());
@@ -281,7 +294,7 @@ class SpritePropertiesLifecycleTest {
                 1, 0, 0, 0, 0, 0,
                 4, 41,
                 0, 0, 50, 60, 70, 80,
-                0, 0, 0, 0, 0, 0
+                0, 0, 0, 0, 0, 0, 0
         ));
 
         assertEquals(4, state.getEffectiveCastLib());

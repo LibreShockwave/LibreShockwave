@@ -103,12 +103,13 @@ public record ScoreChunk(
         int width,
         int colorFlag,
         int blendByte,
+        int thicknessFlags,
         int foreColorG,
         int backColorG,
         int foreColorB,
         int backColorB
     ) {
-        public static final ChannelData EMPTY = new ChannelData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        public static final ChannelData EMPTY = new ChannelData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         /** Typed accessor: returns null if castLib is 0 (empty slot). */
         public CastLibId castLibId() {
@@ -145,6 +146,7 @@ public record ScoreChunk(
 
             int colorFlag = 0;
             int blendByte = 0;
+            int thicknessFlags = 0;
             int foreColorG = 0, backColorG = 0, foreColorB = 0, backColorB = 0;
 
             if (spriteRecordSize >= 24) {
@@ -152,7 +154,7 @@ public record ScoreChunk(
                 int unk3 = reader.readU8();
                 colorFlag = (unk3 & 0xF0) >> 4;
                 blendByte = reader.readU8(); // byte 21: blend (0-255 scale, used with BLEND ink)
-                reader.readU8(); // unk5
+                thicknessFlags = reader.readU8(); // byte 22: thickness + flip/blend flags
                 reader.readU8(); // unk6
             }
 
@@ -168,7 +170,7 @@ public record ScoreChunk(
                 spriteType, ink, trails, stretch, foreColor, backColor,
                 castLib, castMember, unk1, unk2,
                 posY, posX, height, width,
-                colorFlag, blendByte, foreColorG, backColorG, foreColorB, backColorB
+                colorFlag, blendByte, thicknessFlags, foreColorG, backColorG, foreColorB, backColorB
             );
         }
 
@@ -194,6 +196,14 @@ public record ScoreChunk(
         /** Whether backColor is an explicit RGB value (colorFlag bit 1 set). */
         public boolean isBackColorRGB() {
             return (colorFlag & 0x2) != 0;
+        }
+
+        public boolean isFlipH() {
+            return (thicknessFlags & 0x20) != 0;
+        }
+
+        public boolean isFlipV() {
+            return (thicknessFlags & 0x40) != 0;
         }
 
         /** Resolve backColor: assemble RGB only when colorFlag bit 1 is explicitly set. */
