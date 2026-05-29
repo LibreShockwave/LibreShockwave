@@ -1018,6 +1018,16 @@ var LibreShockwave = (function() {
             }
         }
 
+        if (this._opts.initialMovieProperties) {
+            for (var propKey in this._opts.initialMovieProperties) {
+                this._worker.postMessage({
+                    type: 'setMovieProperty',
+                    key: propKey,
+                    value: this._opts.initialMovieProperties[propKey]
+                });
+            }
+        }
+
         // Restore trace handlers after movie load
         if (this._traceHandlers && this._traceHandlers.length > 0) {
             for (var i = 0; i < this._traceHandlers.length; i++) {
