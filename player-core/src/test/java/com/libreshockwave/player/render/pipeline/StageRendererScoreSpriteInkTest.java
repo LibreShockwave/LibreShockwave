@@ -81,6 +81,7 @@ class StageRendererScoreSpriteInkTest {
             0,
             0,
             0,
+            0,
             0
         );
 
@@ -109,6 +110,7 @@ class StageRendererScoreSpriteInkTest {
             10,
             10,
             1,
+            0,
             0,
             0x34,
             0,
@@ -160,6 +162,7 @@ class StageRendererScoreSpriteInkTest {
             10,
             0,
             blendByte,
+            0,
             0,
             0,
             0,

@@ -324,8 +324,8 @@ public class SpriteState {
         this.trailsExplicitlySet = false;
         this.stretchExplicitlySet = false;
         this.scoreDefaultsApplied = false;
-        this.flipH = false;
-        this.flipV = false;
+        this.flipH = data.isFlipH();
+        this.flipV = data.isFlipV();
         this.rotation = 0.0;
         this.skew = 0.0;
         this.cursor = 0;
