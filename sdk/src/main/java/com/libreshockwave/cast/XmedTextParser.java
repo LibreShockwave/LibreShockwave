@@ -459,11 +459,17 @@ public class XmedTextParser {
             }
         }
 
-        // Use the most common font size (body text), not the first (which may be heading)
+        // Use the most common font size (body text), not the first (which may be
+        // an inherited/default style record). For close ties, prefer the smaller
+        // repeated size; XMED sections commonly include slightly larger defaults
+        // before the concrete run style used by compact text members.
         int fontSize = 9; // default
         int maxCount = 0;
         for (var entry : sizeCounts.entrySet()) {
-            if (entry.getValue() > maxCount) {
+            if (entry.getValue() > maxCount
+                    || (entry.getValue() == maxCount
+                    && entry.getKey() < fontSize
+                    && fontSize - entry.getKey() <= 2)) {
                 maxCount = entry.getValue();
                 fontSize = entry.getKey();
             }
