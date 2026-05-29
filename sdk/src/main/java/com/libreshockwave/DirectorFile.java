@@ -180,6 +180,10 @@ public class DirectorFile {
         return getScriptLookup().getByContextId(scriptId);
     }
 
+    public List<ScriptChunk> getScriptsByContextId(int scriptId) {
+        return getScriptLookup().getAllByContextId(scriptId);
+    }
+
     /**
      * Get the reliable script type for a script by looking up its associated cast member.
      * The script type stored in the cast member's specificData is the authoritative source.
