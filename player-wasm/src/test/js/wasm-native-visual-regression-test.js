@@ -24,6 +24,7 @@ const V1 = {
     waitText: "Haven't got a Habbo yet?",
     maxPolls: Number(process.env.LS_V1_NATIVE_MAX_POLLS || 360),
     pollMs: 250,
+    settleMs: Number(process.env.LS_V1_NATIVE_SETTLE_MS || 1000),
     maxMeanDelta: Number(process.env.LS_V1_NATIVE_MAX_MEAN_DELTA || 38),
     maxBadFraction: Number(process.env.LS_V1_NATIVE_MAX_BAD_FRACTION || 0.28),
 };
@@ -488,7 +489,7 @@ async function waitForV1Login(page) {
         if (lastState.error) break;
         if (lastState.loaded && v1LoginEvidenceReady(lastEvidence) &&
                 lastState.nonBlack > 2000 && lastState.colorBuckets > 30) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, V1.settleMs));
             return { state: lastState, evidence: lastEvidence };
         }
     }
@@ -834,6 +835,9 @@ async function runCase(browserHandle, baseUrl, fixture) {
                 ? await waitForV14Login(page)
                 : await waitForV31Navigator(page);
         const comparison = await captureAndCompare(page, fixture, baseUrl, `${fixture.name}_wasm_native_compare`);
+        if (process.env.LS_NATIVE_SAVE_DIAGNOSTICS === '1') {
+            await saveSuccessDiagnostics(page, fixture);
+        }
         console.log(`  state=${JSON.stringify(compactState(waitResult.state))}`);
         if (waitResult.evidence) {
             console.log(`  evidence=${JSON.stringify(waitResult.evidence)}`);
@@ -857,6 +861,24 @@ async function runCase(browserHandle, baseUrl, fixture) {
         await page.close();
         try { fs.unlinkSync(htmlPath); } catch (e) {}
     }
+}
+
+async function saveSuccessDiagnostics(page, fixture) {
+    const artifacts = await page.evaluate(async () => {
+        const visibleText = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
+            ? await window.betaClientPlayer.getVisibleTextDiagnostics()
+            : '';
+        const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+            ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+            : '';
+        const bootstrap = window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
+            ? await window.betaClientPlayer.getBootstrapDiagnostics()
+            : '';
+        return { visibleText, windowSprites, bootstrap };
+    });
+    fs.writeFileSync(path.join(outputDir, `${fixture.name}_visible_text.txt`), artifacts.visibleText || '');
+    fs.writeFileSync(path.join(outputDir, `${fixture.name}_window_sprites.txt`), artifacts.windowSprites || '');
+    fs.writeFileSync(path.join(outputDir, `${fixture.name}_bootstrap.txt`), artifacts.bootstrap || '');
 }
 
 async function main() {
