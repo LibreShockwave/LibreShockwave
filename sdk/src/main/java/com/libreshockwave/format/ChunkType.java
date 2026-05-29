@@ -58,6 +58,7 @@ public enum ChunkType {
     ALFA("ALFA", "Alpha Channel Data"),
     CLUT("CLUT", "Color Lookup Table (Palette)"),
     STXT("STXT", "Styled Text"),
+    Fmap("Fmap", "Font Map"),
     snd_("snd ", "Sound Data"),         // Note: space in FourCC
     ediM("ediM", "Media Resource"),
     XMED("XMED", "Extended Media"),
@@ -137,7 +138,7 @@ public enum ChunkType {
     }
 
     public boolean isMedia() {
-        return this == BITD || this == CLUT || this == STXT || this == snd_ || this == ediM || this == XMED;
+        return this == BITD || this == CLUT || this == STXT || this == Fmap || this == snd_ || this == ediM || this == XMED;
     }
 
     public static ChunkType fromFourCC(int fourcc) {

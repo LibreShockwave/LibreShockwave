@@ -21,6 +21,7 @@ public sealed interface Chunk permits
         BitmapChunk,
         PaletteChunk,
         TextChunk,
+        FontMapChunk,
         SoundChunk,
         MediaChunk,
         RawChunk {
