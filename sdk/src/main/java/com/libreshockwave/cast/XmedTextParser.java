@@ -83,22 +83,15 @@ public class XmedTextParser {
             }
         }
 
-        if (text.contains("WELCOME")) {
-            var t2 = 2;
-        }
-
-        // Build a single styled span covering the full text (per-run parsing TBD)
         boolean spanBold = memberBold || (fontStyle & 1) != 0;
         boolean spanItalic = (fontStyle & 2) != 0;
-        boolean spanUnderline = (fontStyle & 4) != 0;
         int textLen = text != null ? text.length() : 0;
-        StyledSpan span = new StyledSpan(0, textLen, fontName, fontSize,
-                spanBold, spanItalic, spanUnderline,
-                color[0], color[1], color[2]);
+        List<StyledSpan> spans = extractStyleSpans(xmedData, ascii, textLen,
+                fontName, fontSize, spanBold, spanItalic, color);
 
         return new XmedStyledText(
                 text,
-                List.of(span),
+                spans,
                 alignment,
                 true,           // wordWrap — XMED text members default to wrapping
                 0,              // fixedLineSpace
@@ -108,6 +101,93 @@ public class XmedTextParser {
                 memberBold,
                 color[0], color[1], color[2]
         );
+    }
+
+    private static List<StyledSpan> extractStyleSpans(byte[] data, String ascii, int textLen,
+                                                      String fontName, int fontSize,
+                                                      boolean bold, boolean italic,
+                                                      int[] color) {
+        List<StyleRun> runs = extractStyleRuns(data, ascii, textLen);
+        if (runs.isEmpty()) {
+            return List.of(new StyledSpan(0, textLen, fontName, fontSize,
+                    bold, italic, false,
+                    color[0], color[1], color[2]));
+        }
+
+        java.util.ArrayList<StyledSpan> spans = new java.util.ArrayList<>();
+        for (int i = 0; i < runs.size(); i++) {
+            StyleRun run = runs.get(i);
+            int start = Math.max(0, Math.min(textLen, run.offset()));
+            int end = i + 1 < runs.size() ? runs.get(i + 1).offset() : textLen;
+            end = Math.max(start, Math.min(textLen, end));
+            if (start == end) {
+                continue;
+            }
+            spans.add(new StyledSpan(start, end, fontName, fontSize,
+                    bold, italic, (run.style() & 1) != 0,
+                    color[0], color[1], color[2]));
+        }
+
+        return spans.isEmpty()
+                ? List.of(new StyledSpan(0, textLen, fontName, fontSize,
+                        bold, italic, false,
+                        color[0], color[1], color[2]))
+                : List.copyOf(spans);
+    }
+
+    private record StyleRun(int offset, int style) {}
+
+    /**
+     * Section 0004 stores character style runs as offset/style pairs encoded
+     * with Director's compact textual control-byte format:
+     *   [02]<hex offset>[01]<hex style>
+     */
+    private static List<StyleRun> extractStyleRuns(byte[] data, String ascii, int textLen) {
+        int idx = findSection(data, "0004");
+        if (idx < 0) {
+            return List.of();
+        }
+        int secStart = idx + 20;
+        int secLen = parseSectionLength(ascii, idx);
+        int secEnd = secLen > 0 ? Math.min(secStart + secLen, data.length) : data.length;
+
+        java.util.ArrayList<StyleRun> runs = new java.util.ArrayList<>();
+        int i = secStart;
+        while (i < secEnd) {
+            if (data[i] != 0x02) {
+                i++;
+                continue;
+            }
+            int offsetStart = ++i;
+            while (i < secEnd && isHexDigit(data[i] & 0xFF)) {
+                i++;
+            }
+            int offsetEnd = i;
+            if (offsetStart == i || i >= secEnd || data[i] != 0x01) {
+                continue;
+            }
+            int styleStart = ++i;
+            while (i < secEnd && isHexDigit(data[i] & 0xFF)) {
+                i++;
+            }
+            if (styleStart == i) {
+                continue;
+            }
+            try {
+                int offset = Integer.parseInt(new String(data, offsetStart, offsetEnd - offsetStart,
+                        java.nio.charset.StandardCharsets.ISO_8859_1), 16);
+                int style = Integer.parseInt(new String(data, styleStart, i - styleStart,
+                        java.nio.charset.StandardCharsets.ISO_8859_1), 16);
+                if (offset >= 0 && offset <= textLen + 2) {
+                    runs.add(new StyleRun(Math.min(offset, textLen), style));
+                }
+            } catch (NumberFormatException e) {
+                // Ignore malformed style entries.
+            }
+        }
+
+        runs.sort(java.util.Comparator.comparingInt(StyleRun::offset));
+        return runs;
     }
 
     /**
@@ -341,23 +421,12 @@ public class XmedTextParser {
      */
     private static int[] extractFontSizeAndStyle(byte[] data, String ascii) {
         // Find section 0006 — search after [03] delimiter
-        int idx0006 = -1;
-        for (int i = 0; i < data.length - 24; i++) {
-            if (data[i] == 0x03 && i + 4 < data.length
-                    && data[i+1] == '0' && data[i+2] == '0' && data[i+3] == '0' && data[i+4] == '6') {
-                idx0006 = i + 1;
-                break;
-            }
-        }
+        int idx0006 = findSection(data, "0006");
         if (idx0006 < 0) return new int[]{9, 0};
 
         // Parse section header: tag(4) + length(8) + count(8)
         int secStart = idx0006 + 20;
-        int secLen = 0;
-        try {
-            String lenHex = ascii.substring(idx0006 + 4, Math.min(idx0006 + 12, ascii.length()));
-            secLen = Integer.parseInt(lenHex, 16);
-        } catch (Exception e) { /* ignore */ }
+        int secLen = parseSectionLength(ascii, idx0006);
         int secEnd = secLen > 0 ? Math.min(secStart + secLen, data.length) : data.length;
 
         // Extract font sizes from [02]<hexSize>"0000"[02] pattern within section 0006
@@ -404,6 +473,34 @@ public class XmedTextParser {
         }
 
         return new int[]{fontSize, fontStyle};
+    }
+
+    private static int findSection(byte[] data, String tag) {
+        byte[] tagBytes = tag.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+        for (int i = 0; i < data.length - 24; i++) {
+            if (data[i] == 0x03 && i + tagBytes.length < data.length) {
+                boolean match = true;
+                for (int j = 0; j < tagBytes.length; j++) {
+                    if (data[i + 1 + j] != tagBytes[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return i + 1;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int parseSectionLength(String ascii, int sectionOffset) {
+        try {
+            String lenHex = ascii.substring(sectionOffset + 4, Math.min(sectionOffset + 12, ascii.length()));
+            return Integer.parseInt(lenHex, 16);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** Read a big-endian unsigned 32-bit integer from a byte array. */

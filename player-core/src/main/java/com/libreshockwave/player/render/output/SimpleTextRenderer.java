@@ -115,6 +115,7 @@ public class SimpleTextRenderer implements TextRenderer {
             Bitmap result = renderWithBitmapFont(font, text, width, height,
                     alignment, textColor, bgColor, wordWrap,
                     fixedLineSpace, 0, syntheticBold, underline);
+            underlineStyledSpans(result, font, styledText, textColor);
             if (antialias && result != null) {
                 result = applyTextAA(result, bgColor);
             }
@@ -129,6 +130,77 @@ public class SimpleTextRenderer implements TextRenderer {
             result = applyTextAA(result, bgColor);
         }
         return result;
+    }
+
+    private static void underlineStyledSpans(Bitmap bitmap, BitmapFont font, XmedStyledText styledText, int textColor) {
+        if (bitmap == null || font == null || styledText == null || styledText.styledSpans().isEmpty()) {
+            return;
+        }
+
+        boolean hasUnderline = false;
+        for (var span : styledText.styledSpans()) {
+            if (span.underline()) {
+                hasUnderline = true;
+                break;
+            }
+        }
+        if (!hasUnderline) {
+            return;
+        }
+
+        int[] pixels = bitmap.getPixels();
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        String text = styledText.text();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+
+        int lineHeight = styledText.fixedLineSpace() > 0 ? styledText.fixedLineSpace() : font.getLineHeight();
+        int y = 0;
+        int lineStart = 0;
+        while (lineStart <= text.length() && y < height) {
+            int lineEnd = lineStart;
+            while (lineEnd < text.length() && text.charAt(lineEnd) != '\r' && text.charAt(lineEnd) != '\n') {
+                lineEnd++;
+            }
+
+            String line = text.substring(lineStart, lineEnd);
+            int lineWidth = font.getStringWidth(line);
+            int lineX = switch (styledText.alignment()) {
+                case "center" -> (width - lineWidth) / 2;
+                case "right" -> width - lineWidth;
+                default -> 0;
+            };
+            int glyphY = y;
+
+            for (var span : styledText.styledSpans()) {
+                if (!span.underline()) {
+                    continue;
+                }
+                int start = Math.max(lineStart, span.startOffset());
+                int end = Math.min(lineEnd, span.endOffset());
+                if (start >= end) {
+                    continue;
+                }
+                int startX = lineX + font.getStringWidth(text.substring(lineStart, start));
+                int endX = lineX + font.getStringWidth(text.substring(lineStart, end));
+                int inkBottom = findInkBottom(pixels, width, height, startX, endX,
+                        glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
+                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom));
+                drawUnderline(pixels, width, height, underlineY, startX, endX, textColor);
+            }
+
+            if (lineEnd >= text.length()) {
+                break;
+            }
+            if (text.charAt(lineEnd) == '\r' && lineEnd + 1 < text.length() && text.charAt(lineEnd + 1) == '\n') {
+                lineStart = lineEnd + 2;
+            } else {
+                lineStart = lineEnd + 1;
+            }
+            y += lineHeight;
+        }
     }
 
     /**
