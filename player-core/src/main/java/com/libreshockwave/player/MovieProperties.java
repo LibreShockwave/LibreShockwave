@@ -143,6 +143,10 @@ public class MovieProperties implements MoviePropertyProvider {
             case "alerthook" -> alertHook;
             case "cursor" -> cursor;
             case "floatprecision" -> Datum.of(floatPrecision);
+            case "randomseed" -> {
+                var vm = player != null ? player.getVM() : null;
+                yield Datum.of(vm != null ? vm.getRandomSeed() : 0);
+            }
 
             // actorList
             case "actorlist" -> actorList;
@@ -317,6 +321,12 @@ public class MovieProperties implements MoviePropertyProvider {
             }
             case "floatprecision" -> {
                 floatPrecision = value.toInt();
+                return true;
+            }
+            case "randomseed" -> {
+                if (player != null && player.getVM() != null) {
+                    player.getVM().setRandomSeed(value.toInt());
+                }
                 return true;
             }
             case "selstart" -> {

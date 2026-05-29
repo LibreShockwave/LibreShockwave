@@ -6,7 +6,11 @@ import com.libreshockwave.vm.xtra.Xtra;
 import com.libreshockwave.vm.xtra.XtraManager;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+
+import com.libreshockwave.DirectorFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,6 +66,26 @@ class MoviePropertiesTest {
 
         assertEquals(9, properties.getMovieProp("keyboardFocusSprite").toInt());
         assertTrue(inputState.isCaretVisible());
+    }
+
+    @Test
+    void randomSeedMoviePropertyControlsVmRandomSequence() throws Exception {
+        Path v1Movie = Path.of("/opt/git/v1_assets/projectorrays_lingo/habbo_entry/habbo_entry.dir");
+        if (!Files.isRegularFile(v1Movie)) {
+            return;
+        }
+        Player player = new Player(DirectorFile.load(v1Movie));
+        MovieProperties properties = player.getMovieProperties();
+
+        assertTrue(properties.setMovieProp("randomSeed", Datum.of(777)));
+        int first = player.getVM().callHandler("random", List.of(Datum.of(1000))).toInt();
+        int second = player.getVM().callHandler("random", List.of(Datum.of(1000))).toInt();
+
+        properties.setMovieProp("randomSeed", Datum.of(777));
+
+        assertEquals(777, properties.getMovieProp("randomSeed").toInt());
+        assertEquals(first, player.getVM().callHandler("random", List.of(Datum.of(1000))).toInt());
+        assertEquals(second, player.getVM().callHandler("random", List.of(Datum.of(1000))).toInt());
     }
 
     private record FakeXtra(String name) implements Xtra {

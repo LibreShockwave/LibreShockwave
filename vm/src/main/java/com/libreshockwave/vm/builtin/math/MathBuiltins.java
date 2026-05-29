@@ -57,7 +57,7 @@ public final class MathBuiltins {
         if (args.isEmpty()) return Datum.of(1);
         int max = args.get(0).toInt();
         if (max <= 0) return Datum.of(1);
-        return Datum.of((int) (Math.random() * max) + 1);
+        return Datum.of(vm.randomInt(max));
     }
 
     /**
