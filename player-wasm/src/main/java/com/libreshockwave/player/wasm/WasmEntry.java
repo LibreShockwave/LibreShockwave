@@ -126,6 +126,14 @@ public class WasmEntry {
         wasmPlayer.getPlayer().setInitialBuiltinVariable(key, Datum.symbol(value));
     }
 
+    @Export(name = "setMovieProperty")
+    public static void setMovieProperty(int keyLen, int valueLen) {
+        if (wasmPlayer == null || wasmPlayer.getPlayer() == null || keyLen <= 0) return;
+        String key = new String(stringBuffer, 0, keyLen, StandardCharsets.UTF_8);
+        String value = new String(stringBuffer, keyLen, Math.max(0, valueLen), StandardCharsets.UTF_8);
+        wasmPlayer.getPlayer().getMovieProperties().setMovieProp(key, Datum.of(value));
+    }
+
     @Export(name = "readNextGotoNetPage")
     public static int readNextGotoNetPage() {
         String[] next;

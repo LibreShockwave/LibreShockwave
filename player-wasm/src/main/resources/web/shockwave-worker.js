@@ -62,6 +62,7 @@ function _musPreview(data) {
  *   {type:'loadMovie', data:ArrayBuffer, basePath}
  *   {type:'setParam',  key, value}
  *   {type:'clearParams'}
+ *   {type:'setMovieProperty', key, value}
  *   {type:'preloadCasts'}
  *   {type:'play'|'pause'|'stop'}
  *   {type:'tick'}
@@ -276,6 +277,14 @@ WasmEngine.prototype.setInitialBuiltinSymbol = function(key, value) {
     var sbuf = new Uint8Array(this._mem(), this.exports.getStringBufferAddress(), 4096);
     sbuf.set(kb); sbuf.set(vb, kb.length);
     this.exports.setInitialBuiltinSymbol(kb.length, vb.length);
+    this._clearEx();
+};
+
+WasmEngine.prototype.setMovieProperty = function(key, value) {
+    var kb = new TextEncoder().encode(key), vb = new TextEncoder().encode(String(value));
+    var sbuf = new Uint8Array(this._mem(), this.exports.getStringBufferAddress(), 4096);
+    sbuf.set(kb); sbuf.set(vb, kb.length);
+    this.exports.setMovieProperty(kb.length, vb.length);
     this._clearEx();
 };
 
@@ -1037,6 +1046,10 @@ self.onmessage = async function(e) {
 
             case 'setInitialBuiltinSymbol':
                 _e.setInitialBuiltinSymbol(msg.key, msg.value);
+                break;
+
+            case 'setMovieProperty':
+                _e.setMovieProperty(msg.key, msg.value);
                 break;
 
             case 'preloadCasts': {

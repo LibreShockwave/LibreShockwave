@@ -21,6 +21,7 @@ const V1 = {
     nativePath: path.join(referenceDir, 'v1_native.png'),
     movieUrl: 'http://192.168.122.1/dcr0910/loader.dcr',
     params: {},
+    initialMovieProperties: readJsonEnv('LS_V1_INITIAL_MOVIE_PROPERTIES', {}),
     waitText: "Haven't got a Habbo yet?",
     maxPolls: Number(process.env.LS_V1_NATIVE_MAX_POLLS || 360),
     pollMs: 250,
@@ -50,6 +51,7 @@ const V14 = {
         'connection.info.id': 'info',
         'connection.room.id': 'room',
     },
+    initialMovieProperties: readJsonEnv('LS_V14_INITIAL_MOVIE_PROPERTIES', {}),
     waitText: "Haven't got a Habbo yet?",
     maxPolls: Number(process.env.LS_V14_NATIVE_MAX_POLLS || 360),
     pollMs: 250,
@@ -74,6 +76,7 @@ const V31 = {
         sw8: 'use.sso.ticket=1;sso.ticket=vibe-sso-admin-504d3ba4-acdb-4436-b67c-d0752f44f767',
     },
     wait: 'navigator',
+    initialMovieProperties: readJsonEnv('LS_V31_INITIAL_MOVIE_PROPERTIES', {}),
     maxPolls: Number(process.env.LS_V31_NATIVE_MAX_POLLS || 900),
     pollMs: 500,
     maxMeanDelta: Number(process.env.LS_V31_NATIVE_MAX_MEAN_DELTA || 42),
@@ -92,6 +95,18 @@ const MIME = {
     '.txt': 'text/plain',
     '.xml': 'application/xml',
 };
+
+function readJsonEnv(name, fallback) {
+    const raw = process.env[name];
+    if (!raw || !raw.trim()) {
+        return fallback;
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (error) {
+        throw new Error(`${name} must contain JSON: ${error.message}`);
+    }
+}
 
 function serveFile(res, filePath) {
     const data = readFixtureFile(filePath);
@@ -316,6 +331,7 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
     debugPlayback: true,
     params: betaClientParams,
     initialBuiltinSymbols: ${JSON.stringify(fixture.initialBuiltinSymbols || {})},
+    initialMovieProperties: ${JSON.stringify(fixture.initialMovieProperties || {})},
     onLoad: function(info) {
         _testState.loaded = true;
         _testState.info = info;
