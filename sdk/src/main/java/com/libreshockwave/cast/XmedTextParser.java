@@ -70,10 +70,6 @@ public class XmedTextParser {
             height = readU32BE(specificData, 48);
             width = readU32BE(specificData, 52);
         }
-        if (specificData != null && specificData.length >= 36) {
-            int boldFlag = readU32BE(specificData, 32);
-            memberBold = boldFlag != 0;
-        }
         if (specificData != null && specificData.length >= 40) {
             int aaDisabled = readU32BE(specificData, 12);
             if (aaDisabled == 0) {
@@ -453,7 +449,7 @@ public class XmedTextParser {
      * The first entry's value determines the primary alignment for the text.
      *
      * XMED alignment values (different from Director's scripting convention):
-     *   0 = left, 1 = right, 2 = center
+     *   0 = left, 1 = center, 2 = right
      */
     private static String extractAlignment(byte[] data, String ascii) {
         // Find section 0005 after a [03] delimiter
@@ -494,8 +490,8 @@ public class XmedTextParser {
 
     private static String alignmentFromValue(int val) {
         return switch (val) {
-            case 1 -> "right";
-            case 2 -> "center";
+            case 1 -> "center";
+            case 2 -> "right";
             default -> "left";
         };
     }

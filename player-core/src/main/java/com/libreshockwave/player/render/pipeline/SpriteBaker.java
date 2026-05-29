@@ -401,7 +401,7 @@ public class SpriteBaker {
         // For BACKGROUND_TRANSPARENT text: both XTRA and regular text members are already
         // rendered with transparent background (bgColor=0x00000000). No further ink processing
         // needed — the bitmap already has correct alpha (opaque text, transparent background).
-        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT) {
+        if (isTransparentTextInk(sprite)) {
             return textImage;
         }
 
@@ -415,7 +415,7 @@ public class SpriteBaker {
     }
 
     private int dynamicTextBgColor(RenderSprite sprite, CastMember member) {
-        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT) {
+        if (isTransparentTextInk(sprite)) {
             return 0x00000000;
         }
         return resolvePaletteColor(sprite.getBackColor());
@@ -475,11 +475,11 @@ public class SpriteBaker {
         var renderer = CastMember.getTextRendererStatic();
         if (renderer == null) return null;
 
-        // Score-placed text uses the sprite foreground color. Member run colors
-        // are defaults; the score channel can recolor the same text member.
-        int textColor = resolvePaletteColor(sprite.getForeColor());
+        int textColor = sprite.hasForeColor()
+                ? resolvePaletteColor(sprite.getForeColor())
+                : resolveRunColor(runColorR, runColorG, runColorB);
         // Use transparent background for BACKGROUND_TRANSPARENT ink
-        int bgColor = (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT)
+        int bgColor = isTransparentTextInk(sprite)
                 ? 0x00000000
                 : 0xFF000000 | ((textInfo.bgRed() << 16) | (textInfo.bgGreen() << 8) | textInfo.bgBlue());
 
@@ -510,11 +510,12 @@ public class SpriteBaker {
         int width = styledText.width() > 0 ? styledText.width() : (sprite.getWidth() > 0 ? sprite.getWidth() : 200);
         int height = styledText.height() > 0 ? styledText.height() : (sprite.getHeight() > 0 ? sprite.getHeight() : 20);
 
-        // Score-placed XMED text also uses the sprite foreground color.
-        int textColor = resolvePaletteColor(sprite.getForeColor());
+        int textColor = sprite.getInkMode() == com.libreshockwave.id.InkMode.MATTE
+                ? styledText.textColorARGB()
+                : resolvePaletteColor(sprite.getForeColor());
         // Use transparent background for BACKGROUND_TRANSPARENT ink so the text
         // can be composited directly without ink processing removing the text pixels.
-        int bgColor = (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT)
+        int bgColor = isTransparentTextInk(sprite)
                 ? 0x00000000 : resolvePaletteColor(sprite.getBackColor());
 
         var renderer = CastMember.getTextRendererStatic();
@@ -530,6 +531,18 @@ public class SpriteBaker {
      */
     private int resolvePaletteColor(int color) {
         return 0xFF000000 | (color & 0xFFFFFF);
+    }
+
+    private int resolveRunColor(int r, int g, int b) {
+        if (r >= 0 && g >= 0 && b >= 0) {
+            return 0xFF000000 | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
+        }
+        return 0xFF000000;
+    }
+
+    private boolean isTransparentTextInk(RenderSprite sprite) {
+        return sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT
+                || sprite.getInkMode() == com.libreshockwave.id.InkMode.MATTE;
     }
 
     /**

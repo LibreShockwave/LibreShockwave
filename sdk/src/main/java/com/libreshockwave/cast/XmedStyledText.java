@@ -27,7 +27,7 @@ public record XmedStyledText(
     boolean antialias,
     int antiAliasThreshold,
 
-    // Member-level bold (from specificData @32-35, overrides per-span)
+    // Member-level bold flag when known from parsed style metadata.
     boolean memberBold,
 
     // Text color (primary, from XMED section 0003)

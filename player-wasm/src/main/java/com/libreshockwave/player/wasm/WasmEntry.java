@@ -6,6 +6,7 @@ import org.teavm.interop.Export;
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.chunks.CastMemberChunk;
+import com.libreshockwave.cast.TextInfo;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
@@ -1127,6 +1128,7 @@ public class WasmEntry {
                     .append(" dynName=").append(dyn != null ? dyn.getName() : "")
                     .append(" dynType=").append(dyn != null ? dyn.getMemberType() : "")
                     .append('\n');
+            appendStaticTextProbe(sb, cast);
             String text = dyn != null ? dyn.getTextContent() : null;
             if (text == null || text.isEmpty()) {
                 continue;
@@ -1138,6 +1140,80 @@ public class WasmEntry {
         int len = Math.min(bytes.length, stringBuffer.length);
         System.arraycopy(bytes, 0, stringBuffer, 0, len);
         return len;
+    }
+
+    private static void appendStaticTextProbe(StringBuilder sb, CastMemberChunk cast) {
+        if (cast == null || (!cast.isText() && !cast.isTextXtra())) {
+            return;
+        }
+        DirectorFile file = cast.file();
+        if (file == null) {
+            return;
+        }
+
+        TextInfo info = TextInfo.parse(cast.specificData());
+        sb.append("  textInfo align=").append(info.textAlign())
+                .append(" size=").append(info.width()).append('x').append(info.height())
+                .append(" bg=").append(info.bgRed()).append(',')
+                .append(info.bgGreen()).append(',').append(info.bgBlue())
+                .append(" wrap=").append(info.isWordWrap())
+                .append(" specificLen=").append(cast.specificData() != null ? cast.specificData().length : 0)
+                .append(" specificHead=").append(hexHead(cast.specificData(), 24))
+                .append('\n');
+
+        var xmed = file.getXmedStyledTextForMember(cast);
+        if (xmed != null) {
+            sb.append("  xmed text=\"").append(escapeDiagnosticText(xmed.text())).append('"')
+                    .append(" font=").append(xmed.fontName())
+                    .append(" size=").append(xmed.fontSize())
+                    .append(" align=").append(xmed.alignment())
+                    .append(" rect=").append(xmed.width()).append('x').append(xmed.height())
+                    .append(" color=").append(xmed.colorR()).append(',')
+                    .append(xmed.colorG()).append(',').append(xmed.colorB())
+                    .append(" aa=").append(xmed.antialias()).append('/').append(xmed.antiAliasThreshold())
+                    .append(" bold=").append(xmed.memberBold())
+                    .append('\n');
+        }
+
+        var textChunk = file.getTextForMember(cast);
+        if (textChunk == null) {
+            return;
+        }
+        sb.append("  stxt text=\"").append(escapeDiagnosticText(textChunk.text())).append('"')
+                .append(" runs=").append(textChunk.runs().size())
+                .append('\n');
+        int runIndex = 0;
+        for (var run : textChunk.runs()) {
+            if (runIndex >= 4) {
+                break;
+            }
+            sb.append("    run").append(runIndex)
+                    .append(" start=").append(run.startOffset())
+                    .append(" end=").append(run.endOffset())
+                    .append(" fontId=").append(run.fontId())
+                    .append(" size=").append(run.fontSize())
+                    .append(" style=").append(run.fontStyle())
+                    .append(" color=").append(run.colorR()).append(',')
+                    .append(run.colorG()).append(',').append(run.colorB())
+                    .append('\n');
+            runIndex++;
+        }
+    }
+
+    private static String hexHead(byte[] data, int maxBytes) {
+        if (data == null || data.length == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(Math.min(data.length, maxBytes) * 2);
+        int limit = Math.min(data.length, maxBytes);
+        for (int i = 0; i < limit; i++) {
+            int value = data[i] & 0xFF;
+            if (value < 0x10) {
+                sb.append('0');
+            }
+            sb.append(Integer.toHexString(value));
+        }
+        return sb.toString();
     }
 
     /**
