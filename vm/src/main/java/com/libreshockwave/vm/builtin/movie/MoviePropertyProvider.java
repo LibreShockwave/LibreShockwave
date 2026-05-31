@@ -88,6 +88,14 @@ public interface MoviePropertyProvider {
         // Default: no-op
     }
 
+    /**
+     * Resolve a frame label to a 1-based frame number.
+     * Returns 0 when the label does not exist.
+     */
+    default int getFrameForLabel(String label) {
+        return 0;
+    }
+
     default void gotoNetPage(String url, String target) {
     }
 

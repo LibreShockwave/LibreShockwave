@@ -8,6 +8,7 @@ import com.libreshockwave.vm.builtin.flow.ControlFlowBuiltins;
 import com.libreshockwave.vm.builtin.math.MathBuiltins;
 import com.libreshockwave.vm.builtin.media.ImageBuiltins;
 import com.libreshockwave.vm.builtin.media.SoundBuiltins;
+import com.libreshockwave.vm.builtin.movie.MovieBuiltins;
 import com.libreshockwave.vm.builtin.net.ExternalParamBuiltins;
 import com.libreshockwave.vm.builtin.net.NetBuiltins;
 import com.libreshockwave.vm.builtin.sprite.SpriteBuiltins;
@@ -46,6 +47,7 @@ public class BuiltinRegistry {
         ExternalParamBuiltins.register(builtins);
         ImageBuiltins.register(builtins);
         SoundBuiltins.register(builtins);
+        MovieBuiltins.register(builtins);
     }
 
     /**
