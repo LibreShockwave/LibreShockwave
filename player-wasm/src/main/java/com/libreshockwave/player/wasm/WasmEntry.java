@@ -79,10 +79,9 @@ public class WasmEntry {
         }
     }
 
-    static int enqueueGotoNetMovie(String url) {
+    static void enqueueGotoNetMovie(String url) {
         synchronized (pendingGotoNetMovies) {
             pendingGotoNetMovies.offer(url != null ? url : "");
-            return nextGotoNetMovieRequestId++;
         }
     }
 
@@ -195,6 +194,9 @@ public class WasmEntry {
         System.arraycopy(movieBuffer, 0, data, 0, movieSize);
 
         if (wasmPlayer != null) {
+            if (wasmPlayer.getNetProvider() != null) {
+                wasmPlayer.getNetProvider().completeMovieNavigationTasks();
+            }
             wasmPlayer.shutdown();
         }
         synchronized (pendingGotoNetPages) {
@@ -1261,6 +1263,11 @@ public class WasmEntry {
                     appendTruncated(sb, "cast#" + i + " " + threadIndexField, threadIndex, 3000);
                 }
             }
+        }
+
+        QueuedNetProvider netProvider = wasmPlayer.getNetProvider();
+        if (netProvider != null) {
+            appendTruncated(sb, "netProvider", netProvider.getDebugStatus(), 8000);
         }
 
         if (!player.getVM().getGlobals().isEmpty()) {

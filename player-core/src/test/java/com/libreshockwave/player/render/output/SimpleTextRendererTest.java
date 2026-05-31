@@ -1,14 +1,18 @@
 package com.libreshockwave.player.render.output;
 
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.cast.StyledSpan;
+import com.libreshockwave.cast.XmedStyledText;
 import com.libreshockwave.player.cast.FontRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SimpleTextRendererTest {
@@ -284,6 +288,151 @@ class SimpleTextRendererTest {
 
             assertEquals(24, text.getHeight(),
                     "expected Director alias size 12 to fit the v1 two-line panel text");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
+    @Test
+    void xmedFontCandidatesPreferRegisteredMovieFontOverWindowsFallback() throws Exception {
+        Path v1Volter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03732_Volter_GoldFish__3966_XMED.bin");
+        if (!Files.isRegularFile(v1Volter)) {
+            return;
+        }
+
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerPfr1Font("Volter (GoldFish)", Files.readAllBytes(v1Volter));
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+            XmedStyledText styled = new XmedStyledText(
+                    "You can create one here.",
+                    List.of(new StyledSpan(0, 24, "Verdana", 9, false, false, false, 0, 0, 0)),
+                    List.of("Geneva", "Verdana", "Volter Neue", "Volter (goldfish)"),
+                    "left",
+                    1,
+                    1,
+                    2,
+                    true,
+                    0,
+                    175,
+                    24,
+                    "Verdana",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            Bitmap text = renderer.renderXmedText(styled, 175, 24, 0xFF000000, 0x00FFFFFF);
+
+            assertEquals(132, findLastNonBackgroundColumn(text, 0x00FFFFFF),
+                    "expected the XMED font table to prefer the registered GoldFish pixel font over Verdana fallback");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
+    @Test
+    void xmedMovieFontCandidateMatchesExplicitGoldfishRender() throws Exception {
+        Path v1Volter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03732_Volter_GoldFish__3966_XMED.bin");
+        if (!Files.isRegularFile(v1Volter)) {
+            return;
+        }
+
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerPfr1Font("Volter (GoldFish)", Files.readAllBytes(v1Volter));
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            XmedStyledText current = new XmedStyledText(
+                    "Haven't got a Habbo yet?\rYou can create one here.",
+                    List.of(
+                            new StyledSpan(0, 44, "Verdana", 9, false, false, false, 0, 0, 0),
+                            new StyledSpan(44, 48, "Verdana", 9, false, false, true, 0, 0, 0),
+                            new StyledSpan(48, 49, "Verdana", 9, false, false, false, 0, 0, 0)
+                    ),
+                    List.of("Geneva", "Verdana", "Volter Neue", "Volter (goldfish)"),
+                    "center",
+                    1,
+                    1,
+                    2,
+                    true,
+                    0,
+                    175,
+                    24,
+                    "Verdana",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            XmedStyledText goldfish = new XmedStyledText(
+                    current.text(),
+                    List.of(
+                            new StyledSpan(0, 44, "Volter (goldfish)", 9, false, false, false, 0, 0, 0),
+                            new StyledSpan(44, 48, "Volter (goldfish)", 9, false, false, true, 0, 0, 0),
+                            new StyledSpan(48, 49, "Volter (goldfish)", 9, false, false, false, 0, 0, 0)
+                    ),
+                    List.of("Volter (goldfish)"),
+                    "center",
+                    1,
+                    1,
+                    2,
+                    true,
+                    0,
+                    175,
+                    24,
+                    "Volter (goldfish)",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            XmedStyledText verdana = new XmedStyledText(
+                    current.text(),
+                    List.of(
+                            new StyledSpan(0, 44, "Verdana", 9, false, false, false, 0, 0, 0),
+                            new StyledSpan(44, 48, "Verdana", 9, false, false, true, 0, 0, 0),
+                            new StyledSpan(48, 49, "Verdana", 9, false, false, false, 0, 0, 0)
+                    ),
+                    List.of("Verdana"),
+                    "center",
+                    1,
+                    1,
+                    2,
+                    true,
+                    0,
+                    175,
+                    24,
+                    "Verdana",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            Bitmap currentBitmap = renderer.renderXmedText(current, 175, 24, 0xFF000000, 0x00FFFFFF);
+            Bitmap goldfishBitmap = renderer.renderXmedText(goldfish, 175, 24, 0xFF000000, 0x00FFFFFF);
+            Bitmap verdanaBitmap = renderer.renderXmedText(verdana, 175, 24, 0xFF000000, 0x00FFFFFF);
+
+            assertArrayEquals(goldfishBitmap.getPixels(), currentBitmap.getPixels(),
+                    "expected XMED movie-font candidate resolution to match the explicit GoldFish render");
+            assertFalse(java.util.Arrays.equals(verdanaBitmap.getPixels(), currentBitmap.getPixels()),
+                    "expected the resolved render to differ from pure Verdana fallback");
         } finally {
             FontRegistry.clear();
         }

@@ -56,4 +56,5 @@ class SpriteBakerTextTest {
         assertEquals(0xFF000006, shifted.getPixel(2, 3));
         assertTrue(shifted.isNativeAlpha());
     }
+
 }

@@ -5,11 +5,14 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.net.NetBuiltins;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.net.URLDecoder;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -22,11 +25,15 @@ import java.util.function.Predicate;
  * back via deliverFetchResult/deliverFetchError exports.
  */
 public class QueuedNetProvider implements NetBuiltins.NetProvider {
+    private static final boolean DEBUG_STREAM_LOOKUP = Boolean.getBoolean("libreshockwave.debugNetLookup");
+    private static final int MAX_DEBUG_LOOKUPS = 64;
 
     private final String basePath;
     private final Map<Integer, NetTask> tasks = new HashMap<>();
     private final Map<String, byte[]> urlCache = new HashMap<>();
     private final List<PendingRequest> pendingRequests = new ArrayList<>();
+    private final Queue<Integer> pendingMovieNavigationTasks = new ArrayDeque<>();
+    private int unmatchedLookupLogCount;
     private int nextTaskId = 1;
     private int lastTaskId = 0;
 
@@ -89,6 +96,28 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
 
         pendingRequests.add(new PendingRequest(taskId, fallbacks[0], "GET", null, fallbacks));
         return taskId;
+    }
+
+    public int beginMovieNavigation(String url) {
+        int taskId = nextTaskId++;
+        lastTaskId = taskId;
+
+        String resolvedUrl = resolveUrl(url);
+        NetTask task = new NetTask(taskId, resolvedUrl);
+        tasks.put(taskId, task);
+        pendingMovieNavigationTasks.add(taskId);
+        return taskId;
+    }
+
+    public void completeMovieNavigationTasks() {
+        Integer taskId;
+        while ((taskId = pendingMovieNavigationTasks.poll()) != null) {
+            NetTask task = tasks.get(taskId);
+            if (task != null) {
+                task.done = true;
+                task.errorCode = 0;
+            }
+        }
     }
 
     private boolean isDirectoryOnlyUrl(String url) {
@@ -167,10 +196,15 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
 
     @Override
     public Datum getStreamStatusDatum(String url) {
-        NetTask task = getTask(url);
-        if (task == null && isDirectoryOnlyUrl(url)) {
+        String normalizedUrl = normalizeLookupUrl(url);
+        NetTask task = getTask(normalizedUrl);
+        if (task == null && isDirectoryOnlyUrl(normalizedUrl)) {
             task = new NetTask(0, url);
             task.done = true;
+        } else if (task == null && DEBUG_STREAM_LOOKUP && unmatchedLookupLogCount < MAX_DEBUG_LOOKUPS) {
+            unmatchedLookupLogCount++;
+            WasmEntry.log("[NetProvider] unmatched stream status lookup " + unmatchedLookupLogCount
+                    + " for " + normalizedUrl + ", tasks=" + tasks.size() + ", pending=" + pendingRequests.size());
         }
         return streamStatusDatum(task);
     }
@@ -211,6 +245,37 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
     public String getTaskUrl(int taskId) {
         NetTask task = tasks.get(taskId);
         return task != null ? task.url : null;
+    }
+
+    /**
+     * Produce compact net debugging text for diagnostic dumps.
+     */
+    public String getDebugStatus() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("netProvider: tasks=").append(tasks.size())
+                .append(" pendingRequests=").append(pendingRequests.size()).append('\n');
+        for (Map.Entry<Integer, NetTask> entry : tasks.entrySet()) {
+            NetTask task = entry.getValue();
+            if (task == null) continue;
+            sb.append("task #").append(entry.getKey())
+                    .append(" url=").append(task.url)
+                    .append(" done=").append(task.done)
+                    .append(" error=").append(task.errorCode)
+                    .append(" byteCount=").append(task.byteCount)
+                    .append(" poll=").append(task.pollCount)
+                    .append(" fallbackCount=").append(task.fallbackUrls != null ? task.fallbackUrls.length : 0)
+                    .append('\n');
+        }
+        for (int i = 0; i < pendingRequests.size(); i++) {
+            PendingRequest req = pendingRequests.get(i);
+            if (req == null) continue;
+            sb.append("pending #").append(i)
+                    .append(" taskId=").append(req.taskId)
+                    .append(" method=").append(req.method)
+                    .append(" url=").append(req.url)
+                    .append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -290,8 +355,12 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         if (url == null || url.isEmpty()) {
             return null;
         }
+        String normalizedUrl = normalizeLookupUrl(url);
+        if (normalizedUrl == null) {
+            return null;
+        }
         for (NetTask task : tasks.values()) {
-            if (taskMatchesUrl(task, url)) {
+            if (taskMatchesUrl(task, normalizedUrl)) {
                 return task;
             }
         }
@@ -302,19 +371,123 @@ public class QueuedNetProvider implements NetBuiltins.NetProvider {
         if (task == null) {
             return false;
         }
-        for (String key : buildCacheKeys(url, url)) {
-            if (buildCacheKeys(task.url, task.url).contains(key)) {
+        String normalizedUrl = normalizeLookupUrl(url);
+        if (normalizedUrl == null) {
+            return false;
+        }
+        Set<String> taskKeys = buildTaskLookupKeys(task);
+        if (taskKeys.isEmpty()) {
+            return false;
+        }
+        for (String key : buildLookupKeys(normalizedUrl)) {
+            if (taskKeys.contains(key)) {
                 return true;
             }
-            if (task.fallbackUrls != null) {
-                for (String fallback : task.fallbackUrls) {
-                    if (buildCacheKeys(fallback, fallback).contains(key)) {
-                        return true;
-                    }
+        }
+        String normalizedTaskUrl = normalizeLookupUrl(task.url);
+        if (normalizedTaskUrl != null && normalizedTaskUrl.equalsIgnoreCase(normalizedUrl)) {
+            return true;
+        }
+        if (task.fallbackUrls != null) {
+            for (String fallback : task.fallbackUrls) {
+                String normalizedFallback = normalizeLookupUrl(fallback);
+                if (normalizedFallback != null && normalizedFallback.equalsIgnoreCase(normalizedUrl)) {
+                    return true;
                 }
             }
         }
         return false;
+    }
+
+    private Set<String> buildTaskLookupKeys(NetTask task) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        if (task == null) {
+            return keys;
+        }
+        addLookupCacheKeys(keys, task.url);
+        if (task.fallbackUrls != null) {
+            for (String fallback : task.fallbackUrls) {
+                addLookupCacheKeys(keys, fallback);
+            }
+        }
+        return keys;
+    }
+
+    private Set<String> buildLookupKeys(String url) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        String normalizedUrl = normalizeLookupUrl(url);
+        if (normalizedUrl == null) {
+            return keys;
+        }
+        addLookupCacheKeys(keys, normalizedUrl);
+        for (String candidate : withMovieDirectoryCastFallbacks(normalizedUrl, FileUtil.getUrlsWithFallbacks(normalizedUrl))) {
+            addLookupCacheKeys(keys, candidate);
+        }
+        return keys;
+    }
+
+    private void addLookupCacheKeys(Set<String> keys, String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+        addCacheKeys(keys, url);
+        String normalizedUrl = normalizeLookupUrl(url);
+        if (normalizedUrl != null && !normalizedUrl.equals(url)) {
+            addCacheKeys(keys, normalizedUrl);
+        }
+        String decodedUrl = decodeLookupUrl(url);
+        if (decodedUrl != null && !decodedUrl.equals(url)) {
+            addCacheKeys(keys, decodedUrl);
+        }
+        String decodedNormalized = decodeLookupUrl(normalizedUrl);
+        if (decodedNormalized != null
+                && !decodedNormalized.equals(url)
+                && !decodedNormalized.equals(normalizedUrl)
+                && !decodedNormalized.equals(decodedUrl)) {
+            addCacheKeys(keys, decodedNormalized);
+        }
+
+        String fileName = FileUtil.getFileName(url);
+        if (fileName != null && !fileName.contains(".")) {
+            addCacheKeys(keys, url + ".cct");
+            addCacheKeys(keys, url + ".cst");
+            addCacheKeys(keys, normalizedUrl + ".cct");
+            addCacheKeys(keys, normalizedUrl + ".cst");
+            if (decodedUrl != null) {
+                addCacheKeys(keys, decodedUrl + ".cct");
+                addCacheKeys(keys, decodedUrl + ".cst");
+            }
+        }
+    }
+
+    private String normalizeLookupUrl(String rawUrl) {
+        if (rawUrl == null) {
+            return null;
+        }
+        String normalized = rawUrl.trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        int queryStart = normalized.indexOf('?');
+        if (queryStart >= 0) {
+            normalized = normalized.substring(0, queryStart);
+        }
+        int hashStart = normalized.indexOf('#');
+        if (hashStart >= 0) {
+            normalized = normalized.substring(0, hashStart);
+        }
+        return normalized;
+    }
+
+    private String decodeLookupUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isEmpty()) {
+            return null;
+        }
+        try {
+            return URLDecoder.decode(rawUrl, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String resolveUrl(String url) {

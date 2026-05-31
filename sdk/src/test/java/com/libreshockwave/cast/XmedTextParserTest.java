@@ -3,6 +3,8 @@ package com.libreshockwave.cast;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,6 +72,35 @@ class XmedTextParserTest {
         XmedStyledText styled = XmedTextParser.parseStyled(xmed, textXtraSpecificData(120, 20));
 
         assertEquals(12, styled.fontSize());
+    }
+
+    @Test
+    void corpusMultilineMemberKeepsParagraphStyleMetadataSeparateFromAlignment() throws Exception {
+        Path xmed = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03742_member_4209_XMED.bin");
+        if (!Files.isRegularFile(xmed)) {
+            return;
+        }
+
+        XmedStyledText styled = XmedTextParser.parseStyled(Files.readAllBytes(xmed), textXtraSpecificData(220, 40));
+
+        assertEquals("center", styled.alignment());
+        assertEquals(1, styled.primaryParagraphStyleIndex());
+        assertEquals(2, styled.paragraphStyleCount());
+    }
+
+    @Test
+    void corpusLeftAlignedMemberUsesStyleIndexZero() throws Exception {
+        Path xmed = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03709_member_4163_XMED.bin");
+        if (!Files.isRegularFile(xmed)) {
+            return;
+        }
+
+        XmedStyledText styled = XmedTextParser.parseStyled(Files.readAllBytes(xmed), textXtraSpecificData(160, 20));
+
+        assertEquals("left", styled.alignment());
+        assertEquals(0, styled.primaryParagraphStyleIndex());
+        assertEquals(2, styled.primaryParagraphAlignmentCode());
+        assertEquals(1, styled.paragraphStyleCount());
     }
 
     private static byte[] xmedWithAlignmentValue(char value) {

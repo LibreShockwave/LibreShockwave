@@ -50,11 +50,19 @@ public class XmedTextParser {
         String ascii = toAsciiString(xmedData);
 
         String text = extractText(xmedData, ascii);
-        String fontName = extractFont(xmedData, ascii);
+        List<String> fontCandidates = extractFontNames(xmedData, ascii);
+        String fontName = selectPrimaryFontName(fontCandidates);
         int[] fontSizeAndStyle = extractFontSizeAndStyle(xmedData, ascii,
                 text != null ? text.length() : 0);
         int[] color = extractColor(xmedData, ascii);
-        String alignment = extractAlignment(xmedData, ascii);
+        int primaryParagraphStyleIndex = extractPrimaryParagraphStyleIndex(xmedData, ascii);
+        int paragraphStyleCount = countParagraphStyleRecords(xmedData);
+        byte[] selectedParagraphStyleRecord = extractSelectedParagraphStyleRecord(xmedData, primaryParagraphStyleIndex);
+        int primaryParagraphAlignmentCode = extractParagraphAlignmentCode(selectedParagraphStyleRecord);
+        String alignment = alignmentFromParagraphAlignmentCode(primaryParagraphAlignmentCode);
+        if (alignment == null) {
+            alignment = alignmentFromParagraphStyleIndex(primaryParagraphStyleIndex);
+        }
 
         if (fontName == null) fontName = "Geneva";
         int fontSize = fontSizeAndStyle[0];
@@ -93,9 +101,13 @@ public class XmedTextParser {
         return new XmedStyledText(
                 text,
                 spans,
+                fontCandidates,
                 alignment,
+                primaryParagraphStyleIndex,
+                primaryParagraphAlignmentCode,
+                paragraphStyleCount,
                 true,           // wordWrap — XMED text members default to wrapping
-                0,              // fixedLineSpace
+                0,
                 width, height,
                 fontName, fontSize,
                 antialias, aaThreshold,
@@ -124,7 +136,8 @@ public class XmedTextParser {
             if (start == end) {
                 continue;
             }
-            spans.add(new StyledSpan(start, end, fontName, fontSize,
+            spans.add(new StyledSpan(start, end,
+                    fontName, fontSize,
                     bold, italic, (run.style() & 1) != 0,
                     color[0], color[1], color[2]));
         }
@@ -203,11 +216,18 @@ public class XmedTextParser {
         String ascii = toAsciiString(data);
 
         String text = extractText(data, ascii);
-        String fontName = extractFont(data, ascii);
+        List<String> fontCandidates = extractFontNames(data, ascii);
+        String fontName = selectPrimaryFontName(fontCandidates);
         int[] fontSizeAndStyle = extractFontSizeAndStyle(data, ascii,
                 text != null ? text.length() : 0);
         int[] color = extractColor(data, ascii);
-        String alignment = extractAlignment(data, ascii);
+        int primaryParagraphStyleIndex = extractPrimaryParagraphStyleIndex(data, ascii);
+        byte[] selectedParagraphStyleRecord = extractSelectedParagraphStyleRecord(data, primaryParagraphStyleIndex);
+        int primaryParagraphAlignmentCode = extractParagraphAlignmentCode(selectedParagraphStyleRecord);
+        String alignment = alignmentFromParagraphAlignmentCode(primaryParagraphAlignmentCode);
+        if (alignment == null) {
+            alignment = alignmentFromParagraphStyleIndex(primaryParagraphStyleIndex);
+        }
 
         return new XmedText(text, fontName != null ? fontName : "Geneva",
                 fontSizeAndStyle[0], fontSizeAndStyle[1],
@@ -325,15 +345,27 @@ public class XmedTextParser {
      * Each font entry: null + "40," + length_byte + font_name + null_padding (64 bytes)
      * We prefer the Windows name and fall back to the Mac name.
      */
-    private static String extractFont(byte[] data, String ascii) {
+    private static String selectPrimaryFontName(List<String> fonts) {
+        if (fonts.isEmpty()) {
+            return null;
+        }
+        String macFont = fonts.get(0);
+        for (int i = 1; i < fonts.size(); i++) {
+            String font = fonts.get(i);
+            if (!font.equals(macFont)) {
+                return font;
+            }
+        }
+        return macFont;
+    }
+
+    private static List<String> extractFontNames(byte[] data, String ascii) {
         int tagIdx = ascii.indexOf("0008");
-        if (tagIdx < 0) return null;
+        if (tagIdx < 0) return List.of();
 
         // Collect ALL font names from section 0008 by finding "40," patterns
         // followed by a length byte and font name
-        String macFont = null;
-        String winFont = null;
-        int fontCount = 0;
+        java.util.ArrayList<String> fonts = new java.util.ArrayList<>();
 
         for (int i = tagIdx + 20; i < data.length - 10; i++) {
             // Stop if we hit the next section (0x03 delimiter followed by "000")
@@ -350,13 +382,8 @@ public class XmedTextParser {
                 if (nameLen > 0 && nameLen < 64 && i + 5 + nameLen <= data.length) {
                     String fontName = new String(data, i + 5, nameLen,
                             java.nio.charset.StandardCharsets.ISO_8859_1).trim();
-                    if (!fontName.isEmpty()) {
-                        fontCount++;
-                        if (macFont == null) {
-                            macFont = fontName; // First font = Mac name
-                        } else if (!fontName.equals(macFont)) {
-                            winFont = fontName; // Different name after first = Windows name
-                        }
+                    if (!fontName.isEmpty() && !fonts.contains(fontName)) {
+                        fonts.add(fontName);
                     }
                 }
                 // Skip past the 64-byte padded field
@@ -364,8 +391,7 @@ public class XmedTextParser {
             }
         }
 
-        // Prefer Windows font name, fall back to Mac font name
-        return winFont != null ? winFont : macFont;
+        return List.copyOf(fonts);
     }
 
     /**
@@ -629,7 +655,7 @@ public class XmedTextParser {
      * XMED alignment values (different from Director's scripting convention):
      *   0 = left, 1 = center, 2 = right
      */
-    private static String extractAlignment(byte[] data, String ascii) {
+    private static int extractPrimaryParagraphStyleIndex(byte[] data, String ascii) {
         // Find section 0005 after a [03] delimiter
         int idx = -1;
         for (int i = 0; i < data.length - 24; i++) {
@@ -639,34 +665,93 @@ public class XmedTextParser {
                 break;
             }
         }
-        if (idx < 0 || idx + 24 >= data.length) return null;
+        if (idx < 0 || idx + 24 >= data.length) return 0;
 
         // Validate: followed by 8-char hex length + 8-char hex count
         String lenStr = ascii.substring(idx + 4, Math.min(idx + 12, ascii.length()));
-        if (!lenStr.matches("[0-9A-Fa-f]+")) return null;
+        if (!lenStr.matches("[0-9A-Fa-f]+")) return 0;
 
         // Skip tag(4) + length(8) + count(8) = 20, then read first entry
         int bodyStart = idx + 20;
-        if (bodyStart >= data.length) return null;
+        if (bodyStart >= data.length) return 0;
 
         // First entry format: [02]<offset>[01]<value> or [02]<offset>[81] (high-bit value)
         // Skip the [02] delimiter if present
         int pos = bodyStart;
         if (data[pos] == 0x02) pos++;
 
-        // Scan for [01] delimiter followed by alignment value.
-        // Skip 0x80+ control bytes (like [81]) — these are NOT alignment values.
-        // The actual alignment is at the [01] delimiter: [01]"0"=left, [01]"1"=right, [01]"2"=center.
+        // Scan for the first [01]-delimited paragraph-style index. This is not the final
+        // paragraph record itself; it selects a style in section 0007.
         for (int i = pos; i < Math.min(bodyStart + 30, data.length); i++) {
             if (data[i] == 0x01 && i + 1 < data.length) {
-                int val = parseHexValue(data, i + 1);
-                return alignmentFromValue(val);
+                return parseHexValue(data, i + 1);
             }
         }
-        return null;
+        return 0;
     }
 
-    private static String alignmentFromValue(int val) {
+    private static int countParagraphStyleRecords(byte[] data) {
+        return extractParagraphStyleRecords(data).size();
+    }
+
+    private static byte[] extractSelectedParagraphStyleRecord(byte[] data, int primaryParagraphStyleIndex) {
+        List<byte[]> records = extractParagraphStyleRecords(data);
+        if (primaryParagraphStyleIndex < 0 || primaryParagraphStyleIndex >= records.size()) {
+            return null;
+        }
+        return records.get(primaryParagraphStyleIndex);
+    }
+
+    private static List<byte[]> extractParagraphStyleRecords(byte[] data) {
+        int idx = findSection(data, "0007");
+        if (idx < 0) {
+            return List.of();
+        }
+        int secStart = idx + 20;
+        int secLen = parseSectionLength(toAsciiString(data), idx);
+        int secEnd = secLen > 0 ? Math.min(secStart + secLen, data.length) : data.length;
+
+        java.util.ArrayList<byte[]> records = new java.util.ArrayList<>();
+        int start = secStart;
+        for (int i = secStart; i + 1 < secEnd; i++) {
+            if ((data[i] & 0xFF) == 0xC2 && (data[i + 1] & 0xFF) == 0x12) {
+                records.add(java.util.Arrays.copyOfRange(data, start, i + 2));
+                start = i + 2;
+            }
+        }
+        return List.copyOf(records);
+    }
+
+    private static int extractParagraphAlignmentCode(byte[] paragraphStyleRecord) {
+        if (paragraphStyleRecord == null || paragraphStyleRecord.length == 0) {
+            return -1;
+        }
+        for (int i = 0; i + 1 < paragraphStyleRecord.length; i++) {
+            if ((paragraphStyleRecord[i] & 0xFF) == 0xC2 && (paragraphStyleRecord[i + 1] & 0xFF) == 0x0F) {
+                for (int j = i + 2; j < paragraphStyleRecord.length; j++) {
+                    int b = paragraphStyleRecord[j] & 0xFF;
+                    if (b == 0x01 || b == 0x02) {
+                        int value = parseHexValue(paragraphStyleRecord, j + 1);
+                        if (value >= 0) {
+                            return value;
+                        }
+                    }
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static String alignmentFromParagraphAlignmentCode(int val) {
+        return switch (val) {
+            case 1 -> "center";
+            case 2 -> "left";
+            case 3 -> "right";
+            default -> null;
+        };
+    }
+
+    private static String alignmentFromParagraphStyleIndex(int val) {
         return switch (val) {
             case 1 -> "center";
             case 2 -> "right";

@@ -133,20 +133,7 @@ public record ScriptChunk(
      */
     public String getScriptName() {
         if (file == null) return "";
-
-        // Find the cast member that contains this script
-        for (CastMemberChunk member : file.getCastMembers()) {
-            if (member.isScript()) {
-                // Get the script chunk for this member and compare
-                ScriptChunk script = file.getScriptByContextId(member.scriptId());
-                if (script != null && script.id() == this.id) {
-                    String name = member.name();
-                    return name != null ? name : "";
-                }
-            }
-        }
-
-        return "";
+        return file.getScriptName(this);
     }
 
     /**
@@ -347,12 +334,11 @@ public record ScriptChunk(
                 int offset = info[1];
                 Object value = null;
 
-                reader.setPosition(literalDataOffset + offset);
-                int dataLen = reader.readI32();
-
                 double numericValue = 0.0;
                 switch (type) {
                     case 1 -> { // String (dataLen includes null terminator)
+                        reader.setPosition(literalDataOffset + offset);
+                        int dataLen = reader.readI32();
                         String s = reader.readStringMacRoman(dataLen);
                         // Strip null terminator if present
                         if (s.endsWith("\0")) {
@@ -361,13 +347,17 @@ public record ScriptChunk(
                         value = s;
                     }
                     case 4 -> { // Int
-                        value = dataLen; // Actually the value
+                        value = offset; // D5+/D6 integer literals are stored inline, not in literalData
                     }
                     case 9 -> { // Float — store as primitive double to avoid boxed Double (TeaVM WASM bug)
+                        reader.setPosition(literalDataOffset + offset);
+                        int dataLen = reader.readI32();
                         numericValue = (double) Float.intBitsToFloat(reader.readI32());
                         value = String.valueOf(numericValue);
                     }
                     default -> {
+                        reader.setPosition(literalDataOffset + offset);
+                        int dataLen = reader.readI32();
                         value = reader.readBytes(dataLen);
                     }
                 }

@@ -222,6 +222,36 @@ public class NetManager implements NetBuiltins.NetProvider {
         return Datum.propList(props);
     }
 
+    @Override
+    public Datum getStreamStatusDatum(String url) {
+        if (url == null || url.isEmpty()) {
+            return getStreamStatusDatum((Integer) null);
+        }
+
+        NetTask bestMatch = null;
+        String resolvedUrl = resolveUrl(url);
+        String fileName = FileUtil.getFileName(url);
+
+        for (NetTask task : tasks.values()) {
+            String originalUrl = task.getOriginalUrl();
+            String taskUrl = task.getUrl();
+
+            boolean matches = url.equals(originalUrl)
+                || resolvedUrl.equals(taskUrl)
+                || (!fileName.isEmpty() && fileName.equals(FileUtil.getFileName(originalUrl)));
+            if (!matches) {
+                continue;
+            }
+
+            if (bestMatch == null || task.getTaskId() > bestMatch.getTaskId()) {
+                bestMatch = task;
+            }
+        }
+
+        return bestMatch != null ? getStreamStatusDatum(bestMatch.getTaskId())
+            : getStreamStatusDatum((Integer) null);
+    }
+
     /**
      * Get the raw bytes of a completed task.
      */

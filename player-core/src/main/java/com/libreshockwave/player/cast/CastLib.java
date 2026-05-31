@@ -207,7 +207,7 @@ public class CastLib {
                     memberChunks.put(memberNumber, member);
 
                     if (member.isScript() && member.scriptId() > 0) {
-                        ScriptChunk script = sourceFile.getScriptByContextId(member.scriptId());
+                        ScriptChunk script = sourceFile.getScriptForCastMember(member, cast);
                         if (script != null) {
                             scripts.put(memberNumber, script);
                         }
