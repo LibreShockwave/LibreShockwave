@@ -96,7 +96,9 @@ public class XmedTextParser {
         boolean spanItalic = (fontStyle & 2) != 0;
         int textLen = text != null ? text.length() : 0;
         List<StyledSpan> spans = extractStyleSpans(xmedData, ascii, textLen,
-                fontName, fontSize, spanBold, spanItalic, color);
+                fontCandidates, fontName, fontSize, spanBold, spanItalic, color);
+        String primarySpanFontName = choosePrimarySpanFontName(spans, fontName);
+        int primarySpanFontSize = choosePrimarySpanFontSize(spans, fontSize);
 
         return new XmedStyledText(
                 text,
@@ -109,7 +111,7 @@ public class XmedTextParser {
                 true,           // wordWrap — XMED text members default to wrapping
                 0,
                 width, height,
-                fontName, fontSize,
+                primarySpanFontName, primarySpanFontSize,
                 antialias, aaThreshold,
                 memberBold,
                 color[0], color[1], color[2]
@@ -117,10 +119,12 @@ public class XmedTextParser {
     }
 
     private static List<StyledSpan> extractStyleSpans(byte[] data, String ascii, int textLen,
+                                                      List<String> fontCandidates,
                                                       String fontName, int fontSize,
                                                       boolean bold, boolean italic,
                                                       int[] color) {
         List<StyleRun> runs = extractStyleRuns(data, ascii, textLen);
+        List<XmedStyleRecord> styleRecords = extractStyleRecords(data, ascii);
         if (runs.isEmpty()) {
             return List.of(new StyledSpan(0, textLen, fontName, fontSize,
                     bold, italic, false,
@@ -136,8 +140,13 @@ public class XmedTextParser {
             if (start == end) {
                 continue;
             }
+            XmedStyleRecord styleRecord = styleRecordForRun(styleRecords, run.style());
+            String spanFontName = resolveSpanFontName(fontCandidates, fontName, styleRecord);
+            int spanFontSize = styleRecord != null && styleRecord.fontSize() > 0
+                    ? styleRecord.fontSize()
+                    : fontSize;
             spans.add(new StyledSpan(start, end,
-                    fontName, fontSize,
+                    spanFontName, spanFontSize,
                     bold, italic, (run.style() & 1) != 0,
                     color[0], color[1], color[2]));
         }
@@ -150,6 +159,7 @@ public class XmedTextParser {
     }
 
     private record StyleRun(int offset, int style) {}
+    private record XmedStyleRecord(int fontCandidateIndex, int fontSize) {}
 
     /**
      * Section 0004 stores character style runs as offset/style pairs encoded
@@ -515,6 +525,151 @@ public class XmedTextParser {
         return new int[]{fontSize, fontStyle};
     }
 
+    private static List<XmedStyleRecord> extractStyleRecords(byte[] data, String ascii) {
+        int idx0006 = findSection(data, "0006");
+        if (idx0006 < 0) {
+            return List.of();
+        }
+
+        int secStart = idx0006 + 20;
+        int secLen = parseSectionLength(ascii, idx0006);
+        int secEnd = secLen > 0 ? Math.min(secStart + secLen, data.length) : data.length;
+        int count = parseSectionCount(ascii, idx0006);
+        if (count <= 0 || secStart >= secEnd) {
+            return List.of();
+        }
+
+        byte[] body = java.util.Arrays.copyOfRange(data, secStart, secEnd);
+        java.util.ArrayList<XmedStyleRecord> records = new java.util.ArrayList<>(count);
+        int recordStart = 0;
+        for (int i = 0; i + 1 < body.length && records.size() < count - 1; i++) {
+            if ((body[i] & 0xFF) == 0xC2 && (body[i + 1] & 0xFF) == 0x0A) {
+                records.add(parseStyleRecord(java.util.Arrays.copyOfRange(body, recordStart, i + 2)));
+                recordStart = i + 2;
+            }
+        }
+        records.add(parseStyleRecord(java.util.Arrays.copyOfRange(body, recordStart, body.length)));
+        return List.copyOf(records);
+    }
+
+    private static XmedStyleRecord parseStyleRecord(byte[] record) {
+        int fontCandidateIndex = -1;
+        int fontSize = -1;
+
+        int pos = 0;
+        if (record.length > 0 && record[0] == 0x02) {
+            pos = skipHexField(record, 1);
+            if (pos < record.length && record[pos] == 0x02) {
+                pos = skipHexField(record, pos + 1);
+            }
+        }
+
+        while (pos < record.length) {
+            int marker = record[pos] & 0xFF;
+            if (marker != 0x01 && marker != 0x02) {
+                pos++;
+                continue;
+            }
+            int fieldStart = pos + 1;
+            int fieldEnd = skipHexField(record, fieldStart);
+            if (fieldEnd == fieldStart) {
+                pos++;
+                continue;
+            }
+            String raw = new String(record, fieldStart, fieldEnd - fieldStart,
+                    java.nio.charset.StandardCharsets.ISO_8859_1);
+            try {
+                int value = Integer.parseInt(raw, 16);
+                if (marker == 0x01 && fontCandidateIndex < 0) {
+                    fontCandidateIndex = value;
+                }
+                if (marker == 0x02 && fontSize < 0 && raw.length() >= 5 && raw.endsWith("0000")) {
+                    int size = Integer.parseInt(raw.substring(0, raw.length() - 4), 16);
+                    if (size >= 6 && size <= 200) {
+                        fontSize = size;
+                    }
+                }
+            } catch (NumberFormatException e) {
+                // Ignore malformed fields.
+            }
+            pos = fieldEnd;
+        }
+
+        return new XmedStyleRecord(fontCandidateIndex, fontSize);
+    }
+
+    private static int skipHexField(byte[] data, int start) {
+        int pos = start;
+        while (pos < data.length && isHexDigit(data[pos] & 0xFF)) {
+            pos++;
+        }
+        return pos;
+    }
+
+    private static XmedStyleRecord styleRecordForRun(List<XmedStyleRecord> styleRecords, int runStyleIndex) {
+        if (runStyleIndex < 0 || runStyleIndex >= styleRecords.size()) {
+            return null;
+        }
+        return styleRecords.get(runStyleIndex);
+    }
+
+    private static String resolveSpanFontName(List<String> fontCandidates,
+                                              String fallbackFontName,
+                                              XmedStyleRecord styleRecord) {
+        if (styleRecord == null || styleRecord.fontCandidateIndex() < 0 || fontCandidates == null) {
+            return fallbackFontName;
+        }
+        int idx = styleRecord.fontCandidateIndex();
+        if (idx >= 0 && idx < fontCandidates.size()) {
+            String candidate = fontCandidates.get(idx);
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return fallbackFontName;
+    }
+
+    private static String choosePrimarySpanFontName(List<StyledSpan> spans, String fallbackFontName) {
+        if (spans == null || spans.isEmpty()) {
+            return fallbackFontName;
+        }
+        java.util.Map<String, Integer> coverage = new java.util.LinkedHashMap<>();
+        for (StyledSpan span : spans) {
+            String spanFontName = span.fontName() != null ? span.fontName() : fallbackFontName;
+            coverage.put(spanFontName,
+                    coverage.getOrDefault(spanFontName, 0) + Math.max(0, span.endOffset() - span.startOffset()));
+        }
+        String bestFontName = fallbackFontName;
+        int bestCoverage = -1;
+        for (var entry : coverage.entrySet()) {
+            if (entry.getValue() > bestCoverage) {
+                bestFontName = entry.getKey();
+                bestCoverage = entry.getValue();
+            }
+        }
+        return bestFontName;
+    }
+
+    private static int choosePrimarySpanFontSize(List<StyledSpan> spans, int fallbackFontSize) {
+        if (spans == null || spans.isEmpty()) {
+            return fallbackFontSize;
+        }
+        java.util.Map<Integer, Integer> coverage = new java.util.LinkedHashMap<>();
+        for (StyledSpan span : spans) {
+            coverage.put(span.fontSize(),
+                    coverage.getOrDefault(span.fontSize(), 0) + Math.max(0, span.endOffset() - span.startOffset()));
+        }
+        int bestFontSize = fallbackFontSize;
+        int bestCoverage = -1;
+        for (var entry : coverage.entrySet()) {
+            if (entry.getValue() > bestCoverage) {
+                bestFontSize = entry.getKey();
+                bestCoverage = entry.getValue();
+            }
+        }
+        return bestFontSize;
+    }
+
     private static java.util.List<Integer> extractStyleRecordFontSizes(byte[] data, int secStart, int secEnd) {
         java.util.ArrayList<Integer> sizes = new java.util.ArrayList<>();
         for (int i = secStart; i < secEnd - 6; i++) {
@@ -605,6 +760,15 @@ public class XmedTextParser {
         try {
             String lenHex = ascii.substring(sectionOffset + 4, Math.min(sectionOffset + 12, ascii.length()));
             return Integer.parseInt(lenHex, 16);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private static int parseSectionCount(String ascii, int sectionOffset) {
+        try {
+            String countHex = ascii.substring(sectionOffset + 12, Math.min(sectionOffset + 20, ascii.length()));
+            return Integer.parseInt(countHex, 16);
         } catch (Exception e) {
             return 0;
         }

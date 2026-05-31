@@ -15,6 +15,11 @@ import java.util.List;
  * with a built-in fallback font for when PFR fonts aren't available yet.
  */
 public class SimpleTextRenderer implements TextRenderer {
+    private record ResolvedXmedSpan(BitmapFont font, boolean syntheticBold,
+                                    boolean underline, int color) {}
+    private record StyledLine(int start, int end, int width, int maxLineHeight,
+                              boolean paragraphBreakBefore) {}
+
     private static final List<String> RECENT_RENDER_PROBES = new ArrayList<>();
 
     public static List<String> getRecentRenderProbes() {
@@ -133,6 +138,14 @@ public class SimpleTextRenderer implements TextRenderer {
         boolean[] usedRealBold = {false};
         BitmapFont font = resolveXmedFont(styledText, fontSize, wantsBold, wantsItalic, usedRealBold);
         if (font != null) {
+            ResolvedXmedSpan[] charSpans = resolveXmedCharSpans(styledText, textColor, font);
+            if (needsPerSpanBitmapRendering(styledText, charSpans)) {
+                Bitmap result = renderStyledXmedText(charSpans, styledText, width, height, bgColor);
+                if (antialias && result != null) {
+                    result = applyTextAA(result, bgColor);
+                }
+                return result;
+            }
             boolean syntheticBold = wantsBold && !usedRealBold[0];
             Bitmap result = renderWithBitmapFont(font, text, width, height,
                     alignment, textColor, bgColor, wordWrap,
@@ -152,6 +165,301 @@ public class SimpleTextRenderer implements TextRenderer {
             result = applyTextAA(result, bgColor);
         }
         return result;
+    }
+
+    private static boolean needsPerSpanBitmapRendering(XmedStyledText styledText, ResolvedXmedSpan[] charSpans) {
+        if (styledText == null || styledText.text() == null || styledText.text().isEmpty()
+                || charSpans == null || charSpans.length == 0) {
+            return false;
+        }
+        ResolvedXmedSpan first = null;
+        for (int i = 0; i < charSpans.length; i++) {
+            if (isLineBreak(styledText.text().charAt(i))) {
+                continue;
+            }
+            first = charSpans[i];
+            break;
+        }
+        if (first == null) {
+            return false;
+        }
+        for (int i = 0; i < charSpans.length; i++) {
+            char ch = styledText.text().charAt(i);
+            if (isLineBreak(ch)) {
+                continue;
+            }
+            ResolvedXmedSpan current = charSpans[i];
+            if (current.font() != first.font()
+                    || current.syntheticBold() != first.syntheticBold()
+                    || current.underline() != first.underline()
+                    || current.color() != first.color()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static ResolvedXmedSpan[] resolveXmedCharSpans(XmedStyledText styledText, int textColor,
+                                                            BitmapFont fallbackFont) {
+        String text = styledText.text();
+        ResolvedXmedSpan[] charSpans = new ResolvedXmedSpan[text.length()];
+        int defaultColor = textColor != 0 ? textColor : styledText.textColorARGB();
+
+        for (var span : styledText.styledSpans()) {
+            boolean[] usedRealBold = {false};
+            BitmapFont spanFont;
+            if (span.fontName() == null
+                    || span.fontName().equalsIgnoreCase(styledText.fontName())) {
+                spanFont = fallbackFont;
+            } else {
+                spanFont = resolveXmedFontByName(span.fontName(), span.fontSize(),
+                        span.bold(), span.italic(), usedRealBold);
+            }
+            if (spanFont == null) {
+                spanFont = fallbackFont;
+            }
+            boolean syntheticBold = span.bold() && !usedRealBold[0];
+            int spanColor = textColor != 0
+                    ? textColor
+                    : 0xFF000000 | ((span.colorR() & 0xFF) << 16) | ((span.colorG() & 0xFF) << 8) | (span.colorB() & 0xFF);
+            ResolvedXmedSpan resolved = new ResolvedXmedSpan(spanFont, syntheticBold, span.underline(), spanColor);
+            int start = Math.max(0, span.startOffset());
+            int end = Math.min(text.length(), span.endOffset());
+            for (int i = start; i < end; i++) {
+                charSpans[i] = resolved;
+            }
+        }
+
+        ResolvedXmedSpan fallback = new ResolvedXmedSpan(fallbackFont, false,
+                styledText.fontStyleString().toLowerCase().contains("underline"), defaultColor);
+        for (int i = 0; i < charSpans.length; i++) {
+            if (charSpans[i] == null) {
+                charSpans[i] = fallback;
+            }
+        }
+        return charSpans;
+    }
+
+    private static Bitmap renderStyledXmedText(ResolvedXmedSpan[] charSpans, XmedStyledText styledText,
+                                               int width, int height, int bgColor) {
+        String text = styledText.text();
+        List<StyledLine> lines = layoutStyledLines(text, charSpans, width, styledText.wordWrap());
+        int maxFontLineHeight = 0;
+        for (ResolvedXmedSpan charSpan : charSpans) {
+            if (charSpan != null && charSpan.font() != null) {
+                maxFontLineHeight = Math.max(maxFontLineHeight, charSpan.font().getLineHeight());
+            }
+        }
+        if (maxFontLineHeight <= 0) {
+            maxFontLineHeight = styledText.fontSize();
+        }
+        int lineHeight = styledText.fixedLineSpace() > 0 ? styledText.fixedLineSpace() : maxFontLineHeight;
+        int neededHeight = Math.max(height, Math.max(1, lines.size()) * Math.max(1, lineHeight));
+        int paragraphBreakCount = 0;
+        for (StyledLine line : lines) {
+            if (line.paragraphBreakBefore()) {
+                paragraphBreakCount++;
+            }
+        }
+        int paragraphGap = paragraphBreakCount > 0
+                ? Math.max(0, (height - Math.max(1, lines.size()) * Math.max(1, lineHeight)) / (paragraphBreakCount + 1))
+                : 0;
+        int[] pixels = new int[width * neededHeight];
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = bgColor;
+        }
+
+        int y = 0;
+        for (StyledLine line : lines) {
+            if (y >= neededHeight) {
+                break;
+            }
+            if (line.paragraphBreakBefore()) {
+                y += paragraphGap;
+                if (y >= neededHeight) {
+                    break;
+                }
+            }
+            int lineX = alignmentOffset(styledText.alignment(), width, line.width());
+            int x = lineX;
+            for (int i = line.start(); i < line.end(); i++) {
+                char ch = text.charAt(i);
+                if (isLineBreak(ch)) {
+                    continue;
+                }
+                ResolvedXmedSpan span = charSpans[i];
+                if (span == null || span.font() == null) {
+                    continue;
+                }
+                span.font().drawChar(ch, pixels, width, neededHeight, x, y, span.color());
+                if (span.syntheticBold()) {
+                    span.font().drawChar(ch, pixels, width, neededHeight, x + 1, y, span.color());
+                }
+                x += span.font().getCharWidth(ch);
+            }
+
+            int runStart = -1;
+            int runStartX = 0;
+            x = lineX;
+            for (int i = line.start(); i < line.end(); i++) {
+                char ch = text.charAt(i);
+                if (isLineBreak(ch)) {
+                    continue;
+                }
+                ResolvedXmedSpan span = charSpans[i];
+                int charWidth = span != null && span.font() != null ? span.font().getCharWidth(ch) : 0;
+                if (span != null && span.underline()) {
+                    if (runStart < 0) {
+                        runStart = i;
+                        runStartX = x;
+                    }
+                } else if (runStart >= 0) {
+                    drawStyledUnderline(pixels, width, neededHeight, y, runStartX, x,
+                            line.maxLineHeight(), charSpans[runStart].color());
+                    runStart = -1;
+                }
+                x += charWidth;
+            }
+            if (runStart >= 0) {
+                drawStyledUnderline(pixels, width, neededHeight, y, runStartX, x,
+                        line.maxLineHeight(), charSpans[runStart].color());
+            }
+            y += lineHeight;
+        }
+
+        Bitmap bitmap = new Bitmap(width, neededHeight, 32, pixels);
+        bitmap.markScriptModified();
+        return bitmap;
+    }
+
+    private static void drawStyledUnderline(int[] pixels, int width, int height, int glyphY,
+                                            int startX, int endX, int lineHeight, int color) {
+        int inkBottom = findInkBottom(pixels, width, height, startX, endX, glyphY,
+                Math.min(height - 1, glyphY + Math.max(0, lineHeight - 1)));
+        int[] bounds = findHorizontalInkBounds(pixels, width, height, startX, endX, glyphY,
+                Math.min(height - 1, glyphY + Math.max(0, lineHeight - 1)));
+        int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 2));
+        drawUnderline(pixels, width, height, underlineY,
+                bounds[0], extendUnderlineRightEdge(bounds[1], endX, width), color);
+    }
+
+    private static List<StyledLine> layoutStyledLines(String text, ResolvedXmedSpan[] charSpans,
+                                                      int maxWidth, boolean wordWrap) {
+        List<StyledLine> lines = new ArrayList<>();
+        int textLen = text.length();
+        int lineStart = 0;
+        while (lineStart <= textLen) {
+            int lineEnd = lineStart;
+            while (lineEnd < textLen && !isLineBreak(text.charAt(lineEnd))) {
+                lineEnd++;
+            }
+            if (!wordWrap || measureStyledWidth(text, charSpans, lineStart, lineEnd) <= maxWidth) {
+                lines.add(createStyledLine(text, charSpans, lineStart, lineEnd, lineStart > 0));
+            } else {
+                wrapStyledRange(text, charSpans, lineStart, lineEnd, maxWidth, lines, lineStart > 0);
+            }
+            if (lineEnd >= textLen) {
+                break;
+            }
+            if (text.charAt(lineEnd) == '\r' && lineEnd + 1 < textLen && text.charAt(lineEnd + 1) == '\n') {
+                lineStart = lineEnd + 2;
+            } else {
+                lineStart = lineEnd + 1;
+            }
+            if (lineStart == textLen) {
+                lines.add(createStyledLine(text, charSpans, textLen, textLen, true));
+                break;
+            }
+        }
+        if (lines.isEmpty()) {
+            lines.add(new StyledLine(0, 0, 0, 0, false));
+        }
+        return lines;
+    }
+
+    private static void wrapStyledRange(String text, ResolvedXmedSpan[] charSpans,
+                                        int start, int end, int maxWidth,
+                                        List<StyledLine> out,
+                                        boolean paragraphBreakBefore) {
+        int currentStart = start;
+        boolean firstWrappedLine = true;
+        while (currentStart < end) {
+            int pos = currentStart;
+            int width = 0;
+            int lastBreak = -1;
+            while (pos < end) {
+                char ch = text.charAt(pos);
+                int charWidth = widthForChar(charSpans, pos, ch);
+                if (width + charWidth > maxWidth && pos > currentStart) {
+                    break;
+                }
+                width += charWidth;
+                if (Character.isWhitespace(ch) || ch == '-') {
+                    lastBreak = pos + 1;
+                }
+                pos++;
+            }
+            if (pos >= end) {
+                out.add(createStyledLine(text, charSpans, currentStart, end,
+                        paragraphBreakBefore && firstWrappedLine));
+                return;
+            }
+            int breakPos = lastBreak > currentStart ? lastBreak : pos;
+            int trimmedEnd = breakPos;
+            while (trimmedEnd > currentStart && Character.isWhitespace(text.charAt(trimmedEnd - 1))) {
+                trimmedEnd--;
+            }
+            out.add(createStyledLine(text, charSpans, currentStart, trimmedEnd,
+                    paragraphBreakBefore && firstWrappedLine));
+            firstWrappedLine = false;
+            currentStart = breakPos;
+            while (currentStart < end && Character.isWhitespace(text.charAt(currentStart))) {
+                currentStart++;
+            }
+            if (currentStart == breakPos && breakPos == pos) {
+                currentStart = Math.min(end, pos + 1);
+            }
+        }
+    }
+
+    private static StyledLine createStyledLine(String text, ResolvedXmedSpan[] charSpans,
+                                               int start, int end,
+                                               boolean paragraphBreakBefore) {
+        return new StyledLine(start, end,
+                measureStyledWidth(text, charSpans, start, end),
+                measureMaxLineHeight(charSpans, start, end),
+                paragraphBreakBefore);
+    }
+
+    private static int measureStyledWidth(String text, ResolvedXmedSpan[] charSpans, int start, int end) {
+        int width = 0;
+        for (int i = start; i < end; i++) {
+            char ch = text.charAt(i);
+            if (!isLineBreak(ch)) {
+                width += widthForChar(charSpans, i, ch);
+            }
+        }
+        return width;
+    }
+
+    private static int measureMaxLineHeight(ResolvedXmedSpan[] charSpans, int start, int end) {
+        int max = 0;
+        for (int i = start; i < end; i++) {
+            ResolvedXmedSpan span = charSpans[i];
+            if (span != null && span.font() != null) {
+                max = Math.max(max, span.font().getLineHeight());
+            }
+        }
+        return max;
+    }
+
+    private static int widthForChar(ResolvedXmedSpan[] charSpans, int index, char ch) {
+        ResolvedXmedSpan span = index >= 0 && index < charSpans.length ? charSpans[index] : null;
+        return span != null && span.font() != null ? span.font().getCharWidth(ch) : 0;
+    }
+
+    private static boolean isLineBreak(char ch) {
+        return ch == '\r' || ch == '\n';
     }
 
     private static void underlineStyledSpans(Bitmap bitmap, BitmapFont font, XmedStyledText styledText,
@@ -210,8 +518,11 @@ public class SimpleTextRenderer implements TextRenderer {
                 int endX = lineX + font.getStringWidth(text.substring(lineStart, end));
                 int inkBottom = findInkBottom(pixels, width, height, startX, endX,
                         glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
-                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom));
-                drawUnderline(pixels, width, height, underlineY, startX, endX, textColor);
+                int[] bounds = findHorizontalInkBounds(pixels, width, height, startX, endX,
+                        glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
+                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 1));
+                drawUnderline(pixels, width, height, underlineY,
+                        bounds[0], extendUnderlineRightEdge(bounds[1], endX, width), textColor);
             }
 
             if (lineEnd >= text.length()) {
@@ -235,7 +546,13 @@ public class SimpleTextRenderer implements TextRenderer {
     private static BitmapFont resolveXmedFont(XmedStyledText styledText, int fontSize,
                                               boolean bold, boolean italic,
                                               boolean[] usedRealBold) {
-        String fontName = styledText.fontName();
+        return resolveXmedFontByName(styledText.fontName(), styledText.fontCandidates(),
+                fontSize, bold, italic, usedRealBold);
+    }
+
+    private static BitmapFont resolveXmedFontByName(String fontName, List<String> fontCandidates,
+                                                    int fontSize, boolean bold, boolean italic,
+                                                    boolean[] usedRealBold) {
         if (fontName == null) return null;
 
         BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic,
@@ -244,7 +561,7 @@ public class SimpleTextRenderer implements TextRenderer {
             return aliasFont;
         }
 
-        BitmapFont movieFont = resolveMovieFontCandidate(styledText.fontCandidates(), fontName,
+        BitmapFont movieFont = resolveMovieFontCandidate(fontCandidates, fontName,
                 fontSize, bold, italic, usedRealBold);
         if (movieFont != null) {
             return movieFont;
@@ -284,6 +601,12 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         return null;
+    }
+
+    private static BitmapFont resolveXmedFontByName(String fontName, int fontSize,
+                                                    boolean bold, boolean italic,
+                                                    boolean[] usedRealBold) {
+        return resolveXmedFontByName(fontName, null, fontSize, bold, italic, usedRealBold);
     }
 
     private static BitmapFont resolveMovieFontCandidate(List<String> fontCandidates,
@@ -622,8 +945,11 @@ public class SimpleTextRenderer implements TextRenderer {
             }
             if (underline && line.length() > 0) {
                 int inkBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
-                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom));
-                drawUnderline(pixels, width, height, underlineY, lineStartX, x, textColor);
+                int[] bounds = findHorizontalInkBounds(pixels, width, height, lineStartX, x,
+                        glyphY, Math.min(height - 1, glyphY + font.getLineHeight() - 1));
+                int underlineY = Math.min(height - 1, Math.max(glyphY, inkBottom + 1));
+                drawUnderline(pixels, width, height, underlineY,
+                        bounds[0], extendUnderlineRightEdge(bounds[1], x, width), textColor);
             }
             y += lineAdvance;
         }
@@ -696,7 +1022,7 @@ public class SimpleTextRenderer implements TextRenderer {
             if (underline && line.length() > 0) {
                 int glyphTop = Math.max(0, y);
                 int glyphBottom = findInkBottom(pixels, width, height, lineStartX, x, glyphTop, Math.min(height - 1, y + ascent));
-                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom), lineStartX, x, textColor);
+                drawUnderline(pixels, width, height, Math.min(height - 1, glyphBottom + 1), lineStartX, x, textColor);
             }
             y += lineAdvance;
         }
@@ -729,6 +1055,32 @@ public class SimpleTextRenderer implements TextRenderer {
             }
         }
         return clampedStartY;
+    }
+
+    private static int[] findHorizontalInkBounds(int[] pixels, int width, int height,
+                                                 int startX, int endX, int startY, int endY) {
+        int clampedStartX = Math.max(0, startX);
+        int clampedEndX = Math.min(width, endX);
+        int clampedStartY = Math.max(0, startY);
+        int clampedEndY = Math.min(height - 1, endY);
+        int left = clampedEndX;
+        int right = clampedStartX;
+        for (int y = clampedStartY; y <= clampedEndY; y++) {
+            for (int x = clampedStartX; x < clampedEndX; x++) {
+                if (((pixels[y * width + x] >>> 24) & 0xFF) != 0) {
+                    left = Math.min(left, x);
+                    right = Math.max(right, x + 1);
+                }
+            }
+        }
+        if (left >= right) {
+            return new int[]{clampedStartX, clampedEndX};
+        }
+        return new int[]{left, right};
+    }
+
+    private static int extendUnderlineRightEdge(int inkRightX, int spanEndX, int width) {
+        return Math.min(width, Math.min(spanEndX, inkRightX + 1));
     }
 
     /**
