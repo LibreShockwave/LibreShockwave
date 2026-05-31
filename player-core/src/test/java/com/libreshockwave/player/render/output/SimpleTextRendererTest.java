@@ -438,6 +438,112 @@ class SimpleTextRendererTest {
         }
     }
 
+    @Test
+    void xmedRenderingHonorsPerSpanMovieFontSelection() throws Exception {
+        Path v1Volter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03732_Volter_GoldFish__3966_XMED.bin");
+        Path v1BoldVolter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03731_Volter-Bold_GoldFish__3968_XMED.bin");
+        if (!Files.isRegularFile(v1Volter) || !Files.isRegularFile(v1BoldVolter)) {
+            return;
+        }
+
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerPfr1Font("Volter (GoldFish)", Files.readAllBytes(v1Volter));
+            FontRegistry.registerPfr1Font("Volter-Bold (GoldFish)", Files.readAllBytes(v1BoldVolter));
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            XmedStyledText styled = new XmedStyledText(
+                    "First time here?",
+                    List.of(new StyledSpan(0, 16, "Volter-Bold (goldfish)", 9, false, false, false, 0, 0, 0)),
+                    List.of("Geneva", "Volter (goldfish)", "Volter-Bold (goldfish)"),
+                    "left",
+                    1,
+                    1,
+                    2,
+                    false,
+                    0,
+                    120,
+                    16,
+                    "Volter (goldfish)",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            Bitmap styledBitmap = renderer.renderXmedText(styled, 120, 16, 0xFF000000, 0x00FFFFFF);
+            Bitmap explicitBold = renderer.renderText("First time here?", 120, 16,
+                    "Volter-Bold (goldfish)", 9, "plain",
+                    "left", 0xFF000000, 0x00FFFFFF,
+                    false, false, 0, 0);
+            Bitmap plain = renderer.renderText("First time here?", 120, 16,
+                    "Volter (goldfish)", 9, "plain",
+                    "left", 0xFF000000, 0x00FFFFFF,
+                    false, false, 0, 0);
+
+            assertArrayEquals(explicitBold.getPixels(), styledBitmap.getPixels(),
+                    "expected XMED rendering to honor the authored span font instead of the member primary font");
+            assertFalse(java.util.Arrays.equals(plain.getPixels(), styledBitmap.getPixels()),
+                    "expected the per-span movie font selection to differ from a plain regular-face render");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
+    @Test
+    void xmedUnderlineStopsAtUnderlinedSpanInk() throws Exception {
+        Path v1Volter = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03732_Volter_GoldFish__3966_XMED.bin");
+        if (!Files.isRegularFile(v1Volter)) {
+            return;
+        }
+
+        FontRegistry.clear();
+        try {
+            FontRegistry.registerPfr1Font("Volter (GoldFish)", Files.readAllBytes(v1Volter));
+            SimpleTextRenderer renderer = new SimpleTextRenderer();
+
+            XmedStyledText styled = new XmedStyledText(
+                    "here.",
+                    List.of(
+                            new StyledSpan(0, 4, "Volter (goldfish)", 9, false, false, true, 0, 0, 0),
+                            new StyledSpan(4, 5, "Volter (goldfish)", 9, false, false, false, 0, 0, 0)
+                    ),
+                    List.of("Volter (goldfish)"),
+                    "left",
+                    0,
+                    0,
+                    1,
+                    false,
+                    0,
+                    40,
+                    12,
+                    "Volter (goldfish)",
+                    9,
+                    false,
+                    14,
+                    false,
+                    0,
+                    0,
+                    0
+            );
+
+            Bitmap bitmap = renderer.renderXmedText(styled, 40, 12, 0xFF000000, 0x00FFFFFF);
+            int underlineRow = findLastOpaqueRow(bitmap);
+
+            assertEquals(0x00FFFFFF, bitmap.getPixel(23, underlineRow),
+                    "expected trailing non-underlined punctuation advance to stay clear of the underline");
+            assertEquals(0xFF000000, bitmap.getPixel(22, underlineRow),
+                    "expected bitmap underline to keep the native one-pixel right overhang within the authored span");
+            assertEquals(0xFF000000, bitmap.getPixel(21, underlineRow),
+                    "expected underline to remain visible under the authored underlined span");
+        } finally {
+            FontRegistry.clear();
+        }
+    }
+
     private static int countOpaquePixelsOnRow(Bitmap bitmap, int y) {
         int count = 0;
         for (int x = 0; x < bitmap.getWidth(); x++) {

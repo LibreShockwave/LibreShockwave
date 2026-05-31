@@ -39,10 +39,10 @@ class SpriteBakerTextTest {
     @Test
     void shiftBitmapDownPreservesSizeAndClearsLeadingRows() {
         Bitmap source = new Bitmap(3, 4, 32, new int[] {
-                0xFF000001, 0xFF000002, 0xFF000003,
+                0x00000000, 0x00000000, 0x00000000,
                 0xFF000004, 0xFF000005, 0xFF000006,
                 0xFF000007, 0xFF000008, 0xFF000009,
-                0xFF00000A, 0xFF00000B, 0xFF00000C
+                0x00000000, 0x00000000, 0x00000000
         });
         source.setNativeAlpha(true);
 
@@ -52,9 +52,24 @@ class SpriteBakerTextTest {
         assertEquals(4, shifted.getHeight());
         assertEquals(0x00000000, shifted.getPixel(0, 0));
         assertEquals(0x00000000, shifted.getPixel(2, 1));
-        assertEquals(0xFF000001, shifted.getPixel(0, 2));
-        assertEquals(0xFF000006, shifted.getPixel(2, 3));
+        assertEquals(0xFF000004, shifted.getPixel(0, 2));
+        assertEquals(0xFF000009, shifted.getPixel(2, 3));
         assertTrue(shifted.isNativeAlpha());
+    }
+
+    @Test
+    void shiftBitmapDownDoesNotClipBottomInkWhenThereIsNoRoom() {
+        Bitmap source = new Bitmap(3, 3, 32, new int[] {
+                0x00000000, 0x00000000, 0x00000000,
+                0x00000000, 0xFF000001, 0x00000000,
+                0xFF000002, 0xFF000003, 0xFF000004
+        });
+
+        Bitmap shifted = SpriteBaker.shiftBitmapDown(source, 2, 0x00000000);
+
+        assertEquals(source.getPixel(0, 2), shifted.getPixel(0, 2));
+        assertEquals(source.getPixel(1, 2), shifted.getPixel(1, 2));
+        assertEquals(source.getPixel(2, 2), shifted.getPixel(2, 2));
     }
 
 }

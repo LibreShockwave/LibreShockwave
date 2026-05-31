@@ -103,6 +103,49 @@ class XmedTextParserTest {
         assertEquals(1, styled.paragraphStyleCount());
     }
 
+    @Test
+    void corpusLoginPromptUsesMovieBoldFontMember() throws Exception {
+        Path xmed = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03541_member_4227_XMED.bin");
+        if (!Files.isRegularFile(xmed)) {
+            return;
+        }
+
+        XmedStyledText styled = XmedTextParser.parseStyled(Files.readAllBytes(xmed), textXtraSpecificData(160, 20));
+
+        assertEquals("Volter-Bold (goldfish)", styled.fontName());
+        assertEquals("Volter-Bold (goldfish)", styled.styledSpans().get(0).fontName());
+        assertEquals(9, styled.fontSize());
+    }
+
+    @Test
+    void corpusFirstTimePromptUsesMovieBoldFontMember() throws Exception {
+        Path xmed = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03640_member_4211_XMED.bin");
+        if (!Files.isRegularFile(xmed)) {
+            return;
+        }
+
+        XmedStyledText styled = XmedTextParser.parseStyled(Files.readAllBytes(xmed), textXtraSpecificData(160, 20));
+
+        assertEquals("Volter-Bold (goldfish)", styled.fontName());
+        assertEquals("Volter-Bold (goldfish)", styled.styledSpans().get(0).fontName());
+        assertEquals(9, styled.fontSize());
+    }
+
+    @Test
+    void corpusMultilineLoginLinkUsesMoviePixelFontOnAuthoredSpans() throws Exception {
+        Path xmed = Path.of("/opt/git/v1_assets/habbo_entry/raw_chunks/03742_member_4209_XMED.bin");
+        if (!Files.isRegularFile(xmed)) {
+            return;
+        }
+
+        XmedStyledText styled = XmedTextParser.parseStyled(Files.readAllBytes(xmed), textXtraSpecificData(175, 24));
+
+        assertEquals("Volter (goldfish)", styled.fontName());
+        assertEquals("Volter (goldfish)", styled.styledSpans().get(0).fontName());
+        assertEquals("Volter (goldfish)", styled.styledSpans().get(1).fontName());
+        assertTrue(styled.styledSpans().get(1).underline());
+    }
+
     private static byte[] xmedWithAlignmentValue(char value) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeAscii(out, "0002");

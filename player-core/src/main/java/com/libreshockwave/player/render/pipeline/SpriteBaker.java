@@ -605,13 +605,18 @@ public class SpriteBaker {
         }
         int width = source.getWidth();
         int height = source.getHeight();
+        int[] src = source.getPixels();
+        int availableBottomRows = bottomTransparentRows(src, width, height);
+        int safeDy = Math.min(dy, availableBottomRows);
+        if (safeDy <= 0) {
+            return source;
+        }
         int[] pixels = new int[width * height];
         for (int i = 0; i < pixels.length; i++) {
             pixels[i] = bgColor;
         }
-        int[] src = source.getPixels();
-        for (int y = 0; y < height - dy; y++) {
-            System.arraycopy(src, y * width, pixels, (y + dy) * width, width);
+        for (int y = 0; y < height - safeDy; y++) {
+            System.arraycopy(src, y * width, pixels, (y + safeDy) * width, width);
         }
         Bitmap shifted = new Bitmap(width, height, source.getBitDepth(), pixels);
         shifted.markScriptModified();
@@ -619,6 +624,24 @@ public class SpriteBaker {
             shifted.setNativeAlpha(true);
         }
         return shifted;
+    }
+
+    private static int bottomTransparentRows(int[] pixels, int width, int height) {
+        int rows = 0;
+        for (int y = height - 1; y >= 0; y--) {
+            boolean rowTransparent = true;
+            for (int x = 0; x < width; x++) {
+                if (((pixels[y * width + x] >>> 24) & 0xFF) != 0) {
+                    rowTransparent = false;
+                    break;
+                }
+            }
+            if (!rowTransparent) {
+                break;
+            }
+            rows++;
+        }
+        return rows;
     }
 
     /**
