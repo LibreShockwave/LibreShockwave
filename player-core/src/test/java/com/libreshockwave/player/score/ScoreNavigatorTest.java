@@ -46,4 +46,19 @@ class ScoreNavigatorTest {
         assertTrue(ScoreNavigator.parseBehaviorParameters(
                 List.of(new byte[0], "not a list".getBytes(StandardCharsets.ISO_8859_1)), 1).isEmpty());
     }
+
+    @Test
+    void resolvesRelativeMarkerFramesLikeDirectorMarkerMethod() {
+        List<Integer> markers = List.of(5, 10, 20, 40);
+
+        assertEquals(20, ScoreNavigator.resolveMarkerFrame(markers, 20, 0));
+        assertEquals(10, ScoreNavigator.resolveMarkerFrame(markers, 17, 0));
+        assertEquals(20, ScoreNavigator.resolveMarkerFrame(markers, 17, 1));
+        assertEquals(40, ScoreNavigator.resolveMarkerFrame(markers, 17, 2));
+        assertEquals(5, ScoreNavigator.resolveMarkerFrame(markers, 17, -1));
+        assertEquals(0, ScoreNavigator.resolveMarkerFrame(markers, 4, 0));
+        assertEquals(5, ScoreNavigator.resolveMarkerFrame(markers, 4, 1));
+        assertEquals(0, ScoreNavigator.resolveMarkerFrame(markers, 4, -1));
+        assertEquals(0, ScoreNavigator.resolveMarkerFrame(markers, 40, 1));
+    }
 }

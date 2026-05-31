@@ -413,6 +413,11 @@ public class MovieProperties implements MoviePropertyProvider {
     }
 
     @Override
+    public int getMarkerFrame(int markerOffset) {
+        return player.getNavigator().getMarkerFrame(player.getEffectiveFrame(), markerOffset);
+    }
+
+    @Override
     public void gotoNetPage(String url, String target) {
         String safeUrl = url != null ? url : "";
         String safeTarget = target != null ? target : "";
