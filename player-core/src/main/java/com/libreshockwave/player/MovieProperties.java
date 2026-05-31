@@ -408,6 +408,11 @@ public class MovieProperties implements MoviePropertyProvider {
     }
 
     @Override
+    public int getFrameForLabel(String label) {
+        return player.getFrameForLabel(label);
+    }
+
+    @Override
     public void gotoNetPage(String url, String target) {
         String safeUrl = url != null ? url : "";
         String safeTarget = target != null ? target : "";

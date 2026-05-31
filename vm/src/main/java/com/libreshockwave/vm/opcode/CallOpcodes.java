@@ -112,14 +112,19 @@ public final class CallOpcodes {
             if (builtinResult != null) {
                 result = builtinResult;
             } else {
-            // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
-            // Director compiles these as EXT_CALL with 0 args when used without "the"
-                if (args.isEmpty()) {
-                    result = PropertyOpcodes.getBuiltinConstant(handlerName);
+                Datum receiverStyleResult = dispatchExtCallReceiverStyle(ctx, handlerName, args);
+                if (receiverStyleResult != null) {
+                    result = receiverStyleResult;
                 } else {
-                    System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
-                    System.err.println(ctx.formatCallStack());
-                    result = Datum.VOID;
+                // Check built-in constants (SPACE, RETURN, QUOTE, etc.)
+                // Director compiles these as EXT_CALL with 0 args when used without "the"
+                    if (args.isEmpty()) {
+                        result = PropertyOpcodes.getBuiltinConstant(handlerName);
+                    } else {
+                        System.err.println("[LingoVM] Missing builtin/handler: " + handlerName);
+                        System.err.println(ctx.formatCallStack());
+                        result = Datum.VOID;
+                    }
                 }
             }
         }
@@ -127,6 +132,40 @@ public final class CallOpcodes {
             ctx.push(result);
         }
         return true;
+    }
+
+    private static Datum dispatchExtCallReceiverStyle(ExecutionContext ctx, String handlerName, List<Datum> args) {
+        if (args.isEmpty()) {
+            return null;
+        }
+
+        Datum receiver = args.get(0);
+        if (!supportsReceiverStyleExtCall(receiver)) {
+            return null;
+        }
+
+        return dispatchMethod(ctx, receiver, handlerName, args.subList(1, args.size()));
+    }
+
+    private static boolean supportsReceiverStyleExtCall(Datum receiver) {
+        return receiver instanceof Datum.MovieRef
+                || receiver instanceof Datum.ScriptInstance
+                || receiver instanceof Datum.XtraInstance
+                || receiver instanceof Datum.List
+                || receiver instanceof Datum.PropList
+                || receiver instanceof Datum.VarRef
+                || receiver instanceof Datum.ChunkRef
+                || receiver instanceof Datum.Point
+                || receiver instanceof Datum.Rect
+                || receiver instanceof Datum.Str
+                || receiver instanceof Datum.FieldText
+                || receiver instanceof Datum.TimeoutRef
+                || receiver instanceof Datum.SoundChannel
+                || receiver instanceof Datum.ImageRef
+                || receiver instanceof Datum.SpriteRef
+                || receiver instanceof Datum.CastLibRef
+                || receiver instanceof Datum.CastMemberRef
+                || receiver instanceof Datum.CastLibMemberAccessor;
     }
 
     private static boolean objCall(ExecutionContext ctx) {
