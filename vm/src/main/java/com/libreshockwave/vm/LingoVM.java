@@ -119,13 +119,36 @@ public class LingoVM {
     }
 
     public int randomInt(int max) {
+        int result;
         if (max <= 0) {
-            return 1;
+            result = 1;
+        } else if (!explicitRandomSeed) {
+            result = random.nextInt(max) + 1;
+        } else {
+            result = nextSeededRandomInt(max) + 1;
         }
-        if (!explicitRandomSeed) {
-            return random.nextInt(max) + 1;
+        traceRandomCall(max, result);
+        return result;
+    }
+
+    private void traceRandomCall(int max, int result) {
+        if (!tracedHandlers.contains("random")) {
+            return;
         }
-        return nextSeededRandomInt(max) + 1;
+        StringBuilder sb = new StringBuilder("[TRACE] random(");
+        sb.append(max).append(")=").append(result);
+        if (explicitRandomSeed) {
+            sb.append(" seed=").append(randomSeed);
+        }
+        Scope scope = callStack.peek();
+        if (scope != null) {
+            sb.append(" at ")
+                    .append(scope.getScript().getHandlerName(scope.getHandler()))
+                    .append(" in \"")
+                    .append(scope.getScript().getDisplayName())
+                    .append('"');
+        }
+        System.out.println(sb.toString());
     }
 
     public int getRandomSeed() {

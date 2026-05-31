@@ -33,6 +33,7 @@ public final class SpriteBuiltins {
         builtins.put("updatestage", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("movetofront", (vm, args) -> Datum.VOID);  // No-op stub
         builtins.put("movetoback", (vm, args) -> Datum.VOID);  // No-op stub
+        builtins.put("spritebox", SpriteBuiltins::spriteBox);
     }
 
     /**
@@ -124,5 +125,18 @@ public final class SpriteBuiltins {
         }
 
         return Datum.VOID;
+    }
+
+    private static Datum spriteBox(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) {
+            return new Datum.Rect(0, 0, 0, 0);
+        }
+
+        SpritePropertyProvider provider = SpritePropertyProvider.getProvider();
+        if (provider == null) {
+            return new Datum.Rect(0, 0, 0, 0);
+        }
+
+        return provider.getSpriteProp(args.get(0).toInt(), "rect");
     }
 }

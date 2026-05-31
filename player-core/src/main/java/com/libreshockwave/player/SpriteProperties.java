@@ -1,11 +1,10 @@
 package com.libreshockwave.player;
-
 import com.libreshockwave.bitmap.Bitmap;
 import com.libreshockwave.cast.BitmapInfo;
-import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.id.InkMode;
+import com.libreshockwave.player.cast.CastLib;
 import com.libreshockwave.player.cast.CastLibManager;
 import com.libreshockwave.player.cast.CastMember;
 import com.libreshockwave.player.render.SpriteRegistry;
@@ -167,21 +166,21 @@ public class SpriteProperties implements SpritePropertyProvider {
                 regY = mirrorOffset(runtimeMember.getRegPointY(), basisHeight, flipV);
             } else {
                 CastMemberChunk member = castLibManager.getCastMember(castLib, memberNum);
-                if (member != null) {
-                    if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
-                        BitmapInfo bi = BitmapInfo.parse(member);
-                        int bmpWidth = bi.width();
-                        int bmpHeight = bi.height();
-                        regX = bi.regXLocal();
-                        regY = bi.regYLocal();
-                        if (width > 0 && bmpWidth > 0 && bmpWidth != width) {
-                            regX = regX * width / bmpWidth;
-                        }
-                        if (height > 0 && bmpHeight > 0 && bmpHeight != height) {
-                            regY = regY * height / bmpHeight;
-                        }
-                        regX = mirrorOffset(regX, width > 0 ? width : bmpWidth, flipH);
-                        regY = mirrorOffset(regY, height > 0 ? height : bmpHeight, flipV);
+                    if (member != null) {
+                        if (member.isBitmap() && member.specificData() != null && member.specificData().length >= 10) {
+                            BitmapInfo bi = BitmapInfo.parse(member);
+                            int bmpWidth = bi.width();
+                            int bmpHeight = bi.height();
+                            regX = bi.regXLocal();
+                            regY = bi.regYLocal();
+                            if (width > 0 && bmpWidth > 0 && bmpWidth != width) {
+                                regX = scaleRegistrationOffset(regX, width, bmpWidth);
+                            }
+                            if (height > 0 && bmpHeight > 0 && bmpHeight != height) {
+                                regY = scaleRegistrationOffset(regY, height, bmpHeight);
+                            }
+                            regX = mirrorOffset(regX, width > 0 ? width : bmpWidth, flipH);
+                            regY = mirrorOffset(regY, height > 0 ? height : bmpHeight, flipV);
                     } else {
                         regX = mirrorOffset(member.regPointX(), width, flipH);
                         regY = mirrorOffset(member.regPointY(), height, flipV);
@@ -202,6 +201,20 @@ public class SpriteProperties implements SpritePropertyProvider {
         return span - reg;
     }
 
+    private int scaleRegistrationOffset(int reg, int spriteSpan, int bitmapSpan) {
+        if (usesLegacyRoundedRegistrationScale()) {
+            return Math.round((float) reg * spriteSpan / bitmapSpan);
+        }
+        return reg * spriteSpan / bitmapSpan;
+    }
+
+    private boolean usesLegacyRoundedRegistrationScale() {
+        return castLibManager != null
+                && castLibManager.getFile() != null
+                && castLibManager.getFile().getConfig() != null
+                && castLibManager.getFile().getConfig().directorVersion() <= 1600;
+    }
+
     private boolean effectiveFlipH(SpriteState sprite) {
         return sprite.isFlipH() ^ hasDirectorHorizontalMirror(sprite.getRotation(), sprite.getSkew());
     }
@@ -220,10 +233,9 @@ public class SpriteProperties implements SpritePropertyProvider {
 
     @Override
     public boolean setSpriteProp(int spriteNum, String propName, Datum value) {
+        String prop = propName.toLowerCase();
         // Auto-create dynamic sprite if it doesn't exist
         SpriteState sprite = registry.getOrCreateDynamic(spriteNum);
-
-        String prop = propName.toLowerCase();
         // Bump revision so SoftwareRenderer cache invalidates for single-frame movies
         registry.bumpRevision();
         switch (prop) {
@@ -517,6 +529,7 @@ public class SpriteProperties implements SpritePropertyProvider {
         }
         return true;
     }
+
 
     /**
      * Auto-size the sprite to match its member's natural dimensions.

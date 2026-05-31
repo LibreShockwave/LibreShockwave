@@ -205,6 +205,7 @@ public class MovieProperties implements MoviePropertyProvider {
                 }
                 yield Datum.of(32);
             }
+            case "fullcolorpermit" -> Datum.TRUE;
 
             // Anim2 properties
             case "perframehook" -> Datum.VOID;

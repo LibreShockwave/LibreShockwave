@@ -245,7 +245,9 @@ public class EventDispatcher {
                 || spriteHasHandler(channel, PlayerEvent.MOUSE_UP.getHandlerName())
                 || spriteHasHandler(channel, PlayerEvent.MOUSE_ENTER.getHandlerName())
                 || spriteHasHandler(channel, PlayerEvent.MOUSE_LEAVE.getHandlerName())
-                || spriteHasHandler(channel, PlayerEvent.MOUSE_WITHIN.getHandlerName());
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_WITHIN.getHandlerName())
+                || spriteHasHandler(channel, PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName())
+                || spriteHasHandler(channel, "mouseUpOutSide");
     }
 
     /**
@@ -431,8 +433,8 @@ public class EventDispatcher {
                 || PlayerEvent.MOUSE_ENTER.getHandlerName().equals(handlerName)
                 || PlayerEvent.MOUSE_LEAVE.getHandlerName().equals(handlerName)
                 || PlayerEvent.MOUSE_WITHIN.getHandlerName().equals(handlerName)
-                || "mouseUpOutSide".equals(handlerName)
-                || PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName().equals(handlerName);
+                || PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName().equals(handlerName)
+                || "mouseUpOutSide".equals(handlerName);
     }
 
     private Datum getScriptInstanceProcEntry(Datum.ScriptInstance instance, String handlerName) {

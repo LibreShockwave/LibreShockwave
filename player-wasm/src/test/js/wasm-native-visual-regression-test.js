@@ -9,10 +9,12 @@ const distPath = process.argv[2] || path.resolve(__dirname, '../../../build/dist
 const outputDir = process.argv[3] || path.resolve(process.cwd(), 'frames_native_visual');
 const referenceDir = process.env.LS_NATIVE_REFERENCE_DIR || '/opt/git/v14_v31_compare';
 const v14Root = process.env.LS_V14_HTDOCS_ROOT || '/opt/git/Kepler-www';
+const v1AssetsRoot = process.env.LS_V1_ASSETS_ROOT || '/opt/git/v1_assets/projectorrays_lingo';
 const cases = (process.env.LS_NATIVE_VISUAL_CASES || 'v1,v14,v31')
     .split(',')
     .map(value => value.trim().toLowerCase())
     .filter(Boolean);
+const traceHandlers = readListEnv('LS_TRACE_HANDLERS');
 
 const V1 = {
     name: 'v1',
@@ -23,7 +25,7 @@ const V1 = {
     params: {},
     initialMovieProperties: readJsonEnv('LS_V1_INITIAL_MOVIE_PROPERTIES', {}),
     waitText: "Haven't got a Habbo yet?",
-    maxPolls: Number(process.env.LS_V1_NATIVE_MAX_POLLS || 360),
+    maxPolls: Number(process.env.LS_V1_NATIVE_MAX_POLLS || 900),
     pollMs: 250,
     settleMs: Number(process.env.LS_V1_NATIVE_SETTLE_MS || 1000),
     maxMeanDelta: Number(process.env.LS_V1_NATIVE_MAX_MEAN_DELTA || 38),
@@ -108,6 +110,13 @@ function readJsonEnv(name, fallback) {
     }
 }
 
+function readListEnv(name) {
+    return (process.env[name] || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean);
+}
+
 function serveFile(res, filePath) {
     const data = readFixtureFile(filePath);
     res.writeHead(200, {
@@ -178,6 +187,10 @@ function createServer() {
 
 function proxyHttpFixture(req, res) {
     const targetUrl = 'http://' + req.url.substring('/__native_proxy/'.length);
+    const localV1Path = resolveLocalV1ProxyPath(targetUrl);
+    if (localV1Path) {
+        return serveFile(res, localV1Path);
+    }
     http.get(targetUrl, proxyRes => {
         const chunks = [];
         proxyRes.on('data', chunk => chunks.push(chunk));
@@ -197,6 +210,26 @@ function proxyHttpFixture(req, res) {
         });
         res.end(`Could not proxy ${targetUrl}: ${err.message}`);
     });
+}
+
+function resolveLocalV1ProxyPath(targetUrl) {
+    let parsed;
+    try {
+        parsed = new URL(targetUrl);
+    } catch (error) {
+        return null;
+    }
+    const baseName = path.basename(parsed.pathname);
+    const stem = baseName.replace(/\.(dcr|dir|cct|cst)$/i, '');
+    const extension = baseName.toLowerCase().endsWith('.cct') || baseName.toLowerCase().endsWith('.cst') ? '.cst' : '.dir';
+    const candidates = [
+        path.join(v1AssetsRoot, `${stem}${extension}`),
+        path.join(v1AssetsRoot, stem, `${stem}${extension}`),
+        path.join(v1AssetsRoot, 'projectorrays_lingo', `${stem}${extension}`),
+        path.join(v1AssetsRoot, 'projectorrays_lingo', stem, `${stem}${extension}`),
+    ];
+    const candidate = candidates.find(candidatePath => fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile());
+    return candidate || null;
 }
 
 async function loadBrowser() {
@@ -351,17 +384,16 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
     onDebugLog: function(log) {
         var text = String(log);
         _testState.debugLogs.push(text);
-        if (_testState.debugLogs.length > 120) {
-            _testState.debugLogs.splice(0, _testState.debugLogs.length - 120);
+        if (_testState.debugLogs.length > 2000) {
+            _testState.debugLogs.splice(0, _testState.debugLogs.length - 2000);
         }
-        if (text.indexOf('[ScriptError]') >= 0 || text.indexOf('[NetManager]') >= 0) {
+        if (text.indexOf('[ScriptError]') >= 0 || text.indexOf('[NetManager]') >= 0 || text.indexOf('[TRACE]') >= 0) {
             console.log(text);
         }
     }
 });
 window.betaClientPlayer = betaClientPlayer;
-[
-].forEach(function(name) { betaClientPlayer.addTraceHandler(name); });
+${JSON.stringify(traceHandlers)}.forEach(function(name) { betaClientPlayer.addTraceHandler(name); });
 window.startNativeVisualCase = function() {
     betaClientPlayer.load(betaClientMovieUrl);
 };
@@ -890,11 +922,15 @@ async function saveSuccessDiagnostics(page, fixture) {
         const bootstrap = window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
             ? await window.betaClientPlayer.getBootstrapDiagnostics()
             : '';
-        return { visibleText, windowSprites, bootstrap };
+        const debugLogs = window._testState && window._testState.debugLogs
+            ? window._testState.debugLogs.slice()
+            : [];
+        return { visibleText, windowSprites, bootstrap, debugLogs };
     });
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_visible_text.txt`), artifacts.visibleText || '');
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_window_sprites.txt`), artifacts.windowSprites || '');
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_bootstrap.txt`), artifacts.bootstrap || '');
+    fs.writeFileSync(path.join(outputDir, `${fixture.name}_debug_logs.txt`), (artifacts.debugLogs || []).join('\n'));
 }
 
 async function main() {

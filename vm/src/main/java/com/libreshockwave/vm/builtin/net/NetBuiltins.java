@@ -53,6 +53,8 @@ public final class NetBuiltins {
 
     // Thread-local provider for VM access
     private static final ThreadLocal<NetProvider> currentProvider = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> tellStreamStatusEnabled =
+        ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     /**
      * Set the network provider for the current thread.
@@ -67,6 +69,7 @@ public final class NetBuiltins {
      */
     public static void clearProvider() {
         currentProvider.remove();
+        tellStreamStatusEnabled.remove();
     }
 
     public static void register(Map<String, BiFunction<LingoVM, List<Datum>, Datum>> builtins) {
@@ -79,6 +82,7 @@ public final class NetBuiltins {
         builtins.put("nettextresult", NetBuiltins::netTextResult);
         builtins.put("neterror", NetBuiltins::netError);
         builtins.put("getstreamstatus", NetBuiltins::getStreamStatus);
+        builtins.put("tellstreamstatus", NetBuiltins::tellStreamStatus);
         builtins.put("gotonetpage", NetBuiltins::gotoNetPage);
         builtins.put("gotonetmovie", NetBuiltins::gotoNetMovie);
     }
@@ -215,10 +219,27 @@ public final class NetBuiltins {
         }
 
         if (!args.isEmpty() && (args.get(0).isString() || args.get(0).isSymbol())) {
-            return provider.getStreamStatusDatum(args.get(0).toStr());
+            String url = args.get(0).toStr();
+            return provider.getStreamStatusDatum(url);
         }
 
         Integer taskId = args.isEmpty() ? null : args.get(0).toInt();
         return provider.getStreamStatusDatum(taskId);
+    }
+
+    /**
+     * tellStreamStatus(onOrOffBoolean)
+     * tellStreamStatus()
+     * Director uses this as a global toggle/getter for on streamStatus callbacks.
+     * We currently preserve the toggle state even though callback delivery is not
+     * yet synthesized generically.
+     */
+    private static Datum tellStreamStatus(LingoVM vm, List<Datum> args) {
+        if (args.isEmpty()) {
+            return tellStreamStatusEnabled.get() ? Datum.TRUE : Datum.FALSE;
+        }
+        boolean enabled = args.get(0).isTruthy();
+        tellStreamStatusEnabled.set(enabled);
+        return enabled ? Datum.TRUE : Datum.FALSE;
     }
 }

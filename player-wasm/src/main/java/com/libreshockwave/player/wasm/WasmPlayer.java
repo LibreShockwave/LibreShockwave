@@ -38,7 +38,11 @@ public class WasmPlayer {
         netProvider = new QueuedNetProvider(basePath);
         player = new Player(file, netProvider, castDataRequestCallback);
         player.getMovieProperties().setGotoNetPageHandler(WasmEntry::enqueueGotoNetPage);
-        player.getMovieProperties().setGotoNetMovieHandler(WasmEntry::enqueueGotoNetMovie);
+        player.getMovieProperties().setGotoNetMovieHandler(url -> {
+            int requestId = netProvider.beginMovieNavigation(url);
+            WasmEntry.enqueueGotoNetMovie(url);
+            return requestId;
+        });
         player.setErrorListener(WasmEntry::reportScriptError);
 
         // When a fetch completes, cache cast files in CastLibManager so they're
@@ -67,15 +71,23 @@ public class WasmPlayer {
             return false;
         }
         for (CastLib castLib : player.getCastLibManager().getCastLibs().values()) {
-            if (!castLib.isLoaded()) {
-                continue;
-            }
-            if (baseName.equalsIgnoreCase(castLib.getName())) {
-                return true;
-            }
             String castFileName = FileUtil.getFileName(castLib.getFileName());
             String castBaseName = FileUtil.getFileNameWithoutExtension(castFileName);
-            if (castBaseName != null && baseName.equalsIgnoreCase(castBaseName)) {
+
+            boolean matchesCast = baseName.equalsIgnoreCase(castLib.getName());
+            if (!matchesCast && castBaseName != null) {
+                matchesCast = baseName.equalsIgnoreCase(castBaseName);
+            }
+            if (!matchesCast) {
+                continue;
+            }
+
+            // Internal casts with authored members are already in-memory; treat them
+            // as immediately satisfied.
+            if (!castLib.isExternal()) {
+                return castLib.isLoaded();
+            }
+            if (castLib.isFetched()) {
                 return true;
             }
         }

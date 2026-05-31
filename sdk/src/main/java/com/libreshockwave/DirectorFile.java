@@ -185,13 +185,134 @@ public class DirectorFile {
     }
 
     /**
+     * Resolve the authored script chunk for a specific script cast member.
+     * Older movies can reuse local scriptId indices across multiple Lctx chunks,
+     * so scriptId alone is ambiguous. Prefer KEY*-owner mapping back to the
+     * cast member's CASt chunk, then fall back to scriptId candidates.
+     */
+    public ScriptChunk getScriptForCastMember(CastMemberChunk member) {
+        return getScriptForCastMember(member, null);
+    }
+
+    /**
+     * Resolve the authored script chunk for a specific script cast member, optionally
+     * constraining the match to the ScriptContextChunk associated with the given CastChunk.
+     * Older Director files can contain multiple internal cast chunks and multiple script
+     * contexts whose local scriptId spaces overlap. KEY* owner tokens tie each internal
+     * CAS* chunk to its matching Lctx/LctX chunk.
+     */
+    public ScriptChunk getScriptForCastMember(CastMemberChunk member, CastChunk castChunk) {
+        if (member == null || !member.isScript() || member.scriptId() <= 0) {
+            return null;
+        }
+
+        List<ScriptChunk> matches = getScriptsByContextId(member.scriptId());
+        if (matches.isEmpty()) {
+            return null;
+        }
+        if (matches.size() == 1) {
+            return matches.get(0);
+        }
+
+        ChunkId preferredContextOwner = null;
+        if (castChunk != null && keyTable != null) {
+            preferredContextOwner = keyTable.getOwnerCastId(castChunk.id());
+        }
+        if (preferredContextOwner != null) {
+            for (ScriptContextChunk ctx : allScriptContexts) {
+                ChunkId contextOwner = keyTable.getOwnerCastId(ctx.id());
+                if (!preferredContextOwner.equals(contextOwner)) {
+                    continue;
+                }
+                int index = member.scriptId() - 1;
+                if (index < 0 || index >= ctx.entries().size()) {
+                    break;
+                }
+                ChunkId scriptId = ctx.entries().get(index).id();
+                if (scriptId.value() <= 0) {
+                    break;
+                }
+                for (ScriptChunk script : matches) {
+                    if (script.id().equals(scriptId)) {
+                        return script;
+                    }
+                }
+                break;
+            }
+        }
+
+        if (keyTable != null) {
+            for (ScriptChunk script : matches) {
+                ChunkId ownerId = keyTable.getOwnerCastId(script.id());
+                if (member.id().equals(ownerId)) {
+                    return script;
+                }
+            }
+        }
+
+        ScriptChunk.ScriptType memberType = member.getScriptType();
+        if (memberType != null) {
+            for (ScriptChunk script : matches) {
+                if (script.scriptType() == memberType) {
+                    return script;
+                }
+            }
+        }
+
+        return matches.get(0);
+    }
+
+    /**
      * Get the reliable script type for a script by looking up its associated cast member.
      * The script type stored in the cast member's specificData is the authoritative source.
      * @param script The script chunk to get the type for
      * @return The script type from the cast member, or null if not found
      */
     public ScriptChunk.ScriptType getScriptType(ScriptChunk script) {
+        if (script == null) {
+            return null;
+        }
+        if (keyTable != null) {
+            ChunkId ownerId = keyTable.getOwnerCastId(script.id());
+            if (ownerId != null) {
+                for (CastMemberChunk member : castMembers) {
+                    if (member.id().equals(ownerId) && member.isScript()) {
+                        return member.getScriptType();
+                    }
+                }
+            }
+        }
         return getScriptLookup().getScriptType(script);
+    }
+
+    /**
+     * Get the authored cast member name for a script chunk, if available.
+     */
+    public String getScriptName(ScriptChunk script) {
+        if (script == null) {
+            return "";
+        }
+        if (keyTable != null) {
+            ChunkId ownerId = keyTable.getOwnerCastId(script.id());
+            if (ownerId != null) {
+                for (CastMemberChunk member : castMembers) {
+                    if (member.id().equals(ownerId) && member.isScript()) {
+                        return member.name() != null ? member.name() : "";
+                    }
+                }
+            }
+        }
+
+        for (CastMemberChunk member : castMembers) {
+            if (!member.isScript()) {
+                continue;
+            }
+            ScriptChunk resolved = getScriptForCastMember(member);
+            if (resolved != null && resolved.id().equals(script.id())) {
+                return member.name() != null ? member.name() : "";
+            }
+        }
+        return "";
     }
 
     private ScriptLookup getScriptLookup() {
@@ -960,7 +1081,9 @@ public class DirectorFile {
 
         // Parse all chunks
         int version = file.config != null ? file.config.directorVersion() : 0;
-        boolean capitalX = false;
+        boolean capitalX = file.chunkInfo.values().stream()
+                .anyMatch(info -> info.fourcc() == BinaryReader.fourCC("LctX"));
+        file.capitalX = capitalX;
 
         for (ChunkInfo info : file.chunkInfo.values()) {
             try {
@@ -1046,7 +1169,9 @@ public class DirectorFile {
 
         // Parse all chunks
         int version = file.config != null ? file.config.directorVersion() : 0;
-        boolean capitalX = false;
+        boolean capitalX = file.chunkInfo.values().stream()
+                .anyMatch(info -> info.fourcc() == BinaryReader.fourCC("LctX"));
+        file.capitalX = capitalX;
 
         for (ChunkInfo info : file.chunkInfo.values()) {
             try {
@@ -1086,7 +1211,9 @@ public class DirectorFile {
         abReader.parse();
 
         int version = abReader.getDirectorVersion();
-        boolean capitalX = false;
+        boolean capitalX = abReader.getChunkInfos().stream()
+                .anyMatch(info -> info.fourCC().equals("LctX"));
+        file.capitalX = capitalX;
 
         // First pass: find and parse the config chunk to get correct version
         for (com.libreshockwave.format.ChunkInfo abInfo : abReader.getChunkInfos()) {

@@ -121,6 +121,10 @@ public class CastLibManager implements CastLibProvider {
         return castLib;
     }
 
+    public DirectorFile getFile() {
+        return file;
+    }
+
     /**
      * Get a cast library by name, loading it if necessary.
      */

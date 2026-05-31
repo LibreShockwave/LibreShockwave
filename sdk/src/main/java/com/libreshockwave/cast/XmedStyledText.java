@@ -11,7 +11,11 @@ import java.util.List;
 public record XmedStyledText(
     String text,
     List<StyledSpan> styledSpans,
+    List<String> fontCandidates,
     String alignment,
+    int primaryParagraphStyleIndex,
+    int primaryParagraphAlignmentCode,
+    int paragraphStyleCount,
     boolean wordWrap,
     int fixedLineSpace,
 

@@ -131,13 +131,13 @@ public class SimpleTextRenderer implements TextRenderer {
 
         // XMED font resolution: Mac bitmap TTF → Windows outline TTF → PFR → builtin
         boolean[] usedRealBold = {false};
-        BitmapFont font = resolveXmedFont(fontName, fontSize, wantsBold, wantsItalic, usedRealBold);
+        BitmapFont font = resolveXmedFont(styledText, fontSize, wantsBold, wantsItalic, usedRealBold);
         if (font != null) {
             boolean syntheticBold = wantsBold && !usedRealBold[0];
             Bitmap result = renderWithBitmapFont(font, text, width, height,
                     alignment, textColor, bgColor, wordWrap,
                     fixedLineSpace, 0, syntheticBold, underline);
-            underlineStyledSpans(result, font, styledText, textColor);
+            underlineStyledSpans(result, font, styledText, 0, textColor);
             if (antialias && result != null) {
                 result = applyTextAA(result, bgColor);
             }
@@ -154,7 +154,8 @@ public class SimpleTextRenderer implements TextRenderer {
         return result;
     }
 
-    private static void underlineStyledSpans(Bitmap bitmap, BitmapFont font, XmedStyledText styledText, int textColor) {
+    private static void underlineStyledSpans(Bitmap bitmap, BitmapFont font, XmedStyledText styledText,
+                                             int topSpacing, int textColor) {
         if (bitmap == null || font == null || styledText == null || styledText.styledSpans().isEmpty()) {
             return;
         }
@@ -179,7 +180,7 @@ public class SimpleTextRenderer implements TextRenderer {
         }
 
         int lineHeight = styledText.fixedLineSpace() > 0 ? styledText.fixedLineSpace() : font.getLineHeight();
-        int y = 0;
+        int y = topSpacing;
         int lineStart = 0;
         while (lineStart <= text.length() && y < height) {
             int lineEnd = lineStart;
@@ -227,12 +228,14 @@ public class SimpleTextRenderer implements TextRenderer {
 
     /**
      * XMED-specific font resolution chain.
-     * Priority: Mac bitmap TTFs (pixel-perfect) → Windows outline TTFs → PFR → first registered.
+     * Priority: bundled embedded font aliases → Mac bitmap TTFs
+     * → Windows outline TTFs → generic PFR fallback.
      * Separate from STXT path to allow independent tuning.
      */
-    private static BitmapFont resolveXmedFont(String fontName, int fontSize,
-                                               boolean bold, boolean italic,
-                                               boolean[] usedRealBold) {
+    private static BitmapFont resolveXmedFont(XmedStyledText styledText, int fontSize,
+                                              boolean bold, boolean italic,
+                                              boolean[] usedRealBold) {
+        String fontName = styledText.fontName();
         if (fontName == null) return null;
 
         BitmapFont aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic,
@@ -241,7 +244,13 @@ public class SimpleTextRenderer implements TextRenderer {
             return aliasFont;
         }
 
-        // 1. Mac bitmap TTFs first — pixel-perfect at target size, best for small sizes
+        BitmapFont movieFont = resolveMovieFontCandidate(styledText.fontCandidates(), fontName,
+                fontSize, bold, italic, usedRealBold);
+        if (movieFont != null) {
+            return movieFont;
+        }
+
+        // 1. Mac bitmap TTFs fallback
         BitmapFont macFont = com.libreshockwave.player.cast.MacFontBundle.getFont(
                 fontName, fontSize, bold, italic);
         if (macFont != null) {
@@ -257,7 +266,7 @@ public class SimpleTextRenderer implements TextRenderer {
             return winFont;
         }
 
-        // 3. PFR fonts via FontRegistry
+        // 3. Generic PFR fonts via FontRegistry
         BitmapFont exact = FontRegistry.getBitmapFont(fontName, fontSize);
         if (exact != null) return exact;
 
@@ -274,6 +283,28 @@ public class SimpleTextRenderer implements TextRenderer {
             return FontRegistry.getBitmapFont(fallback, fbSize);
         }
 
+        return null;
+    }
+
+    private static BitmapFont resolveMovieFontCandidate(List<String> fontCandidates,
+                                                        String primaryFontName,
+                                                        int fontSize,
+                                                        boolean bold,
+                                                        boolean italic,
+                                                        boolean[] usedRealBold) {
+        if (italic || fontCandidates == null || fontCandidates.isEmpty()) {
+            return null;
+        }
+        for (String candidate : fontCandidates) {
+            if (candidate == null || candidate.isBlank() || candidate.equalsIgnoreCase(primaryFontName)) {
+                continue;
+            }
+            BitmapFont registered = resolveRegisteredDirectorFont(candidate, candidate,
+                    fontSize, bold, false, usedRealBold);
+            if (registered != null) {
+                return registered;
+            }
+        }
         return null;
     }
 
