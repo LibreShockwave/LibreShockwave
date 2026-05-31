@@ -18,11 +18,13 @@ public class ScoreNavigator {
     private final DirectorFile file;
     private final List<SpriteSpan> spriteSpans;
     private final Map<String, Integer> frameLabels;
+    private final List<Integer> markerFrames;
 
     public ScoreNavigator(DirectorFile file) {
         this.file = file;
         this.spriteSpans = new ArrayList<>();
         this.frameLabels = new HashMap<>();
+        this.markerFrames = new ArrayList<>();
 
         buildSpriteSpans();
         buildFrameLabels();
@@ -114,7 +116,10 @@ public class ScoreNavigator {
             String key = label.label().toLowerCase();
             int value = label.frameNum().value();
             frameLabels.put(key, value);
+            markerFrames.add(value);
         }
+
+        Collections.sort(markerFrames);
     }
 
     /**
@@ -192,6 +197,59 @@ public class ScoreNavigator {
      */
     public Set<String> getFrameLabels() {
         return Collections.unmodifiableSet(frameLabels.keySet());
+    }
+
+    /**
+     * Resolve Director's marker() movie method against the current frame.
+     * Returns 0 when no matching marker exists.
+     */
+    public int getMarkerFrame(int currentFrame, int markerOffset) {
+        return resolveMarkerFrame(markerFrames, currentFrame, markerOffset);
+    }
+
+    static int resolveMarkerFrame(List<Integer> markerFrames, int currentFrame, int markerOffset) {
+        if (markerFrames.isEmpty()) {
+            return 0;
+        }
+
+        if (markerOffset > 0) {
+            int seen = 0;
+            for (int markerFrame : markerFrames) {
+                if (markerFrame > currentFrame && ++seen == markerOffset) {
+                    return markerFrame;
+                }
+            }
+            return 0;
+        }
+
+        int markerZero = 0;
+        for (int markerFrame : markerFrames) {
+            if (markerFrame > currentFrame) {
+                break;
+            }
+            markerZero = markerFrame;
+        }
+
+        if (markerOffset == 0) {
+            return markerZero;
+        }
+
+        if (markerZero == 0) {
+            return 0;
+        }
+
+        int targetIndex = -markerOffset;
+        int seen = 0;
+        for (int i = markerFrames.size() - 1; i >= 0; i--) {
+            int markerFrame = markerFrames.get(i);
+            if (markerFrame >= markerZero) {
+                continue;
+            }
+            if (++seen == targetIndex) {
+                return markerFrame;
+            }
+        }
+        return 0;
     }
 
     /**

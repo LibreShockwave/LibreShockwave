@@ -96,6 +96,14 @@ public interface MoviePropertyProvider {
         return 0;
     }
 
+    /**
+     * Resolve Director's marker() movie method relative to the current frame.
+     * Returns 0 when no matching marker exists.
+     */
+    default int getMarkerFrame(int markerOffset) {
+        return 0;
+    }
+
     default void gotoNetPage(String url, String target) {
     }
 

@@ -95,6 +95,15 @@ class CallOpcodesReceiverStyleExtCallTest {
             public int getFrameForLabel(String label) {
                 return "connectloop".equalsIgnoreCase(label) ? 27 : 0;
             }
+
+            @Override
+            public int getMarkerFrame(int markerOffset) {
+                return switch (markerOffset) {
+                    case 0 -> 27;
+                    case 1 -> 42;
+                    default -> 0;
+                };
+            }
         };
 
         MoviePropertyProvider.setProvider(provider);
@@ -102,6 +111,9 @@ class CallOpcodesReceiverStyleExtCallTest {
             assertEquals(27, builtins.invoke("label", new LingoVM(null), List.of(Datum.of("connectloop"))).toInt());
             assertEquals(27, builtins.invoke("label", new LingoVM(null),
                     List.of(Datum.MOVIE, Datum.of("connectloop"))).toInt());
+            assertEquals(27, builtins.invoke("marker", new LingoVM(null), List.of(Datum.of(0))).toInt());
+            assertEquals(42, builtins.invoke("marker", new LingoVM(null),
+                    List.of(Datum.MOVIE, Datum.of(1))).toInt());
         } finally {
             MoviePropertyProvider.clearProvider();
         }
