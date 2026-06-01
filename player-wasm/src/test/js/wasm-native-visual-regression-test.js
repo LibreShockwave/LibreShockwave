@@ -45,6 +45,12 @@ const V1 = {
         { name: 'hotel_flag_exact', x: 52, y: 236, width: 20, height: 14 },
         { name: 'register_text_stack', x: 446, y: 132, width: 196, height: 44 },
         { name: 'login_text_stack', x: 446, y: 240, width: 196, height: 108 },
+        { name: 'register_heading_text', x: 433, y: 124, width: 224, height: 10 },
+        { name: 'register_copy_text', x: 457, y: 155, width: 175, height: 24 },
+        { name: 'login_heading_text', x: 435, y: 236, width: 224, height: 10 },
+        { name: 'login_name_label_text', x: 457, y: 266, width: 175, height: 12 },
+        { name: 'login_password_label_text', x: 457, y: 320, width: 175, height: 12 },
+        { name: 'forgot_password_text', x: 446, y: 416, width: 206, height: 10 },
     ],
 };
 
@@ -849,15 +855,43 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                 let regionTotal = 0;
                 let regionBad = 0;
                 let regionMax = 0;
+                let actualWhitePixels = 0;
+                let actualBlackPixels = 0;
+                let actualLightPixels = 0;
+                let actualDarkPixels = 0;
+                let refWhitePixels = 0;
+                let refBlackPixels = 0;
+                let refLightPixels = 0;
+                let refDarkPixels = 0;
                 const regionPixels = region.width * region.height;
                 for (let p = 0; p < actualRegion.data.length; p += 4) {
-                    const dr = Math.abs(actualRegion.data[p] - refRegion.data[p]);
-                    const dg = Math.abs(actualRegion.data[p + 1] - refRegion.data[p + 1]);
-                    const db = Math.abs(actualRegion.data[p + 2] - refRegion.data[p + 2]);
+                    const ar = actualRegion.data[p];
+                    const ag = actualRegion.data[p + 1];
+                    const ab = actualRegion.data[p + 2];
+                    const aa = actualRegion.data[p + 3];
+                    const rr = refRegion.data[p];
+                    const rg = refRegion.data[p + 1];
+                    const rb = refRegion.data[p + 2];
+                    const ra = refRegion.data[p + 3];
+                    const dr = Math.abs(ar - rr);
+                    const dg = Math.abs(ag - rg);
+                    const db = Math.abs(ab - rb);
                     const delta = (dr + dg + db) / 3;
                     regionTotal += delta;
                     regionMax = Math.max(regionMax, delta);
                     if (delta > 64) regionBad++;
+                    if (aa > 0) {
+                        if (ar === 255 && ag === 255 && ab === 255) actualWhitePixels++;
+                        if (ar === 0 && ag === 0 && ab === 0) actualBlackPixels++;
+                        if (ar >= 220 && ag >= 220 && ab >= 220) actualLightPixels++;
+                        if (ar <= 40 && ag <= 40 && ab <= 40) actualDarkPixels++;
+                    }
+                    if (ra > 0) {
+                        if (rr === 255 && rg === 255 && rb === 255) refWhitePixels++;
+                        if (rr === 0 && rg === 0 && rb === 0) refBlackPixels++;
+                        if (rr >= 220 && rg >= 220 && rb >= 220) refLightPixels++;
+                        if (rr <= 40 && rg <= 40 && rb <= 40) refDarkPixels++;
+                    }
                     cropDiffData.data[p] = delta;
                     cropDiffData.data[p + 1] = 0;
                     cropDiffData.data[p + 2] = 255 - delta;
@@ -874,6 +908,14 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                     meanDelta: regionTotal / regionPixels,
                     badFraction: regionBad / regionPixels,
                     maxDelta: regionMax,
+                    actualWhitePixels,
+                    actualBlackPixels,
+                    actualLightPixels,
+                    actualDarkPixels,
+                    refWhitePixels,
+                    refBlackPixels,
+                    refLightPixels,
+                    refDarkPixels,
                     actualPng: cropActual.toDataURL('image/png'),
                     diffPng: cropDiff.toDataURL('image/png'),
                 };
@@ -1023,6 +1065,12 @@ async function runCase(browserHandle, baseUrl, fixture) {
         for (const region of comparison.guardRegions || []) {
             console.log(`  guard ${region.name} meanDelta=${region.meanDelta.toFixed(2)} ` +
                 `badFraction=${(region.badFraction * 100).toFixed(2)}% maxDelta=${region.maxDelta.toFixed(0)}`);
+            if (region.name.includes('text')) {
+                console.log(`  guard ${region.name} colors actualWhite=${region.actualWhitePixels} actualBlack=${region.actualBlackPixels} ` +
+                    `actualLight=${region.actualLightPixels} actualDark=${region.actualDarkPixels} ` +
+                    `refWhite=${region.refWhitePixels} refBlack=${region.refBlackPixels} ` +
+                    `refLight=${region.refLightPixels} refDark=${region.refDarkPixels}`);
+            }
             console.log(`  guard output=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}.png`)}`);
             console.log(`  guard diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_diff.png`)}`);
         }
