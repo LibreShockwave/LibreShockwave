@@ -30,6 +30,22 @@ const V1 = {
     settleMs: Number(process.env.LS_V1_NATIVE_SETTLE_MS || 1000),
     maxMeanDelta: Number(process.env.LS_V1_NATIVE_MAX_MEAN_DELTA || 38),
     maxBadFraction: Number(process.env.LS_V1_NATIVE_MAX_BAD_FRACTION || 0.28),
+    guardRegions: [
+        { name: 'cloud_left', x: 57, y: 131, width: 43, height: 42 },
+        { name: 'cloud_mid', x: 629, y: 141, width: 43, height: 42 },
+        { name: 'cloud_spike', x: 476, y: 84, width: 43, height: 42 },
+        { name: 'cloud_left_exact_weak', x: 52, y: 134, width: 43, height: 42 },
+        { name: 'cloud_mid_exact_weak', x: 624, y: 139, width: 43, height: 42 },
+        { name: 'cloud_left_exact_strong', x: 57, y: 131, width: 43, height: 42 },
+        { name: 'cloud_mid_exact_strong', x: 629, y: 141, width: 43, height: 42 },
+        { name: 'cloud_spike_exact', x: 476, y: 84, width: 6, height: 5 },
+        { name: 'car_left', x: 292, y: 425, width: 40, height: 35 },
+        { name: 'car_right', x: 586, y: 417, width: 40, height: 35 },
+        { name: 'hotel_flag', x: 42, y: 226, width: 40, height: 34 },
+        { name: 'hotel_flag_exact', x: 52, y: 236, width: 20, height: 14 },
+        { name: 'register_text_stack', x: 446, y: 132, width: 196, height: 44 },
+        { name: 'login_text_stack', x: 446, y: 240, width: 196, height: 108 },
+    ],
 };
 
 const V14 = {
@@ -736,10 +752,14 @@ async function waitForV31Navigator(page) {
         JSON.stringify(lastState) + ' evidence=' + JSON.stringify(evidence));
 }
 
-async function captureAndCompare(page, fixture, baseUrl, outputName) {
+async function captureAndCompare(page, fixture, baseUrl, outputName, options = {}) {
     const outputPath = path.join(outputDir, `${outputName}.png`);
     const diffPath = path.join(outputDir, `${outputName}_diff.png`);
-    return page.evaluate(async ({ referenceUrl, expectedWidth, expectedHeight, outputPathName, diffPathName }) => {
+    return page.evaluate(async ({ referenceUrl, expectedWidth, expectedHeight, outputPathName, diffPathName, guardRegions, captureDiagnostics, freezeBeforeCapture }) => {
+        if (freezeBeforeCapture && window.betaClientPlayer && window.betaClientPlayer.pause) {
+            window.betaClientPlayer.pause();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
         const canvas = document.getElementById('beta-client-stage');
         const actual = document.createElement('canvas');
         actual.width = expectedWidth;
@@ -791,7 +811,7 @@ async function captureAndCompare(page, fixture, baseUrl, outputName) {
         }
         diffCtx.putImageData(diffData, 0, 0);
 
-        return {
+        const result = {
             actualPng: actual.toDataURL('image/png'),
             diffPng: diff.toDataURL('image/png'),
             outputPathName,
@@ -801,16 +821,107 @@ async function captureAndCompare(page, fixture, baseUrl, outputName) {
             maxDelta: max,
             width: expectedWidth,
             height: expectedHeight,
+            guardRegions: (guardRegions || []).map(region => {
+                const cropActual = document.createElement('canvas');
+                cropActual.width = region.width;
+                cropActual.height = region.height;
+                cropActual.getContext('2d').drawImage(
+                    actual,
+                    region.x, region.y, region.width, region.height,
+                    0, 0, region.width, region.height);
+
+                const cropRef = document.createElement('canvas');
+                cropRef.width = region.width;
+                cropRef.height = region.height;
+                cropRef.getContext('2d').drawImage(
+                    reference,
+                    region.x, region.y, region.width, region.height,
+                    0, 0, region.width, region.height);
+
+                const actualRegion = cropActual.getContext('2d').getImageData(0, 0, region.width, region.height);
+                const refRegion = cropRef.getContext('2d').getImageData(0, 0, region.width, region.height);
+                const cropDiff = document.createElement('canvas');
+                cropDiff.width = region.width;
+                cropDiff.height = region.height;
+                const cropDiffCtx = cropDiff.getContext('2d');
+                const cropDiffData = cropDiffCtx.createImageData(region.width, region.height);
+
+                let regionTotal = 0;
+                let regionBad = 0;
+                let regionMax = 0;
+                const regionPixels = region.width * region.height;
+                for (let p = 0; p < actualRegion.data.length; p += 4) {
+                    const dr = Math.abs(actualRegion.data[p] - refRegion.data[p]);
+                    const dg = Math.abs(actualRegion.data[p + 1] - refRegion.data[p + 1]);
+                    const db = Math.abs(actualRegion.data[p + 2] - refRegion.data[p + 2]);
+                    const delta = (dr + dg + db) / 3;
+                    regionTotal += delta;
+                    regionMax = Math.max(regionMax, delta);
+                    if (delta > 64) regionBad++;
+                    cropDiffData.data[p] = delta;
+                    cropDiffData.data[p + 1] = 0;
+                    cropDiffData.data[p + 2] = 255 - delta;
+                    cropDiffData.data[p + 3] = 255;
+                }
+                cropDiffCtx.putImageData(cropDiffData, 0, 0);
+
+                return {
+                    name: region.name,
+                    x: region.x,
+                    y: region.y,
+                    width: region.width,
+                    height: region.height,
+                    meanDelta: regionTotal / regionPixels,
+                    badFraction: regionBad / regionPixels,
+                    maxDelta: regionMax,
+                    actualPng: cropActual.toDataURL('image/png'),
+                    diffPng: cropDiff.toDataURL('image/png'),
+                };
+            }),
         };
+        if (captureDiagnostics) {
+            const visibleText = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
+                ? await window.betaClientPlayer.getVisibleTextDiagnostics()
+                : '';
+            const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+                ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+                : '';
+            const bootstrap = window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
+                ? await window.betaClientPlayer.getBootstrapDiagnostics()
+                : '';
+            const debugLogs = window._testState && window._testState.debugLogs
+                ? window._testState.debugLogs.slice()
+                : [];
+            result.diagnostics = {
+                visibleText,
+                windowSprites,
+                bootstrap,
+                debugLogs,
+                tick: window._testState ? window._testState.tick : -1,
+                frame: window._testState ? window._testState.frame : -1,
+            };
+        }
+        return result;
     }, {
         referenceUrl: `${baseUrl}/${path.basename(fixture.nativePath)}`,
         expectedWidth: fixture.width,
         expectedHeight: fixture.height,
         outputPathName: outputPath,
         diffPathName: diffPath,
+        guardRegions: fixture.guardRegions || [],
+        captureDiagnostics: !!options.captureDiagnostics,
+        freezeBeforeCapture: !!options.freezeBeforeCapture,
     }).then(result => {
         fs.writeFileSync(outputPath, Buffer.from(result.actualPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
         fs.writeFileSync(diffPath, Buffer.from(result.diffPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        for (const region of result.guardRegions || []) {
+            fs.writeFileSync(
+                path.join(outputDir, `${outputName}_${region.name}.png`),
+                Buffer.from(region.actualPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+            fs.writeFileSync(
+                path.join(outputDir, `${outputName}_${region.name}_diff.png`),
+                Buffer.from(region.diffPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        }
         return result;
     });
 }
@@ -882,11 +993,26 @@ async function runCase(browserHandle, baseUrl, fixture) {
             : fixture.name === 'v14'
                 ? await waitForV14Login(page)
                 : await waitForV31Navigator(page);
-        const comparison = await captureAndCompare(page, fixture, baseUrl, `${fixture.name}_wasm_native_compare`);
-        if (process.env.LS_NATIVE_SAVE_DIAGNOSTICS === '1') {
-            await saveSuccessDiagnostics(page, fixture);
+        const captureDiagnostics = process.env.LS_NATIVE_SAVE_DIAGNOSTICS === '1';
+        const comparison = await captureAndCompare(
+            page,
+            fixture,
+            baseUrl,
+            `${fixture.name}_wasm_native_compare`,
+            {
+                captureDiagnostics,
+                freezeBeforeCapture: captureDiagnostics,
+            });
+        if (captureDiagnostics) {
+            await saveSuccessDiagnostics(page, fixture, comparison.diagnostics || null, waitResult.state || null);
         }
-        console.log(`  state=${JSON.stringify(compactState(waitResult.state))}`);
+        console.log(`  waitState=${JSON.stringify(compactState(waitResult.state))}`);
+        if (comparison.diagnostics) {
+            console.log(`  compareState=${JSON.stringify({
+                tick: comparison.diagnostics.tick,
+                frame: comparison.diagnostics.frame,
+            })}`);
+        }
         if (waitResult.evidence) {
             console.log(`  evidence=${JSON.stringify(waitResult.evidence)}`);
         }
@@ -894,6 +1020,12 @@ async function runCase(browserHandle, baseUrl, fixture) {
             `badFraction=${(comparison.badFraction * 100).toFixed(2)}% maxDelta=${comparison.maxDelta.toFixed(0)}`);
         console.log(`  output=${path.join(outputDir, `${fixture.name}_wasm_native_compare.png`)}`);
         console.log(`  diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_diff.png`)}`);
+        for (const region of comparison.guardRegions || []) {
+            console.log(`  guard ${region.name} meanDelta=${region.meanDelta.toFixed(2)} ` +
+                `badFraction=${(region.badFraction * 100).toFixed(2)}% maxDelta=${region.maxDelta.toFixed(0)}`);
+            console.log(`  guard output=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}.png`)}`);
+            console.log(`  guard diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_diff.png`)}`);
+        }
         if (comparison.meanDelta > fixture.maxMeanDelta || comparison.badFraction > fixture.maxBadFraction) {
             throw new Error(`${fixture.name} visual mismatch exceeds threshold: ` +
                 `meanDelta=${comparison.meanDelta.toFixed(2)} max=${fixture.maxMeanDelta}, ` +
@@ -911,8 +1043,8 @@ async function runCase(browserHandle, baseUrl, fixture) {
     }
 }
 
-async function saveSuccessDiagnostics(page, fixture) {
-    const artifacts = await page.evaluate(async () => {
+async function saveSuccessDiagnostics(page, fixture, preCapturedArtifacts, waitState) {
+    const artifacts = preCapturedArtifacts || await page.evaluate(async () => {
         const visibleText = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
             ? await window.betaClientPlayer.getVisibleTextDiagnostics()
             : '';
@@ -925,12 +1057,22 @@ async function saveSuccessDiagnostics(page, fixture) {
         const debugLogs = window._testState && window._testState.debugLogs
             ? window._testState.debugLogs.slice()
             : [];
-        return { visibleText, windowSprites, bootstrap, debugLogs };
+        const tick = window._testState ? window._testState.tick : -1;
+        const frame = window._testState ? window._testState.frame : -1;
+        return { visibleText, windowSprites, bootstrap, debugLogs, tick, frame };
     });
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_visible_text.txt`), artifacts.visibleText || '');
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_window_sprites.txt`), artifacts.windowSprites || '');
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_bootstrap.txt`), artifacts.bootstrap || '');
     fs.writeFileSync(path.join(outputDir, `${fixture.name}_debug_logs.txt`), (artifacts.debugLogs || []).join('\n'));
+    fs.writeFileSync(
+        path.join(outputDir, `${fixture.name}_capture_state.txt`),
+        `tick=${artifacts.tick ?? -1}\nframe=${artifacts.frame ?? -1}\n`);
+    if (waitState) {
+        fs.writeFileSync(
+            path.join(outputDir, `${fixture.name}_wait_state.txt`),
+            JSON.stringify(waitState, null, 2) + '\n');
+    }
 }
 
 async function main() {

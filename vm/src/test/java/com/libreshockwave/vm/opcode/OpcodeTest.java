@@ -416,6 +416,18 @@ class OpcodeTest {
         }
 
         @Test
+        void greaterThanCoercesNumericStrings() {
+            scope.push(Datum.of(400));
+            scope.push(Datum.of("332"));
+
+            OpcodeHandler handler = registry.get(Opcode.GT);
+            boolean advance = handler.execute(createContext(0));
+
+            assertTrue(advance);
+            assertEquals(Datum.TRUE, scope.pop());
+        }
+
+        @Test
         void equalIntegers() {
             scope.push(Datum.of(42));
             scope.push(Datum.of(42));

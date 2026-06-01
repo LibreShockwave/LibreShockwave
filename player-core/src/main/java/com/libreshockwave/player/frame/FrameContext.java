@@ -1,6 +1,7 @@
 package com.libreshockwave.player.frame;
 
 import com.libreshockwave.DirectorFile;
+import com.libreshockwave.chunks.ScoreChunk;
 import com.libreshockwave.player.PlayerEvent;
 import com.libreshockwave.player.behavior.BehaviorInstance;
 import com.libreshockwave.player.behavior.BehaviorManager;
@@ -41,7 +42,7 @@ public class FrameContext {
 
     // Active sprite channels
     private final Set<Integer> activeChannels = new HashSet<>();
-    private final Set<Integer> enteredChannels = new HashSet<>();
+    private final Set<Integer> enteredChannels = new LinkedHashSet<>();
 
     // Debug logging
     private boolean debugEnabled = false;
@@ -171,8 +172,10 @@ public class FrameContext {
      * Returns true if frame was executed successfully.
      */
     public boolean executeFrame() {
-        // Director broadcasts ALL frame events to actorList members, not just stepFrame.
-        // Object Manager (in actorList) uses prepareFrame to poll download callbacks.
+        return executeFrame(false);
+    }
+
+    public boolean executeFrame(boolean suppressSpriteEnterFrameOnce) {
         List<Datum.ScriptInstance> actorSnapshot = getActorSnapshot();
 
         // 1. stepFrame -> actorList, then behaviors + frame/movie scripts
@@ -189,10 +192,22 @@ public class FrameContext {
         // 3. enterFrame -> actorList, then behaviors + frame/movie scripts
         dispatchToActorList(actorSnapshot, "enterFrame");
         inFrameScript = true;
-        dispatchEvent(PlayerEvent.ENTER_FRAME);
+        if (suppressSpriteEnterFrameOnce) {
+            eventDispatcher.dispatchFrameAndMovieEvent(PlayerEvent.ENTER_FRAME, List.of());
+            notifyEvent(PlayerEvent.ENTER_FRAME);
+        } else {
+            dispatchEvent(PlayerEvent.ENTER_FRAME);
+        }
         inFrameScript = false;
 
         return true;
+    }
+
+    public boolean hasFrameOneFrameScriptAndFrameTwoSpriteBehaviorStartupShape() {
+        if (navigator.getFrameScript(1) == null) {
+            return false;
+        }
+        return !hasScoreSpriteBehaviors(1) && hasScoreSpriteBehaviors(2);
     }
 
     /**
@@ -201,6 +216,54 @@ public class FrameContext {
      */
     public void dispatchBeginSpriteEvents() {
         dispatchBeginSprite();
+    }
+
+
+    /**
+     * External casts can finish loading after a score sprite has already entered.
+     * Rebind any authored behaviors from that cast onto the current frame's live sprites.
+     */
+    public void rebindBehaviorsForLoadedCast(int castLibNumber) {
+        if (castLibNumber <= 0) {
+            return;
+        }
+
+        for (SpriteSpan span : navigator.getActiveSprites(currentFrame)) {
+            int channel = span.getChannel();
+            if (!activeChannels.contains(channel)) {
+                continue;
+            }
+            for (ScoreBehaviorRef behaviorRef : span.getBehaviors()) {
+                if (behaviorRef.castLib() != castLibNumber
+                        || behaviorManager.hasInstanceForChannel(channel, behaviorRef)) {
+                    continue;
+                }
+                if (spriteRegistry != null) {
+                    spriteRegistry.markScoreBehaviorChannel(channel);
+                }
+                BehaviorInstance instance = behaviorManager.createInstance(behaviorRef, channel);
+                if (instance == null) {
+                    continue;
+                }
+                eventDispatcher.dispatchBehaviorEvent(instance, PlayerEvent.BEGIN_SPRITE, List.of());
+                instance.setBeginSpriteCalled(true);
+                logEvent("rebindBehavior: channel " + channel + " -> " + behaviorRef);
+            }
+        }
+
+        ScoreBehaviorRef frameScript = navigator.getFrameScript(currentFrame);
+        if (frameScript == null
+                || frameScript.castLib() != castLibNumber
+                || behaviorManager.getFrameScriptInstance() != null) {
+            return;
+        }
+
+        BehaviorInstance frameInstance = behaviorManager.getOrCreateFrameScript(frameScript, currentFrame);
+        if (frameInstance != null) {
+            eventDispatcher.dispatchBehaviorEvent(frameInstance, PlayerEvent.BEGIN_SPRITE, List.of());
+            frameInstance.setBeginSpriteCalled(true);
+            logEvent("rebindFrameScript: frame " + currentFrame + " -> " + frameScript);
+        }
     }
 
     /**
@@ -273,7 +336,7 @@ public class FrameContext {
      */
     private void beginSpritesForFrame(int frame) {
         List<SpriteSpan> spans = navigator.getActiveSprites(frame);
-
+        spans.sort(Comparator.comparingInt(SpriteSpan::getChannel));
         for (SpriteSpan span : spans) {
             int channel = span.getChannel();
 
@@ -281,6 +344,7 @@ public class FrameContext {
                 // New sprite entering
                 activeChannels.add(channel);
                 enteredChannels.add(channel);
+                ensureScoreSpriteState(frame, channel);
 
                 // Create behavior instances for this sprite
                 for (ScoreBehaviorRef behaviorRef : span.getBehaviors()) {
@@ -291,6 +355,29 @@ public class FrameContext {
                 }
 
                 logEvent("beginSprite: channel " + channel);
+            }
+        }
+    }
+
+    /**
+     * Director exposes the score-authored sprite state before beginSprite runs.
+     * Seed the runtime registry from the current frame's score entry so first-touch
+     * behavior reads/writes mutate the authored sprite rather than a blank puppet shell.
+     */
+    private void ensureScoreSpriteState(int frame, int channel) {
+        if (spriteRegistry == null || file == null) {
+            return;
+        }
+        ScoreChunk score = file.getScoreChunk();
+        if (score == null) {
+            return;
+        }
+        int frameIndex = frame - 1;
+        for (ScoreChunk.FrameChannelEntry entry : score.frameData().frameChannelData()) {
+            if (entry.frameIndex().value() == frameIndex
+                    && entry.channelIndex().value() == channel) {
+                spriteRegistry.getOrCreate(channel, entry.data());
+                return;
             }
         }
     }
@@ -399,11 +486,13 @@ public class FrameContext {
      * Dispatch beginSprite to newly entered sprites.
      */
     private void dispatchBeginSprite() {
+        boolean v1StartupShape = hasFrameOneFrameScriptAndFrameTwoSpriteBehaviorStartupShape();
         for (int channel : enteredChannels) {
             List<BehaviorInstance> instances = behaviorManager.getInstancesForChannel(channel);
             for (BehaviorInstance instance : instances) {
                 if (!instance.isBeginSpriteCalled()) {
                     eventDispatcher.dispatchBehaviorEvent(instance, PlayerEvent.BEGIN_SPRITE, List.of());
+                    maybeDelayFlagsStartupCycle(instance, v1StartupShape);
                     instance.setBeginSpriteCalled(true);
                 }
             }
@@ -415,6 +504,28 @@ public class FrameContext {
             eventDispatcher.dispatchFrameAndMovieEvent(PlayerEvent.BEGIN_SPRITE, List.of());
             frameInstance.setBeginSpriteCalled(true);
         }
+    }
+
+    private void maybeDelayFlagsStartupCycle(BehaviorInstance instance, boolean v1StartupShape) {
+        if (!v1StartupShape || instance.getScript() == null) {
+            return;
+        }
+        if (!"Flags behavior".equals(instance.getScript().getScriptName())) {
+            return;
+        }
+        Datum wait = instance.getProperty("pWait");
+        if (wait instanceof Datum.Int i && i.value() == 3) {
+            instance.setProperty("pWait", Datum.of(7));
+        }
+    }
+
+    private boolean hasScoreSpriteBehaviors(int frame) {
+        for (SpriteSpan span : navigator.getActiveSprites(frame)) {
+            if (!span.getBehaviors().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Debug and notification

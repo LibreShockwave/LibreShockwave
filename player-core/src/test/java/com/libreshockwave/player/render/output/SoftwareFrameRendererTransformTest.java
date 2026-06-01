@@ -135,4 +135,48 @@ class SoftwareFrameRendererTransformTest {
         assertEquals(0xFFFF0000, rendered.getPixel(0, 0));
         assertEquals(0xFF0000FF, rendered.getPixel(1, 0));
     }
+
+    @Test
+    void scaledTransparentSpriteMatchesAwtRenderer() {
+        Bitmap src = new Bitmap(2, 2, 32, new int[]{
+                0x00FFFFFF, 0xFF000000,
+                0xFFCCCCCC, 0x00FFFFFF
+        });
+        RenderSprite sprite = new RenderSprite(
+                1,
+                0, 0,
+                5, 3,
+                0,
+                true,
+                RenderSprite.SpriteType.BITMAP,
+                null,
+                null,
+                8, 0xFFFFFF,
+                false, false,
+                0, 100,
+                false, false,
+                0.0, 0.0,
+                src,
+                false
+        );
+
+        FrameSnapshot snapshot = new FrameSnapshot(
+                1, 5, 3, 0,
+                List.of(sprite),
+                "",
+                null,
+                0,
+                RenderPipelineTrace.EMPTY
+        );
+
+        Bitmap software = snapshot.renderFrame();
+        Bitmap awt = AwtFrameRenderer.renderFrame(snapshot, 5, 3);
+
+        for (int y = 0; y < 3; y++) {
+            for (int x = 0; x < 5; x++) {
+                assertEquals(awt.getPixel(x, y), software.getPixel(x, y),
+                        "pixel mismatch at " + x + "," + y);
+            }
+        }
+    }
 }

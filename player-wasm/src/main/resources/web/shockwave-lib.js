@@ -1339,6 +1339,7 @@ var LibreShockwave = (function() {
     ShockwavePlayer.prototype._startNormalLoop = function() {
         var self = this;
         var ticking = false;
+        var nextDue = performance.now();
         function loop() {
             if (!self._playing) return;
             var tempo = self._lastTempo || 15;
@@ -1349,15 +1350,21 @@ var LibreShockwave = (function() {
                 self._doTick().then(function() {
                     ticking = false;
                     if (self._playing) {
-                        // Compensate only for the work done in this tick.
-                        var elapsed = performance.now() - tickStart;
-                        var delay = Math.max(0, ms - elapsed);
+                        // Schedule against an absolute timeline so small per-tick
+                        // work variance does not accumulate into different frame phases.
+                        var tickEnd = performance.now();
+                        if (nextDue < tickStart) {
+                            nextDue = tickStart;
+                        }
+                        nextDue += ms;
+                        var delay = Math.max(0, nextDue - tickEnd);
                         self._normalTimerId = setTimeout(loop, delay);
                     }
                 }).catch(function(err) {
                     ticking = false;
                     console.error('[LS] tick error:', err);
                     if (self._playing) {
+                        nextDue = performance.now() + ms;
                         self._normalTimerId = setTimeout(loop, ms);
                     }
                 });

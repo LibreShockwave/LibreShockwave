@@ -140,6 +140,33 @@ public class EventDispatcher {
     }
 
     /**
+     * Dispatch an event to sprite behaviors and movie scripts, but skip the frame script.
+     * Used for narrow startup paths where Director appears to omit a synthetic frame-level
+     * handler while still allowing sprite/movie lifecycle work to run.
+     */
+    public void dispatchSpriteAndMovieEvent(String handlerName, List<Datum> args) {
+        stopPropagation = false;
+        vm.resetErrorState();
+
+        List<BehaviorInstance> spriteInstances = behaviorManager.getSpriteInstances();
+        int lastChannel = -1;
+        for (BehaviorInstance instance : spriteInstances) {
+            int channel = instance.getSpriteNum();
+            if (channel != lastChannel) {
+                stopPropagation = false;
+                lastChannel = channel;
+            }
+            if (stopPropagation) {
+                continue;
+            }
+            invokeHandler(instance, handlerName, args);
+        }
+
+        stopPropagation = false;
+        dispatchToMovieScripts(handlerName, args);
+    }
+
+    /**
      * Dispatch an event to a specific sprite's behaviors.
      */
     public void dispatchSpriteEvent(int channel, PlayerEvent event, List<Datum> args) {
