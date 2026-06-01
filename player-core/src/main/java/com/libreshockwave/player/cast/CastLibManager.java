@@ -676,7 +676,6 @@ public class CastLibManager implements CastLibProvider {
     // a JS round-trip.
     private final Map<String, byte[]> castDataCache = new HashMap<>();
     private final Map<Integer, String> pendingExternalLoads = new HashMap<>();
-
     /**
      * Cache raw external cast data by base name for later reuse.
      */
@@ -695,7 +694,6 @@ public class CastLibManager implements CastLibProvider {
     public byte[] getCachedExternalData(String baseName) {
         return castDataCache.get(baseName);
     }
-
     /**
      * Look up cached downloaded bytes by URL or file name.
      * Used by importFileInto for external image payloads as well as cast loading.
@@ -786,8 +784,15 @@ public class CastLibManager implements CastLibProvider {
      */
     public java.util.List<Integer> getMatchingCastLibNumbersByUrl(String url) {
         ensureInitialized();
+        String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
         java.util.List<Integer> result = new java.util.ArrayList<>();
-        for (CastLib castLib : findCastLibsByUrl(url)) {
+        if (baseName == null || baseName.isEmpty()) {
+            return result;
+        }
+        for (CastLib castLib : castLibs.values()) {
+            if (!castLib.matchesAuthoredExternalFile(baseName)) {
+                continue;
+            }
             result.add(castLib.getNumber());
         }
         return result;
@@ -798,7 +803,7 @@ public class CastLibManager implements CastLibProvider {
 
         String baseName = FileUtil.getFileNameWithoutExtension(FileUtil.getFileName(url));
         java.util.List<Integer> slots = new java.util.ArrayList<>();
-        
+
         for (CastLib castLib : findCastLibsByUrl(url)) {
             int castLibNumber = castLib.getNumber();
             boolean wasRequested = castLib.isFetching()

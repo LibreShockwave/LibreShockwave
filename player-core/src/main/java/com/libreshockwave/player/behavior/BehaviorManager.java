@@ -1,6 +1,7 @@
 package com.libreshockwave.player.behavior;
 
 import com.libreshockwave.DirectorFile;
+import com.libreshockwave.chunks.CastChunk;
 import com.libreshockwave.chunks.CastMemberChunk;
 import com.libreshockwave.chunks.ScriptChunk;
 import com.libreshockwave.chunks.ScriptNamesChunk;
@@ -31,7 +32,6 @@ public class BehaviorManager {
 
     // Debug logging
     private boolean debugEnabled = false;
-
     public BehaviorManager(DirectorFile file) {
         this.file = file;
         this.instancesById = new HashMap<>();
@@ -127,6 +127,26 @@ public class BehaviorManager {
     }
 
     /**
+     * Check whether a score-authored behavior reference already has a live instance
+     * on the given channel. Used when external casts arrive after the sprite entered.
+     */
+    public boolean hasInstanceForChannel(int channel, ScoreBehaviorRef behaviorRef) {
+        if (behaviorRef == null) {
+            return false;
+        }
+        List<BehaviorInstance> instances = instancesByChannel.get(channel);
+        if (instances == null || instances.isEmpty()) {
+            return false;
+        }
+        for (BehaviorInstance instance : instances) {
+            if (behaviorRef.equals(instance.getBehaviorRef())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Get a behavior instance by ID.
      */
     public BehaviorInstance getInstance(int id) {
@@ -207,10 +227,14 @@ public class BehaviorManager {
         CastMemberChunk member = file.getCastMemberByNumber(castLibNum, castMember);
         if (member != null && member.isScript()) {
             int scriptId = member.scriptId();
+            CastChunk castChunk = file.getMappedCastChunk(castLibNum);
             if (debugEnabled) {
                 System.out.println("[BehaviorManager] Looking for script id=" + scriptId + " (member name: " + member.name() + ")");
             }
-            ScriptChunk script = selectBehaviorScript(file.getScriptsByContextId(scriptId));
+            ScriptChunk script = file.getScriptForCastMember(member, castChunk);
+            if (script == null) {
+                script = selectBehaviorScript(file.getScriptsByContextId(scriptId));
+            }
             if (script != null) {
                 if (debugEnabled) {
                     System.out.println("[BehaviorManager] Found script \"" + member.name() + "\" #" + script.id() + " type=" + script.getScriptType());
@@ -297,4 +321,5 @@ public class BehaviorManager {
             }
         }
     }
+
 }

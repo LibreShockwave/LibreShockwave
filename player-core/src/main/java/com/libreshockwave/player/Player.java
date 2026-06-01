@@ -118,7 +118,6 @@ public class Player implements UpdateProvider {
     private final java.util.List<ExternalCastLoadHandler> externalCastLoadHandlers = new java.util.ArrayList<>();
     private final List<Datum> updatingObjects = new ArrayList<>();
     private final Map<String, Datum> initialBuiltinVariables = new LinkedHashMap<>();
-
     // External parameters (Shockwave PARAM tags)
     private final Map<String, String> externalParams = new LinkedHashMap<>();
     private final ExternalParamProvider externalParamProvider = new ExternalParamProvider() {
@@ -523,6 +522,7 @@ public class Player implements UpdateProvider {
         castLibManager.clearHandlerLookupCache();
         vm.invalidateHandlerCache();
         stageRenderer.getSpriteRegistry().bumpRevision();
+        frameContext.rebindBehaviorsForLoadedCast(castLibNumber);
         notifyExternalCastLoaded(castLibNumber);
     }
 
@@ -1240,9 +1240,11 @@ public class Player implements UpdateProvider {
             // 7. enterFrame -> dispatched to all behaviors + frame/movie scripts
             frameContext.getEventDispatcher().dispatchGlobalEvent(PlayerEvent.ENTER_FRAME, List.of());
 
-            // 8. exitFrame -> timeout targets first, then behaviors + frame/movie scripts
+            // 8. exitFrame -> timeout targets first, then sprite behaviors + movie scripts.
+            // The frame-1 score loop already runs on the first real advanceFrame() exit path;
+            // replaying it here adds an extra startup loader iteration before playback begins.
             timeoutManager.dispatchSystemEvent(vm, "exitFrame");
-            frameContext.getEventDispatcher().dispatchGlobalEvent(PlayerEvent.EXIT_FRAME, List.of());
+            frameContext.getEventDispatcher().dispatchSpriteAndMovieEvent(PlayerEvent.EXIT_FRAME.getHandlerName(), List.of());
 
             // 9. Re-run preloadMode=1 pass in case first-frame scripts requested additional casts.
             castLibManager.preloadCasts(1);
@@ -1347,6 +1349,8 @@ public class Player implements UpdateProvider {
             clearProviders();
         }
     }
+
+
 
     // --- Input handling ---
 

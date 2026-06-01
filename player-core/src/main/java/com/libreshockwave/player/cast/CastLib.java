@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * and are lazily loaded from the DirectorFile when first accessed.
  */
 public class CastLib {
-
     public enum State {
         NONE,
         FETCHING,  // External cast fetch in progress
@@ -35,6 +34,8 @@ public class CastLib {
     private String name;
     private String fileName;
     private final String authoredFileName;
+    private boolean nameExplicitlyAssigned;
+    private boolean nameLoadedFromExternalFile;
     private State state = State.NONE;
     private int preloadMode = 0;
     private Datum selection = Datum.list(); // Selected members as [[start, end], ...]
@@ -75,6 +76,8 @@ public class CastLib {
         if (this.name.isEmpty() && number == 1) {
             this.name = "Internal";
         }
+        this.nameExplicitlyAssigned = false;
+        this.nameLoadedFromExternalFile = false;
     }
 
     /**
@@ -346,6 +349,8 @@ public class CastLib {
 
     public void setName(String name) {
         this.name = name;
+        this.nameExplicitlyAssigned = true;
+        this.nameLoadedFromExternalFile = false;
     }
 
     public String getFileName() {
@@ -400,6 +405,9 @@ public class CastLib {
         }
         if (usesAuthoredExternalBinding()) {
             return true;
+        }
+        if (nameLoadedFromExternalFile) {
+            return false;
         }
         String runtimeName = name != null ? name.trim() : "";
         if (runtimeName.isEmpty()) {
@@ -743,6 +751,8 @@ public class CastLib {
         switch (prop) {
             case "name" -> {
                 this.name = value.toStr();
+                this.nameExplicitlyAssigned = true;
+                this.nameLoadedFromExternalFile = false;
                 return true;
             }
             case "filename" -> {
@@ -751,6 +761,11 @@ public class CastLib {
                     invalidateFileBackedBinding();
                 }
                 this.fileName = newFileName;
+                if (!nameExplicitlyAssigned && hasAuthoredExternalBinding()
+                        && !usesAuthoredExternalBinding()) {
+                    this.name = newFileName;
+                    this.nameLoadedFromExternalFile = false;
+                }
                 return true;
             }
             case "preloadmode" -> {
@@ -793,6 +808,7 @@ public class CastLib {
         fetchedExternalData = null;
         state = State.NONE;
         totalSlotCount = 0;
+        nameLoadedFromExternalFile = false;
         memberChunks.clear();
         scripts.clear();
         members.clear();
@@ -900,12 +916,14 @@ public class CastLib {
                 CastListChunk externalCastList = file.getCastList();
                 if (externalCastList != null && !externalCastList.entries().isEmpty()) {
                     String internalName = externalCastList.entries().get(0).name();
-                    if (internalName != null && !internalName.isEmpty()) {
+                    if (internalName != null && !internalName.isEmpty() && !nameExplicitlyAssigned) {
                         this.name = internalName;
+                        this.nameLoadedFromExternalFile = !usesAuthoredExternalBinding();
                     }
                 }
                 if (this.name == null || this.name.isEmpty()) {
                     this.name = nameBeforeLoad;
+                    this.nameLoadedFromExternalFile = false;
                 }
 
                 // Preserve dynamically created members (memberNum >= nextDynamicMember start).

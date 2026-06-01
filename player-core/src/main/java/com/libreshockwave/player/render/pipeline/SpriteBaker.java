@@ -487,9 +487,10 @@ public class SpriteBaker {
         var renderer = CastMember.getTextRendererStatic();
         if (renderer == null) return null;
 
-        int textColor = sprite.hasForeColor()
+        int runTextColor = resolveRunColor(runColorR, runColorG, runColorB);
+        int textColor = shouldUseSpriteForeColorForFileText(sprite, runTextColor)
                 ? resolvePaletteColor(sprite.getForeColor())
-                : resolveRunColor(runColorR, runColorG, runColorB);
+                : runTextColor;
         // Use transparent background for BACKGROUND_TRANSPARENT ink
         int bgColor = isTransparentTextInk(sprite)
                 ? 0x00000000
@@ -516,6 +517,23 @@ public class SpriteBaker {
                     fixedLineSpace, topSpacing);
         }
         return insetTextBitmap(rendered, width, height, horizontalInset, bgColor);
+    }
+
+    /**
+     * Director score sprites always carry a foreColor slot, but white is also the
+     * default untinted value. When authored STXT already provides a non-white run
+     * color, treating the default white sprite color as an override washes out
+     * light-background UI labels like the v1 registration form.
+     */
+    private boolean shouldUseSpriteForeColorForFileText(RenderSprite sprite, int runTextColor) {
+        if (!sprite.hasForeColor()) {
+            return false;
+        }
+        int spriteColor = resolvePaletteColor(sprite.getForeColor());
+        if ((spriteColor & 0x00FFFFFF) != 0x00FFFFFF) {
+            return true;
+        }
+        return (runTextColor & 0x00FFFFFF) == 0x00FFFFFF;
     }
 
     private static boolean usesLegacyEmbeddedTextFont(DirectorFile file, int fontId, int fontStyle) {
@@ -579,9 +597,10 @@ public class SpriteBaker {
         int width = styledText.width() > 0 ? styledText.width() : (sprite.getWidth() > 0 ? sprite.getWidth() : 200);
         int height = styledText.height() > 0 ? styledText.height() : (sprite.getHeight() > 0 ? sprite.getHeight() : 20);
 
-        int textColor = sprite.getInkMode() == com.libreshockwave.id.InkMode.MATTE
-                ? styledText.textColorARGB()
-                : resolvePaletteColor(sprite.getForeColor());
+        int styledTextColor = styledText.textColorARGB();
+        int textColor = shouldUseSpriteForeColorForStyledText(sprite, styledTextColor)
+                ? resolvePaletteColor(sprite.getForeColor())
+                : styledTextColor;
         // Use transparent background for BACKGROUND_TRANSPARENT ink so the text
         // can be composited directly without ink processing removing the text pixels.
         int bgColor = isTransparentTextInk(sprite)
@@ -597,6 +616,20 @@ public class SpriteBaker {
             rendered = shiftBitmapDown(rendered, 2, bgColor);
         }
         return rendered;
+    }
+
+    private boolean shouldUseSpriteForeColorForStyledText(RenderSprite sprite, int styledTextColor) {
+        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.MATTE) {
+            return false;
+        }
+        if (!sprite.hasForeColor()) {
+            return false;
+        }
+        int spriteColor = resolvePaletteColor(sprite.getForeColor());
+        if ((spriteColor & 0x00FFFFFF) != 0x00FFFFFF) {
+            return true;
+        }
+        return (styledTextColor & 0x00FFFFFF) == 0x00FFFFFF;
     }
 
     static Bitmap shiftBitmapDown(Bitmap source, int dy, int bgColor) {
