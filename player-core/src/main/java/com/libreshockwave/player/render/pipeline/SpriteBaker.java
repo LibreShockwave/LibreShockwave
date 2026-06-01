@@ -622,6 +622,11 @@ public class SpriteBaker {
         if (sprite.getInkMode() == com.libreshockwave.id.InkMode.MATTE) {
             return false;
         }
+        if (sprite.getInkMode() == com.libreshockwave.id.InkMode.BACKGROUND_TRANSPARENT
+                && !sprite.hasForeColor()
+                && (styledTextColor & 0x00FFFFFF) == 0x00FFFFFF) {
+            return true;
+        }
         if (!sprite.hasForeColor()) {
             return false;
         }
