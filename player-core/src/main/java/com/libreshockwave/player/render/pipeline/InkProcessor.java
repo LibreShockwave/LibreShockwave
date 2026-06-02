@@ -86,6 +86,10 @@ public final class InkProcessor {
             if (matteSpec == null) {
                 return src;
             }
+            Bitmap outlined = applyOutlinedWhiteBodyMatteIfNeeded(src, matteSpec);
+            if (outlined != null) {
+                return outlined;
+            }
             if (matteSpec.usesPaletteIndex()) {
                 return applyIndexedMatte(src, matteSpec.mattePaletteIndex());
             }
@@ -371,17 +375,180 @@ public final class InkProcessor {
         if (paletteIndices == null || paletteIndices.length != src.getWidth() * src.getHeight()) {
             return src;
         }
+        int w = src.getWidth();
+        int h = src.getHeight();
         int[] pixels = src.getPixels();
-        int[] result = new int[pixels.length];
+        int[] result = java.util.Arrays.copyOf(pixels, pixels.length);
+        boolean[] transparent = new boolean[pixels.length];
+        Queue<Integer> queue = new ArrayDeque<>();
         int matteIndex = mattePaletteIndex & 0xFF;
+
+        for (int x = 0; x < w; x++) {
+            seedIndexedMatte(pixels, paletteIndices, transparent, queue, x, 0, w, matteIndex);
+            seedIndexedMatte(pixels, paletteIndices, transparent, queue, x, h - 1, w, matteIndex);
+        }
+        for (int y = 1; y < h - 1; y++) {
+            seedIndexedMatte(pixels, paletteIndices, transparent, queue, 0, y, w, matteIndex);
+            seedIndexedMatte(pixels, paletteIndices, transparent, queue, w - 1, y, w, matteIndex);
+        }
+
+        while (!queue.isEmpty()) {
+            int idx = queue.remove();
+            int x = idx % w;
+            int y = idx / w;
+            if (x > 0) {
+                seedIndexedMatte(pixels, paletteIndices, transparent, queue, x - 1, y, w, matteIndex);
+            }
+            if (x + 1 < w) {
+                seedIndexedMatte(pixels, paletteIndices, transparent, queue, x + 1, y, w, matteIndex);
+            }
+            if (y > 0) {
+                seedIndexedMatte(pixels, paletteIndices, transparent, queue, x, y - 1, w, matteIndex);
+            }
+            if (y + 1 < h) {
+                seedIndexedMatte(pixels, paletteIndices, transparent, queue, x, y + 1, w, matteIndex);
+            }
+        }
+
         for (int i = 0; i < pixels.length; i++) {
-            if ((paletteIndices[i] & 0xFF) == matteIndex || ((pixels[i] >>> 24) & 0xFF) == 0) {
+            if (transparent[i] || ((pixels[i] >>> 24) & 0xFF) == 0) {
                 result[i] = 0x00000000;
-            } else {
-                result[i] = pixels[i];
             }
         }
         return newDerivedBitmap(src, result);
+    }
+
+    private static void seedIndexedMatte(int[] pixels, byte[] paletteIndices, boolean[] transparent,
+                                         Queue<Integer> queue, int x, int y, int w, int matteIndex) {
+        int idx = y * w + x;
+        if (transparent[idx] || ((pixels[idx] >>> 24) & 0xFF) == 0) {
+            return;
+        }
+        if ((paletteIndices[idx] & 0xFF) != matteIndex) {
+            return;
+        }
+        transparent[idx] = true;
+        queue.add(idx);
+    }
+
+    private static Bitmap applyOutlinedWhiteBodyMatteIfNeeded(Bitmap src, Drawing.FloodFillMatte matteSpec) {
+        if (src == null || matteSpec == null || matteSpec.matteColorRgb() != 0xFFFFFF) {
+            return null;
+        }
+        if (src.getBitDepth() <= 1 || src.getBitDepth() > 8) {
+            return null;
+        }
+
+        int[] pixels = src.getPixels();
+        int white = 0;
+        int dark = 0;
+        int gray = 0;
+        for (int pixel : pixels) {
+            if (((pixel >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int rgb = pixel & 0xFFFFFF;
+            int r = (rgb >> 16) & 0xFF;
+            int g = (rgb >> 8) & 0xFF;
+            int b = rgb & 0xFF;
+            if (Math.abs(r - g) > 4 || Math.abs(g - b) > 4) {
+                return null;
+            }
+            if (rgb == 0xFFFFFF) {
+                white++;
+            } else if (rgb <= 0x303030) {
+                dark++;
+            } else {
+                gray++;
+            }
+        }
+
+        if (white == 0 || dark == 0 || gray == 0) {
+            return null;
+        }
+
+        Bitmap plain = matteSpec.usesPaletteIndex()
+                ? applyIndexedMatte(src, matteSpec.mattePaletteIndex())
+                : applyMatte(src, matteSpec.matteColorRgb(), matteSpec.tolerance());
+        int remainingWhite = 0;
+        for (int pixel : plain.getPixels()) {
+            if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) == 0xFFFFFF) {
+                remainingWhite++;
+            }
+        }
+        if (remainingWhite * 20 > white) {
+            return null;
+        }
+
+        return applyOutlinedWhiteBodyMatte(src);
+    }
+
+    private static Bitmap applyOutlinedWhiteBodyMatte(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] pixels = src.getPixels();
+        boolean[] barrier = new boolean[pixels.length];
+        boolean[] dilated = new boolean[pixels.length];
+        boolean[] outside = new boolean[pixels.length];
+        Queue<Integer> queue = new ArrayDeque<>();
+
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) != 0xFFFFFF) {
+                barrier[i] = true;
+            }
+        }
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int idx = y * w + x;
+                if (!barrier[idx]) {
+                    continue;
+                }
+                for (int ny = Math.max(0, y - 1); ny <= Math.min(h - 1, y + 1); ny++) {
+                    for (int nx = Math.max(0, x - 1); nx <= Math.min(w - 1, x + 1); nx++) {
+                        dilated[ny * w + nx] = true;
+                    }
+                }
+            }
+        }
+
+        for (int x = 0; x < w; x++) {
+            seedOutlinedBackground(pixels, dilated, outside, queue, x, 0, w);
+            seedOutlinedBackground(pixels, dilated, outside, queue, x, h - 1, w);
+        }
+        for (int y = 1; y < h - 1; y++) {
+            seedOutlinedBackground(pixels, dilated, outside, queue, 0, y, w);
+            seedOutlinedBackground(pixels, dilated, outside, queue, w - 1, y, w);
+        }
+
+        while (!queue.isEmpty()) {
+            int idx = queue.remove();
+            int x = idx % w;
+            int y = idx / w;
+            if (x > 0) seedOutlinedBackground(pixels, dilated, outside, queue, x - 1, y, w);
+            if (x + 1 < w) seedOutlinedBackground(pixels, dilated, outside, queue, x + 1, y, w);
+            if (y > 0) seedOutlinedBackground(pixels, dilated, outside, queue, x, y - 1, w);
+            if (y + 1 < h) seedOutlinedBackground(pixels, dilated, outside, queue, x, y + 1, w);
+        }
+
+        int[] result = java.util.Arrays.copyOf(pixels, pixels.length);
+        for (int i = 0; i < pixels.length; i++) {
+            if (!barrier[i] && outside[i]) {
+                result[i] = 0x00000000;
+            }
+        }
+        return newDerivedBitmap(src, result);
+    }
+
+    private static void seedOutlinedBackground(int[] pixels, boolean[] dilatedBarrier, boolean[] outside,
+                                               Queue<Integer> queue, int x, int y, int w) {
+        int idx = y * w + x;
+        if (outside[idx] || dilatedBarrier[idx] || ((pixels[idx] >>> 24) & 0xFF) == 0) {
+            return;
+        }
+        outside[idx] = true;
+        queue.add(idx);
     }
 
     private static void seedMatte(int[] pixels, boolean[] transparent, Queue<Integer> queue,

@@ -269,6 +269,32 @@ class InkProcessorTest {
     }
 
     @Test
+    void mattePreservesWhiteBodyForOutlinedIndexedArt() {
+        Bitmap src = new Bitmap(6, 5, 8, new int[] {
+            0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFEEEEEE, 0xFFEEEEEE, 0xFF000000,
+            0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFBBBBBB, 0xFFBBBBBB, 0xFF000000,
+            0xFF000000, 0xFFBBBBBB, 0xFFBBBBBB, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+            0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 0, 0, (byte) 255, (byte) 255, 0,
+            0, (byte) 255, (byte) 255, 17, 17, (byte) 255,
+            (byte) 255, 0, 0, 68, 68, (byte) 255,
+            (byte) 255, 68, 68, (byte) 255, (byte) 255, 0,
+            0, (byte) 255, (byte) 255, 0, 0, 0
+        });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, false, null);
+
+        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, result.getPixel(1, 2));
+        assertEquals(0xFFFFFFFF, result.getPixel(2, 2));
+        assertEquals(0xFFBBBBBB, result.getPixel(3, 2));
+        assertEquals(0xFF000000, result.getPixel(0, 2));
+    }
+
+    @Test
     void indexedColorRemapUsesOriginalPaletteIndicesAfterMatteMasking() {
         Bitmap raw = new Bitmap(3, 1, 8, new int[] {
             0xFFFFFFFF,
