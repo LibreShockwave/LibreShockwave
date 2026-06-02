@@ -695,6 +695,13 @@ public class CastMember {
             case "script" -> getScript() != null
                     ? Datum.ScriptRef.of(castLibId.value(), memberId.value())
                     : Datum.VOID;
+            case "scripttext" -> {
+                if (memberType == MemberType.BITMAP && isRuntimeDynamicMember()) {
+                    System.err.println("[CastMember] get scriptText dynamic bitmap member="
+                            + memberId.value());
+                }
+                yield Datum.EMPTY_STRING;
+            }
             case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
             case "mediaready" -> Datum.of(1); // Always ready for now
             default -> getTypeProp(prop);
@@ -1079,6 +1086,33 @@ public class CastMember {
                     this.regPointX = 0;
                     this.regPointY = 0;
                 }
+            }
+            this.state = State.LOADED;
+            syncBitmapAnchorState();
+            notifyMemberVisualChanged();
+            return true;
+        }
+        if (memberType == MemberType.BITMAP && value instanceof Datum.Media media) {
+            CastLibProvider provider = CastLibProvider.getProvider();
+            Bitmap decoded = CastLibManager.decodeBitmapMedia(
+                    media.bytes(),
+                    castLibId.value(),
+                    paletteResolver,
+                    provider);
+            if (decoded == null) {
+                System.err.println("[CastMember] Unsupported bitmap media payload: "
+                        + media.bytes().length + " bytes");
+                return false;
+            }
+            System.err.println("[CastMember] set bitmap media member=" + memberId.value()
+                    + " bytes=" + media.bytes().length
+                    + " size=" + decoded.getWidth() + "x" + decoded.getHeight());
+            decoded.markScriptModified();
+            this.bitmap = decoded;
+            this.transparentPlaceholderBitmap = false;
+            if (!regPointPinnedToMember) {
+                this.regPointX = decoded.hasAnchorPoint() ? decoded.getAnchorX() : 0;
+                this.regPointY = decoded.hasAnchorPoint() ? decoded.getAnchorY() : 0;
             }
             this.state = State.LOADED;
             syncBitmapAnchorState();

@@ -40,6 +40,18 @@ public final class ImageMethodDispatcher {
         String method = methodName.toLowerCase();
         Bitmap bmp = imageRef.bitmap();
 
+        if (bmp == null) {
+            return switch (method) {
+                case "duplicate" -> new Datum.ImageRef((Bitmap) null);
+                case "getat" -> {
+                    if (args.isEmpty()) yield Datum.VOID;
+                    int index = args.get(0).toInt();
+                    yield index == 1 || index == 2 ? Datum.ZERO : Datum.VOID;
+                }
+                default -> Datum.VOID;
+            };
+        }
+
         return switch (method) {
             case "fill" -> {
                 if (fill(bmp, args)) {
@@ -74,6 +86,10 @@ public final class ImageMethodDispatcher {
                     int px = args.get(0).toInt();
                     int py = args.get(1).toInt();
                     if (px >= 0 && px < bmp.getWidth() && py >= 0 && py < bmp.getHeight()) {
+                        Integer paletteIndex = bmp.getPaletteIndex(px, py);
+                        if (paletteIndex != null) {
+                            yield new Datum.PaletteIndexColor(paletteIndex);
+                        }
                         int pixel = bmp.getPixel(px, py);
                         int r = (pixel >> 16) & 0xFF;
                         int g = (pixel >> 8) & 0xFF;
@@ -201,6 +217,16 @@ public final class ImageMethodDispatcher {
 
     public static Datum getProperty(Datum.ImageRef imageRef, String propName) {
         Bitmap bmp = imageRef.bitmap();
+        if (bmp == null) {
+            return switch (propName.toLowerCase()) {
+                case "rect" -> new Datum.Rect(0, 0, 0, 0);
+                case "width", "height", "depth" -> Datum.ZERO;
+                case "usealpha" -> Datum.FALSE;
+                case "ilk" -> Datum.symbol("image");
+                case "image" -> imageRef;
+                default -> Datum.VOID;
+            };
+        }
         return switch (propName.toLowerCase()) {
             case "rect" -> new Datum.Rect(0, 0, bmp.getWidth(), bmp.getHeight());
             case "width" -> Datum.of(bmp.getWidth());
@@ -710,7 +736,8 @@ public final class ImageMethodDispatcher {
             // No scaling needed - direct copy
             boolean preservePaletteIndices = canPreservePaletteIndices(dest, effectiveSrc,
                     effectiveInk, blend, mask, colorRemap, bgColorRemap);
-            if (!preservePaletteIndices) {
+            boolean refreshDestPaletteIndices = canRefreshDestinationPaletteIndices(dest);
+            if (!preservePaletteIndices && !refreshDestPaletteIndices) {
                 dest.clearPaletteIndices();
             }
             Drawing.copyPixels(dest, effectiveSrc,
@@ -723,6 +750,8 @@ public final class ImageMethodDispatcher {
                         effectiveSrcX, effectiveSrcY,
                         srcW, srcH, srcW, srcH,
                         effectiveInk, blend, mask, colorRemap, bgColorRemap);
+            } else if (refreshDestPaletteIndices) {
+                refreshDestinationPaletteIndices(dest, destRect.left(), destRect.top(), srcW, srcH);
             }
         } else {
             // Scaling needed - create scaled intermediate, applying mask at source coordinates
@@ -760,7 +789,8 @@ public final class ImageMethodDispatcher {
             // Mask already applied during scaling, so pass null to Drawing
             boolean preservePaletteIndices = canPreservePaletteIndices(dest, scaled,
                     effectiveInk, blend, null, colorRemap, bgColorRemap);
-            if (!preservePaletteIndices) {
+            boolean refreshDestPaletteIndices = canRefreshDestinationPaletteIndices(dest);
+            if (!preservePaletteIndices && !refreshDestPaletteIndices) {
                 dest.clearPaletteIndices();
             }
             Drawing.copyPixels(dest, scaled,
@@ -772,6 +802,8 @@ public final class ImageMethodDispatcher {
                         0, 0,
                         destW, destH, destW, destH,
                         effectiveInk, blend, null, colorRemap, bgColorRemap);
+            } else if (refreshDestPaletteIndices) {
+                refreshDestinationPaletteIndices(dest, destRect.left(), destRect.top(), destW, destH);
             }
         }
 
@@ -1008,6 +1040,37 @@ public final class ImageMethodDispatcher {
                 && mask == null
                 && colorRemap < 0
                 && bgColorRemap < 0;
+    }
+
+    private static boolean canRefreshDestinationPaletteIndices(Bitmap dest) {
+        return dest != null
+                && dest.getBitDepth() <= 8
+                && dest.getImagePalette() != null
+                && dest.getPaletteIndices() != null;
+    }
+
+    private static void refreshDestinationPaletteIndices(Bitmap dest, int destX, int destY,
+                                                         int destW, int destH) {
+        Palette palette = dest.getImagePalette();
+        byte[] indices = dest.getPaletteIndices();
+        if (palette == null || indices == null || indices.length < dest.getWidth() * dest.getHeight()) {
+            return;
+        }
+        int x0 = Math.max(0, destX);
+        int y0 = Math.max(0, destY);
+        int x1 = Math.min(dest.getWidth(), destX + destW);
+        int y1 = Math.min(dest.getHeight(), destY + destH);
+        for (int y = y0; y < y1; y++) {
+            for (int x = x0; x < x1; x++) {
+                int offset = y * dest.getWidth() + x;
+                int pixel = dest.getPixel(x, y);
+                if (((pixel >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                indices[offset] = (byte) (palette.nearestIndex(pixel) & 0xFF);
+            }
+        }
+        dest.setPaletteIndices(indices);
     }
 
     private static boolean palettesAreCompatibleForIndexPreserve(Bitmap dest, Bitmap src) {

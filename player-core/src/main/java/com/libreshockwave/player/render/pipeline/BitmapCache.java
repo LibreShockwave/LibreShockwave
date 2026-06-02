@@ -224,6 +224,11 @@ public class BitmapCache {
     static Bitmap applyIndexedMatteColorRemapIfNeeded(
             Bitmap raw, Bitmap processed, int ink, int foreColor, int backColor,
             boolean hasForeColor, boolean hasBackColor, Palette palette) {
+        InkMode inkMode = InkMode.fromCode(ink);
+        if (inkMode == InkMode.DARKEN && hasForeColor
+                && raw != null && raw.getBitDepth() > 1 && raw.getPaletteIndices() != null) {
+            return InkProcessor.applyDarkenForeColorOffset(processed, foreColor);
+        }
         return applyIndexedMatteColorRemap(
                 raw,
                 processed,

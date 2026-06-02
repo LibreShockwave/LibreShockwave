@@ -242,10 +242,7 @@ public final class ListBuiltins {
         Datum container = args.get(0);
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
-        Datum keyDatum = args.get(1);
-        String key = keyDatum.toKeyName();
-        boolean isSym = keyDatum instanceof Datum.Symbol;
-        pl.put(key, isSym, args.get(2));
+        pl.put(args.get(1), args.get(2));
         return Datum.VOID;
     }
 
@@ -257,9 +254,7 @@ public final class ListBuiltins {
         Datum container = args.get(0);
         if (!(container instanceof Datum.PropList pl)) return Datum.VOID;
 
-        String key = args.get(1).toKeyName();
-        boolean isSym = args.get(1) instanceof Datum.Symbol;
-        pl.add(key, args.get(2), isSym);
+        pl.add(args.get(1), args.get(2));
         return Datum.VOID;
     }
 
@@ -286,7 +281,7 @@ public final class ListBuiltins {
 
         int index = args.get(1).toInt() - 1;
         if (index >= 0 && index < pl.size()) {
-            return Datum.symbol(pl.getKey(index));
+            return pl.getKeyDatum(index);
         }
         return Datum.VOID;
     }

@@ -232,6 +232,13 @@ public final class ControlFlowBuiltins {
     public static Datum callHandlerOnInstance(LingoVM vm, Datum.ScriptInstance instance,
                                                String handlerName, List<Datum> extraArgs) {
         try {
+            if ("binaryDataReceived".equalsIgnoreCase(handlerName)) {
+                System.err.println("[ControlFlow] call binaryDataReceived instance="
+                        + instance.scriptId()
+                        + " args=" + extraArgs.stream()
+                        .map(arg -> arg.getClass().getSimpleName())
+                        .toList());
+            }
             Datum result = AncestorChainWalker.invokeHandlerWithResult(vm, instance, handlerName, extraArgs);
             return result != null ? result : Datum.VOID;
         } catch (Exception e) {

@@ -131,7 +131,18 @@ public sealed interface Datum {
      * {@link PropList#get(String, boolean)} so that symbol-keyed entries don't
      * collide with string-keyed entries.
      */
-    record PropEntry(String key, Datum value, boolean isSymbolKey) {}
+    record PropEntry(String key, Datum value, boolean isSymbolKey, Datum rawKey) {
+        public PropEntry(String key, Datum value, boolean isSymbolKey) {
+            this(key, value, isSymbolKey, null);
+        }
+
+        public Datum keyDatum() {
+            if (rawKey != null) {
+                return rawKey;
+            }
+            return isSymbolKey ? Datum.symbol(key) : Datum.of(key);
+        }
+    }
 
     /**
      * Property list [#a: 1, #b: 2].
@@ -226,7 +237,8 @@ public sealed interface Datum {
                 if (entries.get(i).key().equalsIgnoreCase(key)) {
                     if (entries.get(i).isSymbolKey() == isSymbolKey) {
                         // Same-type match — best, update immediately
-                        entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                        PropEntry old = entries.get(i);
+                        entries.set(i, new PropEntry(old.key(), value, isSymbolKey, old.rawKey()));
                         return;
                     }
                     // Cross-type fallback only on exact case
@@ -238,10 +250,36 @@ public sealed interface Datum {
             if (crossTypeIdx >= 0) {
                 // Cross-type fallback — update existing entry, preserve its type
                 PropEntry old = entries.get(crossTypeIdx);
-                entries.set(crossTypeIdx, new PropEntry(old.key(), value, old.isSymbolKey()));
+                entries.set(crossTypeIdx, new PropEntry(old.key(), value, old.isSymbolKey(), old.rawKey()));
                 return;
             }
             entries.add(new PropEntry(key, value, isSymbolKey));
+        }
+
+        public void put(Datum keyDatum, Datum value) {
+            put(keyDatum.toKeyName(), keyDatum instanceof Datum.Symbol, value, keyDatum);
+        }
+
+        private void put(String key, boolean isSymbolKey, Datum value, Datum rawKey) {
+            int crossTypeIdx = -1;
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).key().equalsIgnoreCase(key)) {
+                    if (entries.get(i).isSymbolKey() == isSymbolKey) {
+                        PropEntry old = entries.get(i);
+                        entries.set(i, new PropEntry(old.key(), value, isSymbolKey, rawKey));
+                        return;
+                    }
+                    if (crossTypeIdx < 0 && entries.get(i).key().equals(key)) {
+                        crossTypeIdx = i;
+                    }
+                }
+            }
+            if (crossTypeIdx >= 0) {
+                PropEntry old = entries.get(crossTypeIdx);
+                entries.set(crossTypeIdx, new PropEntry(old.key(), value, old.isSymbolKey(), old.rawKey()));
+                return;
+            }
+            entries.add(new PropEntry(key, value, isSymbolKey, rawKey));
         }
 
         /**
@@ -254,7 +292,8 @@ public sealed interface Datum {
             for (int i = 0; i < entries.size(); i++) {
                 if (entries.get(i).isSymbolKey() == isSymbolKey
                         && entries.get(i).key().equalsIgnoreCase(key)) {
-                    entries.set(i, new PropEntry(entries.get(i).key(), value, isSymbolKey));
+                    PropEntry old = entries.get(i);
+                    entries.set(i, new PropEntry(old.key(), value, isSymbolKey, old.rawKey()));
                     return;
                 }
             }
@@ -265,6 +304,10 @@ public sealed interface Datum {
         /** Always append — allows duplicate keys (Director's addProp behavior). */
         public void add(String key, Datum value, boolean isSymbolKey) {
             entries.add(new PropEntry(key, value, isSymbolKey));
+        }
+
+        public void add(Datum keyDatum, Datum value) {
+            entries.add(new PropEntry(keyDatum.toKeyName(), value, keyDatum instanceof Datum.Symbol, keyDatum));
         }
 
         /** Remove first entry matching key (case-insensitive, type-unaware). */
@@ -319,10 +362,14 @@ public sealed interface Datum {
             return entries.get(index).key();
         }
 
+        public Datum getKeyDatum(int index) {
+            return entries.get(index).keyDatum();
+        }
+
         /** Set value at position (0-based), preserving the key. */
         public void setValue(int index, Datum value) {
             PropEntry old = entries.get(index);
-            entries.set(index, new PropEntry(old.key(), value, old.isSymbolKey()));
+            entries.set(index, new PropEntry(old.key(), value, old.isSymbolKey(), old.rawKey()));
         }
 
         /** Remove entry at position (0-based). */
@@ -343,7 +390,8 @@ public sealed interface Datum {
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < entries.size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append("#").append(entries.get(i).key()).append(": ").append(entries.get(i).value());
+                PropEntry entry = entries.get(i);
+                sb.append(entry.keyDatum()).append(": ").append(entry.value());
             }
             return sb.append("]").toString();
         }
@@ -444,6 +492,23 @@ public sealed interface Datum {
     record PaletteIndexColor(int index) implements Datum {
         @Override
         public String toString() { return "paletteIndex(" + index + ")"; }
+    }
+
+    /** Raw Director media bytes, used by Multiuser/Lingo media payloads. */
+    record Media(byte[] bytes) implements Datum {
+        public Media {
+            bytes = bytes != null ? bytes.clone() : new byte[0];
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+
+        @Override
+        public String toString() {
+            return "<media " + bytes.length + " bytes>";
+        }
     }
 
     /**
@@ -700,6 +765,7 @@ public sealed interface Datum {
             case Rect r -> "rect";
             case Color c -> "color";
             case PaletteIndexColor pic -> "color";
+            case Media media -> "media";
             case ImageRef ir -> "image";
             case XtraRef xr -> "xtra";
             case XtraInstance xi -> "xtraInstance";
@@ -910,7 +976,14 @@ public sealed interface Datum {
             case Rect r -> new Rect(r.left(), r.top(), r.right(), r.bottom());
             case Color c -> c;
             case PaletteIndexColor pic -> pic;
-            case ImageRef ir -> ir.isLive() ? ir : new ImageRef(ir.bitmap().copy());
+            case Media media -> new Media(media.bytes());
+            case ImageRef ir -> {
+                if (ir.isLive()) {
+                    yield ir;
+                }
+                Bitmap bmp = ir.bitmap();
+                yield new ImageRef(bmp != null ? bmp.copy() : null);
+            }
             case SpriteRef sr -> sr;
             case CastMemberRef cm -> cm;
             case CastLibRef cl -> cl;
@@ -937,7 +1010,8 @@ public sealed interface Datum {
             case PropList pl -> {
                 java.util.List<PropEntry> copiedEntries = new ArrayList<>(pl.entries().size());
                 for (PropEntry entry : pl.entries()) {
-                    copiedEntries.add(new PropEntry(entry.key(), entry.value().deepCopy(), entry.isSymbolKey()));
+                    Datum copiedRawKey = entry.rawKey() != null ? entry.rawKey().deepCopy() : null;
+                    copiedEntries.add(new PropEntry(entry.key(), entry.value().deepCopy(), entry.isSymbolKey(), copiedRawKey));
                 }
                 yield new PropList(copiedEntries);
             }

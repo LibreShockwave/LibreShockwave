@@ -1185,6 +1185,55 @@ public class ScriptModifiedBitmapTest {
         assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
     }
 
+    @Test
+    void scriptModifiedIndexedDarkenUsesPaletteIndicesForSpriteColorRamp() {
+        CastMember member = new CastMember(1, 46, MemberType.BITMAP);
+        member.setName("dynamic_indexed_photo");
+        Bitmap bmp = new Bitmap(3, 1, 8, new int[] {
+                0xFF383838,
+                0xFF282828,
+                0xFF808080
+        });
+        bmp.setImagePalette(Palette.GRAYSCALE_PALETTE);
+        bmp.setPaletteIndices(new byte[] {(byte) 199, (byte) 215, (byte) 127});
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                45, 0, 0, 3, 1, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0x681F10, 0xFFCC66, true, true,
+                41, 100, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0xFFA04B26, baked.getBakedBitmap().getPixel(0, 0));
+        assertEquals(0xFF903F20, baked.getBakedBitmap().getPixel(1, 0));
+        assertEquals(0xFFE88543, baked.getBakedBitmap().getPixel(2, 0));
+    }
+
+    @Test
+    void copyPixelsOntoIndexedDestinationRefreshesOnlyAffectedPaletteIndices() {
+        Bitmap dest = new Bitmap(3, 1, 8, new int[] {
+                0xFFFFFFFF,
+                0xFF808080,
+                0xFF000000
+        });
+        dest.setImagePalette(Palette.GRAYSCALE_PALETTE);
+        dest.setPaletteIndices(new byte[] {0, (byte) 127, (byte) 255});
+        Bitmap src = new Bitmap(1, 1, 32, new int[] {0xFF404040});
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(1, 0, 2, 1),
+                        new Datum.Rect(0, 0, 1, 1)));
+
+        assertArrayEquals(new byte[] {0, (byte) 191, (byte) 255}, dest.getPaletteIndices());
+    }
+
     /**
      * Tests the cloud pattern: pImg = member.image is obtained early,
      * then member.image = image(w,h,8) replaces the member's bitmap,

@@ -117,6 +117,11 @@ public class WasmEntry {
         return Address.ofData(stringBuffer).toInt();
     }
 
+    @Export(name = "getStringBufferCapacity")
+    public static int getStringBufferCapacity() {
+        return stringBuffer.length;
+    }
+
     @Export(name = "setInitialBuiltinSymbol")
     public static void setInitialBuiltinSymbol(int keyLen, int valueLen) {
         if (wasmPlayer == null || wasmPlayer.getPlayer() == null || keyLen <= 0 || valueLen <= 0) return;
@@ -1817,7 +1822,10 @@ public class WasmEntry {
         if (b == null) return 0;
         WasmMultiuserBridge.PendingRequest req = b.getRequest(index);
         if (req == null || req.type != WasmMultiuserBridge.REQ_SEND) return 0;
-        return writeLatin1ToStringBuffer(req.content);
+        byte[] bytes = req.wireBytes();
+        int len = Math.min(bytes.length, stringBuffer.length);
+        System.arraycopy(bytes, 0, stringBuffer, 0, len);
+        return len;
     }
 
     @Export(name = "drainMusPending")
@@ -1856,8 +1864,9 @@ public class WasmEntry {
         WasmMultiuserBridge b = musBridge();
         if (b == null) return;
         try {
-            String data = new String(stringBuffer, 0, dataLen, StandardCharsets.ISO_8859_1);
-            b.deliverMessage(instanceId, 0, "", "", data);
+            byte[] data = new byte[dataLen];
+            System.arraycopy(stringBuffer, 0, data, 0, dataLen);
+            b.deliverMessageBytes(instanceId, data);
         } catch (Throwable e) {
             captureError("musDeliverMessage", e);
         }

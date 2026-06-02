@@ -231,3 +231,42 @@ tasks.register('runWasmNativeVisualRegressionTest', Exec) {
     standardOutput = System.out
     errorOutput    = System.err
 }
+
+// Focused WASM regression for the v31 room-photo hotspot flow.
+// Uses the same browser runner stack but runs the 4-step interactive
+// v31 sequence with reference screenshots in /opt/git/v31_room_load.
+tasks.register('runWasmV31RoomPhotoHotspotTest', Exec) {
+    group       = 'verification'
+    description = 'WASM v31 room flow: rooms -> entered -> photo hotspot'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-v31-room-photo-hotspot-native-test.js').absolutePath,
+        distPath,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
+
+// Room-entry-only variant for the v31 sw9 forward flow.
+// This stops at v31_native_rooms_entered.png and does not click the photo.
+tasks.register('runWasmV31RoomEnterTest', Exec) {
+    group       = 'verification'
+    description = 'WASM v31 room flow: sw9 forward -> entered room'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-v31-room-enter-native-test.js').absolutePath,
+        distPath,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}

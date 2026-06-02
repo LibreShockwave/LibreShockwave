@@ -302,7 +302,7 @@ public final class ScriptInstanceMethodDispatcher {
                 return;
             }
             // PropList: set by key
-            pl.put(getPropertyName(subKey), subKey instanceof Datum.Symbol, value);
+            pl.put(subKey, value);
         }
     }
 

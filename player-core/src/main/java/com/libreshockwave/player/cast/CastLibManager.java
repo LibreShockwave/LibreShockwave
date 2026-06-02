@@ -2,7 +2,9 @@ package com.libreshockwave.player.cast;
 
 import com.libreshockwave.DirectorFile;
 import com.libreshockwave.bitmap.Bitmap;
+import com.libreshockwave.bitmap.BitmapDecoder;
 import com.libreshockwave.bitmap.Palette;
+import com.libreshockwave.cast.BitmapInfo;
 import com.libreshockwave.cast.MemberType;
 import com.libreshockwave.chunks.CastChunk;
 import com.libreshockwave.chunks.CastListChunk;
@@ -13,6 +15,7 @@ import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.LingoVM;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -21,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 
 /**
  * Manages cast libraries for the player.
@@ -343,14 +347,33 @@ public class CastLibManager implements CastLibProvider {
         if (data == null || data.length == 0) {
             return false;
         }
-        Bitmap bitmap = decodeImportedImage(data);
+        Bitmap bitmap = decodeBitmapMedia(data);
         if (bitmap == null) {
             return false;
         }
         return member.setProp("image", new Datum.ImageRef(bitmap));
     }
 
-    private static Bitmap decodeImportedImage(byte[] data) {
+    static Bitmap decodeBitmapMedia(byte[] data) {
+        return decodeBitmapMedia(data, -1, null);
+    }
+
+    static Bitmap decodeBitmapMedia(byte[] data, int defaultCastLib,
+                                    BiFunction<Integer, Integer, Palette> paletteResolver) {
+        return decodeBitmapMedia(data, defaultCastLib, paletteResolver, null);
+    }
+
+    static Bitmap decodeBitmapMedia(byte[] data, int defaultCastLib,
+                                    BiFunction<Integer, Integer, Palette> paletteResolver,
+                                    CastLibProvider provider) {
+        Bitmap imported = decodeImportedImage(data);
+        if (imported != null) {
+            return imported;
+        }
+        return decodeDirectorBitmapMedia(data, defaultCastLib, paletteResolver, provider);
+    }
+
+    static Bitmap decodeImportedImage(byte[] data) {
         if (data.length < 12
                 || data[0] != 'L' || data[1] != 'S' || data[2] != 'W' || data[3] != 'I') {
             return null;
@@ -385,11 +408,143 @@ public class CastLibManager implements CastLibProvider {
         return bitmap;
     }
 
+    private static Bitmap decodeDirectorBitmapMedia(byte[] data, int defaultCastLib,
+                                                    BiFunction<Integer, Integer, Palette> paletteResolver,
+                                                    CastLibProvider provider) {
+        if (data == null || data.length < 40) {
+            return null;
+        }
+
+        int bitdMarker = findBitdMarker(data);
+        if (bitdMarker < 32 || bitdMarker + 8 > data.length) {
+            return null;
+        }
+
+        int bitdLen = readU32LE(data, bitdMarker + 4);
+        int bitdStart = bitdMarker + 8;
+        if (bitdLen <= 0 || bitdStart + bitdLen > data.length) {
+            return null;
+        }
+
+        byte[] infoData = Arrays.copyOfRange(data, bitdMarker - 32, bitdMarker);
+        BitmapInfo info = BitmapInfo.parse(infoData, 1200);
+        if (info.width() <= 0 || info.height() <= 0) {
+            return null;
+        }
+        if (data.length == 15572 || (info.width() == 161 && info.height() == 117)) {
+            System.err.println("[CastLibManager] bitmap media info bytes=" + data.length
+                    + " size=" + info.width() + "x" + info.height()
+                    + " depth=" + info.bitDepth()
+                    + " pitch=" + info.pitch()
+                    + " paletteId=" + info.paletteId()
+                    + " paletteCastLib=" + info.paletteCastLib()
+                    + " defaultCastLib=" + defaultCastLib);
+        }
+
+        byte[] bitd = Arrays.copyOfRange(data, bitdStart, bitdStart + bitdLen);
+        Palette palette = info.bitDepth() <= 8
+                ? resolveMediaPalette(info, defaultCastLib, paletteResolver, provider)
+                : null;
+        Bitmap bitmap = BitmapDecoder.decode(
+                bitd,
+                info.width(),
+                info.height(),
+                info.bitDepth(),
+                palette,
+                true,
+                1200,
+                info.pitch());
+        if (palette != null) {
+            bitmap.setImagePalette(palette);
+        }
+        bitmap.setAnchorPoint(info.regXLocal(), info.regYLocal());
+        if (data.length == 15572 || (info.width() == 161 && info.height() == 117)) {
+            System.err.println("[CastLibManager] bitmap media samples"
+                    + " p8,12=" + bitmap.getPaletteIndex(8, 12) + "/" + Integer.toHexString(bitmap.getPixel(8, 12))
+                    + " p78,32=" + bitmap.getPaletteIndex(78, 32) + "/" + Integer.toHexString(bitmap.getPixel(78, 32))
+                    + " p98,107=" + bitmap.getPaletteIndex(98, 107) + "/" + Integer.toHexString(bitmap.getPixel(98, 107)));
+        }
+        return bitmap;
+    }
+
+    private static Palette resolveMediaPalette(BitmapInfo info, int defaultCastLib,
+                                               BiFunction<Integer, Integer, Palette> paletteResolver,
+                                               CastLibProvider provider) {
+        int paletteId = info.paletteId();
+        if (paletteId < 0) {
+            return Palette.getBuiltIn(paletteId);
+        }
+
+        if (provider != null) {
+            if (info.paletteCastLib() > 0) {
+                Palette palette = provider.resolvePaletteById(info.paletteCastLib(), paletteId);
+                if (palette != null) {
+                    System.err.println("[CastLibManager] bitmap media palette provider-id castLib="
+                            + info.paletteCastLib() + " paletteId=" + paletteId
+                            + " name=" + palette.getName());
+                    return palette;
+                }
+            }
+            if (defaultCastLib > 0) {
+                Palette palette = provider.resolvePaletteById(defaultCastLib, paletteId);
+                if (palette != null) {
+                    System.err.println("[CastLibManager] bitmap media palette provider-id castLib="
+                            + defaultCastLib + " paletteId=" + paletteId
+                            + " name=" + palette.getName());
+                    return palette;
+                }
+            }
+        }
+
+        int memberNumber = paletteId + 1;
+        if (paletteResolver != null) {
+            if (info.paletteCastLib() > 0) {
+                Palette palette = paletteResolver.apply(info.paletteCastLib(), memberNumber);
+                if (palette != null) {
+                    System.err.println("[CastLibManager] bitmap media palette member castLib="
+                            + info.paletteCastLib() + " member=" + memberNumber
+                            + " name=" + palette.getName());
+                    return palette;
+                }
+            }
+            if (defaultCastLib > 0) {
+                Palette palette = paletteResolver.apply(defaultCastLib, memberNumber);
+                if (palette != null) {
+                    System.err.println("[CastLibManager] bitmap media palette member castLib="
+                            + defaultCastLib + " member=" + memberNumber
+                            + " name=" + palette.getName());
+                    return palette;
+                }
+            }
+        }
+
+        System.err.println("[CastLibManager] bitmap media palette active fallback paletteId="
+                + paletteId + " defaultCastLib=" + defaultCastLib
+                + " name=" + Datum.getActivePalette().getName());
+        return Datum.getActivePalette();
+    }
+
+    private static int findBitdMarker(byte[] data) {
+        for (int i = 32; i <= data.length - 8; i++) {
+            if (data[i] == 'D' && data[i + 1] == 'T' && data[i + 2] == 'I' && data[i + 3] == 'B') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private static int readU32BE(byte[] data, int offset) {
         return ((data[offset] & 0xFF) << 24)
                 | ((data[offset + 1] & 0xFF) << 16)
                 | ((data[offset + 2] & 0xFF) << 8)
                 | (data[offset + 3] & 0xFF);
+    }
+
+    private static int readU32LE(byte[] data, int offset) {
+        return (data[offset] & 0xFF)
+                | ((data[offset + 1] & 0xFF) << 8)
+                | ((data[offset + 2] & 0xFF) << 16)
+                | ((data[offset + 3] & 0xFF) << 24);
     }
 
     @Override
@@ -904,6 +1059,71 @@ public class CastLibManager implements CastLibProvider {
         if (castLib == null) {
             return null;
         }
+        CastMember dynamicMember = castLib.getMember(memberNum);
+        if (dynamicMember != null) {
+            com.libreshockwave.bitmap.Palette dynamicPalette = dynamicMember.getPaletteData();
+            if (dynamicPalette != null) {
+                return dynamicPalette;
+            }
+        }
+        com.libreshockwave.chunks.CastMemberChunk chunk = castLib.findMemberByNumber(memberNum);
+        if (chunk != null && chunk.file() != null) {
+            return chunk.file().resolvePaletteByMemberNumber(memberNum);
+        }
+        return null;
+    }
+
+    @Override
+    public com.libreshockwave.bitmap.Palette resolvePaletteById(int castLibNum, int paletteId) {
+        ensureInitialized();
+        if (paletteId < 0) {
+            return com.libreshockwave.bitmap.Palette.getBuiltIn(paletteId);
+        }
+
+        if (castLibNum > 0) {
+            com.libreshockwave.bitmap.Palette palette = resolvePaletteByIdInCast(getCastLib(castLibNum), paletteId);
+            if (palette != null) {
+                return palette;
+            }
+        }
+
+        if (file != null) {
+            com.libreshockwave.bitmap.Palette palette = file.resolvePaletteExact(paletteId);
+            if (palette != null) {
+                return palette;
+            }
+        }
+
+        for (CastLib castLib : castLibs.values()) {
+            if (castLibNum > 0 && castLib.getNumber() == castLibNum) {
+                continue;
+            }
+            if (!castLib.isLoaded()) {
+                continue;
+            }
+            com.libreshockwave.bitmap.Palette palette = resolvePaletteByIdInCast(castLib, paletteId);
+            if (palette != null) {
+                return palette;
+            }
+        }
+
+        return null;
+    }
+
+    private com.libreshockwave.bitmap.Palette resolvePaletteByIdInCast(CastLib castLib, int paletteId) {
+        if (castLib == null) {
+            return null;
+        }
+
+        DirectorFile source = castLib.getSourceFile();
+        if (source != null) {
+            com.libreshockwave.bitmap.Palette palette = source.resolvePaletteExact(paletteId);
+            if (palette != null) {
+                return palette;
+            }
+        }
+
+        int memberNum = paletteId + 1;
         CastMember dynamicMember = castLib.getMember(memberNum);
         if (dynamicMember != null) {
             com.libreshockwave.bitmap.Palette dynamicPalette = dynamicMember.getPaletteData();
