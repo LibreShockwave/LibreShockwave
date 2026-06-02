@@ -929,12 +929,21 @@ WasmEngine.prototype.deliverMusEvents = function() {
     _musErrors = {};
 
     // Deliver messages
+    var stringBufferCapacity = 4096;
+    try {
+        if (this.exports.getStringBufferCapacity) {
+            stringBufferCapacity = this.exports.getStringBufferCapacity(); this._clearEx();
+        }
+    } catch(e) {
+        stringBufferCapacity = 4096;
+    }
     for (var mid in _musInbound) {
         var msgs = _musInbound[mid];
         var iid = parseInt(mid);
         for (var i = 0; i < msgs.length; i++) {
             var msgBytes = msgs[i];
-            var len = Math.min(msgBytes.length, 4096);
+            var len = Math.min(msgBytes.length, stringBufferCapacity);
+            _musDebug('deliver instance=' + iid + ' bytes=' + msgBytes.length + ' copied=' + len + _musPreview(msgBytes));
             new Uint8Array(this._mem(), strAddr, len).set(msgBytes.subarray(0, len));
             try {
                 this.exports.musDeliverMessage(iid, len); this._clearEx();

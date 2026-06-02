@@ -1,6 +1,7 @@
 package com.libreshockwave.vm.opcode.dispatch;
 
 import com.libreshockwave.vm.datum.Datum;
+import com.libreshockwave.vm.datum.DatumFormatter;
 
 import java.util.List;
 
@@ -29,7 +30,9 @@ public final class PropListMethodDispatcher {
         return switch (methodName.toLowerCase()) {
             case "getprop", "getpropref", "getaprop", "getproperty" -> {
                 if (args.isEmpty()) yield Datum.VOID;
-                Datum value = propList.getOrDefault(args.get(0).toKeyName(), Datum.VOID);
+                Datum keyDatum = args.get(0);
+                Datum value = propList.getOrDefault(keyDatum.toKeyName(), Datum.VOID);
+                logBinaryLookup(methodName, propList, keyDatum, value);
                 // getProp(propList, #prop, index) -> propList.prop[index]
                 if (args.size() >= 2 && value instanceof Datum.List subList) {
                     int index = args.get(1).toInt() - 1; // 1-indexed
@@ -43,24 +46,28 @@ public final class PropListMethodDispatcher {
             case "setprop", "setaprop" -> {
                 if (args.size() < 2) yield Datum.VOID;
                 Datum keyDatum = args.get(0);
-                propList.put(keyDatum.toKeyName(), keyDatum instanceof Datum.Symbol, args.get(1));
+                propList.put(keyDatum, args.get(1));
                 yield Datum.VOID;
             }
             case "addprop" -> {
                 if (args.size() < 2) yield Datum.VOID;
                 Datum keyDatum = args.get(0);
                 // addProp always appends -> allows duplicate keys
-                propList.add(keyDatum.toKeyName(), args.get(1), keyDatum instanceof Datum.Symbol);
+                propList.add(keyDatum, args.get(1));
                 yield Datum.VOID;
             }
             case "getat" -> {
                 if (args.isEmpty()) yield Datum.VOID;
                 Datum keyOrIndex = args.get(0);
                 if (keyOrIndex instanceof Datum.Str s) {
-                    yield propList.getOrDefault(s.value(), false, Datum.VOID);
+                    Datum value = propList.getOrDefault(s.value(), false, Datum.VOID);
+                    logBinaryLookup(methodName, propList, keyOrIndex, value);
+                    yield value;
                 }
                 if (keyOrIndex instanceof Datum.Symbol sym) {
-                    yield propList.getOrDefault(sym.name(), true, Datum.VOID);
+                    Datum value = propList.getOrDefault(sym.name(), true, Datum.VOID);
+                    logBinaryLookup(methodName, propList, keyOrIndex, value);
+                    yield value;
                 }
                 int index = keyOrIndex.toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
@@ -78,7 +85,7 @@ public final class PropListMethodDispatcher {
                         propList.setValue(index, value);
                     }
                 } else {
-                    propList.putTyped(keyOrIndex.toKeyName(), keyOrIndex instanceof Datum.Symbol, value);
+                    propList.put(keyOrIndex, value);
                 }
                 yield Datum.VOID;
             }
@@ -89,7 +96,7 @@ public final class PropListMethodDispatcher {
                 Datum searchValue = args.get(0);
                 for (Datum.PropEntry entry : propList.entries()) {
                     if (entry.value().lingoEquals(searchValue)) {
-                        yield Datum.symbol(entry.key());
+                        yield entry.keyDatum();
                     }
                 }
                 yield Datum.ZERO;
@@ -109,7 +116,7 @@ public final class PropListMethodDispatcher {
                 if (args.isEmpty()) yield Datum.VOID;
                 int index = args.get(0).toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
-                    yield Datum.symbol(propList.getKey(index));
+                    yield propList.getKeyDatum(index);
                 }
                 yield Datum.VOID;
             }
@@ -128,5 +135,49 @@ public final class PropListMethodDispatcher {
                     propList.deepCopy();
             default -> Datum.VOID;
         };
+    }
+
+    private static void logBinaryLookup(String methodName, Datum.PropList propList, Datum keyDatum, Datum value) {
+        String key = keyDatum.toKeyName();
+        if (!"callback".equalsIgnoreCase(key)
+                && !"id".equalsIgnoreCase(key)
+                && !(value instanceof Datum.ScriptInstance)
+                && !containsScriptInstance(propList)) {
+            return;
+        }
+
+        System.err.println("[PropList] " + methodName
+                + " key=" + DatumFormatter.formatBrief(keyDatum)
+                + " -> " + DatumFormatter.formatBrief(value)
+                + " type=" + value.typeName()
+                + " entries=" + formatKeys(propList));
+    }
+
+    private static boolean containsScriptInstance(Datum.PropList propList) {
+        for (Datum.PropEntry entry : propList.entries()) {
+            if (entry.value() instanceof Datum.ScriptInstance) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String formatKeys(Datum.PropList propList) {
+        StringBuilder sb = new StringBuilder("[");
+        int limit = Math.min(propList.size(), 8);
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) sb.append(", ");
+            Datum.PropEntry entry = propList.entries().get(i);
+            sb.append(entry.isSymbolKey() ? "#" : "\"")
+                    .append(entry.key())
+                    .append(entry.isSymbolKey() ? "" : "\"")
+                    .append(":")
+                    .append(DatumFormatter.formatBrief(entry.value()));
+        }
+        if (propList.size() > limit) {
+            sb.append(", ...");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 }

@@ -110,6 +110,13 @@ public class MultiuserXtra implements Xtra {
             // Process all pending messages
             while (!state.messageQueue.isEmpty()) {
                 state.currentMessage = state.messageQueue.remove(0);
+                if ("BINARYDATA".equalsIgnoreCase(state.currentMessage.subject())
+                        || "HELLO".equalsIgnoreCase(state.currentMessage.subject())) {
+                    System.err.println("[MultiuserXtra] auto-callback instance=" + instanceId
+                            + " handler=" + state.callbackHandler
+                            + " subject=" + state.currentMessage.subject()
+                            + " contentType=" + state.currentMessage.content().getClass().getSimpleName());
+                }
                 try {
                     scriptCallback.invoke(state.callbackTarget, state.callbackHandler, List.of());
                 } catch (Exception e) {
@@ -156,7 +163,8 @@ public class MultiuserXtra implements Xtra {
             int port = args.get(3).toInt();
             state.host = host;
             state.port = port;
-            netBridge.requestConnect(instanceId, host, port);
+            int mode = args.size() >= 6 ? args.get(5).toInt() : 1;
+            netBridge.requestConnect(instanceId, host, port, mode);
         }
         return Datum.ZERO;
     }

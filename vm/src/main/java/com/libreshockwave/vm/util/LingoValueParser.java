@@ -5,9 +5,7 @@ import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.datum.Datum;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Shared parser for Director/Lingo string values interpreted through value(...).
@@ -306,7 +304,7 @@ public final class LingoValueParser {
             return Datum.list();
         }
         if (content.trim().equals(":")) {
-            return Datum.propList(new LinkedHashMap<>());
+            return new Datum.PropList();
         }
 
         List<String> elements = splitListElements(content);
@@ -317,25 +315,17 @@ public final class LingoValueParser {
         String first = elements.get(0).trim();
         boolean isPropList = isPropListElement(first);
         if (isPropList) {
-            Map<String, Datum> props = new LinkedHashMap<>();
+            Datum.PropList props = new Datum.PropList();
             for (String element : elements) {
                 element = element.trim();
                 int colonIdx = findPropListColon(element);
                 if (colonIdx > 0) {
                     String rawKey = element.substring(0, colonIdx).trim();
-                    String key;
-                    if (rawKey.startsWith("#")) {
-                        key = rawKey.substring(1).trim();
-                    } else if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
-                        key = rawKey.substring(1, rawKey.length() - 1);
-                    } else {
-                        key = rawKey;
-                    }
                     String valueStr = element.substring(colonIdx + 1).trim();
-                    props.put(key, parseWithPartial(valueStr, vm));
+                    props.add(parsePropListKey(rawKey, vm), parseWithPartial(valueStr, vm));
                 }
             }
-            return Datum.propList(props);
+            return props;
         }
 
         List<Datum> items = new ArrayList<>();
@@ -397,12 +387,30 @@ public final class LingoValueParser {
         }
         if (rawKey.startsWith("#")) {
             String key = rawKey.substring(1).trim();
-            return isIdentifier(key);
+            return isIdentifier(key) || tryParseComplete(key, null) != null;
         }
         if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
             return true;
         }
         return isIdentifier(rawKey);
+    }
+
+    private static Datum parsePropListKey(String rawKey, LingoVM vm) {
+        if (rawKey.startsWith("#") && rawKey.length() > 1) {
+            String symbolText = rawKey.substring(1).trim();
+            if (isIdentifier(symbolText)) {
+                return Datum.symbol(symbolText);
+            }
+            Datum parsed = tryParseComplete(symbolText, vm);
+            return parsed != null && !parsed.isVoid() ? parsed : Datum.symbol(symbolText);
+        }
+        if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
+            String unquoted = unescapeString(rawKey.substring(1, rawKey.length() - 1));
+            Datum parsed = tryParseComplete(unquoted, vm);
+            return parsed != null && !parsed.isVoid() ? parsed : Datum.of(unquoted);
+        }
+        Datum parsed = tryParseComplete(rawKey, vm);
+        return parsed != null && !parsed.isVoid() ? parsed : Datum.of(rawKey);
     }
 
     private static int findPropListColon(String element) {

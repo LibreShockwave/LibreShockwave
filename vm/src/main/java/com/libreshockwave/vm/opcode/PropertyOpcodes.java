@@ -137,7 +137,10 @@ public final class PropertyOpcodes {
                 yield getCastLibProp(clr, propName);
             }
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
-            case Datum.ScriptInstance si -> AncestorChainWalker.getProperty(si, propName);
+            case Datum.ScriptInstance si -> {
+                if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("instance");
+                yield AncestorChainWalker.getProperty(si, propName);
+            }
             case Datum.XtraInstance xi -> XtraBuiltins.getProperty(xi, propName);
             case Datum.TimeoutRef tr -> TimeoutBuiltins.getProperty(tr, propName);
             case Datum.PropList pl -> getPropListProp(pl, propName);
@@ -178,6 +181,11 @@ public final class PropertyOpcodes {
                 if ("red".equalsIgnoreCase(propName)) yield Datum.of(color.r());
                 if ("green".equalsIgnoreCase(propName)) yield Datum.of(color.g());
                 if ("blue".equalsIgnoreCase(propName)) yield Datum.of(color.b());
+                if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("color");
+                yield Datum.VOID;
+            }
+            case Datum.PaletteIndexColor color -> {
+                if ("paletteindex".equalsIgnoreCase(propName)) yield Datum.of(color.index());
                 if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("color");
                 yield Datum.VOID;
             }
@@ -716,7 +724,10 @@ public final class PropertyOpcodes {
                 Datum found = pl.get(propName);
                 yield found != null ? found : Datum.VOID;
             }
-            case Datum.ScriptInstance si -> AncestorChainWalker.getProperty(si, propName);
+            case Datum.ScriptInstance si -> {
+                if ("ilk".equalsIgnoreCase(propName)) yield Datum.symbol("instance");
+                yield AncestorChainWalker.getProperty(si, propName);
+            }
             case Datum.CastMemberRef cmr -> getCastMemberProp(cmr, propName);
             case Datum.CastLibRef clr -> {
                 if ("member".equalsIgnoreCase(propName)) {

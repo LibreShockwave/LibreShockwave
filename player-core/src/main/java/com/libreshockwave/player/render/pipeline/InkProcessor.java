@@ -630,6 +630,30 @@ public final class InkProcessor {
         return newDerivedBitmap(src, result);
     }
 
+    static Bitmap applyDarkenForeColorOffset(Bitmap src, int foreColor) {
+        if (src == null) {
+            return null;
+        }
+        int foreR = (foreColor >> 16) & 0xFF;
+        int foreG = (foreColor >> 8) & 0xFF;
+        int foreB = foreColor & 0xFF;
+
+        int[] srcPixels = src.getPixels();
+        int[] result = new int[srcPixels.length];
+        for (int i = 0; i < srcPixels.length; i++) {
+            int alpha = (srcPixels[i] >>> 24) & 0xFF;
+            if (alpha == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
+            int r = Math.min(255, ((srcPixels[i] >> 16) & 0xFF) + foreR);
+            int g = Math.min(255, ((srcPixels[i] >> 8) & 0xFF) + foreG);
+            int b = Math.min(255, (srcPixels[i] & 0xFF) + foreB);
+            result[i] = (alpha << 24) | (r << 16) | (g << 8) | b;
+        }
+        return newDerivedBitmap(src, result);
+    }
+
     /**
      * Replace all pixels exactly matching fromRgb with toRgb, preserving alpha.
      */

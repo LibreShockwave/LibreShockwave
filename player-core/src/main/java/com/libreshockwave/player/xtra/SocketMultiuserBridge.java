@@ -29,15 +29,17 @@ public class SocketMultiuserBridge implements MultiuserNetBridge {
         OutputStream out;
         boolean connected;
         boolean connecting;
+        int mode;
         final byte[] readBuf = new byte[8192];
     }
 
     private final Map<Integer, Connection> connections = new HashMap<>();
 
     @Override
-    public void requestConnect(int instanceId, String host, int port) {
+    public void requestConnect(int instanceId, String host, int port, int mode) {
         Connection conn = new Connection();
         conn.connecting = true;
+        conn.mode = mode;
         connections.put(instanceId, conn);
 
         Thread t = new Thread(() -> {
@@ -62,7 +64,7 @@ public class SocketMultiuserBridge implements MultiuserNetBridge {
         Connection conn = connections.get(instanceId);
         if (conn == null || !conn.connected) return;
 
-        byte[] raw = content.toStr().getBytes(StandardCharsets.UTF_8);
+        byte[] raw = serializeWireContent(subject, content.toStr()).getBytes(StandardCharsets.UTF_8);
         try {
             conn.out.write(raw);
             conn.out.flush();
@@ -114,5 +116,17 @@ public class SocketMultiuserBridge implements MultiuserNetBridge {
     @Override
     public void destroyInstance(int instanceId) {
         requestDisconnect(instanceId);
+    }
+
+    private static String serializeWireContent(String subject, String content) {
+        String normalizedSubject = subject != null ? subject : "";
+        String normalizedContent = content != null ? content : "";
+        if (normalizedSubject.isEmpty() || "0".equals(normalizedSubject)) {
+            return normalizedContent;
+        }
+        if (normalizedContent.isEmpty()) {
+            return normalizedSubject;
+        }
+        return normalizedSubject + " " + normalizedContent;
     }
 }

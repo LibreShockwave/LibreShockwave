@@ -141,6 +141,14 @@ public class Bitmap {
         return paletteIndices != null ? java.util.Arrays.copyOf(paletteIndices, paletteIndices.length) : null;
     }
 
+    public Integer getPaletteIndex(int x, int y) {
+        if (paletteIndices == null || paletteIndices.length != pixels.length
+                || x < 0 || x >= width || y < 0 || y >= height) {
+            return null;
+        }
+        return paletteIndices[y * width + x] & 0xFF;
+    }
+
     public void clearPaletteIndices() {
         this.paletteIndices = null;
     }

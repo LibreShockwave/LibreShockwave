@@ -239,6 +239,9 @@ public interface CastLibProvider {
     /** Resolve a palette cast member by library and member number. Returns null if not found. */
     default com.libreshockwave.bitmap.Palette resolvePaletteByMember(int castLib, int member) { return null; }
 
+    /** Resolve a palette by Director palette ID in or near a cast library. Returns null if not found. */
+    default com.libreshockwave.bitmap.Palette resolvePaletteById(int castLib, int paletteId) { return null; }
+
     /**
      * Get the Lscr chunk ID for a script at a specific cast lib and member number.
      * Used to compare script identity (e.g. in findAncestorForCall).

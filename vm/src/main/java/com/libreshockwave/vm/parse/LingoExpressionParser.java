@@ -5,9 +5,7 @@ import com.libreshockwave.vm.HandlerRef;
 import com.libreshockwave.vm.LingoVM;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Parses Lingo expression strings into Datum values.
@@ -97,18 +95,18 @@ public final class LingoExpressionParser {
         String first = elements.get(0).trim();
         if (first.startsWith("#") && first.contains(":")) {
             // Parse as proplist
-            Map<String, Datum> props = new LinkedHashMap<>();
+            Datum.PropList props = new Datum.PropList();
             for (String element : elements) {
                 element = element.trim();
                 int colonIdx = findPropListColon(element);
                 if (colonIdx > 0 && element.startsWith("#")) {
-                    String key = element.substring(1, colonIdx).trim();
+                    Datum key = Datum.symbol(element.substring(1, colonIdx).trim());
                     String valueStr = element.substring(colonIdx + 1).trim();
                     Datum value = parse(valueStr, vm);
-                    props.put(key, value);
+                    props.add(key, value);
                 }
             }
-            return Datum.propList(props);
+            return props;
         } else {
             // Parse as linear list
             List<Datum> items = new ArrayList<>();

@@ -20,7 +20,7 @@ public interface MultiuserNetBridge {
      * Request a connection to a server.
      * The bridge implementation decides when/how to actually connect.
      */
-    void requestConnect(int instanceId, String host, int port);
+    void requestConnect(int instanceId, String host, int port, int mode);
 
     /**
      * Send a message to the server.
