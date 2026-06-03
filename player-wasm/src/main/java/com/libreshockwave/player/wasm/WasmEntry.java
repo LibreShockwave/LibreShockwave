@@ -1030,6 +1030,9 @@ public class WasmEntry {
         for (String probe : com.libreshockwave.player.render.output.SimpleTextRenderer.getRecentRenderProbes()) {
             sb.append("textRender ").append(probe).append('\n');
         }
+        for (String probe : com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher.getRecentCopyPixelProbes()) {
+            sb.append("copyPixels ").append(probe).append('\n');
+        }
         for (RenderSprite sprite : renderer.getLastBakedSprites()) {
             if (!intersects(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight(),
                     40, 0, 930, 500)) {
@@ -1537,6 +1540,17 @@ public class WasmEntry {
             appendNamedBitmapProbe(sb, castLibManager, "katalogi_ikoni.furni");
             appendNamedBitmapProbe(sb, castLibManager, "testarrow.down");
             appendNamedBitmapProbe(sb, castLibManager, "testarrow.right");
+            appendNamedBitmapProbe(sb, castLibManager, "button.e.left.active");
+            appendNamedBitmapProbe(sb, castLibManager, "button.e.middle.active");
+            appendNamedBitmapProbe(sb, castLibManager, "move_button_icon");
+            appendNamedBitmapProbe(sb, castLibManager, "rotate_button_icon");
+            appendNamedBitmapProbe(sb, castLibManager, "pick/wave_button_icon");
+            appendNamedBitmapProbe(sb, castLibManager, "delete_button_icon");
+            appendNamedBitmapProbe(sb, castLibManager, "icon.button.text");
+            appendNamedBitmapProbe(sb, castLibManager, "obj.disp.actions_move.button");
+            appendNamedBitmapProbe(sb, castLibManager, "obj.disp.actions_rotate.button");
+            appendNamedBitmapProbe(sb, castLibManager, "obj.disp.actions_pick.button");
+            appendNamedBitmapProbe(sb, castLibManager, "obj.disp.actions_delete.button");
 
             CastMemberChunk fileChunk = castLibManager != null
                     ? castLibManager.getCastMemberByName("cn_sofa_small")
@@ -1692,14 +1706,7 @@ public class WasmEntry {
                     .append(" translucent=")
                     .append(bitmap != null && bitmap.hasTranslucentPixels());
             if (bitmap != null) {
-                byte[] paletteIndices = bitmap.getPaletteIndices();
-                for (int x = 0; x < Math.min(4, bitmap.getWidth()); x++) {
-                    sb.append(" p").append(x).append('=')
-                            .append(Integer.toHexString(bitmap.getPixel(x, 0)));
-                    if (paletteIndices != null && x < paletteIndices.length) {
-                        sb.append("/i").append(paletteIndices[x] & 0xFF);
-                    }
-                }
+                appendBitmapStats(sb, bitmap);
                 com.libreshockwave.bitmap.Palette imagePalette = bitmap.getImagePalette();
                 if (imagePalette != null && ("tree_basicslot_unselected".equals(name)
                         || "tree_col1_unselected".equals(name))) {
@@ -1710,9 +1717,81 @@ public class WasmEntry {
                     appendNearestPaletteProbe(sb, imagePalette, 0x67A7A8);
                 }
             }
+            if (member != null && "icon.button.text".equals(name)) {
+                sb.append(" props text=\"")
+                        .append(member.getProp("text").toStr().replace("\r", "\\r").replace("\n", "\\n"))
+                        .append("\" rect=")
+                        .append(member.getProp("rect"))
+                        .append(" height=")
+                        .append(member.getProp("height"))
+                        .append(" font=")
+                        .append(member.getProp("font"))
+                        .append(" size=")
+                        .append(member.getProp("fontsize"))
+                        .append(" style=")
+                        .append(member.getProp("fontstyle"))
+                        .append(" align=")
+                        .append(member.getProp("alignment"))
+                        .append(" fixedLineSpace=")
+                        .append(member.getProp("fixedlinespace"));
+                Datum image = member.getProp("image");
+                Bitmap rendered = image instanceof Datum.ImageRef ir ? ir.bitmap() : null;
+                sb.append(" renderedSize=")
+                        .append(rendered != null ? rendered.getWidth() : 0)
+                        .append('x')
+                        .append(rendered != null ? rendered.getHeight() : 0);
+                if (rendered != null) {
+                    appendBitmapStats(sb, rendered);
+                }
+            }
             sb.append('\n');
         } catch (Exception ignored) {
             sb.append("probe bitmap ").append(name).append(" error\n");
+        }
+    }
+
+    private static void appendBitmapStats(StringBuilder sb, Bitmap bitmap) {
+        byte[] paletteIndices = bitmap.getPaletteIndices();
+        int black = 0;
+        int nonWhiteOpaque = 0;
+        int transparent = 0;
+        int minX = bitmap.getWidth();
+        int minY = bitmap.getHeight();
+        int maxX = -1;
+        int maxY = -1;
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int pixel = bitmap.getPixel(x, y);
+                int alpha = (pixel >>> 24) & 0xFF;
+                int rgb = pixel & 0xFFFFFF;
+                if (alpha == 0) {
+                    transparent++;
+                } else if (rgb != 0xFFFFFF) {
+                    nonWhiteOpaque++;
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                    if (rgb == 0) {
+                        black++;
+                    }
+                }
+            }
+        }
+        sb.append(" black=").append(black)
+                .append(" nonWhite=").append(nonWhiteOpaque)
+                .append(" transparent=").append(transparent)
+                .append(" bounds=")
+                .append(maxX >= 0 ? minX : -1).append(',')
+                .append(maxY >= 0 ? minY : -1).append(',')
+                .append(maxX).append(',')
+                .append(maxY);
+        for (int x = 0; x < Math.min(4, bitmap.getWidth()); x++) {
+            sb.append(" p").append(x).append('=')
+                    .append(Integer.toHexString(bitmap.getPixel(x, 0)));
+            if (paletteIndices != null && x < paletteIndices.length) {
+                sb.append("/i").append(paletteIndices[x] & 0xFF);
+            }
         }
     }
 

@@ -118,6 +118,38 @@ class InkProcessorTest {
     }
 
     @Test
+    void darkenPreservesChannelsWithFullTint() {
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFE88543 });
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.DARKEN, 0xFFCC66, false, null);
+
+        assertEquals(0xFFE8691A, result.getPixel(0, 0));
+    }
+
+    @Test
+    void darkenKeepsIndexedRectangularMediaEdgesOpaque() {
+        Bitmap src = new Bitmap(4, 4, 8, new int[] {
+            0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00,
+            0xFFFFCC00, 0xFFFFFFFF, 0xFFCCCCCC, 0xFFFFCC00,
+            0xFFFFCC00, 0xFF000000, 0xFFFFFFFF, 0xFFFFCC00,
+            0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00
+        });
+        src.setPaletteIndices(new byte[] {
+            (byte) 200, (byte) 200, (byte) 200, (byte) 200,
+            (byte) 200, 0, 1, (byte) 200,
+            (byte) 200, (byte) 255, 0, (byte) 200,
+            (byte) 200, (byte) 200, (byte) 200, (byte) 200
+        });
+        src.setRectangularMedia(true);
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.DARKEN, 0xFFCC66, false, null);
+
+        assertEquals(0xFF, result.getPixel(0, 0) >>> 24);
+        assertEquals(0xFF, result.getPixel(3, 3) >>> 24);
+        assertEquals(0xFF, result.getPixel(1, 1) >>> 24);
+    }
+
+    @Test
     void matteRecoversAlphaFromAntialiased32BitEdges() {
         Bitmap src = new Bitmap(4, 1, 32, new int[] {
             0xFFFFFFFF,

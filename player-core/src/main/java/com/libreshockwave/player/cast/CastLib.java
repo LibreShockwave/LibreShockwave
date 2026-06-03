@@ -1043,6 +1043,14 @@ public class CastLib {
         return member;
     }
 
+    public CastMember createDynamicMember(String memberName, String typeName) {
+        CastMember member = createDynamicMember(typeName);
+        if (member != null) {
+            member.setName(memberName);
+        }
+        return member;
+    }
+
     @Override
     public String toString() {
         return "CastLib{number=" + castLibId.value() + ", name='" + name + "', members=" + members.size() + "}";

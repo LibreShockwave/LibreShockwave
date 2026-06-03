@@ -1023,6 +1023,19 @@ public class CastLibManager implements CastLibProvider {
     }
 
     @Override
+    public Datum createMember(String memberName, String memberType) {
+        CastLib castLib = getCastLib(1);
+        if (castLib == null) {
+            return Datum.VOID;
+        }
+        CastMember member = castLib.createDynamicMember(memberName, memberType);
+        if (member == null) {
+            return Datum.VOID;
+        }
+        return Datum.of((castLib.getNumber() << 16) | member.getMemberNumber());
+    }
+
+    @Override
     public com.libreshockwave.bitmap.Palette resolvePaletteByName(String name) {
         ensureInitialized();
         com.libreshockwave.bitmap.Palette firstMatch = null;

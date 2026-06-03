@@ -15,6 +15,7 @@ public class Bitmap {
     private byte[] paletteIndices;
     private boolean scriptModified; // Set when Lingo modifies this bitmap via image API
     private boolean nativeAlpha; // True for Director-decoded 32-bit bitmaps with real alpha
+    private boolean rectangularMedia; // True for decoded media payloads with no authored matte border
     private Palette imagePalette; // Palette for 8-bit images created via image(w,h,8,paletteMember)
     private int paletteRefCastLib = -1;
     private int paletteRefMemberNum = -1;
@@ -97,6 +98,14 @@ public class Bitmap {
 
     public void setNativeAlpha(boolean nativeAlpha) {
         this.nativeAlpha = nativeAlpha;
+    }
+
+    public boolean isRectangularMedia() {
+        return rectangularMedia;
+    }
+
+    public void setRectangularMedia(boolean rectangularMedia) {
+        this.rectangularMedia = rectangularMedia;
     }
 
     /**
@@ -336,12 +345,15 @@ public class Bitmap {
             this.imagePalette = null;
             this.paletteIndices = null;
             this.scriptModified = false;
+            this.nativeAlpha = false;
+            this.rectangularMedia = false;
             clearPaletteRefMetadata();
             return;
         }
         this.imagePalette = other.imagePalette;
         this.scriptModified = other.scriptModified;
         this.nativeAlpha = other.nativeAlpha;
+        this.rectangularMedia = other.rectangularMedia;
         this.paletteIndices = other.paletteIndices != null
                 ? java.util.Arrays.copyOf(other.paletteIndices, other.paletteIndices.length)
                 : null;

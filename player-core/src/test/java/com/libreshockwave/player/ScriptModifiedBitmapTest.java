@@ -825,6 +825,23 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void darkenCopyPixelsPreservesSubtleSourceColorBias() {
+        Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFFC9C9CB });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0x46, 0x8D, 0xB9), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFF366E92, dest.getPixel(0, 0),
+                "DARKEN copyPixels should preserve non-neutral source channels in room wrapper art");
+    }
+
+    @Test
     void darkenCopyPixelsUsesInversePaletteIndexForIndexedGrayscaleSource() {
         Bitmap dest = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
         Bitmap src = new Bitmap(1, 1, 8, new int[] { 0xFFCCCCCC });
@@ -1474,6 +1491,53 @@ public class ScriptModifiedBitmapTest {
                 "white keyed out by Background Transparent must not overwrite destination palette metadata");
         assertEquals(0xFFD4DDE1, dest.getPixel(0, 0));
         assertEquals(0xFF000000, dest.getPixel(1, 0));
+    }
+
+    @Test
+    void rgbCopyIntoPalettedImageKeepsMatteWhiteSlotAvailable() {
+        Palette windowPalette = new Palette(new int[]{0xFFFFFF, 0xEFEFEF, 0x000000}, "window-ui");
+        Bitmap dest = new Bitmap(3, 1, 8);
+        dest.setImagePalette(windowPalette);
+        dest.fillRectPaletteIndex(0, 0, 3, 1, 1, 0xFFEFEFEF);
+
+        Bitmap src = new Bitmap(3, 1, 32, new int[]{
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF
+        });
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 1),
+                        new Datum.Rect(0, 0, 3, 1)));
+
+        assertArrayEquals(new byte[]{1, 2, 1}, dest.getPaletteIndices(),
+                "RGB white copied into a paletted UI image should not consume the matte-white slot");
+        assertEquals(0xFFEFEFEF, dest.getPixel(0, 0));
+        assertEquals(0xFF000000, dest.getPixel(1, 0));
+        assertEquals(0xFFEFEFEF, dest.getPixel(2, 0));
+    }
+
+    @Test
+    void rgbTextCopyIntoPalettedControlPreservesExistingWhiteButtonFill() {
+        Palette windowPalette = new Palette(new int[]{0xFFFFFF, 0xEFEFEF, 0x555555, 0x000000}, "window-ui");
+        Bitmap dest = new Bitmap(5, 1, 8);
+        dest.setImagePalette(windowPalette);
+        dest.fillRectPaletteIndex(0, 0, 5, 1, 1, 0xFFEFEFEF);
+        dest.fillRectPaletteIndex(4, 0, 1, 1, 2, 0xFF555555);
+
+        Bitmap src = new Bitmap(5, 1, 32, new int[]{
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 5, 1),
+                        new Datum.Rect(0, 0, 5, 1)));
+
+        assertArrayEquals(new byte[]{1, 3, 1, 1, 2}, dest.getPaletteIndices(),
+                "Opaque white in a copied text image should preserve the prebuilt indexed button body");
+        assertEquals(0xFFEFEFEF, dest.getPixel(0, 0));
+        assertEquals(0xFF000000, dest.getPixel(1, 0));
+        assertEquals(0xFFEFEFEF, dest.getPixel(2, 0));
+        assertEquals(0xFFEFEFEF, dest.getPixel(3, 0));
+        assertEquals(0xFF555555, dest.getPixel(4, 0));
     }
 
     @Test

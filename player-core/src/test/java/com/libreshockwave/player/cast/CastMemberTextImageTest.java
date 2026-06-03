@@ -9,6 +9,8 @@ import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
 import com.libreshockwave.vm.datum.Datum;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -70,6 +72,73 @@ class CastMemberTextImageTest {
 
         assertTrue(countWhitePixels(textImage) > 0,
                 "Bottom bar fields are only 10px high, so V/9 text must not be clipped away");
+    }
+
+    @Test
+    void iconButtonTextMeasurementKeepsFullGlyphHeight() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("wordwrap", Datum.of(0));
+        member.setProp("font", Datum.of("vb"));
+        member.setProp("fontstyle", new Datum.List(java.util.List.of(Datum.symbol("plain"))));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("color", new Datum.Color(0, 0, 0));
+        member.setProp("bgcolor", new Datum.Color(255, 255, 255));
+        member.setProp("boxtype", Datum.symbol("adjust"));
+        member.setProp("fixedlinespace", Datum.of(11));
+        member.setProp("text", Datum.of("Pick up"));
+
+        member.setProp("rect", new Datum.Rect(0, 0, 85, 30));
+        Bitmap measurement = new Bitmap(85, 30, 32);
+        measurement.fill(0xFFFFFFFF);
+        Drawing.copyPixels(measurement, member.renderTextToImage(), 0, 0, 0, 0,
+                85, 30, Palette.InkMode.COPY, 255);
+        int textWidth = measurement.getRegion(0, 0, 85, 30).trimWhiteSpace()[2];
+
+        member.setProp("rect", new Datum.Rect(0, 0, textWidth, member.getProp("height").toInt()));
+        Bitmap textImage = member.renderTextToImage();
+
+        assertTrue(textImage.getHeight() > 1,
+                "Icon button labels must render taller than a one-pixel baseline");
+        assertTrue(countPixels(textImage, 0xFF000000) > 20,
+                "Expected visible black glyph pixels for the Pick up label");
+    }
+
+    @Test
+    void iconButtonTextCopyIntoPalettedImageKeepsGlyphPixels() {
+        CastMember.setTextRenderer(new SimpleTextRenderer());
+        CastMember member = new CastMember(1, 1, MemberType.TEXT);
+        member.setProp("wordwrap", Datum.of(0));
+        member.setProp("font", Datum.of("vb"));
+        member.setProp("fontstyle", new Datum.List(java.util.List.of(Datum.symbol("plain"))));
+        member.setProp("fontsize", Datum.of(9));
+        member.setProp("color", new Datum.Color(0, 0, 0));
+        member.setProp("bgcolor", new Datum.Color(255, 255, 255));
+        member.setProp("boxtype", Datum.symbol("adjust"));
+        member.setProp("fixedlinespace", Datum.of(11));
+        member.setProp("text", Datum.of("Pick up"));
+
+        member.setProp("rect", new Datum.Rect(0, 0, 85, 30));
+        Bitmap measurement = new Bitmap(85, 30, 32);
+        measurement.fill(0xFFFFFFFF);
+        Drawing.copyPixels(measurement, member.renderTextToImage(), 0, 0, 0, 0,
+                85, 30, Palette.InkMode.COPY, 255);
+        int textWidth = measurement.getRegion(0, 0, 85, 30).trimWhiteSpace()[2];
+        member.setProp("rect", new Datum.Rect(0, 0, textWidth, member.getProp("height").toInt()));
+        Bitmap textImage = ((Datum.ImageRef) member.getProp("image")).bitmap();
+
+        Bitmap button = new Bitmap(69, 17, 8);
+        button.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        button.fill(0xFFEFEFEF);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(button), "copyPixels",
+                List.of(new Datum.ImageRef(textImage),
+                        new Datum.Rect(24, 3, 24 + textImage.getWidth(), 3 + textImage.getHeight()),
+                        new Datum.Rect(0, 0, textImage.getWidth(), textImage.getHeight())));
+
+        assertTrue(countPixels(button, 0xFF000000) > 20,
+                "Default icon-button text copy into an 8-bit button image must preserve black glyphs");
+        assertTrue(countNonWhitePixels(button) > countPixels(textImage, 0xFF000000),
+                "Paletted button should retain both existing shell pixels and copied text pixels");
     }
 
     @Test
@@ -303,6 +372,19 @@ class CastMemberTextImageTest {
             for (int x = 0; x < bitmap.getWidth(); x++) {
                 int pixel = bitmap.getPixel(x, y);
                 if (((pixel >>> 24) & 0xFF) != 0 && pixel == argb) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static int countNonWhitePixels(Bitmap bitmap) {
+        int count = 0;
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int pixel = bitmap.getPixel(x, y);
+                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) != 0xFFFFFF) {
                     count++;
                 }
             }
