@@ -431,16 +431,6 @@ public class CastLibManager implements CastLibProvider {
         if (info.width() <= 0 || info.height() <= 0) {
             return null;
         }
-        if (data.length == 15572 || (info.width() == 161 && info.height() == 117)) {
-            System.err.println("[CastLibManager] bitmap media info bytes=" + data.length
-                    + " size=" + info.width() + "x" + info.height()
-                    + " depth=" + info.bitDepth()
-                    + " pitch=" + info.pitch()
-                    + " paletteId=" + info.paletteId()
-                    + " paletteCastLib=" + info.paletteCastLib()
-                    + " defaultCastLib=" + defaultCastLib);
-        }
-
         byte[] bitd = Arrays.copyOfRange(data, bitdStart, bitdStart + bitdLen);
         Palette palette = info.bitDepth() <= 8
                 ? resolveMediaPalette(info, defaultCastLib, paletteResolver, provider)
@@ -458,12 +448,6 @@ public class CastLibManager implements CastLibProvider {
             bitmap.setImagePalette(palette);
         }
         bitmap.setAnchorPoint(info.regXLocal(), info.regYLocal());
-        if (data.length == 15572 || (info.width() == 161 && info.height() == 117)) {
-            System.err.println("[CastLibManager] bitmap media samples"
-                    + " p8,12=" + bitmap.getPaletteIndex(8, 12) + "/" + Integer.toHexString(bitmap.getPixel(8, 12))
-                    + " p78,32=" + bitmap.getPaletteIndex(78, 32) + "/" + Integer.toHexString(bitmap.getPixel(78, 32))
-                    + " p98,107=" + bitmap.getPaletteIndex(98, 107) + "/" + Integer.toHexString(bitmap.getPixel(98, 107)));
-        }
         return bitmap;
     }
 
@@ -479,18 +463,12 @@ public class CastLibManager implements CastLibProvider {
             if (info.paletteCastLib() > 0) {
                 Palette palette = provider.resolvePaletteById(info.paletteCastLib(), paletteId);
                 if (palette != null) {
-                    System.err.println("[CastLibManager] bitmap media palette provider-id castLib="
-                            + info.paletteCastLib() + " paletteId=" + paletteId
-                            + " name=" + palette.getName());
                     return palette;
                 }
             }
             if (defaultCastLib > 0) {
                 Palette palette = provider.resolvePaletteById(defaultCastLib, paletteId);
                 if (palette != null) {
-                    System.err.println("[CastLibManager] bitmap media palette provider-id castLib="
-                            + defaultCastLib + " paletteId=" + paletteId
-                            + " name=" + palette.getName());
                     return palette;
                 }
             }
@@ -501,26 +479,17 @@ public class CastLibManager implements CastLibProvider {
             if (info.paletteCastLib() > 0) {
                 Palette palette = paletteResolver.apply(info.paletteCastLib(), memberNumber);
                 if (palette != null) {
-                    System.err.println("[CastLibManager] bitmap media palette member castLib="
-                            + info.paletteCastLib() + " member=" + memberNumber
-                            + " name=" + palette.getName());
                     return palette;
                 }
             }
             if (defaultCastLib > 0) {
                 Palette palette = paletteResolver.apply(defaultCastLib, memberNumber);
                 if (palette != null) {
-                    System.err.println("[CastLibManager] bitmap media palette member castLib="
-                            + defaultCastLib + " member=" + memberNumber
-                            + " name=" + palette.getName());
                     return palette;
                 }
             }
         }
 
-        System.err.println("[CastLibManager] bitmap media palette active fallback paletteId="
-                + paletteId + " defaultCastLib=" + defaultCastLib
-                + " name=" + Datum.getActivePalette().getName());
         return Datum.getActivePalette();
     }
 
