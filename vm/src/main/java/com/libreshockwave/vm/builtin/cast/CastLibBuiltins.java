@@ -24,6 +24,7 @@ public final class CastLibBuiltins {
         builtins.put("castlib", CastLibBuiltins::castLib);
         builtins.put("member", CastLibBuiltins::member);
         builtins.put("field", CastLibBuiltins::field);
+        builtins.put("createmember", CastLibBuiltins::createMember);
         // NOTE: Do NOT register getmemnum/memberExists as builtins.
         // The fuse_client defines these as Lingo movie script handlers that
         // delegate to the Resource Manager Class, which tracks members via
@@ -61,6 +62,27 @@ public final class CastLibBuiltins {
         }
 
         return Datum.CastLibRef.of(castLibNumber);
+    }
+
+    /**
+     * createMember("name", #type) - create a named dynamic member in the
+     * default cast library.
+     */
+    private static Datum createMember(LingoVM vm, List<Datum> args) {
+        if (args.size() < 2) {
+            return Datum.VOID;
+        }
+
+        CastLibProvider provider = CastLibProvider.getProvider();
+        if (provider == null) {
+            return Datum.VOID;
+        }
+
+        String memberName = args.get(0).toStr();
+        String memberType = args.get(1) instanceof Datum.Symbol s
+                ? s.name()
+                : args.get(1).toStr();
+        return provider.createMember(memberName, memberType);
     }
 
     /**

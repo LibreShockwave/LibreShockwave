@@ -1107,6 +1107,7 @@ public class CastMember {
             System.err.println("[CastMember] set bitmap media member=" + memberId.value()
                     + " bytes=" + media.bytes().length
                     + " size=" + decoded.getWidth() + "x" + decoded.getHeight());
+            decoded.setRectangularMedia(true);
             decoded.markScriptModified();
             this.bitmap = decoded;
             this.transparentPlaceholderBitmap = false;

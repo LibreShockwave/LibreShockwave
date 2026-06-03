@@ -7,6 +7,7 @@ import com.libreshockwave.id.InkMode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -16,6 +17,7 @@ import java.util.List;
 public final class ImageMethodDispatcher {
 
     private static final int DEFAULT_INVERSE_TEXT_MASK_RGB = 0x7B9498;
+    private static final List<String> RECENT_COPY_PIXEL_PROBES = new ArrayList<>();
     private static Runnable imageMutationCallback;
 
     private record ResolvedPalette(Palette palette, Datum.CastMemberRef ref, String systemName) {}
@@ -24,6 +26,17 @@ public final class ImageMethodDispatcher {
 
     public static void setImageMutationCallback(Runnable callback) {
         imageMutationCallback = callback;
+    }
+
+    public static List<String> getRecentCopyPixelProbes() {
+        return new ArrayList<>(RECENT_COPY_PIXEL_PROBES);
+    }
+
+    private static void addCopyPixelProbe(String probe) {
+        if (RECENT_COPY_PIXEL_PROBES.size() >= 80) {
+            RECENT_COPY_PIXEL_PROBES.remove(0);
+        }
+        RECENT_COPY_PIXEL_PROBES.add(probe);
     }
 
     private static void notifyImageMutation(Bitmap bmp) {
@@ -623,6 +636,13 @@ public final class ImageMethodDispatcher {
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
         int destH = destRect.bottom() - destRect.top();
+        boolean probeSmallButtonCopy = shouldProbeSmallButtonCopy(dest, src, destRect, srcRect, ink, args);
+        int beforeBlack = 0;
+        int beforeNonWhite = 0;
+        if (probeSmallButtonCopy) {
+            beforeBlack = countRegionPixels(dest, destRect, 0x000000);
+            beforeNonWhite = countRegionNonWhite(dest, destRect);
+        }
         if (dest.getImagePalette() == null && src.getImagePalette() != null) {
             dest.copyPaletteMetadataFrom(src);
         }
@@ -676,9 +696,12 @@ public final class ImageMethodDispatcher {
                             int outB = colorRemap >= 0 ? fgB : 0;
                             effectiveSrc.setPixel(x, y, (maskAlpha << 24) | (outR << 16) | (outG << 8) | outB);
                         } else if (darkenBgTint) {
-                            int nr = gray * bgR / 256;
-                            int ng = gray * bgG / 256;
-                            int nb = gray * bgB / 256;
+                            int sourceR = indexedDarkenShade ? gray : r;
+                            int sourceG = indexedDarkenShade ? gray : g;
+                            int sourceB = indexedDarkenShade ? gray : b;
+                            int nr = sourceR * bgR / 256;
+                            int ng = sourceG * bgG / 256;
+                            int nb = sourceB * bgB / 256;
                             effectiveSrc.setPixel(x, y, (alpha << 24) | (nr << 16) | (ng << 8) | nb);
                         } else {
                             float t = gray / 255.0f;
@@ -730,6 +753,13 @@ public final class ImageMethodDispatcher {
         // the current destination instead of a straight overwrite.
         if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
             effectiveInk = Palette.InkMode.BLEND;
+        }
+        if (shouldTreatWhiteTextBackgroundAsTransparent(dest, effectiveSrc, effectiveSrcX, effectiveSrcY,
+                srcW, srcH, effectiveInk, blend, mask, colorRemap, bgColorRemap)) {
+            effectiveSrc = makeWhiteTextBackgroundTransparent(effectiveSrc, effectiveSrcX, effectiveSrcY,
+                    srcW, srcH);
+            effectiveSrcX = 0;
+            effectiveSrcY = 0;
         }
 
         if (srcW == destW && srcH == destH) {
@@ -807,7 +837,80 @@ public final class ImageMethodDispatcher {
             }
         }
 
+        if (probeSmallButtonCopy) {
+            addCopyPixelProbe("dest=" + dest.getWidth() + "x" + dest.getHeight() + "x" + dest.getBitDepth()
+                    + " src=" + src.getWidth() + "x" + src.getHeight() + "x" + src.getBitDepth()
+                    + " destRect=" + rectSummary(destRect)
+                    + " srcRect=" + rectSummary(srcRect)
+                    + " ink=" + ink
+                    + " props=" + (args.size() >= 4)
+                    + " srcBlack=" + countRegionPixels(src, srcRect, 0x000000)
+                    + " srcNonWhite=" + countRegionNonWhite(src, srcRect)
+                    + " beforeBlack=" + beforeBlack
+                    + " afterBlack=" + countRegionPixels(dest, destRect, 0x000000)
+                    + " beforeNonWhite=" + beforeNonWhite
+                    + " afterNonWhite=" + countRegionNonWhite(dest, destRect));
+        }
+
         return Datum.VOID;
+    }
+
+    private static boolean shouldProbeSmallButtonCopy(Bitmap dest, Bitmap src,
+                                                      Datum.Rect destRect, Datum.Rect srcRect,
+                                                      Palette.InkMode ink, List<Datum> args) {
+        if (dest == null || src == null || destRect == null || srcRect == null) {
+            return false;
+        }
+        int dw = dest.getWidth();
+        int dh = dest.getHeight();
+        int sw = srcRect.right() - srcRect.left();
+        int sh = srcRect.bottom() - srcRect.top();
+        return dest.getBitDepth() <= 8
+                && dw >= 50 && dw <= 110
+                && dh >= 15 && dh <= 22
+                && sw > 0 && sw <= 100
+                && sh > 0 && sh <= 22
+                && (src.getBitDepth() == 32 || src.getBitDepth() <= 8)
+                && (ink == Palette.InkMode.COPY || ink == Palette.InkMode.BACKGROUND_TRANSPARENT)
+                && (args.size() < 4 || args.get(3) instanceof Datum.PropList);
+    }
+
+    private static String rectSummary(Datum.Rect rect) {
+        return rect.left() + "," + rect.top() + "," + rect.right() + "," + rect.bottom();
+    }
+
+    private static int countRegionPixels(Bitmap bitmap, Datum.Rect rect, int rgb) {
+        int count = 0;
+        int x0 = Math.max(0, rect.left());
+        int y0 = Math.max(0, rect.top());
+        int x1 = Math.min(bitmap.getWidth(), rect.right());
+        int y1 = Math.min(bitmap.getHeight(), rect.bottom());
+        for (int y = y0; y < y1; y++) {
+            for (int x = x0; x < x1; x++) {
+                int pixel = bitmap.getPixel(x, y);
+                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) == (rgb & 0xFFFFFF)) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static int countRegionNonWhite(Bitmap bitmap, Datum.Rect rect) {
+        int count = 0;
+        int x0 = Math.max(0, rect.left());
+        int y0 = Math.max(0, rect.top());
+        int x1 = Math.min(bitmap.getWidth(), rect.right());
+        int y1 = Math.min(bitmap.getHeight(), rect.bottom());
+        for (int y = y0; y < y1; y++) {
+            for (int x = x0; x < x1; x++) {
+                int pixel = bitmap.getPixel(x, y);
+                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) != 0xFFFFFF) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     /**
@@ -1049,6 +1152,84 @@ public final class ImageMethodDispatcher {
                 && dest.getPaletteIndices() != null;
     }
 
+    private static boolean shouldTreatWhiteTextBackgroundAsTransparent(Bitmap dest, Bitmap src,
+                                                                       int srcX, int srcY,
+                                                                       int width, int height,
+                                                                       Palette.InkMode ink, int blend,
+                                                                       Bitmap mask,
+                                                                       int colorRemap, int bgColorRemap) {
+        if (dest == null || src == null
+                || dest.getBitDepth() > 8
+                || src.getBitDepth() < 32
+                || src.hasNativeMatteAlpha()
+                || ink != Palette.InkMode.COPY
+                || blend < 255
+                || mask != null
+                || colorRemap >= 0
+                || bgColorRemap >= 0
+                || width <= 0
+                || height <= 0) {
+            return false;
+        }
+
+        int white = 0;
+        int nonWhite = 0;
+        int colored = 0;
+        for (int y = 0; y < height; y++) {
+            int sy = srcY + y;
+            if (sy < 0 || sy >= src.getHeight()) {
+                continue;
+            }
+            for (int x = 0; x < width; x++) {
+                int sx = srcX + x;
+                if (sx < 0 || sx >= src.getWidth()) {
+                    continue;
+                }
+                int pixel = src.getPixel(sx, sy);
+                if (((pixel >>> 24) & 0xFF) != 255) {
+                    return false;
+                }
+                int r = (pixel >> 16) & 0xFF;
+                int g = (pixel >> 8) & 0xFF;
+                int b = pixel & 0xFF;
+                if (r == 255 && g == 255 && b == 255) {
+                    white++;
+                } else {
+                    nonWhite++;
+                    if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
+                        colored++;
+                    }
+                }
+            }
+        }
+        return white > 0
+                && nonWhite > 0
+                && colored == 0
+                && white >= nonWhite;
+    }
+
+    private static Bitmap makeWhiteTextBackgroundTransparent(Bitmap src, int srcX, int srcY,
+                                                             int width, int height) {
+        Bitmap text = new Bitmap(width, height, src.getBitDepth());
+        text.copyPaletteMetadataFrom(src);
+        for (int y = 0; y < height; y++) {
+            int sy = srcY + y;
+            for (int x = 0; x < width; x++) {
+                int sx = srcX + x;
+                if (sx < 0 || sx >= src.getWidth() || sy < 0 || sy >= src.getHeight()) {
+                    continue;
+                }
+                int pixel = src.getPixel(sx, sy);
+                if ((pixel & 0x00FFFFFF) == 0x00FFFFFF) {
+                    pixel &= 0x00FFFFFF;
+                }
+                text.setPixel(x, y, pixel);
+            }
+        }
+        text.setNativeAlpha(true);
+        return text;
+    }
+
     private static void refreshDestinationPaletteIndices(Bitmap dest, int destX, int destY,
                                                          int destW, int destH) {
         Palette palette = dest.getImagePalette();
@@ -1067,10 +1248,38 @@ public final class ImageMethodDispatcher {
                 if (((pixel >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                indices[offset] = (byte) (palette.nearestIndex(pixel) & 0xFF);
+                int paletteIndex = nearestCopiedRgbPaletteIndex(palette, pixel);
+                indices[offset] = (byte) (paletteIndex & 0xFF);
+                dest.setPixelPreservePaletteIndex(x, y,
+                        (pixel & 0xFF000000) | (palette.getColor(paletteIndex) & 0xFFFFFF));
             }
         }
         dest.setPaletteIndices(indices);
+    }
+
+    private static int nearestCopiedRgbPaletteIndex(Palette palette, int pixel) {
+        int rgb = pixel & 0xFFFFFF;
+        if (rgb != 0xFFFFFF || palette.size() <= 1 || (palette.getColor(0) & 0xFFFFFF) != 0xFFFFFF) {
+            return palette.nearestIndex(pixel);
+        }
+
+        int bestIndex = 1;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int i = 1; i < palette.size(); i++) {
+            int color = palette.getColor(i) & 0xFFFFFF;
+            int dr = 0xFF - ((color >> 16) & 0xFF);
+            int dg = 0xFF - ((color >> 8) & 0xFF);
+            int db = 0xFF - (color & 0xFF);
+            int distance = (dr * dr) + (dg * dg) + (db * db);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+                if (distance == 0) {
+                    break;
+                }
+            }
+        }
+        return bestIndex;
     }
 
     private static boolean palettesAreCompatibleForIndexPreserve(Bitmap dest, Bitmap src) {

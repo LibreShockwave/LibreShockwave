@@ -1,7 +1,6 @@
 package com.libreshockwave.vm.opcode.dispatch;
 
 import com.libreshockwave.vm.datum.Datum;
-import com.libreshockwave.vm.datum.DatumFormatter;
 
 import java.util.List;
 
@@ -32,7 +31,6 @@ public final class PropListMethodDispatcher {
                 if (args.isEmpty()) yield Datum.VOID;
                 Datum keyDatum = args.get(0);
                 Datum value = propList.getOrDefault(keyDatum.toKeyName(), Datum.VOID);
-                logBinaryLookup(methodName, propList, keyDatum, value);
                 // getProp(propList, #prop, index) -> propList.prop[index]
                 if (args.size() >= 2 && value instanceof Datum.List subList) {
                     int index = args.get(1).toInt() - 1; // 1-indexed
@@ -60,14 +58,10 @@ public final class PropListMethodDispatcher {
                 if (args.isEmpty()) yield Datum.VOID;
                 Datum keyOrIndex = args.get(0);
                 if (keyOrIndex instanceof Datum.Str s) {
-                    Datum value = propList.getOrDefault(s.value(), false, Datum.VOID);
-                    logBinaryLookup(methodName, propList, keyOrIndex, value);
-                    yield value;
+                    yield propList.getOrDefault(s.value(), false, Datum.VOID);
                 }
                 if (keyOrIndex instanceof Datum.Symbol sym) {
-                    Datum value = propList.getOrDefault(sym.name(), true, Datum.VOID);
-                    logBinaryLookup(methodName, propList, keyOrIndex, value);
-                    yield value;
+                    yield propList.getOrDefault(sym.name(), true, Datum.VOID);
                 }
                 int index = keyOrIndex.toInt() - 1;
                 if (index >= 0 && index < propList.size()) {
@@ -135,49 +129,5 @@ public final class PropListMethodDispatcher {
                     propList.deepCopy();
             default -> Datum.VOID;
         };
-    }
-
-    private static void logBinaryLookup(String methodName, Datum.PropList propList, Datum keyDatum, Datum value) {
-        String key = keyDatum.toKeyName();
-        if (!"callback".equalsIgnoreCase(key)
-                && !"id".equalsIgnoreCase(key)
-                && !(value instanceof Datum.ScriptInstance)
-                && !containsScriptInstance(propList)) {
-            return;
-        }
-
-        System.err.println("[PropList] " + methodName
-                + " key=" + DatumFormatter.formatBrief(keyDatum)
-                + " -> " + DatumFormatter.formatBrief(value)
-                + " type=" + value.typeName()
-                + " entries=" + formatKeys(propList));
-    }
-
-    private static boolean containsScriptInstance(Datum.PropList propList) {
-        for (Datum.PropEntry entry : propList.entries()) {
-            if (entry.value() instanceof Datum.ScriptInstance) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String formatKeys(Datum.PropList propList) {
-        StringBuilder sb = new StringBuilder("[");
-        int limit = Math.min(propList.size(), 8);
-        for (int i = 0; i < limit; i++) {
-            if (i > 0) sb.append(", ");
-            Datum.PropEntry entry = propList.entries().get(i);
-            sb.append(entry.isSymbolKey() ? "#" : "\"")
-                    .append(entry.key())
-                    .append(entry.isSymbolKey() ? "" : "\"")
-                    .append(":")
-                    .append(DatumFormatter.formatBrief(entry.value()));
-        }
-        if (propList.size() > limit) {
-            sb.append(", ...");
-        }
-        sb.append("]");
-        return sb.toString();
     }
 }

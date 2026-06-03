@@ -188,6 +188,9 @@ public final class InkProcessor {
         if (src.getBitDepth() == 32 && !src.isScriptModified()) {
             return new Drawing.FloodFillMatte(0xFFFFFF, 0);
         }
+        if ((ink == InkMode.DARKEN || ink == InkMode.LIGHTEN) && src.isRectangularMedia()) {
+            return null;
+        }
         return Drawing.resolveFloodFillMatte(src);
     }
 
@@ -621,13 +624,23 @@ public final class InkProcessor {
             int r = (srcPixels[i] >> 16) & 0xFF;
             int g = (srcPixels[i] >> 8) & 0xFF;
             int b = srcPixels[i] & 0xFF;
-            r = (r * tintR) / 255;
-            g = (g * tintG) / 255;
-            b = (b * tintB) / 255;
+            r = multiplyDirectorChannel(r, tintR);
+            g = multiplyDirectorChannel(g, tintG);
+            b = multiplyDirectorChannel(b, tintB);
             result[i] = (alpha << 24) | (r << 16) | (g << 8) | b;
         }
 
         return newDerivedBitmap(src, result);
+    }
+
+    private static int multiplyDirectorChannel(int src, int tint) {
+        if (tint >= 255) {
+            return src;
+        }
+        if (src >= 255) {
+            return tint;
+        }
+        return (src * tint) >> 8;
     }
 
     static Bitmap applyDarkenForeColorOffset(Bitmap src, int foreColor) {

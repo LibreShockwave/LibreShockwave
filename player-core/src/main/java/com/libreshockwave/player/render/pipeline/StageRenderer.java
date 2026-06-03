@@ -24,6 +24,12 @@ import java.util.Set;
  */
 public class StageRenderer {
 
+    /**
+     * Director's stage sprite rasterization lands one pixel below the raw locV
+     * coordinate used by the score/runtime state.
+     */
+    private static final int DIRECTOR_SPRITE_RASTER_Y_ORIGIN = 1;
+
     private final DirectorFile file;
     private final SpriteRegistry spriteRegistry;
     private CastLibManager castLibManager;
@@ -253,6 +259,7 @@ public class StageRenderer {
             x -= reg.x();
             y -= reg.y();
         }
+        y = rasterY(y);
 
         RenderSprite.SpriteType type = member != null ? determineSpriteTypeFromMember(member) : RenderSprite.SpriteType.UNKNOWN;
 
@@ -307,7 +314,7 @@ public class StageRenderer {
                     int fillColor = state.getBackColor();
                     return new RenderSprite(
                         state.getChannel(),
-                        pos.locH(), pos.locV(), w, h,
+                        pos.locH(), rasterY(pos.locV()), w, h,
                         pos.locZ(), true,
                         RenderSprite.SpriteType.SHAPE,
                         null, null,
@@ -390,6 +397,7 @@ public class StageRenderer {
                 }
             }
         }
+        y = rasterY(y);
 
         return new RenderSprite(
             state.getChannel(),
@@ -411,6 +419,10 @@ public class StageRenderer {
     private boolean hasAnyBehavior(SpriteState state) {
         return state != null && (state.hasScriptBehaviors()
                 || spriteRegistry.hasScoreBehaviorChannel(state.getChannel()));
+    }
+
+    private static int rasterY(int y) {
+        return y + DIRECTOR_SPRITE_RASTER_Y_ORIGIN;
     }
 
     /**

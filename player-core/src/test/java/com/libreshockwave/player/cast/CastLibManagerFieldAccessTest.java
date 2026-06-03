@@ -71,6 +71,26 @@ class CastLibManagerFieldAccessTest {
         assertEquals("after", result.toStr());
     }
 
+    @Test
+    void createNamedMemberReturnsEncodedSlotAndPreservesLookupName() throws Exception {
+        CastLibManager manager = new CastLibManager(null, (castLibNumber, fileName) -> {});
+        CastLib castLib = new CastLib(1, null, null);
+        installCastLib(manager, castLib);
+
+        Datum created = manager.createMember("common.button.text", "text");
+
+        assertTrue(created.isInt());
+        int encoded = created.toInt();
+        assertEquals(1, encoded >> 16);
+        CastMember member = castLib.getMember(encoded & 0xFFFF);
+        assertEquals("common.button.text", member.getName());
+        assertEquals(MemberType.TEXT, member.getMemberType());
+        Datum found = manager.getMemberByName(0, "common.button.text");
+        Datum.CastMemberRef ref = assertInstanceOf(Datum.CastMemberRef.class, found);
+        assertEquals(1, ref.castLibNum());
+        assertEquals(member.getMemberNumber(), ref.memberNum());
+    }
+
     @SuppressWarnings("unchecked")
     private static void installCastLib(CastLibManager manager, CastLib castLib) throws Exception {
         Field initializedField = CastLibManager.class.getDeclaredField("initialized");

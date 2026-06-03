@@ -233,6 +233,12 @@ public interface CastLibProvider {
      */
     default Datum createMember(int castLibNumber, String memberType) { return Datum.VOID; }
 
+    /**
+     * Create a named cast member of the given type.
+     * Used by Director's createMember(name, #type) syntax.
+     */
+    default Datum createMember(String memberName, String memberType) { return Datum.VOID; }
+
     /** Resolve a palette cast member by name. Returns null if not found. */
     default com.libreshockwave.bitmap.Palette resolvePaletteByName(String name) { return null; }
 
