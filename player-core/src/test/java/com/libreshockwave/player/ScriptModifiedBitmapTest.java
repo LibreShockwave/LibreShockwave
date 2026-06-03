@@ -29,6 +29,22 @@ import static org.junit.jupiter.api.Assertions.*;
 public class ScriptModifiedBitmapTest {
 
     @Test
+    void textMemberExposesDirectorLineChunks() {
+        CastMember member = new CastMember(1, 10001, MemberType.TEXT);
+        member.setDynamicText("[#id:\"window_70s_wide\"]\r[#id:\"window_romantic_wide\"]");
+
+        assertEquals(2, member.getProp("lineCount").toInt());
+
+        Datum.List lines = assertInstanceOf(Datum.List.class, member.getProp("line"));
+        assertEquals("[#id:\"window_70s_wide\"]", lines.items().get(0).toStr());
+        assertEquals("[#id:\"window_romantic_wide\"]", lines.items().get(1).toStr());
+        assertEquals("[#id:\"window_70s_wide\"]",
+                member.callMethod("getProp", List.of(Datum.symbol("line"), Datum.of(1))).toStr());
+        assertEquals("[#id:\"window_romantic_wide\"]",
+                member.callMethod("getProp", List.of(Datum.symbol("line"), Datum.of(2))).toStr());
+    }
+
+    @Test
     void bitmapMemberWithUnavailableMediaStillExposesImageDimensions() {
         byte[] bitmapInfo = new byte[] {
                 (byte) 0x80, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F,
@@ -752,14 +768,14 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
-    void copyPixelsIgnoresMaskImageWhenSourceUsesNativeAlpha() {
+    void copyPixelsCombinesMaskImageWithNativeAlpha() {
         Bitmap dest = new Bitmap(1, 1, 32);
         dest.fill(0xFFFFFFFF);
 
         Bitmap src = new Bitmap(1, 1, 32, new int[] { 0x80000000 });
         src.setNativeAlpha(true);
 
-        Bitmap mask = new Bitmap(1, 1, 32, new int[] { 0x00000000 });
+        Bitmap mask = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
 
         Datum.PropList props = new Datum.PropList();
         props.add("maskImage", new Datum.ImageRef(mask), true);
@@ -768,8 +784,44 @@ public class ScriptModifiedBitmapTest {
                 List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
                         new Datum.Rect(0, 0, 1, 1), props));
 
-        assertEquals(0xFF7F7F7F, dest.getPixel(0, 0),
-                "Native alpha should take precedence over #maskImage");
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "Explicit #maskImage should still constrain native-alpha sources");
+    }
+
+    @Test
+    void copyPixelsHonorsMaskImageWhenNativeAlphaSourceIsOpaque() {
+        Bitmap dest = new Bitmap(1, 1, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Bitmap src = new Bitmap(1, 1, 32, new int[] { 0xFF000000 });
+        src.setNativeAlpha(true);
+
+        Bitmap mask = new Bitmap(1, 1, 32, new int[] { 0xFFFFFFFF });
+
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 1, 1),
+                        new Datum.Rect(0, 0, 1, 1), props));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0),
+                "Opaque 32-bit sources should still honor an explicit #maskImage");
+    }
+
+    @Test
+    void createMaskExtractsDirectorImageMatte() {
+        Bitmap wallMask = new Bitmap(3, 1, 8);
+        wallMask.setPixel(0, 0, 0xFFFFFFFF);
+        wallMask.setPixel(1, 0, 0xFF000000);
+        wallMask.setPixel(2, 0, 0xFFFFFFFF);
+
+        Datum result = ImageMethodDispatcher.dispatch(new Datum.ImageRef(wallMask), "createMask", List.of());
+
+        Bitmap mask = assertInstanceOf(Datum.ImageRef.class, result).bitmap();
+        assertFalse(Drawing.maskAllowsPixel(mask, 0, 0));
+        assertTrue(Drawing.maskAllowsPixel(mask, 1, 0));
+        assertFalse(Drawing.maskAllowsPixel(mask, 2, 0));
     }
 
     @Test
@@ -1062,6 +1114,54 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void compatibilityTextMaskPreservesExactRgbOnPaletteBearingDeepImage() {
+        Bitmap textMemberImage = new Bitmap(3, 3, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap mask = new Bitmap(3, 3, 8);
+        mask.fill(0xFFFFFFFF);
+
+        Datum.PropList matteProps = new Datum.PropList();
+        matteProps.add("ink", Datum.of(8), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(mask), "copyPixels",
+                List.of(new Datum.ImageRef(textMemberImage), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), matteProps));
+
+        Bitmap solidTextColor = new Bitmap(3, 3, 32);
+        solidTextColor.fill(0xFFEEEEEE);
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.setImagePalette(Palette.SYSTEM_MAC_PALETTE);
+        dest.setPaletteRefSystemName("systemMac");
+        dest.fill(0xFFFFFFFF);
+
+        Datum.PropList maskProps = new Datum.PropList();
+        maskProps.add("maskImage", new Datum.ImageRef(mask), true);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(solidTextColor), new Datum.Rect(0, 0, 3, 3),
+                        new Datum.Rect(0, 0, 3, 3), maskProps));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
+        assertEquals(0xFFEEEEEE, dest.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, dest.getPixel(2, 2));
+    }
+
+    @Test
+    void memberPaletteRefAssignmentOnThirtyTwoBitImageDoesNotRecolorExistingRgbPixels() {
+        CastMember member = new CastMember(1, 42, MemberType.BITMAP);
+        Bitmap bitmap = new Bitmap(1, 1, 32);
+        bitmap.setImagePalette(new Palette(new int[] { 0xEEEEEE }, "one-off text palette"));
+        bitmap.fill(0xFFEEEEEE);
+        member.setBitmapDirectly(bitmap);
+
+        assertTrue(member.setProp("paletteRef", Datum.symbol("systemMac")));
+
+        assertEquals(0xFFEEEEEE, member.getBitmap().getPixel(0, 0));
+        assertSame(Palette.SYSTEM_MAC_PALETTE, member.getBitmap().getImagePalette());
+    }
+
+    @Test
     void copyPixelsAcceptsSymbolicAddPinInk() {
         Bitmap dest = new Bitmap(2, 1, 32, new int[] {
                 0xFF204060,
@@ -1169,6 +1269,38 @@ public class ScriptModifiedBitmapTest {
                 "Existing transparent pixels must be preserved");
         assertEquals(0xFF111111, baked.getBakedBitmap().getPixel(2, 0),
                 "Non-key pixels must survive BACKGROUND_TRANSPARENT processing");
+    }
+
+    @Test
+    void scriptModifiedBackgroundTransparentStripsNearWhiteBorderRamp() {
+        CastMember member = new CastMember(1, 144, MemberType.BITMAP);
+        Bitmap bmp = new Bitmap(5, 5, 32, new int[] {
+                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF,
+                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
+                0xFFEEEEEE, 0xFF101010, 0xFF333333, 0xFF101010, 0xFFEEEEEE,
+                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
+                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF
+        });
+        bmp.markScriptModified();
+        member.setBitmapDirectly(bmp);
+
+        RenderSprite sprite = new RenderSprite(
+                144, 0, 0, 5, 5, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0x00FFFFFF, false, true,
+                36, 255, false, false, null, false
+        );
+
+        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
+        RenderSprite baked = baker.bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
+        assertEquals(0xFF101010, baked.getBakedBitmap().getPixel(1, 1));
+        assertEquals(0xFF333333, baked.getBakedBitmap().getPixel(2, 2));
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(4, 4));
     }
 
     @Test
@@ -1413,6 +1545,21 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void paletteRefAssignmentOnThirtyTwoBitImageDoesNotRecolorExistingRgbPixels() {
+        Palette sourcePalette = new Palette(new int[]{0xFFFFFF, 0xFFCC99}, "source");
+        Bitmap bmp = new Bitmap(1, 1, 32);
+        bmp.setImagePalette(sourcePalette);
+        bmp.setPixel(0, 0, 0xFFFFCC99);
+        bmp.setPaletteIndices(new byte[]{1});
+
+        ImageMethodDispatcher.setProperty(new Datum.ImageRef(bmp), "paletteRef", Datum.symbol("systemMac"));
+
+        assertSame(Palette.SYSTEM_MAC_PALETTE, bmp.getImagePalette());
+        assertEquals(0xFFFFCC99, bmp.getPixel(0, 0),
+                "RGB/deep images keep authored pixels when paletteRef metadata changes");
+    }
+
+    @Test
     void drawOnPaletteRefThirtyTwoBitImageResolvesSmallIntegersThroughImagePalette() {
         Palette uiPalette = new Palette(new int[]{0xFFFFFF, 0xA6A6A6}, "ui");
         Bitmap bmp = new Bitmap(3, 3, 32);
@@ -1541,6 +1688,26 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void alreadyColoredTextCopyWithColorParamPreservesExactRgb() {
+        Bitmap dest = new Bitmap(3, 1, 32, new int[]{
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+        Bitmap src = new Bitmap(3, 1, 32, new int[]{
+                0xFFFFFFFF, 0xFFEEEEEE, 0xFFFFFFFF
+        });
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 1),
+                        new Datum.Rect(0, 0, 3, 1),
+                        colorInkProps(0xEEEEEE, 36)));
+
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 0));
+        assertEquals(0xFFEEEEEE, dest.getPixel(1, 0),
+                "Already-colored white-backed text must not be reinterpreted as a low-alpha text mask");
+        assertEquals(0xFFFFFFFF, dest.getPixel(2, 0));
+    }
+
+    @Test
     void scaledPalettedCopyPixelsScalePaletteIndicesWithPixels() {
         Palette navPalette = new Palette(new int[]{0xFFFFFF, 0xDEDEDE, 0x000000}, "nav-ui");
         Bitmap src = new Bitmap(3, 1, 8);
@@ -1577,6 +1744,15 @@ public class ScriptModifiedBitmapTest {
     private static Datum.PropList inkProps(int ink) {
         Datum.PropList props = new Datum.PropList();
         props.add("ink", Datum.of(ink), true);
+        return props;
+    }
+
+    private static Datum.PropList colorInkProps(int colorRgb, int ink) {
+        Datum.PropList props = inkProps(ink);
+        props.add("color", new Datum.Color(
+                (colorRgb >> 16) & 0xFF,
+                (colorRgb >> 8) & 0xFF,
+                colorRgb & 0xFF), true);
         return props;
     }
 

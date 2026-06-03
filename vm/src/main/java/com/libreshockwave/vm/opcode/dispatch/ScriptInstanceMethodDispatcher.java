@@ -10,6 +10,7 @@ import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.opcode.ExecutionContext;
 import com.libreshockwave.vm.util.AncestorChainWalker;
 
+import java.util.ArrayDeque;
 import java.util.List;
 
 /**
@@ -18,8 +19,21 @@ import java.util.List;
  * Matches dirplayer-rs: built-in methods are handled first, then Lingo handlers.
  */
 public final class ScriptInstanceMethodDispatcher {
+    private static final int WRAPPER_TRACE_LIMIT = 64;
+    private static final ArrayDeque<String> wrapperDispatchTrace = new ArrayDeque<>();
 
     private ScriptInstanceMethodDispatcher() {}
+
+    public static synchronized List<String> snapshotWrapperDispatchTrace() {
+        return List.copyOf(wrapperDispatchTrace);
+    }
+
+    private static synchronized void appendWrapperDispatchTrace(String line) {
+        if (wrapperDispatchTrace.size() >= WRAPPER_TRACE_LIMIT) {
+            wrapperDispatchTrace.removeFirst();
+        }
+        wrapperDispatchTrace.addLast(line);
+    }
 
     public static Datum dispatch(ExecutionContext ctx, Datum.ScriptInstance instance,
                                   String methodName, List<Datum> args) {
@@ -177,6 +191,11 @@ public final class ScriptInstanceMethodDispatcher {
             Datum.ScriptInstance current = instance;
             for (int i = 0; i < AncestorChainWalker.MAX_ANCESTOR_DEPTH; i++) {
                 Datum.ScriptRef scriptRef = getScriptRefFromInstance(current);
+                boolean traceWrapperGetPartAt =
+                        "getpartat".equals(method)
+                                && scriptRef != null
+                                && scriptRef.castLibNum() == 2
+                                && scriptRef.memberNum() == 80;
 
                 CastLibProvider.HandlerLocation location;
                 if (scriptRef != null) {
@@ -184,11 +203,29 @@ public final class ScriptInstanceMethodDispatcher {
                 } else {
                     location = provider.findHandlerInScript(current.scriptId(), methodName);
                 }
+                if (traceWrapperGetPartAt) {
+                    appendWrapperDispatchTrace(
+                            "lookup caller="
+                                    + (ctx != null && ctx.getScript() != null ? ctx.getScript().getDisplayName() : "<none>")
+                                    + "::"
+                                    + (ctx != null && ctx.getScript() != null && ctx.getHandler() != null
+                                    ? ctx.getScript().getHandlerName(ctx.getHandler()) : "<none>")
+                                    + " scriptRef="
+                                    + scriptRef
+                                    + " found="
+                                    + (location != null)
+                                    + " args="
+                                    + args);
+                }
 
                 if (location != null && location.script() != null && location.handler() != null) {
                     if (location.script() instanceof ScriptChunk script
                             && location.handler() instanceof ScriptChunk.Handler handler) {
-                        return safeExecuteHandler(ctx, script, handler, args, instance);
+                        Datum result = safeExecuteHandler(ctx, script, handler, args, instance);
+                        if (traceWrapperGetPartAt) {
+                            appendWrapperDispatchTrace("result scriptRef=" + scriptRef + " value=" + result);
+                        }
+                        return result;
                     }
                 }
 

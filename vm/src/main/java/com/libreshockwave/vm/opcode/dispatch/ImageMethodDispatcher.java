@@ -119,6 +119,13 @@ public final class ImageMethodDispatcher {
                 }
                 yield new Datum.ImageRef(Drawing.createMatte(bmp, alphaThreshold));
             }
+            case "createmask" -> {
+                int alphaThreshold = 0;
+                if (!args.isEmpty() && !args.get(0).isVoid()) {
+                    alphaThreshold = args.get(0).toInt();
+                }
+                yield new Datum.ImageRef(Drawing.createMask(bmp, alphaThreshold));
+            }
             case "getat" -> {
                 // getAt(index) on image - some scripts use this
                 // NOTE: Uses if-else instead of nested switch to avoid TeaVM WASM issue
@@ -146,7 +153,11 @@ public final class ImageMethodDispatcher {
             case "paletteref" -> {
                 ResolvedPalette resolved = resolvePaletteFromDatum(value, bmp);
                 if (resolved != null && resolved.palette() != null) {
-                    bmp.remapImagePalette(resolved.palette());
+                    if (bmp.getBitDepth() <= 8) {
+                        bmp.remapImagePalette(resolved.palette());
+                    } else {
+                        bmp.setImagePalette(resolved.palette());
+                    }
                     if (resolved.ref() != null) {
                         Datum.CastMemberRef ref = resolved.ref();
                         bmp.setPaletteRefCastMember(ref.castLibNum(), ref.memberNum());
@@ -614,11 +625,6 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        // Director ignores #maskImage when the source image already has native alpha in use.
-        if (src.getBitDepth() == 32 && src.isNativeAlpha()) {
-            mask = null;
-        }
-
         int srcW = srcRect.right() - srcRect.left();
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
@@ -646,7 +652,10 @@ public final class ImageMethodDispatcher {
         boolean grayscaleColorized = false;
         if ((colorRemap >= 0 || bgColorRemap >= 0) && !src.hasNativeMatteAlpha()) {
             // Sample source pixels to check if they're grayscale (safe to remap)
-            boolean isGrayscale = isMostlyGrayscale(src, srcRect);
+            boolean transparentBackground = colorRemap >= 0 && bgColorRemap < 0;
+            boolean isGrayscale = isMostlyGrayscale(src, srcRect)
+                    && !(transparentBackground
+                    && isWhiteBackedAlreadyColorized(src, srcRect, colorRemap));
 
             if (isGrayscale) {
                 int fgR = colorRemap >= 0 ? (colorRemap >> 16) & 0xFF : 0;
@@ -655,7 +664,6 @@ public final class ImageMethodDispatcher {
                 int bgR = bgColorRemap >= 0 ? (bgColorRemap >> 16) & 0xFF : 255;
                 int bgG = bgColorRemap >= 0 ? (bgColorRemap >> 8) & 0xFF : 255;
                 int bgB = bgColorRemap >= 0 ? bgColorRemap & 0xFF : 255;
-                boolean transparentBackground = colorRemap >= 0 && bgColorRemap < 0;
                 boolean darkenBgTint = ink == Palette.InkMode.DARKEN && bgColorRemap >= 0 && colorRemap < 0;
                 boolean indexedDarkenShade = usesIndexedShadeForDarken(src, mask);
 
@@ -1272,6 +1280,47 @@ public final class ImageMethodDispatcher {
             }
         }
         return true;
+    }
+
+    private static boolean isWhiteBackedAlreadyColorized(Bitmap src, Datum.Rect srcRect, int colorRgb) {
+        if (src == null || srcRect == null || colorRgb < 0) {
+            return false;
+        }
+        int srcW = srcRect.right() - srcRect.left();
+        int srcH = srcRect.bottom() - srcRect.top();
+        if (srcW <= 0 || srcH <= 0) {
+            return false;
+        }
+
+        int keyRgb = 0xFFFFFF;
+        int targetRgb = colorRgb & 0xFFFFFF;
+        boolean hasKey = false;
+        boolean hasColored = false;
+        for (int y = 0; y < srcH; y++) {
+            int sy = srcRect.top() + y;
+            if (sy < 0 || sy >= src.getHeight()) {
+                continue;
+            }
+            for (int x = 0; x < srcW; x++) {
+                int sx = srcRect.left() + x;
+                if (sx < 0 || sx >= src.getWidth()) {
+                    continue;
+                }
+                int pixel = src.getPixel(sx, sy);
+                if (((pixel >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                int rgb = pixel & 0xFFFFFF;
+                if (rgb == keyRgb) {
+                    hasKey = true;
+                } else if (rgb == targetRgb) {
+                    hasColored = true;
+                } else {
+                    return false;
+                }
+            }
+        }
+        return hasKey && hasColored;
     }
 
     private static boolean isInverseWhiteAlphaMask(Bitmap src, int srcX, int srcY, int width, int height) {

@@ -98,6 +98,19 @@ class MathBuiltinsReferenceCoercionTest {
     }
 
     @Test
+    void startupRandomSequenceDefaultsToSeedZero() {
+        LingoVM first = new LingoVM(null);
+        LingoVM second = new LingoVM(null);
+
+        assertEquals(0, first.getRandomSeed());
+        assertEquals(0, second.getRandomSeed());
+        for (int i = 0; i < 8; i++) {
+            assertEquals(first.callHandler("random", List.of(Datum.of(150))).toInt(),
+                    second.callHandler("random", List.of(Datum.of(150))).toInt());
+        }
+    }
+
+    @Test
     void randomSeedUsesJavaCompatibleSequence() {
         LingoVM vm = new LingoVM(null);
         vm.setRandomSeed(4096);

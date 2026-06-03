@@ -86,6 +86,27 @@ class LingoVMTest {
     }
 
     @Test
+    void deconstructReentryGuardAllowsAncestorScriptCleanup() {
+        Datum.ScriptInstance receiver = new Datum.ScriptInstance(1, new java.util.LinkedHashMap<>());
+        ScriptChunk derivedScript = emptyScript(10);
+        ScriptChunk ancestorScript = emptyScript(11);
+
+        assertFalse(LingoVM.shouldSkipDeconstructReentry(
+                "deconstruct", receiver, ancestorScript,
+                "deconstruct", receiver, derivedScript));
+    }
+
+    @Test
+    void deconstructReentryGuardSkipsSameScriptSameReceiver() {
+        Datum.ScriptInstance receiver = new Datum.ScriptInstance(1, new java.util.LinkedHashMap<>());
+        ScriptChunk script = emptyScript(10);
+
+        assertTrue(LingoVM.shouldSkipDeconstructReentry(
+                "deconstruct", receiver, script,
+                "deconstruct", receiver, script));
+    }
+
+    @Test
     void testDeferredTasksFlushOnlyAtExplicitBoundary() {
         LingoVM vm = new LingoVM(null);
         AtomicInteger calls = new AtomicInteger();
@@ -876,5 +897,18 @@ class LingoVMTest {
 
         assertEquals(0, vm.getCallStackDepth());
         assertNull(vm.getCurrentScope());
+    }
+
+    private static ScriptChunk emptyScript(int id) {
+        return new ScriptChunk(
+                null,
+                new ChunkId(id),
+                ScriptChunk.ScriptType.PARENT,
+                0,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                new byte[0]);
     }
 }

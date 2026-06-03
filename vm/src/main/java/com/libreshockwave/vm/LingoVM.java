@@ -41,7 +41,6 @@ public class LingoVM {
     private final Map<String, Datum> symbolDatumCache = new HashMap<>();
     private final Deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls = new ArrayDeque<>();
     private final Deque<Runnable> deferredTasks = new ArrayDeque<>();
-    private Random random = new Random();
     private boolean explicitRandomSeed = false;
     private long randomState = 0;
     private int randomSeed = 0;
@@ -115,6 +114,15 @@ public class LingoVM {
         this.tracingHelper = new TracingHelper();
         this.consolePrinter = new ConsoleTracePrinter();
         this.cachedBuiltinInvoker = (name, args) -> builtins.invoke(name, this, args);
+        setRandomSeed(0);
+        String initialRandomSeed = System.getenv("LS_INITIAL_RANDOM_SEED");
+        if (initialRandomSeed != null && !initialRandomSeed.isBlank()) {
+            try {
+                setRandomSeed(Integer.parseInt(initialRandomSeed.trim()));
+            } catch (NumberFormatException ignored) {
+                // Ignore invalid external override and keep the default startup seed.
+            }
+        }
         registerPassBuiltin();
     }
 
@@ -122,8 +130,6 @@ public class LingoVM {
         int result;
         if (max <= 0) {
             result = 1;
-        } else if (!explicitRandomSeed) {
-            result = random.nextInt(max) + 1;
         } else {
             result = nextSeededRandomInt(max) + 1;
         }
@@ -551,6 +557,19 @@ public class LingoVM {
         return executeHandler(ref.script(), ref.handler(), args, receiver);
     }
 
+    static boolean shouldSkipDeconstructReentry(
+            String normalizedHandlerName,
+            Datum effectiveReceiver,
+            ScriptChunk currentScript,
+            String existingNormalizedHandlerName,
+            Datum existingReceiver,
+            ScriptChunk existingScript) {
+        return "deconstruct".equals(normalizedHandlerName)
+                && "deconstruct".equals(existingNormalizedHandlerName)
+                && effectiveReceiver == existingReceiver
+                && currentScript == existingScript;
+    }
+
     /**
      * Execute a specific handler with arguments.
      */
@@ -570,17 +589,21 @@ public class LingoVM {
         }
         String hn = normalizeLookupName(handlerName);
 
-        // Reentrancy guard: if deconstruct is already on the call stack for the
-        // same receiver, skip re-entry. This prevents infinite recursion when
-        // deconstruct -> hideAll -> removeWindow -> Remove -> deconstruct cycles.
+        // Reentrancy guard: if this same script's deconstruct is already on the
+        // call stack for the same receiver, skip re-entry. Ancestor class chains
+        // legitimately call derived.deconstruct -> callAncestor(#deconstruct),
+        // so different scripts in the same chain must still be allowed to run.
         if ("deconstruct".equals(hn)) {
             // Resolve the effective receiver: explicit receiver, or args[0] if it's a ScriptInstance
             Datum effectiveReceiver = (receiver != null && !receiver.isVoid()) ? receiver
                     : (!args.isEmpty() && args.get(0) instanceof Datum.ScriptInstance ? args.get(0) : null);
             if (effectiveReceiver != null) {
                 for (Scope existing : callStack) {
-                    if ("deconstruct".equals(existing.getScript().getHandlerName(existing.getHandler()).toLowerCase())
-                            && effectiveReceiver == existing.getReceiver()) {
+                    String existingHandler = normalizeLookupName(existing.getScript()
+                            .getHandlerName(existing.getHandler()));
+                    if (shouldSkipDeconstructReentry(
+                            hn, effectiveReceiver, script,
+                            existingHandler, existing.getReceiver(), existing.getScript())) {
                         return Datum.VOID;
                     }
                 }

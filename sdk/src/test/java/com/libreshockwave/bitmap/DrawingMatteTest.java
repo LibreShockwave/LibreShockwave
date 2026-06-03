@@ -450,4 +450,73 @@ class DrawingMatteTest {
         assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
         assertEquals(0xFF000000, dest.getPixel(2, 2));
     }
+
+    @Test
+    void createMaskPreservesDisconnectedWhiteBackedMaskRegions() {
+        Bitmap src = new Bitmap(7, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Bitmap mask = Drawing.createMask(src);
+
+        assertEquals(false, Drawing.maskAllowsPixel(mask, 0, 1));
+        assertEquals(true, Drawing.maskAllowsPixel(mask, 1, 1));
+        assertEquals(true, Drawing.maskAllowsPixel(mask, 2, 1));
+        assertEquals(true, Drawing.maskAllowsPixel(mask, 4, 1));
+        assertEquals(true, Drawing.maskAllowsPixel(mask, 5, 1));
+        assertEquals(false, Drawing.maskAllowsPixel(mask, 6, 1));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsStripsBorderConnectedNearWhiteRamp() {
+        Bitmap dest = new Bitmap(5, 5, 32, new int[] {
+                0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555,
+                0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555,
+                0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555,
+                0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555,
+                0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555, 0xFF555555
+        });
+        Bitmap src = new Bitmap(5, 5, 32, new int[] {
+                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF,
+                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
+                0xFFEEEEEE, 0xFF101010, 0xFF333333, 0xFF101010, 0xFFEEEEEE,
+                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
+                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 5, 5, Palette.InkMode.BACKGROUND_TRANSPARENT, 255);
+
+        assertEquals(0xFF555555, dest.getPixel(0, 0));
+        assertEquals(0xFF555555, dest.getPixel(2, 0));
+        assertEquals(0xFF101010, dest.getPixel(1, 1));
+        assertEquals(0xFF333333, dest.getPixel(2, 2));
+        assertEquals(0xFF555555, dest.getPixel(4, 4));
+    }
+
+    @Test
+    void backgroundTransparentCopyPixelsPreservesNearWhiteTextGlyphs() {
+        Bitmap dest = new Bitmap(6, 4, 32, new int[] {
+                0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222,
+                0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222,
+                0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222,
+                0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222, 0xFF222222
+        });
+        Bitmap src = new Bitmap(6, 4, 32, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFEEEEEE, 0xFFEEEEEE, 0xFFEEEEEE, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFEEEEEE, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 6, 4, Palette.InkMode.BACKGROUND_TRANSPARENT, 255);
+
+        assertEquals(0xFF222222, dest.getPixel(0, 0));
+        assertEquals(0xFFEEEEEE, dest.getPixel(1, 1));
+        assertEquals(0xFFEEEEEE, dest.getPixel(2, 1));
+        assertEquals(0xFFEEEEEE, dest.getPixel(3, 1));
+        assertEquals(0xFFEEEEEE, dest.getPixel(2, 2));
+        assertEquals(0xFF222222, dest.getPixel(5, 3));
+    }
 }

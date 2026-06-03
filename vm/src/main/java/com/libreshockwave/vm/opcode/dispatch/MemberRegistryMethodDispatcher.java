@@ -28,9 +28,13 @@ public final class MemberRegistryMethodDispatcher {
         }
 
         switch (methodName.toLowerCase(Locale.ROOT)) {
-            case "getmemnum", "exists", "memberexists", "getmember" -> {
+            case "getmemnum", "exists", "memberexists", "getmember", "readaliasindexesfromfield" -> {
                 Datum.PropList registry = getRegistry(instance);
                 if (registry != null) {
+                    if ("readaliasindexesfromfield".equalsIgnoreCase(methodName)) {
+                        dispatchReadAliasIndexesFromField(instance, registry, args);
+                        return NOT_HANDLED;
+                    }
                     resolveRegisteredMemberSlot(instance, registry, args, true);
                     return switch (methodName.toLowerCase(Locale.ROOT)) {
                         case "getmemnum" -> new DispatchResult(
@@ -198,25 +202,10 @@ public final class MemberRegistryMethodDispatcher {
         if (!(bootstrapRef instanceof Datum.CastMemberRef cmr) || cmr.castLibNum() < 1 || cmr.memberNum() < 1) {
             return 0;
         }
-        boolean registryVisible = provider.isRegistryVisibleMember(cmr.castLibNum(), cmr.memberNum());
-        if (!registryVisible && !isBootstrapDefinitionMember(provider, cmr.castLibNum(), cmr.memberNum())) {
+        if (!provider.isRegistryVisibleMember(cmr.castLibNum(), cmr.memberNum())) {
             return 0;
         }
         return SlotId.of(cmr.castLibNum(), cmr.memberNum()).value();
-    }
-
-    private static boolean isBootstrapDefinitionMember(CastLibProvider provider, int castLibNumber, int memberNumber) {
-        if (provider == null || castLibNumber <= 0 || memberNumber <= 0) {
-            return false;
-        }
-
-        Datum type = provider.getMemberProp(castLibNumber, memberNumber, "type");
-        if (!(type instanceof Datum.Symbol symbol)) {
-            return false;
-        }
-        String typeName = symbol.name();
-        return "script".equalsIgnoreCase(typeName)
-                || "field".equalsIgnoreCase(typeName);
     }
 
     private static boolean isRegisteredRegistrySlotLive(int slotValue) {

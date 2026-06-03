@@ -276,6 +276,12 @@ public final class InkProcessor {
     }
 
     static Bitmap applyBackgroundTransparent(Bitmap src, int bgColorRGB, boolean skipGraduatedAlpha) {
+        if (bgColorRGB == 0xFFFFFF) {
+            Bitmap preprocessed = Drawing.preprocessBackgroundTransparent(src, bgColorRGB);
+            if (preprocessed != null) {
+                return preprocessed;
+            }
+        }
         int w = src.getWidth();
         int h = src.getHeight();
         int[] srcPixels = src.getPixels();

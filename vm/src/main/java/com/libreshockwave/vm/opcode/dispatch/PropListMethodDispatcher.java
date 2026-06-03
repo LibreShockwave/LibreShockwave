@@ -67,6 +67,9 @@ public final class PropListMethodDispatcher {
                 if (index >= 0 && index < propList.size()) {
                     yield propList.getValue(index);
                 }
+                if (keyOrIndex instanceof Datum.Int intKey) {
+                    yield propList.getOrDefault(Integer.toString(intKey.value()), false, Datum.VOID);
+                }
                 yield Datum.VOID;
             }
             case "setat" -> {
@@ -77,6 +80,8 @@ public final class PropListMethodDispatcher {
                     int index = intKey.value() - 1;
                     if (index >= 0 && index < propList.size()) {
                         propList.setValue(index, value);
+                    } else {
+                        propList.put(Integer.toString(intKey.value()), false, value);
                     }
                 } else {
                     propList.put(keyOrIndex, value);

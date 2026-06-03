@@ -68,6 +68,22 @@ class CallOpcodesFieldTextDispatchTest {
     }
 
     @Test
+    void fieldTextLinePropertySupportsDirectorLineCountAndIndexing() {
+        Datum lineProp = invokeGetStringProp("right=a*\r\nleft=b", "line");
+
+        Datum.List lines = assertInstanceOf(Datum.List.class, lineProp);
+        assertEquals(2, lines.items().size());
+        assertEquals("right=a*", lines.items().get(0).toStr());
+        assertEquals("left=b", lines.items().get(1).toStr());
+        assertEquals("right=a*", invokeDispatchMethod(
+                createContext(0, 0),
+                lines,
+                "getAt",
+                List.of(Datum.of(1))).toStr());
+        assertEquals(2, invokeGetStringProp("right=a*\r\nleft=b", "lineCount").toInt());
+    }
+
+    @Test
     void charChunkHelpersIgnoreInvertedRanges() {
         assertEquals("", invokeGetStringChunk("abc", "char", 1, -1));
         assertEquals("abc", invokeDeleteChunkRange("abc", "char", 1, -1));
@@ -120,6 +136,21 @@ class CallOpcodesFieldTextDispatchTest {
                     Datum.class);
             method.setAccessible(true);
             return (Datum) method.invoke(null, ctx, varType, idDatum, castIdDatum);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new AssertionError(e);
+        } catch (InvocationTargetException e) {
+            throw unwrap(e);
+        }
+    }
+
+    private static Datum invokeGetStringProp(String str, String propName) {
+        try {
+            Method method = PropertyOpcodes.class.getDeclaredMethod(
+                    "getStringProp",
+                    String.class,
+                    String.class);
+            method.setAccessible(true);
+            return (Datum) method.invoke(null, str, propName);
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new AssertionError(e);
         } catch (InvocationTargetException e) {
