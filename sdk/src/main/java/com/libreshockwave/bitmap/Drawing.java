@@ -76,22 +76,35 @@ public class Drawing {
                 && copyMatteToMaskImage(dest, src, destX, destY, srcX, srcY, width, height)) {
             return;
         }
+        Bitmap effectiveSrc = src;
+        int effectiveSrcX = srcX;
+        int effectiveSrcY = srcY;
+        InkMode effectiveInk = ink;
+        Integer resolvedBackgroundKeyRgb = effectiveInk == InkMode.BACKGROUND_TRANSPARENT && backgroundKeyRgb == null
+                ? Integer.valueOf(0xFFFFFF)
+                : backgroundKeyRgb;
         // For MATTE ink, pre-process the FULL source image with flood-fill matte.
         // Director applies matte to the entire source member, then extracts the
         // copy region. This preserves content that forms "islands" in the full
         // image but would be border-connected in a cropped sub-region (e.g.,
         // cloud bitmaps cropped during turn animations).
-        Bitmap effectiveSrc = src;
-        int effectiveSrcX = srcX;
-        int effectiveSrcY = srcY;
         if (ink == InkMode.MATTE) {
             effectiveSrc = applyMatteToRegion(src, 0, 0, src.getWidth(), src.getHeight());
             effectiveSrcX = srcX;
             effectiveSrcY = srcY;
+        } else if (ink == InkMode.BACKGROUND_TRANSPARENT) {
+            Bitmap backgroundTransparentSrc = applyBackgroundTransparentToRegion(
+                    src, 0, 0, src.getWidth(), src.getHeight(), resolvedBackgroundKeyRgb);
+            if (backgroundTransparentSrc != null) {
+                effectiveSrc = backgroundTransparentSrc;
+                effectiveSrcX = srcX;
+                effectiveSrcY = srcY;
+                effectiveInk = InkMode.COPY;
+            }
         }
-        boolean keyNearWhiteMatte = ink == InkMode.BACKGROUND_TRANSPARENT
+        boolean keyNearWhiteMatte = effectiveInk == InkMode.BACKGROUND_TRANSPARENT
                 && shouldKeyNearWhiteMatte(effectiveSrc, effectiveSrcX, effectiveSrcY, width, height,
-                        backgroundKeyRgb);
+                        resolvedBackgroundKeyRgb);
         for (int y = 0; y < height; y++) {
             int sy = effectiveSrcY + y;
             int dy = destY + y;
@@ -122,7 +135,7 @@ public class Drawing {
 
                 int resultPixel = keyNearWhiteMatte && isNearWhiteMattePixel(srcPixel)
                         ? destPixel
-                        : applyInk(srcPixel, destPixel, ink, blend, backgroundKeyRgb);
+                        : applyInk(srcPixel, destPixel, effectiveInk, blend, resolvedBackgroundKeyRgb);
                 dest.setPixelPreservePaletteIndex(dx, dy, resultPixel);
             }
         }
@@ -298,6 +311,43 @@ public class Drawing {
             }
         }
         return sampled > 0 && white * 4 >= sampled * 3;
+    }
+
+    public static Bitmap preprocessBackgroundTransparent(Bitmap src, Integer backgroundKeyRgb) {
+        return applyBackgroundTransparentToRegion(src, 0, 0, src.getWidth(), src.getHeight(), backgroundKeyRgb);
+    }
+
+    private static Bitmap applyBackgroundTransparentToRegion(Bitmap src, int srcX, int srcY, int w, int h,
+                                                            Integer backgroundKeyRgb) {
+        if (w <= 0 || h <= 0 || backgroundKeyRgb == null || (backgroundKeyRgb & 0xFFFFFF) != 0xFFFFFF) {
+            return null;
+        }
+        if (src.hasNativeMatteAlpha()) {
+            return null;
+        }
+
+        Bitmap region = src.getRegion(srcX, srcY, w, h);
+        int[] pixels = region.getPixels();
+        byte[] paletteIndices = region.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveBackgroundTransparentMatte(pixels, paletteIndices, w, h);
+        if (matteSpec == null) {
+            return null;
+        }
+
+        boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+        boolean changed = false;
+        for (int i = 0; i < pixels.length; i++) {
+            if (!transparent[i]) {
+                continue;
+            }
+            pixels[i] &= 0x00FFFFFF;
+            changed = true;
+        }
+        if (!changed) {
+            return null;
+        }
+        region.setNativeAlpha(true);
+        return region;
     }
 
     /**
@@ -632,6 +682,39 @@ public class Drawing {
         return createMatte(src, 0);
     }
 
+    public static Bitmap createMask(Bitmap src) {
+        return createMask(src, 0);
+    }
+
+    public static Bitmap createMask(Bitmap src, int alphaThreshold) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) {
+            return new Bitmap(1, 1, 32);
+        }
+
+        if (src.hasNativeMatteAlpha()) {
+            return createAlphaMatte(src, alphaThreshold);
+        }
+
+        int[] pixels = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                pixels[y * w + x] = src.getPixel(x, y);
+            }
+        }
+        byte[] paletteIndices = src.getPaletteIndices();
+        FloodFillMatte matteSpec = resolveFloodFillMatte(pixels, paletteIndices, w, h);
+        if (matteSpec != null) {
+            boolean[] transparent = computeFloodFillTransparency(pixels, paletteIndices, w, h, matteSpec);
+            if (isMaskSource(pixels, transparent, matteSpec)) {
+                return createDirectMask(src, pixels, matteSpec, alphaThreshold);
+            }
+        }
+
+        return createFloodFillMatte(src);
+    }
+
     /**
      * alphaThreshold excludes pixels below the threshold.
      */
@@ -726,6 +809,35 @@ public class Drawing {
         Bitmap matteBitmap = new Bitmap(w, h, 32, mask);
         matteBitmap.setNativeAlpha(true);
         return matteBitmap;
+    }
+
+    private static Bitmap createDirectMask(Bitmap src, int[] pixels,
+                                           FloodFillMatte matteSpec, int alphaThreshold) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int threshold = Math.max(0, Math.min(255, alphaThreshold));
+        int matteLuma = maskAlphaFromPixel(0xFF000000 | (matteSpec.matteColorRgb() & 0xFFFFFF));
+        boolean lightMatte = matteLuma >= 128;
+
+        int[] mask = new int[w * h];
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            int srcAlpha = (pixel >>> 24) & 0xFF;
+            if (srcAlpha == 0) {
+                mask[i] = 0x00FFFFFF;
+                continue;
+            }
+            int alpha = maskAlphaFromPixel(pixel);
+            alpha = lightMatte ? 255 - alpha : alpha;
+            if (alpha < threshold) {
+                alpha = 0;
+            }
+            mask[i] = alpha == 0 ? 0x00FFFFFF : (alpha << 24) | 0x00FFFFFF;
+        }
+
+        Bitmap maskBitmap = new Bitmap(w, h, 32, mask);
+        maskBitmap.setNativeAlpha(true);
+        return maskBitmap;
     }
 
     /**
@@ -901,6 +1013,46 @@ public class Drawing {
         return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
     }
 
+    private static FloodFillMatte resolveBackgroundTransparentMatte(int[] pixels, byte[] paletteIndices, int w, int h) {
+        if (hasPaletteIndices(paletteIndices, w, h)) {
+            Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
+            if (matteIndex == null) {
+                return null;
+            }
+            int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex);
+            if (!isNearWhiteGrayscale(matteRgb, 232, 16)
+                    || !hasOpaqueNonNearWhiteContent(pixels, paletteIndices, w, h, 232, 16)) {
+                return null;
+            }
+            return new FloodFillMatte(matteIndex, matteRgb, 0);
+        }
+
+        if (!cornersAreNearWhite(pixels, w, h, 232, 16)) {
+            return null;
+        }
+
+        int opaqueEdgeCount = 0;
+        int nearWhiteEdgeCount = 0;
+        for (int index : iterateEdgeIndices(w, h)) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            opaqueEdgeCount++;
+            if (isNearWhiteGrayscale(pixels[index] & 0xFFFFFF, 232, 16)) {
+                nearWhiteEdgeCount++;
+            }
+        }
+
+        if (opaqueEdgeCount == 0 || nearWhiteEdgeCount * 4 < opaqueEdgeCount * 3) {
+            return null;
+        }
+        if (!hasOpaqueNonNearWhiteContent(pixels, null, w, h, 232, 16)) {
+            return null;
+        }
+
+        return new FloodFillMatte(DEFAULT_RGB_MATTE, 24);
+    }
+
     private static Integer inferDominantEdgeRgb(int[] pixels, int w, int h) {
         if (w <= 0 || h <= 0) {
             return null;
@@ -969,6 +1121,68 @@ public class Drawing {
             }
         }
         return true;
+    }
+
+    private static boolean cornersAreNearWhite(int[] pixels, int w, int h, int minChannel, int maxDelta) {
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+        boolean sawOpaqueCorner = false;
+        for (int index : cornerIndices) {
+            if (((pixels[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            sawOpaqueCorner = true;
+            if (!isNearWhiteGrayscale(pixels[index] & 0xFFFFFF, minChannel, maxDelta)) {
+                return false;
+            }
+        }
+        return sawOpaqueCorner;
+    }
+
+    private static boolean hasOpaqueNonNearWhiteContent(int[] pixels, byte[] paletteIndices, int w, int h,
+                                                        int minChannel, int maxDelta) {
+        int contentPixels = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int index = y * w + x;
+                int pixel = pixels[index];
+                if (((pixel >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                if (!isNearWhiteGrayscale(resolvePaletteAwareRgb(pixel, paletteIndices, index), minChannel, maxDelta)) {
+                    contentPixels++;
+                    if (contentPixels >= 8) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static int resolvePaletteAwareRgb(int pixel, byte[] paletteIndices, int index) {
+        if (paletteIndices != null && index >= 0 && index < paletteIndices.length) {
+            int paletteIndex = paletteIndices[index] & 0xFF;
+            int paletteRgb = Palette.SYSTEM_MAC_PALETTE.getColor(paletteIndex) & 0xFFFFFF;
+            if (paletteRgb != 0xFFFFFF || (pixel & 0xFFFFFF) == 0xFFFFFF) {
+                return paletteRgb;
+            }
+        }
+        return pixel & 0xFFFFFF;
+    }
+
+    private static boolean isNearWhiteGrayscale(int rgb, int minChannel, int maxDelta) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        return r >= minChannel && g >= minChannel && b >= minChannel
+                && Math.abs(r - g) <= maxDelta
+                && Math.abs(g - b) <= maxDelta
+                && Math.abs(r - b) <= maxDelta;
     }
 
     private static boolean[] computeFloodFillTransparency(int[] pixels, byte[] paletteIndices, int w, int h,

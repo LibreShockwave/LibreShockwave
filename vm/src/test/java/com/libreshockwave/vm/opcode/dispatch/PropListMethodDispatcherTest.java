@@ -72,6 +72,28 @@ class PropListMethodDispatcherTest {
     }
 
     @Test
+    void getAtFallsBackToNumericStringKeyWhenPositionIsOutOfRange() {
+        Datum.PropList propList = new Datum.PropList();
+        propList.add("9", Datum.of(90), false);
+
+        Datum result = PropListMethodDispatcher.dispatch(
+                propList, "getAt", List.of(Datum.of(9)));
+
+        assertEquals(90, result.toInt());
+    }
+
+    @Test
+    void setAtFallsBackToNumericStringKeyWhenPositionIsOutOfRange() {
+        Datum.PropList propList = new Datum.PropList();
+
+        PropListMethodDispatcher.dispatch(
+                propList, "setAt", List.of(Datum.of(9), Datum.of(90)));
+
+        assertEquals(90, PropListMethodDispatcher.dispatch(
+                propList, "getAt", List.of(Datum.of("9"))).toInt());
+    }
+
+    @Test
     void deletePropRemovesOnlyMatchingKeyType() {
         Datum.PropList propList = new Datum.PropList();
         propList.add("room_interface", Datum.of(1), true);   // symbol #room_interface

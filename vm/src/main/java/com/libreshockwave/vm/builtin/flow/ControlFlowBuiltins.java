@@ -239,12 +239,59 @@ public final class ControlFlowBuiltins {
                         .map(arg -> arg.getClass().getSimpleName())
                         .toList());
             }
-            Datum result = AncestorChainWalker.invokeHandlerWithResult(vm, instance, handlerName, extraArgs);
+            Datum result = AncestorChainWalker.invokeHandlerWithResult(
+                    vm,
+                    instance,
+                    handlerName,
+                    snapshotStructArgsForCall(extraArgs));
             return result != null ? result : Datum.VOID;
         } catch (Exception e) {
             System.err.println("[callHandlerOnInstance] Exception in '" + handlerName + "': " + e.getMessage());
             return Datum.VOID;
         }
+    }
+
+    static List<Datum> snapshotStructArgsForCall(List<Datum> args) {
+        if (args == null || args.isEmpty()) {
+            return args;
+        }
+
+        boolean changed = false;
+        List<Datum> snapshot = new ArrayList<>(args.size());
+        for (Datum arg : args) {
+            Datum copied = snapshotStructArg(arg);
+            snapshot.add(copied);
+            if (copied != arg) {
+                changed = true;
+            }
+        }
+        return changed ? snapshot : args;
+    }
+
+    private static Datum snapshotStructArg(Datum arg) {
+        if (!(arg instanceof Datum.PropList propList) || !isMessageStruct(propList)) {
+            return arg;
+        }
+        return propList.deepCopy();
+    }
+
+    private static boolean isMessageStruct(Datum.PropList propList) {
+        if (propList == null) {
+            return false;
+        }
+
+        Datum connection = propList.getOrDefault("connection", true, Datum.VOID);
+        if (!(connection instanceof Datum.ScriptInstance)) {
+            return false;
+        }
+
+        Datum ilk = propList.getOrDefault("ilk", true, Datum.VOID);
+        if (ilk instanceof Datum.Symbol sym && "struct".equalsIgnoreCase(sym.name())) {
+            return true;
+        }
+
+        return !propList.getOrDefault("subject", true, Datum.VOID).isVoid()
+                && !propList.getOrDefault("content", true, Datum.VOID).isVoid();
     }
 
 }

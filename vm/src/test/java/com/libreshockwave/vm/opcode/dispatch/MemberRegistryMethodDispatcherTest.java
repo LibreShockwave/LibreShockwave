@@ -73,6 +73,38 @@ class MemberRegistryMethodDispatcherTest {
     }
 
     @Test
+    void prefillReadAliasIndexesRemembersAliasesWithoutHandlingAuthoredMethod() {
+        Datum.PropList registry = new Datum.PropList();
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
+        instance.properties().put("pAllMemNumList", registry);
+
+        CastLibProvider.setProvider(new AliasFieldProvider(
+                "rightwall window_70s_wide_mask=leftwall window_70s_wide_mask*\r\n"));
+        try {
+            MemberRegistryMethodDispatcher.DispatchResult prefillResult =
+                    MemberRegistryMethodDispatcher.prefill(instance, "readAliasIndexesFromField",
+                            List.of(Datum.of("memberalias.index"), Datum.of(11)));
+
+            assertEquals(MemberRegistryMethodDispatcher.NOT_HANDLED, prefillResult);
+            assertNull(registry.get("rightwall window_70s_wide_mask"));
+
+            registry.putTyped("leftwall window_70s_wide_mask", false, Datum.of(0x0B0004));
+
+            MemberRegistryMethodDispatcher.DispatchResult memNumResult =
+                    MemberRegistryMethodDispatcher.dispatch(
+                            instance,
+                            "getmemnum",
+                            List.of(Datum.of("rightwall window_70s_wide_mask")));
+            assertTrue(memNumResult.handled());
+            assertEquals(-0x0B0004, memNumResult.value().toInt());
+            assertEquals(-0x0B0004, registry.get("rightwall window_70s_wide_mask").toInt());
+        } finally {
+            CastLibProvider.clearProvider();
+            MemberRegistryMethodDispatcher.clearRememberedAliases();
+        }
+    }
+
+    @Test
     void getmemnumLazilyRestoresRememberedAliasesAfterRegistryDeletion() {
         Datum.PropList registry = new Datum.PropList();
         registry.putTyped("sofachair_silo_a_0_1_1_0_0", false, Datum.of(0x0C0007));
@@ -440,6 +472,31 @@ class MemberRegistryMethodDispatcherTest {
             assertTrue(result.handled());
             assertEquals(0, result.value().toInt());
             assertNull(registry.get("grunge_barrel_a_0_1_1_0_0"));
+        } finally {
+            CastLibProvider.clearProvider();
+            MemberRegistryMethodDispatcher.clearRememberedAliases();
+        }
+    }
+
+    @Test
+    void getmemnumDoesNotBootstrapHiddenFieldMembersFromBroadLookup() {
+        Datum.PropList registry = new Datum.PropList();
+        Datum.ScriptInstance instance = new Datum.ScriptInstance(1, new LinkedHashMap<>());
+        instance.properties().put("pAllMemNumList", registry);
+
+        CastLibProvider.setProvider(new BroadLookupVisibilityProvider(
+                Map.of("window_70s_wide.props", Datum.CastMemberRef.of(34, 9)),
+                Set.of()));
+        try {
+            MemberRegistryMethodDispatcher.DispatchResult result =
+                    MemberRegistryMethodDispatcher.dispatch(
+                            instance,
+                            "getmemnum",
+                            List.of(Datum.of("window_70s_wide.props")));
+
+            assertTrue(result.handled());
+            assertEquals(0, result.value().toInt());
+            assertNull(registry.get("window_70s_wide.props"));
         } finally {
             CastLibProvider.clearProvider();
             MemberRegistryMethodDispatcher.clearRememberedAliases();

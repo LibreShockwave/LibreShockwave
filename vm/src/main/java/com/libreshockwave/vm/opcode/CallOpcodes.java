@@ -19,6 +19,7 @@ import com.libreshockwave.vm.opcode.dispatch.PropListMethodDispatcher;
 import com.libreshockwave.vm.opcode.dispatch.ScriptInstanceMethodDispatcher;
 import com.libreshockwave.vm.opcode.dispatch.StringMethodDispatcher;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,8 +28,67 @@ import java.util.Map;
  * Function call opcodes.
  */
 public final class CallOpcodes {
+    private static final int WRAPPER_TRACE_LIMIT = 64;
+    private static final ArrayDeque<String> wrapperMethodTrace = new ArrayDeque<>();
+    private static boolean wrapperMethodTraceEnabled = false;
 
     private CallOpcodes() {}
+
+    public static synchronized List<String> snapshotWrapperMethodTrace() {
+        return List.copyOf(wrapperMethodTrace);
+    }
+
+    public static synchronized void setWrapperMethodTraceEnabled(boolean enabled) {
+        wrapperMethodTraceEnabled = enabled;
+        if (enabled) {
+            wrapperMethodTrace.clear();
+        }
+    }
+
+    private static synchronized void appendWrapperMethodTrace(String line) {
+        if (wrapperMethodTrace.size() >= WRAPPER_TRACE_LIMIT) {
+            wrapperMethodTrace.removeFirst();
+        }
+        wrapperMethodTrace.addLast(line);
+    }
+
+    private static boolean shouldTraceWrapperMethod(ExecutionContext ctx, String methodName) {
+        if (!wrapperMethodTraceEnabled) {
+            return false;
+        }
+        if (ctx == null || ctx.getScript() == null || ctx.getHandler() == null) {
+            return false;
+        }
+        if (!ctx.getScript().getDisplayName().contains("Visualizer Part Wrapper Class")) {
+            return false;
+        }
+        if (!"getPartAt".equalsIgnoreCase(ctx.getScript().getHandlerName(ctx.getHandler()))) {
+            return false;
+        }
+        return "getAt".equalsIgnoreCase(methodName) || "setAt".equalsIgnoreCase(methodName);
+    }
+
+    private static void traceWrapperMethodCall(
+            ExecutionContext ctx,
+            String opcodeName,
+            String methodName,
+            Datum target,
+            List<Datum> args,
+            Datum result) {
+        if (!shouldTraceWrapperMethod(ctx, methodName)) {
+            return;
+        }
+        appendWrapperMethodTrace(
+                opcodeName
+                        + " "
+                        + methodName
+                        + " target="
+                        + target
+                        + " args="
+                        + args
+                        + " result="
+                        + result);
+    }
 
     /**
      * Safely execute a handler, catching exceptions and returning VOID on error.
@@ -128,6 +188,7 @@ public final class CallOpcodes {
                 }
             }
         }
+        traceWrapperMethodCall(ctx, "extCall", handlerName, args.isEmpty() ? Datum.VOID : args.get(0), args, result);
         if (!noRet) {
             ctx.push(result);
         }
@@ -180,6 +241,7 @@ public final class CallOpcodes {
         }
 
         Datum result = dispatchMethod(ctx, target, methodName, args);
+        traceWrapperMethodCall(ctx, "objCall", methodName, target, args, result);
 
         if (!noRet) {
             ctx.push(result);
@@ -192,107 +254,127 @@ public final class CallOpcodes {
      */
     private static Datum dispatchMethod(ExecutionContext ctx, Datum target,
                                         String methodName, List<Datum> args) {
-        // Avoid pattern-switch dispatch for mutable refs: TeaVM has previously
-        // miscompiled some modern switch constructs in hot VM paths.
+        // Avoid pattern-switch dispatch in this hot path. TeaVM has previously
+        // miscompiled modern switch constructs here, and room-entry wall
+        // wrapper lookups depend on reliable list/proplist objCall dispatch.
         if (target instanceof Datum.VarRef varRef) {
             return handleVarRefMethod(ctx, varRef, methodName, args);
         }
         if (target instanceof Datum.ChunkRef chunkRef) {
             return handleChunkRefMethod(ctx, chunkRef, methodName, args);
         }
-
-        return switch (target) {
-            case Datum.List list -> ListMethodDispatcher.dispatch(list, methodName, args);
-            case Datum.PropList propList -> PropListMethodDispatcher.dispatch(propList, methodName, args);
-            case Datum.ScriptInstance instance -> ScriptInstanceMethodDispatcher.dispatch(ctx, instance, methodName, args);
-            case Datum.ScriptRef scriptRef -> handleScriptRefMethod(ctx, scriptRef, methodName, args);
-            case Datum.Point point -> handlePointMethod(point, methodName, args);
-            case Datum.Rect rect -> handleRectMethod(rect, methodName, args);
-            case Datum.Str str -> StringMethodDispatcher.dispatch(str, methodName, args);
-            case Datum.FieldText fieldText -> StringMethodDispatcher.dispatch(fieldText, methodName, args);
-            case Datum.TimeoutRef ref -> TimeoutBuiltins.handleMethod(ref, methodName, args);
-            case Datum.SoundChannel sc -> SoundChannelMethodDispatcher.dispatch(sc, methodName, args);
-            case Datum.XtraInstance xi -> XtraBuiltins.callHandler(xi, methodName, args);
-            case Datum.ImageRef imageRef -> ImageMethodDispatcher.dispatch(imageRef, methodName, args);
-            case Datum.SpriteRef sr -> {
-                // Method calls on sprite references dispatch to the sprite's scriptInstanceList behaviors.
-                // e.g., sprite(N).setcursor(#arrow) → Event Broker Behavior's on setcursor handler
-                SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
-                if (spriteProvider != null) {
-                    Datum listDatum = spriteProvider.getSpriteProp(sr.channelNum(), "scriptinstancelist");
-                    if (listDatum instanceof Datum.List scriptList) {
-                        for (Datum item : scriptList.items()) {
-                            if (item instanceof Datum.ScriptInstance si) {
-                                Datum r = ScriptInstanceMethodDispatcher.dispatch(ctx, si, methodName, args);
-                                if (!r.isVoid()) {
-                                    yield r;
-                                }
+        if (target instanceof Datum.List list) {
+            return ListMethodDispatcher.dispatch(list, methodName, args);
+        }
+        if (target instanceof Datum.PropList propList) {
+            return PropListMethodDispatcher.dispatch(propList, methodName, args);
+        }
+        if (target instanceof Datum.ScriptInstance instance) {
+            return ScriptInstanceMethodDispatcher.dispatch(ctx, instance, methodName, args);
+        }
+        if (target instanceof Datum.ScriptRef scriptRef) {
+            return handleScriptRefMethod(ctx, scriptRef, methodName, args);
+        }
+        if (target instanceof Datum.Point point) {
+            return handlePointMethod(point, methodName, args);
+        }
+        if (target instanceof Datum.Rect rect) {
+            return handleRectMethod(rect, methodName, args);
+        }
+        if (target instanceof Datum.Str str) {
+            return StringMethodDispatcher.dispatch(str, methodName, args);
+        }
+        if (target instanceof Datum.FieldText fieldText) {
+            return StringMethodDispatcher.dispatch(fieldText, methodName, args);
+        }
+        if (target instanceof Datum.TimeoutRef ref) {
+            return TimeoutBuiltins.handleMethod(ref, methodName, args);
+        }
+        if (target instanceof Datum.SoundChannel sc) {
+            return SoundChannelMethodDispatcher.dispatch(sc, methodName, args);
+        }
+        if (target instanceof Datum.XtraInstance xi) {
+            return XtraBuiltins.callHandler(xi, methodName, args);
+        }
+        if (target instanceof Datum.ImageRef imageRef) {
+            return ImageMethodDispatcher.dispatch(imageRef, methodName, args);
+        }
+        if (target instanceof Datum.SpriteRef sr) {
+            // Method calls on sprite references dispatch to the sprite's scriptInstanceList behaviors.
+            // e.g., sprite(N).setcursor(#arrow) → Event Broker Behavior's on setcursor handler
+            SpritePropertyProvider spriteProvider = SpritePropertyProvider.getProvider();
+            if (spriteProvider != null) {
+                Datum listDatum = spriteProvider.getSpriteProp(sr.channelNum(), "scriptinstancelist");
+                if (listDatum instanceof Datum.List scriptList) {
+                    for (Datum item : scriptList.items()) {
+                        if (item instanceof Datum.ScriptInstance si) {
+                            Datum result = ScriptInstanceMethodDispatcher.dispatch(ctx, si, methodName, args);
+                            if (!result.isVoid()) {
+                                return result;
                             }
                         }
                     }
-                    Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(
-                            sr.channelNum(), methodName, args);
-                    if (!brokerResult.isVoid()) {
-                        yield brokerResult;
-                    }
                 }
-                yield Datum.VOID;
-            }
-            case Datum.CastLibRef clr -> {
-                if (("getpropref".equalsIgnoreCase(methodName) || "getprop".equalsIgnoreCase(methodName))
-                        && args.size() >= 2
-                        && "member".equalsIgnoreCase(args.get(0).toKeyName())) {
-                    CastLibProvider provider = CastLibProvider.getProvider();
-                    if (provider == null) {
-                        yield Datum.VOID;
-                    }
-                    Datum key = args.get(1);
-                    if (key instanceof Datum.Int i) {
-                        yield provider.getMember(clr.castLibNum(), i.value());
-                    }
-                    yield provider.getMemberByName(clr.castLibNum(), key.toStr());
+                Datum brokerResult = SpriteEventBrokerSupport.dispatchSpriteMethod(
+                        sr.channelNum(), methodName, args);
+                if (!brokerResult.isVoid()) {
+                    return brokerResult;
                 }
-                yield Datum.VOID;
             }
-            case Datum.CastMemberRef cmr -> {
-                // Method calls on cast member references (e.g., member.charPosToLoc)
+            return Datum.VOID;
+        }
+        if (target instanceof Datum.CastLibRef clr) {
+            if (("getpropref".equalsIgnoreCase(methodName) || "getprop".equalsIgnoreCase(methodName))
+                    && args.size() >= 2
+                    && "member".equalsIgnoreCase(args.get(0).toKeyName())) {
                 CastLibProvider provider = CastLibProvider.getProvider();
-                if (provider != null) {
-                    yield provider.callMemberMethod(cmr.castLibNum(), cmr.memberNum(), methodName, args);
+                if (provider == null) {
+                    return Datum.VOID;
                 }
-                yield Datum.VOID;
-            }
-            case Datum.CastLibMemberAccessor accessor -> {
-                if ("getat".equalsIgnoreCase(methodName) && !args.isEmpty()) {
-                    CastLibProvider provider = CastLibProvider.getProvider();
-                    if (provider == null) {
-                        yield Datum.VOID;
-                    }
-                    Datum key = args.get(0);
-                    if (key instanceof Datum.Int i) {
-                        yield provider.getMember(accessor.castLibNum(), i.value());
-                    }
-                    yield provider.getMemberByName(accessor.castLibNum(), key.toStr());
+                Datum key = args.get(1);
+                if (key instanceof Datum.Int i) {
+                    return provider.getMember(clr.castLibNum(), i.value());
                 }
-                yield Datum.VOID;
+                return provider.getMemberByName(clr.castLibNum(), key.toStr());
             }
-            case Datum.MovieRef m -> {
-                // Method calls on _movie - try as builtin with args
-                Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, args);
-                if (builtinResult != null) {
-                    yield builtinResult;
+            return Datum.VOID;
+        }
+        if (target instanceof Datum.CastMemberRef cmr) {
+            // Method calls on cast member references (e.g., member.charPosToLoc)
+            CastLibProvider provider = CastLibProvider.getProvider();
+            if (provider != null) {
+                return provider.callMemberMethod(cmr.castLibNum(), cmr.memberNum(), methodName, args);
+            }
+            return Datum.VOID;
+        }
+        if (target instanceof Datum.CastLibMemberAccessor accessor) {
+            if ("getat".equalsIgnoreCase(methodName) && !args.isEmpty()) {
+                CastLibProvider provider = CastLibProvider.getProvider();
+                if (provider == null) {
+                    return Datum.VOID;
                 }
-                yield Datum.VOID;
-            }
-            default -> {
-                // Try to find the method as a global handler (with target as first arg)
-                Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, target, args);
-                if (builtinResult != null) {
-                    yield builtinResult;
+                Datum key = args.get(0);
+                if (key instanceof Datum.Int i) {
+                    return provider.getMember(accessor.castLibNum(), i.value());
                 }
-                yield Datum.VOID;
+                return provider.getMemberByName(accessor.castLibNum(), key.toStr());
             }
-        };
+            return Datum.VOID;
+        }
+        if (target instanceof Datum.MovieRef) {
+            // Method calls on _movie - try as builtin with args
+            Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, args);
+            if (builtinResult != null) {
+                return builtinResult;
+            }
+            return Datum.VOID;
+        }
+        // Try to find the method as a global handler (with target as first arg)
+        Datum builtinResult = ctx.invokeBuiltinIfPresent(methodName, target, args);
+        if (builtinResult != null) {
+            return builtinResult;
+        }
+        return Datum.VOID;
     }
 
     /**

@@ -195,9 +195,11 @@ public final class Scope {
     }
 
     // Parameter access
-    // In Lingo bytecode, parameters are 0-indexed from the EXPLICIT arguments:
+    // Scope stores EXPLICIT arguments in a 0-indexed array:
     //   param0 = first explicit argument (tNum), NOT 'me'
     //   param1 = second explicit argument (tColor), etc.
+    // Bytecode-level GET_PARAM / SET_PARAM operands are translated to this
+    // internal indexing by the opcode handlers.
     // For parent script methods, the receiver ('me') may be prepended to the args list
     // by the caller, so we need to skip it when computing param indices.
     // The handler's argCount does NOT include 'me', so paramOffset compensates.

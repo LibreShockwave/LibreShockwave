@@ -57,6 +57,19 @@ class LingoValueParserTest {
     }
 
     @Test
+    void parsesDynamicAssetIndexClassLine() {
+        Datum parsed = LingoValueParser.parseWithPartial(
+                "[#id: \"window_70s_wide\", #classes: [\"Item Object Class\", \"Item Object Extension Class\", \"Window Class\"]]",
+                new LingoVM(null));
+
+        assertInstanceOf(Datum.PropList.class, parsed);
+        Datum.PropList props = (Datum.PropList) parsed;
+        assertEquals("window_70s_wide", props.get("id").toStr());
+        Datum.List classes = assertInstanceOf(Datum.List.class, props.get("classes"));
+        assertEquals("Item Object Extension Class", classes.items().get(1).toStr());
+    }
+
+    @Test
     void parsesFlatQuotedStringListsUsedBySystemPropsClassVariables() {
         Datum parsed = LingoValueParser.parseWithPartial(
                 "[\"Manager Template Class\",\"Variable Container Class\"]",

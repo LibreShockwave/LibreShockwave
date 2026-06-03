@@ -242,6 +242,17 @@ public final class PropertyOpcodes {
 
     private static Datum getStringProp(String str, String propName) {
         if ("length".equalsIgnoreCase(propName)) return Datum.of(str.length());
+        if ("linecount".equalsIgnoreCase(propName)) {
+            return Datum.of(StringChunkUtils.countChunks(str, StringChunkType.LINE, ','));
+        }
+        if ("line".equalsIgnoreCase(propName)) {
+            java.util.List<String> lines = StringChunkUtils.splitIntoChunks(str, StringChunkType.LINE, ',');
+            Datum.OwnedList items = new Datum.OwnedList(lines.size());
+            for (String line : lines) {
+                items.add(Datum.of(line));
+            }
+            return new Datum.List(items);
+        }
         if ("ilk".equalsIgnoreCase(propName)) return Datum.symbol("string");
         return Datum.VOID;
     }
