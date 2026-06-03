@@ -9,10 +9,11 @@ import java.util.Queue;
  * Fields are non-volatile: WASM/TeaVM target is single-threaded.
  */
 public class InputState {
+    private static final int INITIAL_MOUSE_POSITION = -10000;
 
     // Mouse position (stage coordinates)
-    private int mouseH;
-    private int mouseV;
+    private int mouseH = INITIAL_MOUSE_POSITION;
+    private int mouseV = INITIAL_MOUSE_POSITION;
 
     // Mouse button state
     private boolean mouseDown;

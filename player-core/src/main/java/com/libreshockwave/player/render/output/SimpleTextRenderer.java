@@ -20,19 +20,6 @@ public class SimpleTextRenderer implements TextRenderer {
     private record StyledLine(int start, int end, int width, int maxLineHeight,
                               boolean paragraphBreakBefore) {}
 
-    private static final List<String> RECENT_RENDER_PROBES = new ArrayList<>();
-
-    public static List<String> getRecentRenderProbes() {
-        return new ArrayList<>(RECENT_RENDER_PROBES);
-    }
-
-    private static void addRenderProbe(String probe) {
-        if (RECENT_RENDER_PROBES.size() >= 40) {
-            RECENT_RENDER_PROBES.remove(0);
-        }
-        RECENT_RENDER_PROBES.add(probe);
-    }
-
     @Override
     public Bitmap renderText(String text, int width, int height,
                              String fontName, int fontSize, String fontStyle,
@@ -63,19 +50,6 @@ public class SimpleTextRenderer implements TextRenderer {
         if (text == null) text = "";
         if (width <= 0) width = 200;
         if (height <= 0) height = 1; // auto-size: neededHeight will expand to fit
-        if (width >= 100 && width <= 400
-                && (text.length() > 20 || "right".equalsIgnoreCase(alignment))) {
-            addRenderProbe("width=" + width
-                    + " height=" + height
-                    + " font=" + fontName
-                    + " size=" + fontSize
-                    + " style=" + fontStyle
-                    + " align=" + alignment
-                    + " wrap=" + wordWrap
-                    + " fixedLineSpace=" + fixedLineSpace
-                    + " topSpacing=" + topSpacing
-                    + " text=\"" + text.replace("\r", "\\r").replace("\n", "\\n") + "\"");
-        }
 
         String style = fontStyle != null ? fontStyle.toLowerCase() : "";
         boolean wantsBold = style.contains("bold");
@@ -796,7 +770,7 @@ public class SimpleTextRenderer implements TextRenderer {
         boolean resolvedBold = bold || (alias != null && alias.bold());
         int aliasSize = directorAliasFontSize(fontSize);
 
-        if (preferRegisteredDirectorFonts) {
+        if (preferRegisteredDirectorFonts || alias != null) {
             BitmapFont registered = resolveRegisteredDirectorFont(fontName, resolvedName,
                     aliasSize, resolvedBold, italic, usedRealBold);
             if (registered != null) {
