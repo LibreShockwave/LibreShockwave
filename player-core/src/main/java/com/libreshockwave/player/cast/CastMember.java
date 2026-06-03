@@ -17,8 +17,12 @@ import com.libreshockwave.vm.LingoVM;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.util.LingoValueParser;
+import com.libreshockwave.vm.util.StringChunkUtils;
+import com.libreshockwave.lingo.StringChunkType;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -300,7 +304,7 @@ public class CastMember {
         return null;
     }
 
-    private boolean applyRuntimePaletteOverride(Datum value) {
+    private boolean applyRuntimePaletteOverride(Datum value, boolean remapDeepBitmapRgb) {
         ResolvedPalette resolved = resolvePaletteDatum(value);
         if (resolved == null || resolved.palette() == null) {
             return false;
@@ -316,7 +320,13 @@ public class CastMember {
         runtimePaletteOverride = resolved.palette();
 
         if (bitmap != null && (sourceFile == null || chunk == null || bitmap.isScriptModified())) {
-            bitmap.remapImagePalette(resolved.palette());
+            if (bitmap.getBitDepth() <= 8) {
+                bitmap.remapImagePalette(resolved.palette());
+            } else if (remapDeepBitmapRgb) {
+                bitmap.remapImagePalette(resolved.palette());
+            } else {
+                bitmap.setImagePalette(resolved.palette());
+            }
         }
 
         if (changed) {
@@ -832,6 +842,17 @@ public class CastMember {
     private Datum getTextProp(String prop) {
         return switch (prop) {
             case "text" -> Datum.of(getTextContent());
+            case "linecount" -> Datum.of(StringChunkUtils.countChunks(
+                    getTextContent(), StringChunkType.LINE, ','));
+            case "line" -> {
+                String text = getTextContent();
+                int lineCount = StringChunkUtils.countChunks(text, StringChunkType.LINE, ',');
+                List<Datum> lines = new ArrayList<>(lineCount);
+                for (int i = 1; i <= lineCount; i++) {
+                    lines.add(Datum.of(StringChunkUtils.getChunk(text, StringChunkType.LINE, i, ',')));
+                }
+                yield new Datum.List(lines);
+            }
             case "width" -> Datum.of(textRectRight - textRectLeft);
             case "height" -> {
                 // Director auto-expands text member height for boxType=adjust, but
@@ -1371,7 +1392,8 @@ public class CastMember {
 
     private boolean setBitmapProp(String prop, Datum value) {
         return switch (prop) {
-            case "paletteref", "palette" -> applyRuntimePaletteOverride(value);
+            case "paletteref" -> applyRuntimePaletteOverride(value, false);
+            case "palette" -> applyRuntimePaletteOverride(value, true);
             case "image" -> {
                 if (value instanceof Datum.ImageRef ir) {
                     Bitmap sourceBitmap = ir.bitmap();
@@ -1520,6 +1542,12 @@ public class CastMember {
                         case 4 -> Datum.of(r.bottom());
                         default -> Datum.VOID;
                     };
+                } else if (propValue instanceof Datum.List l) {
+                    int zeroIndex = index - 1;
+                    if (zeroIndex >= 0 && zeroIndex < l.items().size()) {
+                        yield l.items().get(zeroIndex);
+                    }
+                    yield Datum.VOID;
                 }
                 yield propValue;
             }

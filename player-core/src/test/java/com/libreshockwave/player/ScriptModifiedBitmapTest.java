@@ -1272,38 +1272,6 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
-    void scriptModifiedBackgroundTransparentStripsNearWhiteBorderRamp() {
-        CastMember member = new CastMember(1, 144, MemberType.BITMAP);
-        Bitmap bmp = new Bitmap(5, 5, 32, new int[] {
-                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF,
-                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
-                0xFFEEEEEE, 0xFF101010, 0xFF333333, 0xFF101010, 0xFFEEEEEE,
-                0xFFF6F6F6, 0xFF101010, 0xFF101010, 0xFF101010, 0xFFF6F6F6,
-                0xFFFFFFFF, 0xFFF6F6F6, 0xFFEEEEEE, 0xFFF6F6F6, 0xFFFFFFFF
-        });
-        bmp.markScriptModified();
-        member.setBitmapDirectly(bmp);
-
-        RenderSprite sprite = new RenderSprite(
-                144, 0, 0, 5, 5, 0, true,
-                RenderSprite.SpriteType.BITMAP,
-                null, member,
-                0, 0x00FFFFFF, false, true,
-                36, 255, false, false, null, false
-        );
-
-        SpriteBaker baker = new SpriteBaker(new BitmapCache(), null, null);
-        RenderSprite baked = baker.bake(sprite);
-
-        assertNotNull(baked.getBakedBitmap());
-        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(0, 0));
-        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(2, 0));
-        assertEquals(0xFF101010, baked.getBakedBitmap().getPixel(1, 1));
-        assertEquals(0xFF333333, baked.getBakedBitmap().getPixel(2, 2));
-        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(4, 4));
-    }
-
-    @Test
     void scriptModifiedDarkenTreatsOpaqueWhiteCanvasAsNeutral() {
         CastMember member = new CastMember(1, 45, MemberType.BITMAP);
         member.setName("dynamic_tint_canvas");

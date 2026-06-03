@@ -25,10 +25,10 @@ import java.util.Set;
 public class StageRenderer {
 
     /**
-     * Director's stage sprite rasterization lands one pixel below the raw locV
-     * coordinate used by the score/runtime state.
+     * Sprite rasterization uses the score/runtime locV directly. A global +1
+     * offset shifts the whole frame away from the native room-entry reference.
      */
-    private static final int DIRECTOR_SPRITE_RASTER_Y_ORIGIN = 1;
+    private static final int DIRECTOR_SPRITE_RASTER_Y_ORIGIN = 0;
 
     private final DirectorFile file;
     private final SpriteRegistry spriteRegistry;

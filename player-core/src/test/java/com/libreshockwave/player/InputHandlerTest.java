@@ -23,6 +23,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class InputHandlerTest {
 
     @Test
+    void inputStateStartsWithMouseOutsideStageUntilMoved() {
+        InputState inputState = new InputState();
+
+        assertEquals(-10000, inputState.getMouseH());
+        assertEquals(-10000, inputState.getMouseV());
+
+        inputState.setMousePosition(12, 34);
+
+        assertEquals(12, inputState.getMouseH());
+        assertEquals(34, inputState.getMouseV());
+    }
+
+    @Test
     void mouseDownFocusesEditableTextSpriteWithoutMouseHandlers() throws Exception {
         StageRenderer renderer = new StageRenderer(null);
         CastLibManager castLibManager = castLibManagerWithInternalCast();
