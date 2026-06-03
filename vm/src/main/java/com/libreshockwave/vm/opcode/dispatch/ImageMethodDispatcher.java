@@ -7,7 +7,6 @@ import com.libreshockwave.id.InkMode;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -17,7 +16,6 @@ import java.util.List;
 public final class ImageMethodDispatcher {
 
     private static final int DEFAULT_INVERSE_TEXT_MASK_RGB = 0x7B9498;
-    private static final List<String> RECENT_COPY_PIXEL_PROBES = new ArrayList<>();
     private static Runnable imageMutationCallback;
 
     private record ResolvedPalette(Palette palette, Datum.CastMemberRef ref, String systemName) {}
@@ -26,17 +24,6 @@ public final class ImageMethodDispatcher {
 
     public static void setImageMutationCallback(Runnable callback) {
         imageMutationCallback = callback;
-    }
-
-    public static List<String> getRecentCopyPixelProbes() {
-        return new ArrayList<>(RECENT_COPY_PIXEL_PROBES);
-    }
-
-    private static void addCopyPixelProbe(String probe) {
-        if (RECENT_COPY_PIXEL_PROBES.size() >= 80) {
-            RECENT_COPY_PIXEL_PROBES.remove(0);
-        }
-        RECENT_COPY_PIXEL_PROBES.add(probe);
     }
 
     private static void notifyImageMutation(Bitmap bmp) {
@@ -636,13 +623,6 @@ public final class ImageMethodDispatcher {
         int srcH = srcRect.bottom() - srcRect.top();
         int destW = destRect.right() - destRect.left();
         int destH = destRect.bottom() - destRect.top();
-        boolean probeSmallButtonCopy = shouldProbeSmallButtonCopy(dest, src, destRect, srcRect, ink, args);
-        int beforeBlack = 0;
-        int beforeNonWhite = 0;
-        if (probeSmallButtonCopy) {
-            beforeBlack = countRegionPixels(dest, destRect, 0x000000);
-            beforeNonWhite = countRegionNonWhite(dest, destRect);
-        }
         if (dest.getImagePalette() == null && src.getImagePalette() != null) {
             dest.copyPaletteMetadataFrom(src);
         }
@@ -837,80 +817,7 @@ public final class ImageMethodDispatcher {
             }
         }
 
-        if (probeSmallButtonCopy) {
-            addCopyPixelProbe("dest=" + dest.getWidth() + "x" + dest.getHeight() + "x" + dest.getBitDepth()
-                    + " src=" + src.getWidth() + "x" + src.getHeight() + "x" + src.getBitDepth()
-                    + " destRect=" + rectSummary(destRect)
-                    + " srcRect=" + rectSummary(srcRect)
-                    + " ink=" + ink
-                    + " props=" + (args.size() >= 4)
-                    + " srcBlack=" + countRegionPixels(src, srcRect, 0x000000)
-                    + " srcNonWhite=" + countRegionNonWhite(src, srcRect)
-                    + " beforeBlack=" + beforeBlack
-                    + " afterBlack=" + countRegionPixels(dest, destRect, 0x000000)
-                    + " beforeNonWhite=" + beforeNonWhite
-                    + " afterNonWhite=" + countRegionNonWhite(dest, destRect));
-        }
-
         return Datum.VOID;
-    }
-
-    private static boolean shouldProbeSmallButtonCopy(Bitmap dest, Bitmap src,
-                                                      Datum.Rect destRect, Datum.Rect srcRect,
-                                                      Palette.InkMode ink, List<Datum> args) {
-        if (dest == null || src == null || destRect == null || srcRect == null) {
-            return false;
-        }
-        int dw = dest.getWidth();
-        int dh = dest.getHeight();
-        int sw = srcRect.right() - srcRect.left();
-        int sh = srcRect.bottom() - srcRect.top();
-        return dest.getBitDepth() <= 8
-                && dw >= 50 && dw <= 110
-                && dh >= 15 && dh <= 22
-                && sw > 0 && sw <= 100
-                && sh > 0 && sh <= 22
-                && (src.getBitDepth() == 32 || src.getBitDepth() <= 8)
-                && (ink == Palette.InkMode.COPY || ink == Palette.InkMode.BACKGROUND_TRANSPARENT)
-                && (args.size() < 4 || args.get(3) instanceof Datum.PropList);
-    }
-
-    private static String rectSummary(Datum.Rect rect) {
-        return rect.left() + "," + rect.top() + "," + rect.right() + "," + rect.bottom();
-    }
-
-    private static int countRegionPixels(Bitmap bitmap, Datum.Rect rect, int rgb) {
-        int count = 0;
-        int x0 = Math.max(0, rect.left());
-        int y0 = Math.max(0, rect.top());
-        int x1 = Math.min(bitmap.getWidth(), rect.right());
-        int y1 = Math.min(bitmap.getHeight(), rect.bottom());
-        for (int y = y0; y < y1; y++) {
-            for (int x = x0; x < x1; x++) {
-                int pixel = bitmap.getPixel(x, y);
-                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) == (rgb & 0xFFFFFF)) {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
-
-    private static int countRegionNonWhite(Bitmap bitmap, Datum.Rect rect) {
-        int count = 0;
-        int x0 = Math.max(0, rect.left());
-        int y0 = Math.max(0, rect.top());
-        int x1 = Math.min(bitmap.getWidth(), rect.right());
-        int y1 = Math.min(bitmap.getHeight(), rect.bottom());
-        for (int y = y0; y < y1; y++) {
-            for (int x = x0; x < x1; x++) {
-                int pixel = bitmap.getPixel(x, y);
-                if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) != 0xFFFFFF) {
-                    count++;
-                }
-            }
-        }
-        return count;
     }
 
     /**

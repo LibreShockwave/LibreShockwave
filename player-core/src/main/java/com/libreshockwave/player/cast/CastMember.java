@@ -696,10 +696,6 @@ public class CastMember {
                     ? Datum.ScriptRef.of(castLibId.value(), memberId.value())
                     : Datum.VOID;
             case "scripttext" -> {
-                if (memberType == MemberType.BITMAP && isRuntimeDynamicMember()) {
-                    System.err.println("[CastMember] get scriptText dynamic bitmap member="
-                            + memberId.value());
-                }
                 yield Datum.EMPTY_STRING;
             }
             case "media" -> Datum.CastMemberRef.of(castLibId.value(), memberId.value());
@@ -1104,9 +1100,6 @@ public class CastMember {
                         + media.bytes().length + " bytes");
                 return false;
             }
-            System.err.println("[CastMember] set bitmap media member=" + memberId.value()
-                    + " bytes=" + media.bytes().length
-                    + " size=" + decoded.getWidth() + "x" + decoded.getHeight());
             decoded.setRectangularMedia(true);
             decoded.markScriptModified();
             this.bitmap = decoded;
