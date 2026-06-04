@@ -22,7 +22,6 @@ const runLegacyMovieRegressions = process.env.LS_V31_ROOM_PHOTO_SKIP_LEGACY_VISU
     nativePath: path.join(referenceDir, 'v31_native.png'),
     roomsPath: path.join(referenceDir, 'v31_native_rooms.png'),
     enteredPath: path.join(referenceDir, 'v31_native_rooms_entered.png'),
-    clickedPath: path.join(referenceDir, 'v31_native_rooms_entered_clicked_photo.png'),
     movieUrl: 'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?',
     params: {
         sw1: 'client.allow.cross.domain=1;client.notify.cross.domain=0',
@@ -558,7 +557,6 @@ async function main() {
         V31.nativePath,
         V31.roomsPath,
         V31.enteredPath,
-        V31.clickedPath,
     ];
     for (const file of requiredFiles) {
         if (!fs.existsSync(file)) {

@@ -16,6 +16,20 @@ const cases = (process.env.LS_NATIVE_VISUAL_CASES || 'v1,v14,v31')
     .filter(Boolean);
 const traceHandlers = readListEnv('LS_TRACE_HANDLERS');
 
+const V31_BETA_CLIENT_MOVIE_URL =
+    'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
+const V31_BETA_CLIENT_PARAMS = {
+    'venus.websocket.mode': 'ws',
+    sw1: 'client.allow.cross.domain=1;client.notify.cross.domain=0',
+    sw2: 'connection.info.host=verysecret.classichabbo.com;connection.info.port=30100',
+    sw3: 'connection.mus.host=verysecret.classichabbo.com;connection.mus.port=38201',
+    sw4: 'site.url=;url.prefix=',
+    sw5: 'client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error',
+    sw6: 'client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?',
+    sw7: 'external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?',
+    sw8: 'use.sso.ticket=1;sso.ticket=vibe-sso-admin-504d3ba4-acdb-4436-b67c-d0752f44f767',
+};
+
 const V1 = {
     name: 'v1',
     width: 719,
@@ -87,24 +101,31 @@ const V31 = {
     name: 'v31',
     width: 961,
     height: 540,
+    runtimeWidth: 960,
+    runtimeHeight: 540,
     nativePath: path.join(referenceDir, 'v31_native.png'),
-    movieUrl: 'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?',
-    params: {
-        sw1: 'client.allow.cross.domain=1;client.notify.cross.domain=0',
-        sw2: 'connection.info.host=verysecret.classichabbo.com;connection.info.port=30100',
-        sw3: 'connection.mus.host=verysecret.classichabbo.com;connection.mus.port=39101',
-        sw4: 'site.url=;url.prefix=',
-        sw5: 'client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error',
-        sw6: 'client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?',
-        sw7: 'external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?',
-        sw8: 'use.sso.ticket=1;sso.ticket=vibe-sso-admin-504d3ba4-acdb-4436-b67c-d0752f44f767',
-    },
+    enteredPath: path.join('/opt/git/v31_room_load', 'v31_native_rooms_entered.png'),
+    movieUrl: V31_BETA_CLIENT_MOVIE_URL,
+    params: V31_BETA_CLIENT_PARAMS,
     wait: 'navigator',
     initialMovieProperties: readJsonEnv('LS_V31_INITIAL_MOVIE_PROPERTIES', {}),
     maxPolls: Number(process.env.LS_V31_NATIVE_MAX_POLLS || 900),
     pollMs: 500,
     maxMeanDelta: Number(process.env.LS_V31_NATIVE_MAX_MEAN_DELTA || 42),
     maxBadFraction: Number(process.env.LS_V31_NATIVE_MAX_BAD_FRACTION || 0.32),
+    enforceFullFrame: false,
+    minNavigatorSprites: Number(process.env.LS_V31_NATIVE_NAV_MIN_SPRITES || 40),
+    guardRegions: [
+        {
+            name: 'navigator_window',
+            x: 585,
+            y: 20,
+            width: 363,
+            height: 453,
+            maxMeanDelta: Number(process.env.LS_V31_NATIVE_NAV_MAX_MEAN_DELTA || 1.0),
+            maxBadFraction: Number(process.env.LS_V31_NATIVE_NAV_MAX_BAD_FRACTION || 0.01),
+        },
+    ],
 };
 
 const MIME = {
@@ -191,6 +212,7 @@ function createServer() {
             const candidates = [
                 path.join(distPath, urlPath),
                 path.join(referenceDir, path.basename(urlPath)),
+                path.join(path.dirname(V31.enteredPath), path.basename(urlPath)),
                 path.join(v14Root, urlPath.replace(/^\/+/, '')),
                 path.join(v14Root, 'dcr/14.1_b8', path.basename(urlPath)),
                 path.join(v14Root, 'gamedata', path.basename(urlPath)),
@@ -337,6 +359,7 @@ function assertFiles() {
         V1.nativePath,
         V14.nativePath,
         V31.nativePath,
+        V31.enteredPath,
         path.join(v14Root, 'dcr/14.1_b8/habbo.dcr'),
     ]) {
         if (!fs.existsSync(filePath)) {
@@ -372,11 +395,19 @@ function legacyFetchRewriteScript(baseUrl, fixture) {
 function htmlForCase(baseUrl, fixture) {
     return `<!doctype html>
 <html><body style="margin:0;background:#000">
-<canvas id="beta-client-stage" width="${fixture.width}" height="${fixture.height}"></canvas>
+<canvas id="beta-client-stage" width="${fixture.runtimeWidth || fixture.width}" height="${fixture.runtimeHeight || fixture.height}"></canvas>
 ${legacyFetchRewriteScript(baseUrl, fixture)}
 <script src="${baseUrl}/shockwave-lib.js"><\/script>
 <script>
-var _testState = { loaded: false, error: null, tick: 0, frame: 0, gotoNetPages: [], debugLogs: [] };
+var _testState = {
+    loaded: false,
+    error: null,
+    tick: 0,
+    frame: 0,
+    gotoNetPages: [],
+    debugLogs: [],
+    lastNetworkActivityAt: 0
+};
 var betaClientMovieUrl = ${jsString(fixture.movieUrl)};
 var betaClientParams = ${JSON.stringify(fixture.params, null, 4)};
 var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
@@ -390,6 +421,7 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
     onLoad: function(info) {
         _testState.loaded = true;
         _testState.info = info;
+        _testState.lastNetworkActivityAt = Date.now();
         if (betaClientPlayer) betaClientPlayer.play();
     },
     onError: function(message) {
@@ -398,6 +430,7 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
     },
     onGotoNetPage: function(url, target) {
         _testState.gotoNetPages.push({ url: String(url), target: String(target) });
+        _testState.lastNetworkActivityAt = Date.now();
     },
     onFrame: function(frame) {
         _testState.tick++;
@@ -408,6 +441,13 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
         _testState.debugLogs.push(text);
         if (_testState.debugLogs.length > 2000) {
             _testState.debugLogs.splice(0, _testState.debugLogs.length - 2000);
+        }
+        if (text.indexOf('[WORKER] fetch') >= 0
+                || text.indexOf('[WORKER] relay') >= 0
+                || text.indexOf('[WORKER] preloadCasts') >= 0
+                || text.indexOf('[MUS]') >= 0
+                || text.indexOf('[NetManager]') >= 0) {
+            _testState.lastNetworkActivityAt = Date.now();
         }
         if (text.indexOf('[ScriptError]') >= 0 || text.indexOf('[NetManager]') >= 0 || text.indexOf('[TRACE]') >= 0) {
             console.log(text);
@@ -683,6 +723,550 @@ function compactState(state) {
     return copy;
 }
 
+function parseSpriteDiagnostics(text) {
+    const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
+    return lines.filter(line => line.startsWith('ch=')).map(line => {
+        const get = key => {
+            const match = line.match(new RegExp(`${key}=([^\\s]+)`));
+            return match ? match[1] : '';
+        };
+        const locSize = line.match(/loc=([-\d]+,[-\d]+) (\d+)x(\d+)/);
+        const loc = locSize ? locSize[1].split(',').map(Number) : [];
+        return {
+            channel: Number(get('ch')),
+            member: get('member'),
+            x: loc.length === 2 ? loc[0] : NaN,
+            y: loc.length === 2 ? loc[1] : NaN,
+            width: locSize ? Number(locSize[2]) : NaN,
+            height: locSize ? Number(locSize[3]) : NaN,
+            line,
+        };
+    }).filter(sprite =>
+        Number.isFinite(sprite.x) &&
+        Number.isFinite(sprite.y) &&
+        Number.isFinite(sprite.width) &&
+        Number.isFinite(sprite.height) &&
+        sprite.channel > 0);
+}
+
+async function captureReferenceComparison(page, referenceUrl, expectedWidth, expectedHeight, region) {
+    return page.evaluate(async ({ compareReferenceUrl, compareExpectedWidth, compareExpectedHeight, compareRegion }) => {
+        const canvas = document.getElementById('beta-client-stage');
+        if (!canvas) {
+            return { error: 'no-canvas' };
+        }
+
+        const ref = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('Could not load reference image ' + compareReferenceUrl));
+            img.src = compareReferenceUrl;
+        });
+
+        const crop = compareRegion || {
+            x: 0,
+            y: 0,
+            width: Math.max(1, Math.min(canvas.width, compareExpectedWidth > 0 ? compareExpectedWidth : canvas.width, ref.naturalWidth)),
+            height: Math.max(1, Math.min(canvas.height, compareExpectedHeight > 0 ? compareExpectedHeight : canvas.height, ref.naturalHeight)),
+        };
+
+        const actual = document.createElement('canvas');
+        actual.width = crop.width;
+        actual.height = crop.height;
+        const actualCtx = actual.getContext('2d');
+        actualCtx.fillStyle = '#000';
+        actualCtx.fillRect(0, 0, crop.width, crop.height);
+        actualCtx.drawImage(canvas, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+
+        const reference = document.createElement('canvas');
+        reference.width = crop.width;
+        reference.height = crop.height;
+        reference.getContext('2d').drawImage(ref, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+
+        const actualData = actualCtx.getImageData(0, 0, crop.width, crop.height).data;
+        const referenceData = reference.getContext('2d').getImageData(0, 0, crop.width, crop.height).data;
+
+        let total = 0;
+        let max = 0;
+        let bad = 0;
+        const pixels = crop.width * crop.height;
+        const diff = document.createElement('canvas');
+        diff.width = crop.width;
+        diff.height = crop.height;
+        const diffCtx = diff.getContext('2d');
+        const diffData = diffCtx.createImageData(crop.width, crop.height);
+
+        for (let p = 0; p < actualData.length; p += 4) {
+            const dr = Math.abs(actualData[p] - referenceData[p]);
+            const dg = Math.abs(actualData[p + 1] - referenceData[p + 1]);
+            const db = Math.abs(actualData[p + 2] - referenceData[p + 2]);
+            const delta = (dr + dg + db) / 3;
+            total += delta;
+            max = Math.max(max, delta);
+            if (delta > 64) bad++;
+            diffData.data[p] = delta;
+            diffData.data[p + 1] = 0;
+            diffData.data[p + 2] = 255 - delta;
+            diffData.data[p + 3] = 255;
+        }
+        diffCtx.putImageData(diffData, 0, 0);
+
+        return {
+            width: crop.width,
+            height: crop.height,
+            x: crop.x,
+            y: crop.y,
+            meanDelta: total / pixels,
+            badFraction: bad / pixels,
+            maxDelta: max,
+            actualPng: actual.toDataURL('image/png'),
+            refPng: reference.toDataURL('image/png'),
+            diffPng: diff.toDataURL('image/png'),
+            tick: window._testState ? window._testState.tick : -1,
+            frame: window._testState ? window._testState.frame : -1,
+            spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+            error: window._testState ? window._testState.error : null,
+        };
+    }, {
+        compareReferenceUrl: referenceUrl,
+        compareExpectedWidth: expectedWidth,
+        compareExpectedHeight: expectedHeight,
+        compareRegion: region || null,
+    });
+}
+
+async function waitForReferenceMatch(page, referencePath, baseUrl, stepName, thresholds, options = {}) {
+    const referenceUrl = `${baseUrl}/${path.basename(referencePath)}`;
+    const maxPolls = options.maxPolls || V31.maxPolls;
+    const pollMs = options.pollMs || V31.pollMs;
+    const captureTimeoutMs = options.captureTimeoutMs === undefined ? 10000 : options.captureTimeoutMs;
+    const expectedWidth = options.expectedWidth || V31.width;
+    const expectedHeight = options.expectedHeight || V31.height;
+    const region = options.region || null;
+    const artifactStem = options.artifactStem || null;
+    const abortIf = typeof options.abortIf === 'function' ? options.abortIf : null;
+    const abortIfPage = typeof options.abortIfPage === 'function' ? options.abortIfPage : null;
+    const resultScore = result => {
+        if (!result) {
+            return Number.POSITIVE_INFINITY;
+        }
+        return (result.meanDelta * 1000000) + (result.badFraction * 1000) + result.maxDelta;
+    };
+    const writeComparisonArtifacts = (stem, result, suffix = '') => {
+        if (!stem || !result || !result.actualPng || !result.refPng || !result.diffPng) {
+            return;
+        }
+        fs.writeFileSync(`${stem}${suffix}_actual.png`,
+            Buffer.from(result.actualPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        fs.writeFileSync(`${stem}${suffix}_ref.png`,
+            Buffer.from(result.refPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        fs.writeFileSync(`${stem}${suffix}_diff.png`,
+            Buffer.from(result.diffPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        fs.writeFileSync(`${stem}${suffix}_metrics.json`, JSON.stringify(result, null, 2));
+    };
+    let lastResult = null;
+    let bestResult = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < maxPolls; i++) {
+        await new Promise(resolve => setTimeout(resolve, pollMs));
+        const result = captureTimeoutMs > 0
+            ? await withStepTimeout(
+                `${stepName} capture poll=${i}`,
+                captureTimeoutMs,
+                () => captureReferenceComparison(page, referenceUrl, expectedWidth, expectedHeight, region))
+            : await captureReferenceComparison(page, referenceUrl, expectedWidth, expectedHeight, region);
+        lastResult = result;
+        if (!result || result.error) {
+            throw new Error(`[${stepName}] ${result ? result.error : 'missing capture'} at poll=${i}`);
+        }
+        const score = resultScore(result);
+        if (score < bestScore) {
+            bestScore = score;
+            bestResult = result;
+        }
+        if (result.meanDelta <= thresholds.maxMeanDelta && result.badFraction <= thresholds.maxBadFraction) {
+            return result;
+        }
+        if (abortIf) {
+            const abortReason = abortIf(result, i);
+            if (abortReason) {
+                throw new Error(`[${stepName}] ${abortReason}. Last result=` + JSON.stringify(result));
+            }
+        }
+        if (abortIfPage) {
+            const abortReason = await abortIfPage(page, result, i);
+            if (abortReason) {
+                throw new Error(`[${stepName}] ${abortReason}. Last result=` + JSON.stringify(result));
+            }
+        }
+        if (i % 20 === 0) {
+            console.log(`  [${stepName}] poll=${i} mean=${result.meanDelta.toFixed(2)} ` +
+                `bad=${(result.badFraction * 100).toFixed(2)}% max=${result.maxDelta.toFixed(0)} sprites=${result.spriteCount}`);
+        }
+    }
+    writeComparisonArtifacts(artifactStem, lastResult);
+    writeComparisonArtifacts(artifactStem, bestResult, '_best');
+    throw new Error(`[${stepName}] Did not reach target reference. Last result=` + JSON.stringify(lastResult));
+}
+
+async function clickPoint(page, point) {
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down({ button: 'left' });
+    await page.mouse.up({ button: 'left' });
+}
+
+async function findV31NavigatorToolbarPoint(page) {
+    const diagnostics = await runPageProbe(
+        'toolbar diagnostics',
+        () => page.evaluate(async () => {
+            const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+                ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+                : '';
+            return { windowSprites };
+        }));
+    const sprites = parseSpriteDiagnostics(diagnostics.windowSprites);
+    const navSprite = sprites.find(sprite => sprite.member === 'RoomBarID_int_nav_image');
+    if (navSprite) {
+        return {
+            x: Math.round(navSprite.x + (navSprite.width / 2)),
+            y: Math.round(navSprite.y + (navSprite.height / 2)),
+            sprite: navSprite,
+        };
+    }
+    return {
+        x: 716,
+        y: 513,
+        sprite: null,
+    };
+}
+
+async function findWindowSpritePoint(page, memberNames, fallback = null) {
+    const diagnostics = await runPageProbe(
+        'window sprite diagnostics',
+        () => page.evaluate(async () => {
+            const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+                ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+                : '';
+            return { windowSprites };
+        }));
+    const sprites = parseSpriteDiagnostics(diagnostics.windowSprites);
+    for (const memberName of memberNames) {
+        const sprite = sprites.find(candidate => candidate.member === memberName);
+        if (sprite) {
+            return {
+                x: Math.round(sprite.x + (sprite.width / 2)),
+                y: Math.round(sprite.y + (sprite.height / 2)),
+                sprite,
+            };
+        }
+    }
+    return fallback;
+}
+
+async function waitForWindowSpritePoint(page, memberNames, maxPolls = 80) {
+    for (let i = 0; i < maxPolls; i++) {
+        const point = await findWindowSpritePoint(page, memberNames, null);
+        if (point) {
+            return point;
+        }
+        await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    return null;
+}
+
+async function waitForWindowSpritePointOrConnectionFailure(page, memberNames, stepName, options = {}) {
+    const timeoutMs = options.timeoutMs === undefined ? 20000 : options.timeoutMs;
+    const pollMs = options.pollMs === undefined ? 200 : options.pollMs;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const point = await findWindowSpritePoint(page, memberNames, null);
+        if (point) {
+            return point;
+        }
+        const diagnostics = await sampleV31ConnectionFailure(page);
+        const combined = `${diagnostics.visibleText}\n${diagnostics.windowSprites}`;
+        if (/Problems Connecting|connection_problem_window/i.test(combined)) {
+            throw new Error(`${stepName} hit connection_problem_window`);
+        }
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+            break;
+        }
+        await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, remainingMs)));
+    }
+    const finalPoint = await findWindowSpritePoint(page, memberNames, null);
+    if (finalPoint) {
+        return finalPoint;
+    }
+    const finalDiagnostics = await sampleV31ConnectionFailure(page);
+    const finalCombined = `${finalDiagnostics.visibleText}\n${finalDiagnostics.windowSprites}`;
+    if (/Problems Connecting|connection_problem_window/i.test(finalCombined)) {
+        throw new Error(`${stepName} hit connection_problem_window`);
+    }
+    throw new Error(`${stepName} timed out after ${timeoutMs}ms`);
+}
+
+async function sampleV31ConnectionFailure(page) {
+    try {
+        return await runPageProbe(
+            'v31 connection failure diagnostics',
+            () => page.evaluate(async () => {
+                const text = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
+                    ? await window.betaClientPlayer.getVisibleTextDiagnostics()
+                    : '';
+                const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+                    ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+                    : '';
+                return {
+                    visibleText: String(text || ''),
+                    windowSprites: String(windowSprites || ''),
+                };
+            }));
+    } catch (error) {
+        const message = error && error.message ? String(error.message) : String(error);
+        if (/v31 connection failure diagnostics timed out/i.test(message)) {
+            return {
+                visibleText: '',
+                windowSprites: '',
+                probeError: message,
+            };
+        }
+        throw error;
+    }
+}
+
+async function waitForV31NetworkIdle(page, stepName, options = {}) {
+    const idleMs = options.idleMs === undefined
+        ? Number(process.env.LS_V31_NATIVE_NETWORK_IDLE_MS || 2500)
+        : options.idleMs;
+    const timeoutMs = options.timeoutMs === undefined
+        ? Number(process.env.LS_V31_NATIVE_NETWORK_IDLE_TIMEOUT_MS || 60000)
+        : options.timeoutMs;
+    const minTick = options.minTick === undefined ? 1 : options.minTick;
+    return withStepTimeout(stepName, timeoutMs, async () => {
+        await page.waitForFunction(
+            ({ requiredIdleMs, requiredMinTick }) => {
+                if (!window._testState || !window._testState.loaded) {
+                    return false;
+                }
+                if ((window._testState.tick || 0) < requiredMinTick) {
+                    return false;
+                }
+                const lastActivity = window._testState.lastNetworkActivityAt || 0;
+                return (Date.now() - lastActivity) >= requiredIdleMs;
+            },
+            { timeout: timeoutMs, polling: 200 },
+            { requiredIdleMs: idleMs, requiredMinTick: minTick });
+        return page.evaluate(() => ({
+            tick: window._testState ? window._testState.tick : -1,
+            frame: window._testState ? window._testState.frame : -1,
+            lastNetworkActivityAt: window._testState ? window._testState.lastNetworkActivityAt : 0,
+        }));
+    });
+}
+
+async function waitForV31PostHandshakeTraffic(page, stepName, options = {}) {
+    const timeoutMs = options.timeoutMs === undefined
+        ? Number(process.env.LS_V31_NATIVE_POST_HANDSHAKE_TIMEOUT_MS || 90000)
+        : options.timeoutMs;
+    return withStepTimeout(stepName, timeoutMs, async () => {
+        await page.waitForFunction(
+            () => {
+                const logs = window._testState && Array.isArray(window._testState.debugLogs)
+                    ? window._testState.debugLogs
+                    : [];
+                let sawPublicKey = false;
+                for (const line of logs) {
+                    if (line.indexOf('[TRACE] responseWithPublicKey()') >= 0
+                            || line.indexOf('[MUS] send instance=1 bytes=123') >= 0) {
+                        sawPublicKey = true;
+                        continue;
+                    }
+                    if (!sawPublicKey) {
+                        continue;
+                    }
+                    const match = /\[MUS\] message instance=\d+ bytes=(\d+)/.exec(line);
+                    if (match && Number(match[1]) > 10) {
+                        return true;
+                    }
+                }
+                return false;
+            },
+            { timeout: timeoutMs, polling: 200 });
+        return page.evaluate(() => ({
+            tick: window._testState ? window._testState.tick : -1,
+            frame: window._testState ? window._testState.frame : -1,
+            lastNetworkActivityAt: window._testState ? window._testState.lastNetworkActivityAt : 0,
+            debugLogs: window._testState && Array.isArray(window._testState.debugLogs)
+                ? window._testState.debugLogs.slice(-40)
+                : [],
+        }));
+    });
+}
+
+async function executeV31MessageSymbol(page, symbolName, stepName) {
+    const result = await runPageProbe(
+        stepName,
+        () => page.evaluate(async name => {
+            if (!window.betaClientPlayer || !window.betaClientPlayer.executeMessageSymbol) {
+                return {
+                    ok: false,
+                    reason: 'executeMessageSymbol API unavailable',
+                };
+            }
+            const ok = await window.betaClientPlayer.executeMessageSymbol(name);
+            return {
+                ok: !!ok,
+                tick: window._testState ? window._testState.tick : -1,
+                frame: window._testState ? window._testState.frame : -1,
+                lastNetworkActivityAt: window._testState ? window._testState.lastNetworkActivityAt : 0,
+            };
+        }, symbolName));
+    if (!result || !result.ok) {
+        throw new Error(`${stepName} failed${result && result.reason ? `: ${result.reason}` : ''}`);
+    }
+    return result;
+}
+
+async function withStepTimeout(stepName, timeoutMs, action) {
+    let timer = null;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(action),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`${stepName} timed out after ${timeoutMs}ms`)), timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+}
+
+async function runPageProbe(probeName, action, timeoutMs = Number(process.env.LS_V31_NATIVE_PAGE_PROBE_TIMEOUT_MS || 5000)) {
+    if (!(timeoutMs > 0)) {
+        return Promise.resolve().then(action);
+    }
+    let timer = null;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(action),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`${probeName} timed out after ${timeoutMs}ms`)), timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+}
+
+async function waitForV31NavigatorFromRoomBar(page, baseUrl, fixture) {
+    console.log('  v31 room-bar path: waiting for entered-room reference');
+    const enteredMatch = await waitForReferenceMatch(
+        page,
+        fixture.enteredPath,
+        baseUrl,
+        'v31_entered_room',
+        {
+            maxMeanDelta: fixture.maxMeanDelta,
+            maxBadFraction: fixture.maxBadFraction,
+        },
+        {
+            expectedWidth: 959,
+            expectedHeight: fixture.height,
+            captureTimeoutMs: Number(process.env.LS_V31_ENTERED_CAPTURE_TIMEOUT_MS || 30000),
+            artifactStem: path.join(outputDir, `${fixture.name}_entered_room_wait_failure`),
+        });
+    console.log(`  v31 room-bar path: entered-room match tick=${enteredMatch.tick} frame=${enteredMatch.frame} ` +
+        `mean=${enteredMatch.meanDelta.toFixed(2)} bad=${(enteredMatch.badFraction * 100).toFixed(2)}%`);
+    console.log('  v31 room-bar path: resolving toolbar navigator point');
+    const toolbarPoint = await withStepTimeout(
+        'v31 toolbar point lookup',
+        10000,
+        () => findV31NavigatorToolbarPoint(page));
+    console.log(`  v31 toolbar navigator point=(${toolbarPoint.x},${toolbarPoint.y})` +
+        (toolbarPoint.sprite ? ` member=${toolbarPoint.sprite.member} ch=${toolbarPoint.sprite.channel}` : ' fallback=manual'));
+    await clickPoint(page, toolbarPoint);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const clickPublicRooms = process.env.LS_V31_NATIVE_CLICK_PUBLIC_ROOMS === '1';
+    if (clickPublicRooms) {
+        console.log('  v31 room-bar path: waiting for public-rooms tab');
+        let publicRoomsPoint = null;
+        try {
+            publicRoomsPoint = await waitForWindowSpritePointOrConnectionFailure(
+                page,
+                ['Hotel Navigator_nav_tb_publicRooms'],
+                'v31 public-rooms tab wait',
+                { timeoutMs: 15000, pollMs: 200 });
+        } catch (error) {
+            const message = error && error.message ? String(error.message) : String(error);
+            if (/connection_problem_window/i.test(message)) {
+                throw error;
+            }
+            console.log(`  v31 room-bar path: public-rooms tab wait did not resolve (${message}), continuing`);
+            publicRoomsPoint = await findWindowSpritePoint(page, ['Hotel Navigator_nav_tb_publicRooms'], null);
+        }
+        if (publicRoomsPoint) {
+            console.log(`  v31 navigator public-rooms point=(${publicRoomsPoint.x},${publicRoomsPoint.y})` +
+                ` member=${publicRoomsPoint.sprite.member} ch=${publicRoomsPoint.sprite.channel}`);
+            await clickPoint(page, publicRoomsPoint);
+            await new Promise(resolve => setTimeout(resolve, 1200));
+        } else {
+            console.log('  v31 room-bar path: public-rooms tab not found, continuing with current navigator state');
+        }
+    } else {
+        console.log('  v31 room-bar path: skipping public-rooms tab interaction');
+    }
+    console.log('  v31 room-bar path: waiting for navigator networking to go idle');
+    const postNavIdle = await waitForV31NetworkIdle(page, 'v31 room-bar post-nav network idle', { minTick: enteredMatch.tick });
+    console.log(`  v31 room-bar path: post-nav idle tick=${postNavIdle.tick} frame=${postNavIdle.frame}`);
+    const settleMs = Number(process.env.LS_V31_NATIVE_POST_IDLE_SETTLE_MS || 1200);
+    if (settleMs > 0) {
+        console.log(`  v31 room-bar path: settling ${settleMs}ms after network idle`);
+        await new Promise(resolve => setTimeout(resolve, settleMs));
+    }
+    const guardRegion = (fixture.guardRegions || [])[0];
+    console.log('  v31 room-bar path: waiting for navigator crop reference');
+    const navigatorMatch = await waitForReferenceMatch(
+        page,
+        fixture.nativePath,
+        baseUrl,
+        'v31_navigator_crop',
+        {
+            maxMeanDelta: guardRegion ? guardRegion.maxMeanDelta : fixture.maxMeanDelta,
+            maxBadFraction: guardRegion ? guardRegion.maxBadFraction : fixture.maxBadFraction,
+        },
+        {
+            region: guardRegion || null,
+            maxPolls: fixture.maxPolls,
+            expectedWidth: fixture.width,
+            expectedHeight: fixture.height,
+            artifactStem: path.join(outputDir, `${fixture.name}_${guardRegion ? guardRegion.name : 'navigator'}_wait_failure`),
+        });
+    const state = await page.evaluate(() => ({
+        loaded: window._testState.loaded,
+        error: window._testState.error,
+        tick: window._testState.tick,
+        frame: window._testState.frame,
+        gotoNetPages: window._testState.gotoNetPages.slice(),
+        debugLogs: window._testState.debugLogs.slice(-20),
+        spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+    }));
+    return {
+        state,
+        evidence: {
+            enteredRoomMeanDelta: enteredMatch.meanDelta,
+            enteredRoomBadFraction: enteredMatch.badFraction,
+            navigatorCropMeanDelta: navigatorMatch.meanDelta,
+            navigatorCropBadFraction: navigatorMatch.badFraction,
+            toolbarPoint: { x: toolbarPoint.x, y: toolbarPoint.y },
+        },
+    };
+}
+
 async function sampleV31NavigatorEvidence(page) {
     return page.evaluate(() => {
         const canvas = document.getElementById('beta-client-stage');
@@ -710,52 +1294,79 @@ async function sampleV31NavigatorEvidence(page) {
     });
 }
 
-async function waitForV31Navigator(page) {
-    let lastState = null;
-    let evidence = null;
-    for (let i = 0; i < V31.maxPolls; i++) {
-        await new Promise(resolve => setTimeout(resolve, V31.pollMs));
-        lastState = await page.evaluate(() => {
-            const canvas = document.getElementById('beta-client-stage');
-            const ctx = canvas.getContext('2d');
-            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            let nonBlack = 0;
-            const buckets = new Set();
-            for (let p = 0; p < data.length; p += 80) {
-                const r = data[p], g = data[p + 1], b = data[p + 2];
-                if (r > 10 || g > 10 || b > 10) nonBlack++;
-                buckets.add((r >> 5) + ',' + (g >> 5) + ',' + (b >> 5));
-            }
-            return {
-                loaded: window._testState.loaded,
-                error: window._testState.error,
-                tick: window._testState.tick,
-                frame: window._testState.frame,
-                gotoNetPages: window._testState.gotoNetPages.slice(),
-                debugLogs: window._testState.debugLogs.slice(-20),
-                spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
-                nonBlack,
-                colorBuckets: buckets.size,
-            };
-        });
-        if (i % 20 === 0) {
-            console.log(`  v31 poll=${i} loaded=${lastState.loaded} tick=${lastState.tick} frame=${lastState.frame} ` +
-                `sprites=${lastState.spriteCount} nonBlack=${lastState.nonBlack}`);
-        }
-        if (lastState.error) break;
-        if (lastState.gotoNetPages.some(entry => entry.url.includes('connection_failed') || entry.url.includes('clientutils?key=error'))) {
-            break;
-        }
-        if (lastState.spriteCount >= 70 && lastState.nonBlack > 1000) {
-            evidence = await sampleV31NavigatorEvidence(page);
-            if (navigatorEvidenceReady(evidence)) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                return { state: lastState, evidence };
-            }
-        }
+async function waitForV31Navigator(page, baseUrl, fixture) {
+    console.log('  v31 login path: waiting for post-handshake login traffic');
+    const postHandshake = await waitForV31PostHandshakeTraffic(page, 'v31 login post-handshake traffic');
+    console.log(`  v31 login path: post-handshake traffic tick=${postHandshake.tick} frame=${postHandshake.frame}`);
+    console.log('  v31 login path: waiting for hotel-view networking to go idle');
+    const preClickIdle = await waitForV31NetworkIdle(page, 'v31 login pre-nav network idle', { minTick: postHandshake.tick });
+    console.log(`  v31 login path: pre-nav idle tick=${preClickIdle.tick} frame=${preClickIdle.frame}`);
+    const navigatorMessage = String(process.env.LS_V31_NATIVE_NAV_MESSAGE || 'show_hide_navigator').trim() || 'show_hide_navigator';
+    console.log(`  v31 login path: executeMessage(#${navigatorMessage})`);
+    const messageDispatch = await executeV31MessageSymbol(
+        page,
+        navigatorMessage,
+        `v31 executeMessage(#${navigatorMessage})`);
+    console.log(`  v31 login path: message dispatched tick=${messageDispatch.tick} frame=${messageDispatch.frame}`);
+    const publicRoomsPoint = null;
+    const postNavIdle = await waitForV31NetworkIdle(page, 'v31 login post-nav network idle', { minTick: preClickIdle.tick });
+    console.log(`  v31 login path: post-nav idle tick=${postNavIdle.tick} frame=${postNavIdle.frame}`);
+    const settleMs = Number(process.env.LS_V31_NATIVE_POST_IDLE_SETTLE_MS || 1200);
+    if (settleMs > 0) {
+        console.log(`  v31 login path: settling ${settleMs}ms after network idle`);
+        await new Promise(resolve => setTimeout(resolve, settleMs));
     }
-    throw new Error('v31 navigator was not visible before timeout. Last state: ' +
-        JSON.stringify(lastState) + ' evidence=' + JSON.stringify(evidence));
+    const guardRegion = (fixture.guardRegions || [])[0];
+    const navigatorMatch = await waitForReferenceMatch(
+        page,
+        fixture.nativePath,
+        baseUrl,
+        'v31_login_navigator_crop',
+        {
+            maxMeanDelta: guardRegion ? guardRegion.maxMeanDelta : fixture.maxMeanDelta,
+            maxBadFraction: guardRegion ? guardRegion.maxBadFraction : fixture.maxBadFraction,
+        },
+        {
+            region: guardRegion || null,
+            maxPolls: fixture.maxPolls,
+            expectedWidth: fixture.width,
+            expectedHeight: fixture.height,
+            artifactStem: path.join(outputDir, `${fixture.name}_${guardRegion ? guardRegion.name : 'navigator'}_login_wait_failure`),
+            async abortIfPage(currentPage, result, poll) {
+                if (poll < 5) {
+                    return null;
+                }
+                const diagnostics = await sampleV31ConnectionFailure(currentPage);
+                const combined = `${diagnostics.visibleText}\n${diagnostics.windowSprites}`;
+                if (/Problems Connecting|connection_problem_window/i.test(combined)) {
+                    return `login navigator wait hit connection-problem branch at poll=${poll} ` +
+                        `tick=${result.tick} sprites=${result.spriteCount}`;
+                }
+                return null;
+            },
+        });
+    const state = await page.evaluate(() => ({
+        loaded: window._testState.loaded,
+        error: window._testState.error,
+        tick: window._testState.tick,
+        frame: window._testState.frame,
+        gotoNetPages: window._testState.gotoNetPages.slice(),
+        debugLogs: window._testState.debugLogs.slice(-20),
+        lastNetworkActivityAt: window._testState.lastNetworkActivityAt,
+        spriteCount: window.betaClientPlayer ? (window.betaClientPlayer._lastSpriteCount || 0) : 0,
+    }));
+    return {
+        state,
+        evidence: {
+            preClickIdleTick: preClickIdle.tick,
+            navigatorMessage,
+            messageDispatchTick: messageDispatch.tick,
+            postNavIdleTick: postNavIdle.tick,
+            publicRoomsPoint: publicRoomsPoint ? { x: publicRoomsPoint.x, y: publicRoomsPoint.y } : null,
+            navigatorCropMeanDelta: navigatorMatch.meanDelta,
+            navigatorCropBadFraction: navigatorMatch.badFraction,
+        },
+    };
 }
 
 async function captureAndCompare(page, fixture, baseUrl, outputName, options = {}) {
@@ -851,6 +1462,12 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                 cropDiff.height = region.height;
                 const cropDiffCtx = cropDiff.getContext('2d');
                 const cropDiffData = cropDiffCtx.createImageData(region.width, region.height);
+                const sideBySide = document.createElement('canvas');
+                sideBySide.width = region.width * 2;
+                sideBySide.height = region.height;
+                const sideBySideCtx = sideBySide.getContext('2d');
+                sideBySideCtx.drawImage(cropActual, 0, 0);
+                sideBySideCtx.drawImage(cropRef, region.width, 0);
 
                 let regionTotal = 0;
                 let regionBad = 0;
@@ -905,6 +1522,8 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                     y: region.y,
                     width: region.width,
                     height: region.height,
+                    maxMeanDelta: region.maxMeanDelta,
+                    maxBadFraction: region.maxBadFraction,
                     meanDelta: regionTotal / regionPixels,
                     badFraction: regionBad / regionPixels,
                     maxDelta: regionMax,
@@ -917,7 +1536,9 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                     refLightPixels,
                     refDarkPixels,
                     actualPng: cropActual.toDataURL('image/png'),
+                    refPng: cropRef.toDataURL('image/png'),
                     diffPng: cropDiff.toDataURL('image/png'),
+                    sideBySidePng: sideBySide.toDataURL('image/png'),
                 };
             }),
         };
@@ -961,38 +1582,141 @@ async function captureAndCompare(page, fixture, baseUrl, outputName, options = {
                 path.join(outputDir, `${outputName}_${region.name}.png`),
                 Buffer.from(region.actualPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
             fs.writeFileSync(
+                path.join(outputDir, `${outputName}_${region.name}_ref.png`),
+                Buffer.from(region.refPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+            fs.writeFileSync(
                 path.join(outputDir, `${outputName}_${region.name}_diff.png`),
                 Buffer.from(region.diffPng.replace(/^data:image\/png;base64,/, ''), 'base64'));
+            fs.writeFileSync(
+                path.join(outputDir, `${outputName}_${region.name}_side_by_side.png`),
+                Buffer.from(region.sideBySidePng.replace(/^data:image\/png;base64,/, ''), 'base64'));
         }
         return result;
     });
 }
 
-async function saveFailureArtifacts(page, fixture) {
+function v31FailureLooksRetryable(artifacts, err) {
+    artifacts = artifacts || {};
+    const combined = [
+        artifacts.visibleText || '',
+        artifacts.windowSprites || '',
+        artifacts.bootstrap || '',
+        err && err.message ? err.message : '',
+    ].join('\n');
+    return /Problems Connecting|Cannot connect to Habbo/i.test(combined)
+        || /connection_problem_window|nav_problem_obj/.test(combined)
+        || /Loading room_(shadow|back|general_loader_bg|general_loader_text|gen_loaderbar|room_cancel|queue_text)/.test(combined)
+        || /entered-room wait hit (connection-problem branch|loading-room branch|stalled plateau)/.test(combined)
+        || /v31_entered_room capture poll=\d+ timed out/.test(combined);
+}
+
+async function saveFailureArtifacts(page, fixture, outputStem = `${fixture.name}_failure`) {
     try {
-        const artifacts = await page.evaluate(async () => {
-            const canvas = document.getElementById('beta-client-stage');
-            const visibleText = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
-                ? await window.betaClientPlayer.getVisibleTextDiagnostics()
-                : '';
-            const bootstrap = window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
-                ? await window.betaClientPlayer.getBootstrapDiagnostics()
-                : '';
-            return {
-                png: canvas ? canvas.toDataURL('image/png') : '',
-                visibleText,
-                bootstrap,
-            };
-        });
+        const defaultCaptureTimeoutMs = fixture && fixture.name === 'v31' ? 30000 : 10000;
+        const captureTimeoutMs = process.env.LS_NATIVE_FAILURE_CAPTURE_TIMEOUT_MS === undefined
+            ? defaultCaptureTimeoutMs
+            : Number(process.env.LS_NATIVE_FAILURE_CAPTURE_TIMEOUT_MS);
+        const collectArtifacts = () => page.evaluate(async () => {
+                async function captureSpriteBitmapPng(name, baked) {
+                    if (!window.betaClientPlayer || !window.betaClientPlayer.getSpriteBitmap) {
+                        return null;
+                    }
+                    const bitmap = await window.betaClientPlayer.getSpriteBitmap(name, baked);
+                    if (!bitmap || !bitmap.width || !bitmap.height || !bitmap.rgba) {
+                        return null;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        return null;
+                    }
+                    const rgba = bitmap.rgba instanceof Uint8ClampedArray
+                        ? bitmap.rgba
+                        : new Uint8ClampedArray(bitmap.rgba);
+                    ctx.putImageData(new ImageData(rgba, bitmap.width, bitmap.height), 0, 0);
+                    return canvas.toDataURL('image/png');
+                }
+                const canvas = document.getElementById('beta-client-stage');
+                const visibleText = window.betaClientPlayer && window.betaClientPlayer.getVisibleTextDiagnostics
+                    ? await window.betaClientPlayer.getVisibleTextDiagnostics()
+                    : '';
+                const windowSprites = window.betaClientPlayer && window.betaClientPlayer.getWindowSpriteDiagnostics
+                    ? await window.betaClientPlayer.getWindowSpriteDiagnostics()
+                    : '';
+                const bootstrap = window.betaClientPlayer && window.betaClientPlayer.getBootstrapDiagnostics
+                    ? await window.betaClientPlayer.getBootstrapDiagnostics()
+                    : '';
+                const debugLogs = window._testState && window._testState.debugLogs
+                    ? window._testState.debugLogs.slice()
+                    : [];
+                const gotoNetPages = window._testState && window._testState.gotoNetPages
+                    ? window._testState.gotoNetPages.slice()
+                    : [];
+                const tick = window._testState ? window._testState.tick : -1;
+                const frame = window._testState ? window._testState.frame : -1;
+                const spriteBitmaps = {};
+                if (window.betaClientPlayer && window.betaClientPlayer.getSpriteBitmap) {
+                    const targets = [
+                        'Hotel Navigator_nav_roomlist',
+                        'Hotel Navigator_nav_closeInfo',
+                    ];
+                    for (const name of targets) {
+                        spriteBitmaps[`${name}_dyn`] = await captureSpriteBitmapPng(name, false);
+                        spriteBitmaps[`${name}_baked`] = await captureSpriteBitmapPng(name, true);
+                    }
+                }
+                return {
+                    png: canvas ? canvas.toDataURL('image/png') : '',
+                    visibleText,
+                    windowSprites,
+                    bootstrap,
+                    debugLogs,
+                    gotoNetPages,
+                    spriteBitmaps,
+                    tick,
+                    frame,
+                };
+            });
+        const artifacts = captureTimeoutMs > 0
+            ? await withStepTimeout(`${fixture.name} failure artifact capture`, captureTimeoutMs, collectArtifacts)
+            : await collectArtifacts();
         if (artifacts.png) {
             fs.writeFileSync(
-                path.join(outputDir, `${fixture.name}_failure.png`),
+                path.join(outputDir, `${outputStem}.png`),
                 Buffer.from(artifacts.png.replace(/^data:image\/png;base64,/, ''), 'base64'));
         }
-        fs.writeFileSync(path.join(outputDir, `${fixture.name}_failure_visible_text.txt`), artifacts.visibleText || '');
-        fs.writeFileSync(path.join(outputDir, `${fixture.name}_failure_bootstrap.txt`), artifacts.bootstrap || '');
+        fs.writeFileSync(path.join(outputDir, `${outputStem}_visible_text.txt`), artifacts.visibleText || '');
+        fs.writeFileSync(path.join(outputDir, `${outputStem}_window_sprites.txt`), artifacts.windowSprites || '');
+        fs.writeFileSync(path.join(outputDir, `${outputStem}_bootstrap.txt`), artifacts.bootstrap || '');
+        fs.writeFileSync(path.join(outputDir, `${outputStem}_debug_logs.txt`), (artifacts.debugLogs || []).join('\n'));
+        fs.writeFileSync(
+            path.join(outputDir, `${outputStem}_goto_net_pages.txt`),
+            (artifacts.gotoNetPages || []).map(entry => JSON.stringify(entry)).join('\n'));
+        for (const [name, dataUrl] of Object.entries(artifacts.spriteBitmaps || {})) {
+            if (!dataUrl) {
+                continue;
+            }
+            const safeName = name.replace(/[^A-Za-z0-9._-]+/g, '_');
+            fs.writeFileSync(
+                path.join(outputDir, `${outputStem}_${safeName}.png`),
+                Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
+        }
+        fs.writeFileSync(
+            path.join(outputDir, `${outputStem}_capture_state.txt`),
+            `tick=${artifacts.tick ?? -1}\nframe=${artifacts.frame ?? -1}\n`);
+        return artifacts;
     } catch (artifactErr) {
+        try {
+            await page.screenshot({ path: path.join(outputDir, `${outputStem}_screenshot.png`) });
+        } catch (screenshotErr) {
+            fs.writeFileSync(
+                path.join(outputDir, `${outputStem}_artifact_errors.txt`),
+                `artifactCapture=${artifactErr.message}\nscreenshot=${screenshotErr.message}\n`);
+        }
         console.log(`  failed to save failure artifacts: ${artifactErr.message}`);
+        return null;
     }
 }
 
@@ -1000,93 +1724,127 @@ async function runCase(browserHandle, baseUrl, fixture) {
     console.log(`\n=== ${fixture.name} native visual regression ===`);
     const htmlPath = path.join(distPath, `_test_native_${fixture.name}.html`);
     fs.writeFileSync(htmlPath, htmlForCase(baseUrl, fixture));
-    const page = await browserHandle.newPage();
-    const requestEvents = [];
-    page.on('console', msg => {
-        const text = msg.text();
-        console.log('  [page] ' + text);
-    });
-    page.on('pageerror', err => {
-        console.log('  [pageerror] ' + err.message);
-    });
-    page.on('requestfailed', request => {
-        const failure = request.failure();
-        const line = `${request.url()} ${failure ? failure.errorText : ''}`;
-        requestEvents.push('failed ' + line);
-        console.log('  [requestfailed] ' + line);
-    });
-    page.on('response', response => {
-        const url = response.url();
-        if (/shockwave|player-wasm|__native_proxy|\.dcr|\.cst|\.cct|\.gif|\.jpe?g|\.png|external_/i.test(url)) {
-            const line = `${response.status()} ${url}`;
-            requestEvents.push('response ' + line);
-            console.log('  [response] ' + line);
-        }
-    });
+    const maxAttempts = fixture.name === 'v31'
+        ? Math.max(1, Number(process.env.LS_V31_NATIVE_CONNECT_ATTEMPTS || 6))
+        : 1;
     try {
-        await page.goto(`${baseUrl}/_test_native_${fixture.name}.html`, { waitUntil: 'domcontentloaded' });
-        await waitForWorkerReady(page);
-        if (fixture.name === 'v14') {
-            await installV14RequestMap(page);
-        }
-        await page.evaluate(() => window.startNativeVisualCase());
-        const waitResult = fixture.name === 'v1'
-            ? await waitForV1Login(page)
-            : fixture.name === 'v14'
-                ? await waitForV14Login(page)
-                : await waitForV31Navigator(page);
-        const captureDiagnostics = process.env.LS_NATIVE_SAVE_DIAGNOSTICS === '1';
-        const comparison = await captureAndCompare(
-            page,
-            fixture,
-            baseUrl,
-            `${fixture.name}_wasm_native_compare`,
-            {
-                captureDiagnostics,
-                freezeBeforeCapture: captureDiagnostics,
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const page = await browserHandle.newPage();
+            const requestEvents = [];
+            page.on('console', msg => {
+                const text = msg.text();
+                console.log('  [page] ' + text);
             });
-        if (captureDiagnostics) {
-            await saveSuccessDiagnostics(page, fixture, comparison.diagnostics || null, waitResult.state || null);
-        }
-        console.log(`  waitState=${JSON.stringify(compactState(waitResult.state))}`);
-        if (comparison.diagnostics) {
-            console.log(`  compareState=${JSON.stringify({
-                tick: comparison.diagnostics.tick,
-                frame: comparison.diagnostics.frame,
-            })}`);
-        }
-        if (waitResult.evidence) {
-            console.log(`  evidence=${JSON.stringify(waitResult.evidence)}`);
-        }
-        console.log(`  visual meanDelta=${comparison.meanDelta.toFixed(2)} ` +
-            `badFraction=${(comparison.badFraction * 100).toFixed(2)}% maxDelta=${comparison.maxDelta.toFixed(0)}`);
-        console.log(`  output=${path.join(outputDir, `${fixture.name}_wasm_native_compare.png`)}`);
-        console.log(`  diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_diff.png`)}`);
-        for (const region of comparison.guardRegions || []) {
-            console.log(`  guard ${region.name} meanDelta=${region.meanDelta.toFixed(2)} ` +
-                `badFraction=${(region.badFraction * 100).toFixed(2)}% maxDelta=${region.maxDelta.toFixed(0)}`);
-            if (region.name.includes('text')) {
-                console.log(`  guard ${region.name} colors actualWhite=${region.actualWhitePixels} actualBlack=${region.actualBlackPixels} ` +
-                    `actualLight=${region.actualLightPixels} actualDark=${region.actualDarkPixels} ` +
-                    `refWhite=${region.refWhitePixels} refBlack=${region.refBlackPixels} ` +
-                    `refLight=${region.refLightPixels} refDark=${region.refDarkPixels}`);
+            page.on('pageerror', err => {
+                console.log('  [pageerror] ' + err.message);
+            });
+            page.on('requestfailed', request => {
+                const failure = request.failure();
+                const line = `${request.url()} ${failure ? failure.errorText : ''}`;
+                requestEvents.push('failed ' + line);
+                console.log('  [requestfailed] ' + line);
+            });
+            page.on('response', response => {
+                const url = response.url();
+                if (/shockwave|player-wasm|__native_proxy|\.dcr|\.cst|\.cct|\.gif|\.jpe?g|\.png|external_/i.test(url)) {
+                    const line = `${response.status()} ${url}`;
+                    requestEvents.push('response ' + line);
+                    console.log('  [response] ' + line);
+                }
+            });
+            try {
+                if (attempt > 1) {
+                    console.log(`  retry attempt ${attempt}/${maxAttempts}`);
+                }
+                await page.goto(`${baseUrl}/_test_native_${fixture.name}.html`, { waitUntil: 'domcontentloaded' });
+                await waitForWorkerReady(page);
+                if (fixture.name === 'v14') {
+                    await installV14RequestMap(page);
+                }
+                await page.evaluate(() => window.startNativeVisualCase());
+                const v31Path = String(process.env.LS_V31_NATIVE_SOURCE || 'direct').toLowerCase();
+                const waitResult = fixture.name === 'v1'
+                    ? await waitForV1Login(page)
+                    : fixture.name === 'v14'
+                        ? await waitForV14Login(page)
+                        : v31Path === 'direct'
+                            ? await waitForV31Navigator(page, baseUrl, fixture)
+                            : await waitForV31NavigatorFromRoomBar(page, baseUrl, fixture);
+                const captureDiagnostics = process.env.LS_NATIVE_SAVE_DIAGNOSTICS === '1';
+                const comparison = await captureAndCompare(
+                    page,
+                    fixture,
+                    baseUrl,
+                    `${fixture.name}_wasm_native_compare`,
+                    {
+                        captureDiagnostics,
+                        freezeBeforeCapture: captureDiagnostics,
+                    });
+                if (captureDiagnostics) {
+                    await saveSuccessDiagnostics(page, fixture, comparison.diagnostics || null, waitResult.state || null);
+                }
+                console.log(`  waitState=${JSON.stringify(compactState(waitResult.state))}`);
+                if (comparison.diagnostics) {
+                    console.log(`  compareState=${JSON.stringify({
+                        tick: comparison.diagnostics.tick,
+                        frame: comparison.diagnostics.frame,
+                    })}`);
+                }
+                if (waitResult.evidence) {
+                    console.log(`  evidence=${JSON.stringify(waitResult.evidence)}`);
+                }
+                console.log(`  visual meanDelta=${comparison.meanDelta.toFixed(2)} ` +
+                    `badFraction=${(comparison.badFraction * 100).toFixed(2)}% maxDelta=${comparison.maxDelta.toFixed(0)}`);
+                console.log(`  output=${path.join(outputDir, `${fixture.name}_wasm_native_compare.png`)}`);
+                console.log(`  diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_diff.png`)}`);
+                for (const region of comparison.guardRegions || []) {
+                    console.log(`  guard ${region.name} meanDelta=${region.meanDelta.toFixed(2)} ` +
+                        `badFraction=${(region.badFraction * 100).toFixed(2)}% maxDelta=${region.maxDelta.toFixed(0)}`);
+                    if (region.name.includes('text')) {
+                        console.log(`  guard ${region.name} colors actualWhite=${region.actualWhitePixels} actualBlack=${region.actualBlackPixels} ` +
+                            `actualLight=${region.actualLightPixels} actualDark=${region.actualDarkPixels} ` +
+                            `refWhite=${region.refWhitePixels} refBlack=${region.refBlackPixels} ` +
+                            `refLight=${region.refLightPixels} refDark=${region.refDarkPixels}`);
+                    }
+                    console.log(`  guard output=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}.png`)}`);
+                    console.log(`  guard ref=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_ref.png`)}`);
+                    console.log(`  guard diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_diff.png`)}`);
+                    console.log(`  guard sideBySide=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_side_by_side.png`)}`);
+                    if (region.maxMeanDelta !== undefined && region.meanDelta > region.maxMeanDelta) {
+                        throw new Error(`${fixture.name} guard ${region.name} meanDelta ${region.meanDelta.toFixed(2)} exceeds ` +
+                            `max ${region.maxMeanDelta}`);
+                    }
+                    if (region.maxBadFraction !== undefined && region.badFraction > region.maxBadFraction) {
+                        throw new Error(`${fixture.name} guard ${region.name} badFraction ${region.badFraction.toFixed(4)} exceeds ` +
+                            `max ${region.maxBadFraction}`);
+                    }
+                }
+                if (fixture.enforceFullFrame !== false &&
+                        (comparison.meanDelta > fixture.maxMeanDelta || comparison.badFraction > fixture.maxBadFraction)) {
+                    throw new Error(`${fixture.name} visual mismatch exceeds threshold: ` +
+                        `meanDelta=${comparison.meanDelta.toFixed(2)} max=${fixture.maxMeanDelta}, ` +
+                        `badFraction=${comparison.badFraction.toFixed(4)} max=${fixture.maxBadFraction}`);
+                }
+                return;
+            } catch (err) {
+                const artifactStem = attempt < maxAttempts
+                    ? `${fixture.name}_failure_attempt_${attempt}`
+                    : `${fixture.name}_failure`;
+                const artifacts = await saveFailureArtifacts(page, fixture, artifactStem);
+                if (requestEvents.length > 0) {
+                    console.log('  request events:\n' + requestEvents.slice(-40).map(line => '    ' + line).join('\n'));
+                }
+                const retryable = fixture.name === 'v31' && attempt < maxAttempts && v31FailureLooksRetryable(artifacts, err);
+                if (!retryable) {
+                    throw err;
+                }
+                console.log(`  retrying after transient v31 connection failure at tick=${artifacts && artifacts.tick !== undefined ? artifacts.tick : -1} ` +
+                    `frame=${artifacts && artifacts.frame !== undefined ? artifacts.frame : -1}`);
+            } finally {
+                await page.close();
             }
-            console.log(`  guard output=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}.png`)}`);
-            console.log(`  guard diff=${path.join(outputDir, `${fixture.name}_wasm_native_compare_${region.name}_diff.png`)}`);
         }
-        if (comparison.meanDelta > fixture.maxMeanDelta || comparison.badFraction > fixture.maxBadFraction) {
-            throw new Error(`${fixture.name} visual mismatch exceeds threshold: ` +
-                `meanDelta=${comparison.meanDelta.toFixed(2)} max=${fixture.maxMeanDelta}, ` +
-                `badFraction=${comparison.badFraction.toFixed(4)} max=${fixture.maxBadFraction}`);
-        }
-    } catch (err) {
-        await saveFailureArtifacts(page, fixture);
-        if (requestEvents.length > 0) {
-            console.log('  request events:\n' + requestEvents.slice(-40).map(line => '    ' + line).join('\n'));
-        }
-        throw err;
     } finally {
-        await page.close();
         try { fs.unlinkSync(htmlPath); } catch (e) {}
     }
 }
