@@ -1656,6 +1656,28 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void whiteBackedGrayscaleCopyIntoRgbWrapperTreatsWhiteAsTransparent() {
+        Bitmap dest = new Bitmap(4, 3, 32);
+        dest.fill(0xFF88ADBD);
+
+        Bitmap src = new Bitmap(4, 3, 32, new int[]{
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 4, 3),
+                        new Datum.Rect(0, 0, 4, 3)));
+
+        assertEquals(0xFF88ADBD, dest.getPixel(0, 0),
+                "white-backed grayscale wrapper copies should keep the destination background visible");
+        assertEquals(0xFF000000, dest.getPixel(1, 1));
+        assertEquals(0xFF000000, dest.getPixel(2, 1));
+        assertEquals(0xFF88ADBD, dest.getPixel(3, 2));
+    }
+
+    @Test
     void alreadyColoredTextCopyWithColorParamPreservesExactRgb() {
         Bitmap dest = new Bitmap(3, 1, 32, new int[]{
                 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF

@@ -749,7 +749,6 @@ public final class ImageMethodDispatcher {
             effectiveSrcX = 0;
             effectiveSrcY = 0;
         }
-
         if (srcW == destW && srcH == destH) {
             // No scaling needed - direct copy
             boolean preservePaletteIndices = canPreservePaletteIndices(dest, effectiveSrc,
@@ -1074,7 +1073,6 @@ public final class ImageMethodDispatcher {
                                                                        Bitmap mask,
                                                                        int colorRemap, int bgColorRemap) {
         if (dest == null || src == null
-                || dest.getBitDepth() > 8
                 || src.getBitDepth() < 32
                 || src.hasNativeMatteAlpha()
                 || ink != Palette.InkMode.COPY

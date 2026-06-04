@@ -1027,9 +1027,6 @@ public class WasmEntry {
                     .append('\n');
         }
         appendAsianCatalogueProbe(sb);
-        for (String probe : com.libreshockwave.player.render.output.SimpleTextRenderer.getRecentRenderProbes()) {
-            sb.append("textRender ").append(probe).append('\n');
-        }
         for (RenderSprite sprite : renderer.getLastBakedSprites()) {
             if (!intersects(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight(),
                     40, 0, 930, 500)) {
