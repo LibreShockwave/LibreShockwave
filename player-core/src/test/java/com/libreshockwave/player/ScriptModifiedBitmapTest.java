@@ -284,6 +284,65 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void copyPixelsQuadPreservesDarkenBgColorTint() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.fill(0xFFFFFFFF);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2),
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0)
+        )));
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(41), true);
+        props.add("bgColor", new Datum.Color(0x7B, 0x94, 0x98), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 2, 3), props));
+
+        assertEquals(0xFF7A9397, dest.getPixel(0, 0),
+                "Quad copyPixels must preserve #bgColor for rotated DARKEN-tinted figure parts");
+        assertEquals(0xFF7A9397, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void copyPixelsQuadTransformsMaskImageWithSource() {
+        Bitmap src = new Bitmap(2, 3, 32);
+        src.fill(0xFFFF0000);
+
+        Bitmap mask = new Bitmap(2, 3, 32);
+        mask.fill(0xFFFFFFFF);
+        mask.setPixel(0, 2, 0xFF000000);
+
+        Bitmap dest = new Bitmap(3, 2, 32);
+        dest.fill(0xFFFFFFFF);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(3, 0),
+                new Datum.Point(3, 2),
+                new Datum.Point(0, 2),
+                new Datum.Point(0, 0)
+        )));
+        Datum.PropList props = new Datum.PropList();
+        props.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 2, 3), props));
+
+        assertEquals(0xFFFF0000, dest.getPixel(0, 0),
+                "The allowed mask pixel should rotate with its source pixel");
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(2, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(0, 1));
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
+        assertEquals(0xFFFFFFFF, dest.getPixel(2, 1));
+    }
+
+    @Test
     void copyPixelsQuadRotatesCounterClockwiseLikeDirectorDropdown() {
         Bitmap src = new Bitmap(2, 3, 32);
         src.setPixel(0, 0, 0xFFFF0000);
