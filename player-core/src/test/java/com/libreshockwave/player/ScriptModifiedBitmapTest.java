@@ -343,6 +343,86 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void wallMaskQuadFeedsLandscapeMaskImage() {
+        Bitmap windowMaskMember = new Bitmap(4, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF
+        });
+        Bitmap wallMaskImage = new Bitmap(8, 3, 8);
+        wallMaskImage.fill(0xFFFFFFFF);
+
+        Datum.List rightWallQuad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(6, 0),
+                new Datum.Point(2, 0),
+                new Datum.Point(2, 3),
+                new Datum.Point(6, 3)
+        )));
+        Datum.PropList maskStampProps = new Datum.PropList();
+        maskStampProps.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(wallMaskImage), "copyPixels",
+                List.of(new Datum.ImageRef(windowMaskMember), rightWallQuad,
+                        new Datum.Rect(0, 0, 4, 3), maskStampProps));
+
+        Bitmap mask = Drawing.createMask(wallMaskImage);
+        assertFalse(mask.hasNativeMatteAlpha(),
+                "Generated wall masks should remain black-as-allow #maskImage bitmaps");
+        Bitmap landscape = new Bitmap(8, 3, 32);
+        landscape.fill(0xFF336699);
+        Bitmap roomLandscape = new Bitmap(8, 3, 32);
+        roomLandscape.fill(0xFFFFFFFF);
+        Datum.PropList landscapeMaskProps = new Datum.PropList();
+        landscapeMaskProps.add("maskImage", new Datum.ImageRef(mask), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(roomLandscape), "copyPixels",
+                List.of(new Datum.ImageRef(landscape), new Datum.Rect(0, 0, 8, 3),
+                        new Datum.Rect(0, 0, 8, 3), landscapeMaskProps));
+
+        assertEquals(0xFFFFFFFF, roomLandscape.getPixel(2, 0),
+                "White window-mask pixels must keep the generated landscape canvas clear");
+        assertEquals(0xFF336699, roomLandscape.getPixel(4, 0),
+                "Mirrored black window-mask pixels must allow landscape through");
+        assertEquals(0xFF336699, roomLandscape.getPixel(3, 1));
+        assertEquals(0xFFFFFFFF, roomLandscape.getPixel(6, 1));
+
+        Bitmap rendered = InkProcessor.applyInk(roomLandscape, 8, 0xFFFFFF,
+                roomLandscape.isNativeAlpha(), null);
+        assertEquals(0x00000000, rendered.getPixel(2, 0),
+                "The final landscape sprite's MATTE ink must hide the white canvas outside the window");
+        assertEquals(0xFF336699, rendered.getPixel(4, 0),
+                "The final landscape sprite must keep masked-in landscape pixels visible");
+    }
+
+    @Test
+    void plainQuadCopyPixelsDoesNotClearGeneratedWallMaskPaletteIndices() {
+        Bitmap windowMaskMember = new Bitmap(4, 3, 8, new int[] {
+                0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF
+        });
+        Bitmap wallMaskImage = new Bitmap(8, 3, 8);
+        wallMaskImage.fill(0xFFFFFFFF);
+        wallMaskImage.setPaletteIndices(new byte[8 * 3]);
+
+        Datum.List rightWallQuad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(6, 0),
+                new Datum.Point(2, 0),
+                new Datum.Point(2, 3),
+                new Datum.Point(6, 3)
+        )));
+        Datum.PropList maskStampProps = new Datum.PropList();
+        maskStampProps.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(wallMaskImage), "copyPixels",
+                List.of(new Datum.ImageRef(windowMaskMember), rightWallQuad,
+                        new Datum.Rect(0, 0, 4, 3), maskStampProps));
+
+        assertNotNull(wallMaskImage.getPaletteIndices(),
+                "Plain quad copies into generated 8-bit wall masks must not discard index metadata");
+    }
+
+    @Test
     void copyPixelsQuadRotatesCounterClockwiseLikeDirectorDropdown() {
         Bitmap src = new Bitmap(2, 3, 32);
         src.setPixel(0, 0, 0xFFFF0000);
