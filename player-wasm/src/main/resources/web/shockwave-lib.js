@@ -79,12 +79,14 @@ var LibreShockwave = (function() {
         // Worker state
         this._worker      = null;
         this._workerReady = false;
+        this._pendingWaiters = Object.create(null);
         this._pendingUrl  = null;
         this._pendingFile = null;
         this._sharedFrameBuffer = null;
         this._sharedFrameControl = null;
         this._sharedFrameBytes = null;
         this._sharedFrameCapacity = 0;
+        this._skipRenderDuringLoad = !!opts.skipRenderDuringLoad;
 
         // Playback state (mirrors worker)
         this._playing     = false;
@@ -619,11 +621,21 @@ var LibreShockwave = (function() {
                 var relayUrl = msg.url;
 
                 // Check relay cache first (with and without query string for cache-busted URLs)
-                var baseUrl = relayUrl.indexOf('?') >= 0 ? relayUrl.substring(0, relayUrl.indexOf('?')) : relayUrl;
-                var relayBuf = this._relayCache && (this._relayCache[relayUrl] || this._relayCache[baseUrl]);
+                var relayBuf = this._getRelayCacheBuffer(relayUrl);
                 if (relayBuf) {
                     var copy = relayBuf.slice(0); // copy so original stays reusable
                     worker.postMessage({ type: 'fetchRelayResult', relayId: relayId, data: copy }, [copy]);
+                    break;
+                }
+                var inflightRelay = this._getRelayCacheInflight(relayUrl);
+                if (inflightRelay) {
+                    inflightRelay.then(function(buf) {
+                        var copy = buf.slice(0);
+                        worker.postMessage({ type: 'fetchRelayResult', relayId: relayId, data: copy }, [copy]);
+                    }).catch(function(e) {
+                        worker.postMessage({ type: 'fetchRelayResult', relayId: relayId,
+                                             error: true, status: (e && e.status) || 0 });
+                    });
                     break;
                 }
 
@@ -814,9 +826,9 @@ var LibreShockwave = (function() {
     };
 
     ShockwavePlayer.prototype._resolveOnce = function(type, value) {
-        if (this._pending && this._pending.type === type) {
-            var resolve = this._pending.resolve;
-            this._pending = null;
+        if (this._pendingWaiters && this._pendingWaiters[type]) {
+            var resolve = this._pendingWaiters[type].resolve;
+            delete this._pendingWaiters[type];
             resolve(value);
         }
     };
@@ -905,15 +917,16 @@ var LibreShockwave = (function() {
             var resolved = false;
             var pendingId = {}; // unique reference for this pending
             var timerId = setTimeout(function() {
-                if (!resolved && self._pending && self._pending._id === pendingId) {
+                if (!resolved && self._pendingWaiters && self._pendingWaiters[type]
+                        && self._pendingWaiters[type]._id === pendingId) {
                     console.warn('[LS] _waitFor timeout for: ' + type);
-                    self._pending = null;
+                    delete self._pendingWaiters[type];
                     resolved = true;
                     resolve(null);
                 }
             }, timeoutMs);
-            self._pending = {
-                type: type,
+            if (!self._pendingWaiters) self._pendingWaiters = Object.create(null);
+            self._pendingWaiters[type] = {
                 _id: pendingId,
                 resolve: function(val) {
                     if (resolved) return;
@@ -967,7 +980,7 @@ var LibreShockwave = (function() {
         // Cancel any active loops and pending resolvers from a previous/concurrent load
         this._stopLoop();
         this._playing = false;
-        this._pending = null;
+        this._pendingWaiters = Object.create(null);
         this._lastSpriteCount = 0; // Reset so fast loop doesn't skip immediately
         this._loadStartTime = performance.now();
         this._loadedMovieUrl = (typeof basePath === 'string' && basePath.indexOf('://') !== -1)
@@ -1040,6 +1053,7 @@ var LibreShockwave = (function() {
         // so we do it here and serve from cache when the relay arrives. Cache
         // misses still fall through to an async relay fetch.
         this._relayCache = {};
+        this._relayCacheInflight = {};
         this._prefetchRelayCache(mySeq);
 
         // Preload external casts before starting. The worker queues async fetches
@@ -1075,23 +1089,152 @@ var LibreShockwave = (function() {
         return urls;
     }
 
+    function _relayCacheKeys(url) {
+        var keys = [];
+        function add(key) {
+            if (key && keys.indexOf(key) < 0) keys.push(key);
+        }
+        add(url);
+        var q = url.indexOf('?');
+        if (q >= 0) add(url.substring(0, q));
+        try {
+            var parsed = new URL(url, window.location.href);
+            add(parsed.href);
+            var noQuery = parsed.href.indexOf('?') >= 0 ? parsed.href.substring(0, parsed.href.indexOf('?')) : parsed.href;
+            add(noQuery);
+        } catch (e) {}
+        return keys;
+    }
+
+    ShockwavePlayer.prototype._getRelayCacheBuffer = function(url) {
+        if (!this._relayCache) return null;
+        var keys = _relayCacheKeys(url);
+        for (var i = 0; i < keys.length; i++) {
+            if (this._relayCache[keys[i]]) return this._relayCache[keys[i]];
+        }
+        return null;
+    };
+
+    ShockwavePlayer.prototype._getRelayCacheInflight = function(url) {
+        if (!this._relayCacheInflight) return null;
+        var keys = _relayCacheKeys(url);
+        for (var i = 0; i < keys.length; i++) {
+            if (this._relayCacheInflight[keys[i]]) return this._relayCacheInflight[keys[i]];
+        }
+        return null;
+    };
+
+    ShockwavePlayer.prototype._storeRelayCacheBuffer = function(url, buf) {
+        var keys = _relayCacheKeys(url);
+        for (var i = 0; i < keys.length; i++) {
+            this._relayCache[keys[i]] = buf;
+        }
+    };
+
+    ShockwavePlayer.prototype._storeRelayCacheInflight = function(url, promise) {
+        var keys = _relayCacheKeys(url);
+        for (var i = 0; i < keys.length; i++) {
+            this._relayCacheInflight[keys[i]] = promise;
+        }
+        return keys;
+    };
+
+    ShockwavePlayer.prototype._clearRelayCacheInflight = function(keys) {
+        if (!this._relayCacheInflight || !keys) return;
+        for (var i = 0; i < keys.length; i++) {
+            delete this._relayCacheInflight[keys[i]];
+        }
+    };
+
+    function _castBaseUrl(movieUrl, fallbackBasePath) {
+        var source = movieUrl || fallbackBasePath || '';
+        try {
+            var parsed = new URL(source, window.location.href);
+            parsed.search = '';
+            parsed.hash = '';
+            var href = parsed.href;
+            return href.substring(0, href.lastIndexOf('/') + 1);
+        } catch (e) {
+            var q = source.indexOf('?');
+            if (q >= 0) source = source.substring(0, q);
+            return source.substring(0, source.lastIndexOf('/') + 1);
+        }
+    }
+
+    function _parseRoomCastHints(text) {
+        var casts = [];
+        String(text || '').split(/\r?\n/).forEach(function(line) {
+            var m = line.match(/^room\.cast\.[^=]+=\[(.*)\]\s*$/);
+            if (!m) return;
+            var re = /"([^"]+)"/g;
+            var item;
+            while ((item = re.exec(m[1])) !== null) {
+                if (casts.indexOf(item[1]) < 0) casts.push(item[1]);
+            }
+        });
+        return casts;
+    }
+
+    ShockwavePlayer.prototype._prefetchRoomCastHints = function(loadSeq, externalVariablesUrl, buf) {
+        var text;
+        try {
+            text = new TextDecoder().decode(new Uint8Array(buf));
+        } catch (e) {
+            return;
+        }
+        var casts = _parseRoomCastHints(text);
+        if (casts.length === 0) return;
+        var base = _castBaseUrl(this._loadedMovieUrl, this._basePath);
+        var self = this;
+        casts.forEach(function(castName) {
+            var url = base + castName + '.cct';
+            if (self._getRelayCacheBuffer(url) || self._getRelayCacheInflight(url)) return;
+            var promise = _fetchWithTimeout(url)
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+                .then(function(castBuf) {
+                    if (loadSeq !== undefined && self._loadSeq !== loadSeq) return;
+                    self._storeRelayCacheBuffer(url, castBuf);
+                    console.log('[LS] Pre-fetched room cast hint: ' + url + ' (' + castBuf.byteLength + ' bytes)');
+                    return castBuf;
+                })
+                .catch(function(e) {
+                    if (!e || !e.message) e = { message: String(e) };
+                    console.warn('[LS] Room cast hint pre-fetch failed: ' + url + ' - ' + e.message);
+                    throw e;
+                });
+            var keys = self._storeRelayCacheInflight(url, promise);
+            promise.finally(function() {
+                self._clearRelayCacheInflight(keys);
+            }).catch(function() {});
+        });
+    };
+
     ShockwavePlayer.prototype._prefetchRelayCache = function(loadSeq) {
         var urls = _parseSwUrls(this._params);
         if (urls.length === 0) return;
         console.log('[LS] Pre-fetching ' + urls.length + ' sw URLs for relay cache in background');
         var self = this;
         urls.forEach(function(url) {
-            _fetchWithTimeout(url)
+            var promise = _fetchWithTimeout(url)
                 .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
                 .then(function(buf) {
                     if (loadSeq !== undefined && self._loadSeq !== loadSeq) return;
-                    self._relayCache[url] = buf;
+                    self._storeRelayCacheBuffer(url, buf);
                     console.log('[LS] Pre-fetched: ' + url + ' (' + buf.byteLength + ' bytes)');
+                    if (/external_variables\.txt/i.test(url)) {
+                        self._prefetchRoomCastHints(loadSeq, url, buf);
+                    }
+                    return buf;
                 })
                 .catch(function(e) {
                     if (!e || !e.message) e = { message: String(e) };
-                    console.warn('[LS] Pre-fetch failed: ' + url + ' — ' + e.message);
+                    console.warn('[LS] Pre-fetch failed: ' + url + ' - ' + e.message);
+                    throw e;
                 });
+            var keys = self._storeRelayCacheInflight(url, promise);
+            promise.finally(function() {
+                self._clearRelayCacheInflight(keys);
+            }).catch(function() {});
         });
     };
 
@@ -1293,6 +1436,21 @@ var LibreShockwave = (function() {
         });
     };
 
+    ShockwavePlayer.prototype.getRuntimeDiagnostics = function() {
+        if (!this._worker || !this._workerReady) return Promise.resolve({});
+        var self = this;
+        return new Promise(function(resolve) {
+            var handler = function(e) {
+                if (e.data && e.data.type === 'runtimeDiagnostics') {
+                    self._worker.removeEventListener('message', handler);
+                    resolve(e.data.diagnostics || {});
+                }
+            };
+            self._worker.addEventListener('message', handler);
+            self._worker.postMessage({ type: 'getRuntimeDiagnostics' });
+        });
+    };
+
     /**
      * Trigger a test Lingo error to exercise the movie's alertHook error dialog.
      * Call this after the movie is playing to verify error dialog appearance.
@@ -1391,9 +1549,7 @@ var LibreShockwave = (function() {
     // --- Tick: send work to the worker, await the frame response, then render ---
 
     ShockwavePlayer.prototype._doTick = async function() {
-        // Always render — the fast-loading loop completes in few ticks so
-        // skipping frames would hide the loading screen (Sulake logo).
-        var skipRender = false;
+        var skipRender = !!(this._skipRenderDuringLoad && this._loadingPhase);
         this._worker.postMessage({ type: 'tick', skipRender: skipRender });
         var result = await this._waitFor('frame');
         if (!result) return;

@@ -79,9 +79,10 @@ public class WasmEntry {
         }
     }
 
-    static void enqueueGotoNetMovie(String url) {
+    static int enqueueGotoNetMovie(String url) {
         synchronized (pendingGotoNetMovies) {
             pendingGotoNetMovies.offer(url != null ? url : "");
+            return pendingGotoNetMovies.size();
         }
     }
 

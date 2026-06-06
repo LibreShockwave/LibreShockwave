@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClassicHabbo Beta Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #dfe3e8;
+            color: #26323d;
+            font-family: Verdana, Arial, Helvetica, sans-serif;
+            font-size: 12px;
+        }
+
+        .shell {
+            width: min(1040px, calc(100% - 24px));
+            margin: 16px auto;
+            border: 1px solid #9aa6b2;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(24, 38, 54, 0.14);
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 14px;
+            background: #245b89;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .controls {
+            padding: 10px 12px;
+            background: #eef4f8;
+            border-bottom: 1px solid #c3ccd5;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            flex: 0 0 120px;
+            font-weight: bold;
+            color: #2f3d48;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            border: 1px solid #9aa6b2;
+            border-radius: 4px;
+            background: #ffffff;
+            color: #222222;
+            font: inherit;
+        }
+
+        input {
+            height: 30px;
+            padding: 5px 8px;
+        }
+
+        textarea {
+            min-height: 190px;
+            padding: 7px 8px;
+            resize: vertical;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        input:focus,
+        textarea:focus {
+            outline: 2px solid #8db8dc;
+            outline-offset: 1px;
+            border-color: #4679a4;
+        }
+
+        .btn {
+            min-width: 118px;
+            height: 30px;
+            padding: 5px 14px;
+            border: 1px solid #2a5580;
+            border-radius: 4px;
+            background: linear-gradient(to bottom, #4a88c0, #336699);
+            color: #ffffff;
+            cursor: pointer;
+            font: inherit;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background: linear-gradient(to bottom, #5a99d0, #4477aa);
+        }
+
+        .btn-secondary {
+            border-color: #aaaaaa;
+            background: linear-gradient(to bottom, #f7f7f7, #e0e0e0);
+            color: #333333;
+            font-weight: normal;
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(to bottom, #ffffff, #e8e8e8);
+        }
+
+        .stage-panel {
+            padding: 14px;
+            background: #d7dde3;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .stage-frame {
+            background: #000000;
+            border: 1px solid #1d252c;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.24);
+            line-height: 0;
+            max-width: 100%;
+        }
+
+        #beta-client-stage {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 32px;
+            padding: 6px 12px;
+            border-top: 1px solid #c3ccd5;
+            background: #f0f0f0;
+            color: #5f6d78;
+        }
+
+        @media (max-width: 760px) {
+            .shell {
+                width: 100%;
+                margin: 0;
+                border-left: 0;
+                border-right: 0;
+            }
+
+            .control-row {
+                align-items: stretch;
+                flex-wrap: wrap;
+            }
+
+            label {
+                flex: 1 1 100%;
+            }
+
+            .btn {
+                flex: 1 1 auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <div class="header">
+            <span>ClassicHabbo Beta Client</span>
+            <span>LibreShockwave</span>
+        </div>
+
+        <section class="controls">
+            <div class="control-row">
+                <label for="sso-ticket-input">SSO ticket</label>
+                <input type="password" id="sso-ticket-input" autocomplete="off" placeholder="Paste SSO ticket">
+                <button id="new-beta-client-btn" class="btn" type="button">New beta client</button>
+                <button id="forget-ticket-btn" class="btn btn-secondary" type="button">Forget</button>
+            </div>
+            <div class="control-row">
+                <label for="movie-url-input">DCR path</label>
+                <input type="text" id="movie-url-input">
+            </div>
+            <div class="control-row">
+                <label for="params-input">Loader params</label>
+                <textarea id="params-input" spellcheck="false"></textarea>
+            </div>
+        </section>
+
+        <section class="stage-panel">
+            <div class="stage-frame">
+                <canvas id="beta-client-stage" width="960" height="540"></canvas>
+            </div>
+        </section>
+
+        <div class="status">
+            <span id="status">Enter an SSO ticket, then start a new beta client.</span>
+            <span id="frame-info"></span>
+        </div>
+    </main>
+
+    <script src="libreshockwave.js"></script>
+    <script type="text/javascript">
+        var betaClientMovieUrl = "https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?";
+        var betaClientParams = {"venus.websocket.mode":"ws","sw1":"client.allow.cross.domain=1;client.notify.cross.domain=0","sw2":"connection.info.host=verysecret.classichabbo.com;connection.info.port=30100","sw3":"connection.mus.host=verysecret.classichabbo.com;connection.mus.port=38201","sw4":"site.url=;url.prefix=","sw5":"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error","sw6":"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?","sw7":"external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?","sw8":"use.sso.ticket=1;sso.ticket=vibe-sso-admin-504d3ba4-acdb-4436-b67c-d0752f44f767"};
+
+        var ssoKey = "beta_client_sso_ticket";
+        var statusEl = document.getElementById("status");
+        var frameInfo = document.getElementById("frame-info");
+        var ticketInput = document.getElementById("sso-ticket-input");
+        var movieUrlInput = document.getElementById("movie-url-input");
+        var paramsInput = document.getElementById("params-input");
+
+        function cloneParams() {
+            var params = {};
+            Object.keys(betaClientParams).forEach(function(key) {
+                params[key] = betaClientParams[key];
+            });
+            return params;
+        }
+
+        function paramsWithTicket(ticket) {
+            var params = cloneParams();
+            params.sw8 = "use.sso.ticket=1;sso.ticket=" + ticket;
+            return params;
+        }
+
+        function writeParams(params) {
+            paramsInput.value = JSON.stringify(params, null, 2);
+        }
+
+        function readParams() {
+            try {
+                return JSON.parse(paramsInput.value);
+            } catch(e) {
+                statusEl.textContent = "Loader params must be valid JSON.";
+                paramsInput.focus();
+                return null;
+            }
+        }
+
+        function prefill(ticket) {
+            movieUrlInput.value = betaClientMovieUrl;
+            writeParams(paramsWithTicket(ticket || betaClientParams.sw8.split("sso.ticket=")[1] || ""));
+        }
+
+        var savedTicket = "";
+        try { savedTicket = localStorage.getItem(ssoKey) || ""; } catch(e) {}
+        ticketInput.value = savedTicket;
+        prefill(savedTicket);
+
+        ticketInput.addEventListener("input", function() {
+            prefill(ticketInput.value.trim());
+            statusEl.textContent = ticketInput.value.trim()
+                ? "Ticket entered. Start a new beta client to apply it."
+                : "Enter an SSO ticket, then start a new beta client.";
+        });
+
+        var player = LibreShockwave.create("beta-client-stage", {
+            autoplay: true,
+            remember: false,
+            params: readParams() || cloneParams(),
+            onLoad: function(info) {
+                statusEl.textContent = "Loaded (" + info.width + "x" + info.height + ", " + info.frameCount + " frames)";
+            },
+            onError: function(msg) {
+                statusEl.textContent = "Error: " + msg;
+            },
+            onFrame: function(frame, total) {
+                frameInfo.textContent = "Frame " + frame + " / " + total;
+            }
+        });
+
+        function startBetaClient() {
+            var ticket = ticketInput.value.trim();
+            if (!ticket) {
+                statusEl.textContent = "Enter an SSO ticket before starting the beta client.";
+                ticketInput.focus();
+                return;
+            }
+
+            var params = readParams();
+            if (!params) return;
+
+            params.sw8 = "use.sso.ticket=1;sso.ticket=" + ticket;
+            writeParams(params);
+            try { localStorage.setItem(ssoKey, ticket); } catch(e) {}
+
+            statusEl.textContent = "Starting beta client...";
+            frameInfo.textContent = "";
+            player.reset().then(function() {
+                player.setParams(params);
+                statusEl.textContent = "Fetching...";
+                player.load(movieUrlInput.value.trim() || betaClientMovieUrl);
+            });
+        }
+
+        document.getElementById("new-beta-client-btn").addEventListener("click", startBetaClient);
+        ticketInput.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") startBetaClient();
+        });
+        document.getElementById("forget-ticket-btn").addEventListener("click", function() {
+            ticketInput.value = "";
+            try { localStorage.removeItem(ssoKey); } catch(e) {}
+            prefill("");
+            statusEl.textContent = "SSO ticket forgotten.";
+        });
+    </script>
+</body>
+</html>

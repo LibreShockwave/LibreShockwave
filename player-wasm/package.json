@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "test:native-visual": "node src/test/js/wasm-native-visual-regression-test.js build/dist"
+    "test:native-visual": "node src/test/js/wasm-native-visual-regression-test.js build/dist",
+    "test:local-beta-load-budget": "node src/test/js/wasm-local-beta-load-budget-test.js build/dist"
   },
   "devDependencies": {
     "puppeteer": "^24.0.0"
