@@ -3,6 +3,7 @@ package com.libreshockwave.bitmap;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class DrawingMatteTest {
 
@@ -461,6 +462,8 @@ class DrawingMatteTest {
 
         Bitmap mask = Drawing.createMask(src);
 
+        assertFalse(mask.hasNativeMatteAlpha(),
+                "Director createMask for grayscale wall masks should keep black-as-allow mask pixels");
         assertEquals(false, Drawing.maskAllowsPixel(mask, 0, 1));
         assertEquals(true, Drawing.maskAllowsPixel(mask, 1, 1));
         assertEquals(true, Drawing.maskAllowsPixel(mask, 2, 1));

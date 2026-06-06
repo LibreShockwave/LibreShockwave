@@ -827,20 +827,21 @@ public class Drawing {
             int pixel = pixels[i];
             int srcAlpha = (pixel >>> 24) & 0xFF;
             if (srcAlpha == 0) {
-                mask[i] = 0x00FFFFFF;
+                mask[i] = 0xFFFFFFFF;
                 continue;
             }
-            int alpha = maskAlphaFromPixel(pixel);
-            alpha = lightMatte ? 255 - alpha : alpha;
-            if (alpha < threshold) {
-                alpha = 0;
+            int maskLuma = maskAlphaFromPixel(pixel);
+            if (!lightMatte) {
+                maskLuma = 255 - maskLuma;
             }
-            mask[i] = alpha == 0 ? 0x00FFFFFF : (alpha << 24) | 0x00FFFFFF;
+            int opacity = 255 - maskLuma;
+            if (opacity < threshold) {
+                maskLuma = 255;
+            }
+            mask[i] = 0xFF000000 | (maskLuma << 16) | (maskLuma << 8) | maskLuma;
         }
 
-        Bitmap maskBitmap = new Bitmap(w, h, 32, mask);
-        maskBitmap.setNativeAlpha(true);
-        return maskBitmap;
+        return new Bitmap(w, h, src.getBitDepth(), mask);
     }
 
     /**

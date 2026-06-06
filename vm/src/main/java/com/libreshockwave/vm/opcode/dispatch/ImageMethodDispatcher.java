@@ -865,6 +865,7 @@ public final class ImageMethodDispatcher {
 
         // Parse optional propList fields needed before transforming the quad.
         Palette.InkMode ink = Palette.InkMode.COPY;
+        int blend = 255;
         Datum.PropList propList = null;
         Bitmap mask = null;
         if (args.size() > 3 && args.get(3) instanceof Datum.PropList pl) {
@@ -873,6 +874,10 @@ public final class ImageMethodDispatcher {
             Palette.InkMode parsedInk = inkFromDatum(inkDatum);
             if (parsedInk != null) {
                 ink = parsedInk;
+            }
+            Datum blendDatum = getPropIgnoreCase(pl, "blend", "Blend");
+            if (!blendDatum.isVoid()) {
+                blend = percentToBlendAlpha(blendDatum);
             }
             Datum maskDatum = getPropIgnoreCase(pl, "maskImage", "maskimage", "MaskImage");
             if (maskDatum instanceof Datum.ImageRef maskRef) {
@@ -886,6 +891,28 @@ public final class ImageMethodDispatcher {
         Bitmap transformedMask = mask != null
                 ? transformQuadBitmap(mask, srcRect, px, py, minX, minY, maxX, maxY)
                 : null;
+
+        if (!quadPropsRequireRectCopy(propList, ink, mask)) {
+            Palette.InkMode effectiveInk = ink;
+            if (effectiveInk == Palette.InkMode.BACKGROUND_TRANSPARENT
+                    && transformed.hasNativeMatteAlpha()
+                    && !hasOpaqueBackgroundKeyBorder(transformed, 0, 0, destW, destH,
+                            Integer.valueOf(resolveBackgroundTransparentKey(-1)))) {
+                effectiveInk = Palette.InkMode.COPY;
+            }
+            if (blend < 255 && effectiveInk == Palette.InkMode.COPY) {
+                effectiveInk = Palette.InkMode.BLEND;
+            }
+
+            Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, effectiveInk, blend);
+            preservePaletteIndicesOnCopy(dest, transformed,
+                    minX, minY,
+                    0, 0,
+                    destW, destH, destW, destH,
+                    effectiveInk, blend, null, -1, -1);
+
+            return Datum.VOID;
+        }
 
         Datum.PropList transformedProps = propList;
         boolean nativeAlphaBackgroundTransparent = shouldQuadBackgroundTransparentUseNativeAlpha(transformed, ink);
@@ -902,6 +929,23 @@ public final class ImageMethodDispatcher {
             transformedArgs.add(transformedProps);
         }
         return copyPixels(dest, transformedArgs);
+    }
+
+    private static boolean quadPropsRequireRectCopy(Datum.PropList propList, Palette.InkMode ink, Bitmap mask) {
+        if (mask != null || ink == Palette.InkMode.DARKEN || ink == Palette.InkMode.LIGHTEN) {
+            return true;
+        }
+        if (propList == null || propList.isEmpty()) {
+            return false;
+        }
+        for (Datum.PropEntry entry : propList.entries()) {
+            String key = entry.key();
+            if ("ink".equalsIgnoreCase(key) || "blend".equalsIgnoreCase(key)) {
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
 
     private static Bitmap transformQuadBitmap(Bitmap src, Datum.Rect srcRect,
