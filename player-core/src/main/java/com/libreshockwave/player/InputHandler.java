@@ -218,10 +218,7 @@ public class InputHandler {
                 // the current one, send mouseUpOutSide to the old sprite (ScummVM behavior).
                 int lastClicked = inputState.getClickOnSprite();
                 if (lastClicked > 0 && lastClicked != hitSprite) {
-                    String outsideHandler = dispatcher.spriteHasHandler(lastClicked, PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName())
-                            ? PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName()
-                            : "mouseUpOutSide";
-                    dispatcher.dispatchSpriteEvent(lastClicked, outsideHandler, List.of());
+                    dispatcher.dispatchSpriteEvent(lastClicked, "mouseUpOutSide", List.of());
                 }
                 // Track which sprite was clicked so mouseUp can target it
                 inputState.setClickOnSprite(hitSprite);
@@ -242,12 +239,8 @@ public class InputHandler {
                 if (pressedSprite > 0 && releaseSprite == pressedSprite) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
                 } else if (pressedSprite > 0
-                        && (dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName())
-                        || dispatcher.spriteHasHandler(pressedSprite, "mouseUpOutSide"))) {
-                    String outsideHandler = dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName())
-                            ? PlayerEvent.MOUSE_UP_OUTSIDE.getHandlerName()
-                            : "mouseUpOutSide";
-                    dispatcher.dispatchSpriteEvent(pressedSprite, outsideHandler, List.of());
+                        && dispatcher.spriteHasHandler(pressedSprite, "mouseUpOutSide")) {
+                    dispatcher.dispatchSpriteEvent(pressedSprite, "mouseUpOutSide", List.of());
                 } else if (pressedSprite > 0
                         && dispatcher.spriteHasHandler(pressedSprite, PlayerEvent.MOUSE_UP.getHandlerName())) {
                     dispatcher.dispatchSpriteEvent(pressedSprite, PlayerEvent.MOUSE_UP, List.of());
