@@ -99,7 +99,10 @@ public class Drawing {
                 effectiveSrc = backgroundTransparentSrc;
                 effectiveSrcX = srcX;
                 effectiveSrcY = srcY;
-                effectiveInk = InkMode.COPY;
+                // Keep BACKGROUND_TRANSPARENT active after flood-fill preprocessing.
+                // Window text buffers can contain enclosed white glyph counters
+                // that are not border-connected; switching to COPY preserves those
+                // as opaque white pinholes instead of keying them out.
             }
         }
         boolean keyNearWhiteMatte = effectiveInk == InkMode.BACKGROUND_TRANSPARENT
