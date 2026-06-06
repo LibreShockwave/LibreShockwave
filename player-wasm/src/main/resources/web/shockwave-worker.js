@@ -95,6 +95,8 @@ var _musInbound = {};      // instanceId -> [Uint8Array] (raw MUS TCP chunks)
 var _musConnected = {};    // instanceId -> true (pending connect notifications)
 var _musDisconnected = {}; // instanceId -> true (pending disconnect notifications)
 var _musErrors = {};       // instanceId -> errorCode
+var _musDrainScheduled = false;
+var _isMusDraining = false;
 
 // --- Non-blocking fetch delivery queue ---
 var _fetchQueue = [];   // [{taskId, data: ArrayBuffer}] or [{taskId, error: number}]
@@ -107,6 +109,9 @@ var _sharedFrameBytes = null;
 var _sharedFrameControl = null;
 var _sharedFrameCapacity = 0;
 var _sharedFrameSeq = 0;
+var _fetchResultCache = {};
+var _fetchInflight = {};
+var _lastTickTiming = {};
 
 // --- Cross-origin fetch relay (main thread fetches on behalf of worker) ---
 var _fetchRelayMap = {};  // relayId -> { engine, taskId, url, fallbacks }
@@ -204,6 +209,91 @@ var _params = {};
 
 // --- Diagnostic tick counter ---
 var _tickNum = 0;
+
+function _musRuntimeDiagnostics() {
+    var socketStates = {};
+    for (var instId in _musSockets) {
+        if (Object.prototype.hasOwnProperty.call(_musSockets, instId)) {
+            var ws = _musSockets[instId];
+            socketStates[instId] = ws ? ws.readyState : null;
+        }
+    }
+    var inboundCounts = {};
+    for (var inboundId in _musInbound) {
+        if (Object.prototype.hasOwnProperty.call(_musInbound, inboundId)) {
+            inboundCounts[inboundId] = _musInbound[inboundId] ? _musInbound[inboundId].length : 0;
+        }
+    }
+    var pendingCount = 0;
+    if (_e && _e.exports && !_e._wasmDead) {
+        try {
+            pendingCount = _e.exports.getMusPendingCount(); _e._clearEx();
+        } catch (e) {}
+    }
+    return {
+        pendingCount: pendingCount,
+        sockets: socketStates,
+        connected: Object.assign({}, _musConnected),
+        disconnected: Object.assign({}, _musDisconnected),
+        errors: Object.assign({}, _musErrors),
+        inbound: inboundCounts
+    };
+}
+
+function _hasMusQueuedJsEvents() {
+    return Object.keys(_musConnected).length > 0
+        || Object.keys(_musDisconnected).length > 0
+        || Object.keys(_musErrors).length > 0
+        || Object.keys(_musInbound).some(function(id) {
+            return _musInbound[id] && _musInbound[id].length > 0;
+        });
+}
+
+function _getMusPendingCountSafe() {
+    if (!_e || !_e.exports || _e._wasmDead) return 0;
+    try {
+        var count = _e.exports.getMusPendingCount(); _e._clearEx();
+        return count || 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function _scheduleMusDrain() {
+    if (_musDrainScheduled) return;
+    _musDrainScheduled = true;
+    setTimeout(function() {
+        _musDrainScheduled = false;
+        _drainMusNow();
+    }, 0);
+}
+
+function _drainMusNow() {
+    if (!_e || _e._wasmDead || _isTicking || _isMusDraining) {
+        if (_hasMusQueuedJsEvents() || _getMusPendingCountSafe() > 0) {
+            _scheduleMusDrain();
+        }
+        return;
+    }
+    _isMusDraining = true;
+    try {
+        var deadline = performance.now() + 12;
+        for (var i = 0; i < 12; i++) {
+            var hadWork = _hasMusQueuedJsEvents() || _getMusPendingCountSafe() > 0;
+            if (!hadWork) break;
+            try { _e.deliverMusEvents(); }
+            catch (deliverErr) { console.error('[WORKER] MUS fast deliver error: ' + deliverErr); }
+            try { _e.pumpMusRequests(); }
+            catch (pumpErr) { console.error('[WORKER] MUS fast pump error: ' + pumpErr); }
+            if (performance.now() >= deadline) break;
+        }
+    } finally {
+        _isMusDraining = false;
+    }
+    if (_hasMusQueuedJsEvents() || _getMusPendingCountSafe() > 0) {
+        _scheduleMusDrain();
+    }
+}
 
 // ============================================================
 // WasmEngine — mirrors the main-thread version but without Canvas
@@ -513,6 +603,25 @@ WasmEngine.prototype._fetchWithFallbacks = async function(taskId, url, method, p
     return { error: true, status: 0 };
 };
 
+function _fetchCacheKey(req) {
+    return [
+        req.method || 'GET',
+        req.url || '',
+        req.postData || '',
+        (req.fallbacks || []).join('\u0001')
+    ].join('\u0000');
+}
+
+function _cloneFetchResult(result) {
+    if (!result) return result;
+    var copy = {};
+    for (var k in result) copy[k] = result[k];
+    if (result.data) {
+        copy.data = result.data.slice(0);
+    }
+    return copy;
+}
+
 function _isImportableImageUrl(url) {
     if (!url) return false;
     var lower = String(url).toLowerCase();
@@ -571,34 +680,23 @@ function _writeU32BE(bytes, offset, value) {
 
 /**
  * Deliver queued fetch results into WASM.
- * Non-cast results are delivered one at a time to simulate real network latency.
- * Cast file results (.cct/.cst) are delivered immediately so cast members are
- * available when Lingo sets castLib.fileName on the same or next tick.
+ * Completed browser fetches are already asynchronous; holding finished results
+ * to one per tick makes startup scripts wait on artificial frame latency.
  * @return number of results delivered
  */
 WasmEngine.prototype.deliverQueuedResults = function() {
     if (_fetchQueue.length === 0) return 0;
     var delivered = 0;
-    // First pass: deliver all cast file results immediately
-    for (var i = _fetchQueue.length - 1; i >= 0; i--) {
-        var item = _fetchQueue[i];
-        if (item.data !== undefined && item.url && _isCastFileUrl(item.url)) {
-            _fetchQueue.splice(i, 1);
-            this._deliverResult(item.taskId, item.data, item.url);
-            delivered++;
-        }
-    }
-    // Second pass: deliver one non-cast result (rate-limited)
-    if (_fetchQueue.length > 0) {
+    while (_fetchQueue.length > 0) {
         var item = _fetchQueue.shift();
         if (item.data !== undefined) {
             this._deliverResult(item.taskId, item.data, item.url);
         } else {
             this._deliverError(item.taskId, item.error);
         }
-        _flushWasmDiagnostics();
         delivered++;
     }
+    _flushWasmDiagnostics();
     return delivered;
 };
 
@@ -694,11 +792,44 @@ WasmEngine.prototype.pumpNetworkFire = function() {
     var reqs = this._drainRequests();
     if (!reqs) return 0;
     var seq = _networkSeq;
+    var engine = this;
     for (var i = 0; i < reqs.length; i++) {
         let req = reqs[i];
-        this._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || [])
+        let key = _fetchCacheKey(req);
+        if (req.method === 'GET' && _fetchResultCache[key]) {
+            var cachedResult = _cloneFetchResult(_fetchResultCache[key]);
+            if (cachedResult && cachedResult.data) {
+                _fetchQueue.push({ taskId: req.taskId, data: cachedResult.data, url: cachedResult.url || req.url });
+            } else {
+                _fetchQueue.push({ taskId: req.taskId, error: cachedResult && cachedResult.status ? cachedResult.status : 0 });
+            }
+            continue;
+        }
+        if (req.method === 'GET' && _fetchInflight[key]) {
+            _fetchInflight[key].then(function(result) {
+                if (seq !== _networkSeq) return;
+                result = _cloneFetchResult(result);
+                if (result && result.data) {
+                    _fetchQueue.push({ taskId: req.taskId, data: result.data, url: result.url || req.url });
+                } else {
+                    _fetchQueue.push({ taskId: req.taskId, error: result && result.status ? result.status : 0 });
+                }
+            }).catch(function(e) {
+                if (seq !== _networkSeq) return;
+                _fetchQueue.push({ taskId: req.taskId, error: e && e.status ? e.status : 0 });
+            });
+            continue;
+        }
+        var promise = engine._fetchWithFallbacks(req.taskId, req.url, req.method, req.postData, req.fallbacks || []);
+        if (req.method === 'GET') {
+            _fetchInflight[key] = promise;
+        }
+        promise
             .then(function(result) {
                 if (seq !== _networkSeq) return;
+                if (req.method === 'GET' && result && result.data) {
+                    _fetchResultCache[key] = _cloneFetchResult(result);
+                }
                 if (result && result.data) {
                     _fetchQueue.push({ taskId: req.taskId, data: result.data, url: result.url || req.url });
                 } else {
@@ -708,6 +839,11 @@ WasmEngine.prototype.pumpNetworkFire = function() {
             .catch(function(e) {
                 if (seq !== _networkSeq) return;
                 _fetchQueue.push({ taskId: req.taskId, error: e && e.status ? e.status : 0 });
+            })
+            .finally(function() {
+                if (req.method === 'GET') {
+                    delete _fetchInflight[key];
+                }
             });
     }
     return reqs.length;
@@ -822,6 +958,7 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
     ws.onopen = function() {
         _musDebug('open instance=' + instId + ' url=' + wsUrl);
         _musConnected[instId] = true;
+        _scheduleMusDrain();
     };
 
     ws.onmessage = function(evt) {
@@ -835,17 +972,20 @@ WasmEngine.prototype._musConnect = function(instId, wsUrl) {
         }
         _musDebug('message instance=' + instId + ' bytes=' + data.length + _musPreview(data));
         _musInbound[instId].push(data);
+        _scheduleMusDrain();
     };
 
     ws.onclose = function(evt) {
         _musDebug('close instance=' + instId + ' code=' + (evt && evt.code) + ' reason=' + (evt && evt.reason ? evt.reason : '') + ' wasClean=' + (evt && evt.wasClean));
         _musDisconnected[instId] = true;
         delete _musSockets[instId];
+        _scheduleMusDrain();
     };
 
     ws.onerror = function() {
         _musDebug('error instance=' + instId + ' url=' + wsUrl);
         _musErrors[instId] = -2; // network error
+        _scheduleMusDrain();
     };
 };
 
@@ -916,7 +1056,9 @@ WasmEngine.prototype.deliverMusEvents = function() {
     for (var id in _musConnected) {
         try {
             this.exports.musDeliverConnected(parseInt(id)); this._clearEx();
-        } catch(e) {}
+        } catch(e) {
+            console.error('[MUS] musDeliverConnected error instance=' + id + ': ' + e);
+        }
     }
     _musConnected = {};
 
@@ -924,7 +1066,9 @@ WasmEngine.prototype.deliverMusEvents = function() {
     for (var eid in _musErrors) {
         try {
             this.exports.musDeliverError(parseInt(eid), _musErrors[eid]); this._clearEx();
-        } catch(e) {}
+        } catch(e) {
+            console.error('[MUS] musDeliverError error instance=' + eid + ': ' + e);
+        }
     }
     _musErrors = {};
 
@@ -948,7 +1092,7 @@ WasmEngine.prototype.deliverMusEvents = function() {
             try {
                 this.exports.musDeliverMessage(iid, len); this._clearEx();
             } catch(e) {
-                self.postMessage({type:'error', msg:'[MUS] musDeliverMessage error: ' + e});
+                console.error('[MUS] musDeliverMessage error instance=' + iid + ': ' + e);
             }
         }
     }
@@ -958,7 +1102,9 @@ WasmEngine.prototype.deliverMusEvents = function() {
     for (var did in _musDisconnected) {
         try {
             this.exports.musDeliverDisconnected(parseInt(did)); this._clearEx();
-        } catch(e) {}
+        } catch(e) {
+            console.error('[MUS] musDeliverDisconnected error instance=' + did + ': ' + e);
+        }
     }
     _musDisconnected = {};
 };
@@ -1015,6 +1161,8 @@ self.onmessage = async function(e) {
                 _tickNum = 0;
                 _networkSeq++;
                 _fetchQueue = [];
+                _fetchResultCache = {};
+                _fetchInflight = {};
                 _jpegDecodeSeq++;
                 _jpegDecodeQueue = [];
                 _jpegDecodeInFlight = {};
@@ -1202,6 +1350,7 @@ self.onmessage = async function(e) {
                     var stillPlaying = true;
                     var frame = null;
                     _tickNum++;
+                    var timing = { startedAt: performance.now() };
 
                     // Phase 1: deliver completed network results from previous ticks.
                     // This runs BEFORE tick() so netDone() returns true for finished fetches.
@@ -1216,12 +1365,14 @@ self.onmessage = async function(e) {
                             console.error('[WORKER] deliver error: ' + deliverErr);
                         }
                     }
+                    timing.afterFetchDeliver = performance.now();
 
                     // Phase 1.8: deliver pending Multiuser Xtra events (WebSocket)
                     if (!_e._wasmDead) {
                         try { _e.deliverMusEvents(); }
                         catch (musErr) { console.error('[WORKER] MUS deliver error: ' + musErr); }
                     }
+                    timing.afterMusDeliver = performance.now();
 
                     // Phase 2: advance WASM by one Lingo frame
                     if (_e._wasmDead) {
@@ -1240,6 +1391,7 @@ self.onmessage = async function(e) {
                             }
                         }
                     }
+                    timing.afterTick = performance.now();
 
                     // Phase 3: fire new network requests (non-blocking).
                     // Results are queued asynchronously and delivered at the start of
@@ -1255,6 +1407,10 @@ self.onmessage = async function(e) {
                     // Phase 3.5: pump Multiuser Xtra WebSocket requests
                     try { _e.pumpMusRequests(); }
                     catch (musErr2) { console.error('[WORKER] MUS pump error: ' + musErr2); }
+                    if (_hasMusQueuedJsEvents() || _getMusPendingCountSafe() > 0) {
+                        _scheduleMusDrain();
+                    }
+                    timing.afterNetworkPump = performance.now();
 
                     // Phase 3.6: pump audio commands and send to main thread
                     try { _e.pumpAudioCommands(); }
@@ -1280,6 +1436,7 @@ self.onmessage = async function(e) {
                             console.error('[WORKER] render() error: ' + renderErr);
                         }
                     }
+                    timing.afterRender = performance.now();
 
                     // Always read sprite count (needed for fast-loop detection on main thread)
                     var spriteCount = 0;
@@ -1386,6 +1543,18 @@ self.onmessage = async function(e) {
                         selectionRects: selectionRects,
                         debugLog:      debugLog
                     }, transferList);
+                    timing.afterPostMessage = performance.now();
+                    _lastTickTiming = {
+                        tick: _tickNum,
+                        totalMs: Math.round((timing.afterPostMessage - timing.startedAt) * 10) / 10,
+                        fetchDeliverMs: Math.round((timing.afterFetchDeliver - timing.startedAt) * 10) / 10,
+                        musDeliverMs: Math.round((timing.afterMusDeliver - timing.afterFetchDeliver) * 10) / 10,
+                        tickMs: Math.round((timing.afterTick - timing.afterMusDeliver) * 10) / 10,
+                        networkPumpMs: Math.round((timing.afterNetworkPump - timing.afterTick) * 10) / 10,
+                        renderMs: Math.round((timing.afterRender - timing.afterNetworkPump) * 10) / 10,
+                        postMessageMs: Math.round((timing.afterPostMessage - timing.afterRender) * 10) / 10,
+                        skippedRender: !!msg.skipRender
+                    };
 
                 } finally {
                     _isTicking = false;
@@ -1473,6 +1642,25 @@ self.onmessage = async function(e) {
                     }
                 } catch (bootstrapDiagErr) {}
                 self.postMessage({ type: 'bootstrapDiagnostics', diagnostics: bootstrapDiagStr });
+                break;
+            }
+
+            case 'getRuntimeDiagnostics': {
+                self.postMessage({
+                    type: 'runtimeDiagnostics',
+                    diagnostics: {
+                        tick: _tickNum,
+                        params: Object.assign({}, _params),
+                        network: {
+                            queuedResults: _fetchQueue.length,
+                            cachedResults: Object.keys(_fetchResultCache).length,
+                            inflight: Object.keys(_fetchInflight).length
+                        },
+                        mus: _musRuntimeDiagnostics(),
+                        lastTickTiming: Object.assign({}, _lastTickTiming),
+                        isTicking: _isTicking
+                    }
+                });
                 break;
             }
 

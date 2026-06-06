@@ -23,6 +23,7 @@
                     <input type="text" id="url-input" class="url-input" value="https://sandbox.h4bbo.net/dcr/14.1_b8/habbo.dcr">
                     <button id="load-url-btn" class="btn">Go</button>
                     <button id="params-btn" class="btn">Params...</button>
+                    <button id="beta-client-template-btn" class="btn">Beta Client</button>
                     <label class="toolbar-checkbox"><input type="checkbox" id="debug-playback-cb" checked> Debug Log</label>
                     <span class="toolbar-sep">Trace:</span>
                     <input type="text" id="trace-input" class="url-input" style="width:160px;" placeholder="handler1, handler2">
@@ -185,6 +186,9 @@
             });
         }
         document.getElementById('load-url-btn').addEventListener('click', loadUrl);
+        document.getElementById('beta-client-template-btn').addEventListener('click', function() {
+            window.location.href = 'beta.html';
+        });
         urlInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') loadUrl(); });
         urlInput.addEventListener('blur', function() {
             try { localStorage.setItem('ls_urlInput', urlInput.value); } catch(e) {}

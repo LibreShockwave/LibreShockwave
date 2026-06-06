@@ -270,3 +270,23 @@ tasks.register('runWasmV31RoomEnterTest', Exec) {
     standardOutput = System.out
     errorOutput    = System.err
 }
+
+// Local beta client load budget test. Uses the supplied 127.0.0.1 v31 DCR,
+// ws/MUS params, and asserts the room landscape cast is requested within the
+// one-minute load budget.
+tasks.register('runWasmLocalBetaLoadBudgetTest', Exec) {
+    group       = 'verification'
+    description = 'WASM local beta client reaches room landscape network request under one minute'
+    dependsOn 'assembleWasm', 'npmInstall'
+
+    def distPath  = layout.buildDirectory.dir('dist').get().asFile.absolutePath
+    def outputDir = project.findProperty('outputDir') ?: ''
+
+    commandLine 'node',
+        file('src/test/js/wasm-local-beta-load-budget-test.js').absolutePath,
+        distPath,
+        outputDir
+
+    standardOutput = System.out
+    errorOutput    = System.err
+}
