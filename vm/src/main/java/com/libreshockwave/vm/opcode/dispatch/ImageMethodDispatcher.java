@@ -905,11 +905,22 @@ public final class ImageMethodDispatcher {
             }
 
             Drawing.copyPixels(dest, transformed, minX, minY, 0, 0, destW, destH, effectiveInk, blend);
-            preservePaletteIndicesOnCopy(dest, transformed,
-                    minX, minY,
-                    0, 0,
-                    destW, destH, destW, destH,
+            boolean preservePaletteIndices = canPreservePaletteIndices(dest, transformed,
                     effectiveInk, blend, null, -1, -1);
+            if (preservePaletteIndices) {
+                preservePaletteIndicesOnCopy(dest, transformed,
+                        minX, minY,
+                        0, 0,
+                        destW, destH, destW, destH,
+                        effectiveInk, blend, null, -1, -1);
+                if (ink == Palette.InkMode.BACKGROUND_TRANSPARENT
+                        && blend >= 255
+                        && canRefreshDestinationPaletteIndices(dest)) {
+                    refreshDestinationPaletteIndices(dest, minX, minY, destW, destH);
+                }
+            } else if (canRefreshDestinationPaletteIndices(dest)) {
+                refreshDestinationPaletteIndices(dest, minX, minY, destW, destH);
+            }
 
             return Datum.VOID;
         }
@@ -1239,13 +1250,23 @@ public final class ImageMethodDispatcher {
                 if (((pixel >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                int paletteIndex = nearestCopiedRgbPaletteIndex(palette, pixel);
+                int previousIndex = indices[offset] & 0xFF;
+                int paletteIndex = copiedWhiteCanKeepMatteIndex(palette, pixel, previousIndex)
+                        ? previousIndex
+                        : nearestCopiedRgbPaletteIndex(palette, pixel);
                 indices[offset] = (byte) (paletteIndex & 0xFF);
                 dest.setPixelPreservePaletteIndex(x, y,
                         (pixel & 0xFF000000) | (palette.getColor(paletteIndex) & 0xFFFFFF));
             }
         }
         dest.setPaletteIndices(indices);
+    }
+
+    private static boolean copiedWhiteCanKeepMatteIndex(Palette palette, int pixel, int previousIndex) {
+        return previousIndex == 0
+                && palette.size() > 0
+                && (palette.getColor(0) & 0xFFFFFF) == 0xFFFFFF
+                && (pixel & 0xFFFFFF) == 0xFFFFFF;
     }
 
     private static int nearestCopiedRgbPaletteIndex(Palette palette, int pixel) {
