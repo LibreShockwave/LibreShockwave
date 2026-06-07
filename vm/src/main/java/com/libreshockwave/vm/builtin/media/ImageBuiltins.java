@@ -45,9 +45,6 @@ public final class ImageBuiltins {
         }
 
         Bitmap bmp = new Bitmap(width, height, bitDepth);
-        // Director's image() always creates white-filled bitmaps, opaque at all bit depths.
-        // "Creates a new image object filled with white." - Director docs.
-        bmp.fill(0xFFFFFFFF);
 
         // 4th argument: palette member reference (e.g., member("nav_ui_palette"))
         // Store the palette on the bitmap so paletteIndex() colors can be resolved correctly.
@@ -65,6 +62,10 @@ public final class ImageBuiltins {
                 bmp.setPaletteRefSystemName(resolved.systemName());
             }
         }
+
+        // Director's image() creates a white-filled image. For paletted images,
+        // fill after attaching the palette so the backing indices are initialized.
+        bmp.fill(0xFFFFFFFF);
 
         return new Datum.ImageRef(bmp);
     }

@@ -11,6 +11,8 @@ import com.libreshockwave.player.render.pipeline.BitmapCache;
 import com.libreshockwave.player.render.pipeline.InkProcessor;
 import com.libreshockwave.player.render.pipeline.RenderSprite;
 import com.libreshockwave.player.render.pipeline.SpriteBaker;
+import com.libreshockwave.vm.LingoVM;
+import com.libreshockwave.vm.builtin.BuiltinRegistry;
 import com.libreshockwave.vm.builtin.cast.CastLibProvider;
 import com.libreshockwave.vm.datum.Datum;
 import com.libreshockwave.vm.opcode.dispatch.ImageMethodDispatcher;
@@ -340,6 +342,151 @@ public class ScriptModifiedBitmapTest {
         assertEquals(0xFFFFFFFF, dest.getPixel(0, 1));
         assertEquals(0xFFFFFFFF, dest.getPixel(1, 1));
         assertEquals(0xFFFFFFFF, dest.getPixel(2, 1));
+    }
+
+    @Test
+    void backgroundTransparentQuadCopyRefreshesPalettedWindowCornerIndices() {
+        Palette uiPalette = new Palette(new int[] { 0xFFFFFF, 0x6794A7, 0xD4DDE1 }, "ui-test");
+        Bitmap src = new Bitmap(2, 2, 32, new int[] {
+                0xFFFFFFFF, 0xFF6794A7,
+                0xFF6794A7, 0xFF6794A7
+        });
+
+        Bitmap dest = new Bitmap(2, 2, 8);
+        dest.setImagePalette(uiPalette);
+        dest.fill(0xFFD4DDE1);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(0, 0),
+                new Datum.Point(2, 0),
+                new Datum.Point(2, 2),
+                new Datum.Point(0, 2)
+        )));
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 2, 2), props));
+
+        assertEquals(0xFFD4DDE1, dest.getPixel(0, 0),
+                "White rounded-corner pixels should remain keyed out");
+        assertEquals(Integer.valueOf(2), dest.getPaletteIndex(0, 0));
+        assertEquals(0xFF6794A7, dest.getPixel(1, 0));
+        assertEquals(Integer.valueOf(1), dest.getPaletteIndex(1, 0),
+                "Copied window chrome pixels should refresh indexed destination metadata");
+    }
+
+    @Test
+    void backgroundTransparentQuadCopyInitializesGeneratedWindowPaletteIndices() {
+        Palette uiPalette = new Palette(new int[] { 0xFFFFFF, 0x6794A7, 0xD4DDE1 }, "ui-test");
+        Bitmap src = new Bitmap(2, 2, 8, new int[] {
+                0xFFFFFFFF, 0xFF6794A7,
+                0xFF6794A7, 0xFF6794A7
+        });
+        src.setImagePalette(uiPalette);
+        src.setPaletteIndices(new byte[] { 0, 1, 1, 1 });
+
+        Bitmap dest = new Bitmap(2, 2, 8);
+        dest.fill(0xFFD4DDE1);
+
+        Datum.List quad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(0, 0),
+                new Datum.Point(2, 0),
+                new Datum.Point(2, 2),
+                new Datum.Point(0, 2)
+        )));
+        Datum.PropList props = new Datum.PropList();
+        props.add("ink", Datum.of(36), true);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), quad, new Datum.Rect(0, 0, 2, 2), props));
+
+        assertSame(uiPalette, dest.getImagePalette());
+        assertEquals(0xFFD4DDE1, dest.getPixel(0, 0),
+                "Skipped rounded-corner pixels should keep the generated window background");
+        assertEquals(Integer.valueOf(2), dest.getPaletteIndex(0, 0),
+                "Skipped rounded-corner pixels should not inherit the source white index");
+        assertEquals(0xFF6794A7, dest.getPixel(1, 0));
+        assertEquals(Integer.valueOf(1), dest.getPaletteIndex(1, 0));
+    }
+
+    @Test
+    void generatedPalettedImageStartsWithWhitePaletteIndices() {
+        Palette uiPalette = new Palette(new int[] {0xFFFFFF, 0xDADADA}, "nav_ui_palette");
+        CastLibProvider.setProvider(new PaletteNameProvider(uiPalette));
+        try {
+            Datum image = new BuiltinRegistry().invoke("image", new LingoVM(null),
+                    List.of(Datum.of(3), Datum.of(2), Datum.of(8), Datum.of("nav_ui_palette")));
+
+            Bitmap bitmap = assertInstanceOf(Datum.ImageRef.class, image).bitmap();
+            assertSame(uiPalette, bitmap.getImagePalette());
+            assertArrayEquals(new byte[] {0, 0, 0, 0, 0, 0}, bitmap.getPaletteIndices(),
+                    "Generated 8-bit palette images should initialize the white matte slot");
+            assertEquals(0xFFFFFFFF, bitmap.getPixel(0, 0));
+        } finally {
+            CastLibProvider.clearProvider();
+        }
+    }
+
+    @Test
+    void navigatorRoomRowRgbCapsKeepRoundedMatteIndices() {
+        int[] colors = new int[256];
+        colors[0] = 0xFFFFFF;
+        colors[82] = 0xDADADA;
+        Palette navPalette = new Palette(colors, "nav-ui");
+
+        Bitmap row = new Bitmap(24, 16, 8);
+        row.setImagePalette(navPalette);
+        row.fill(0xFFFFFFFF);
+
+        Bitmap cap = navigatorRoomRowCap(0xFFDADADA);
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(row), "copyPixels",
+                List.of(new Datum.ImageRef(cap), new Datum.Rect(0, 0, 6, 16),
+                        new Datum.Rect(0, 0, 6, 16)));
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(row), "fill",
+                List.of(new Datum.Rect(6, 0, 18, 16), new Datum.PaletteIndexColor(82)));
+
+        Datum.List rightCapQuad = new Datum.List(new ArrayList<>(List.of(
+                new Datum.Point(24, 0),
+                new Datum.Point(18, 0),
+                new Datum.Point(18, 16),
+                new Datum.Point(24, 16)
+        )));
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(row), "copyPixels",
+                List.of(new Datum.ImageRef(cap), rightCapQuad, new Datum.Rect(0, 0, 6, 16)));
+
+        assertEquals(Integer.valueOf(0), row.getPaletteIndex(0, 0));
+        assertEquals(Integer.valueOf(82), row.getPaletteIndex(5, 0));
+        assertEquals(Integer.valueOf(82), row.getPaletteIndex(18, 0));
+        assertEquals(Integer.valueOf(0), row.getPaletteIndex(23, 0));
+
+        Bitmap matte = InkProcessor.applyInk(row, 8, 0, false, navPalette);
+        assertEquals(0, matte.getPixel(0, 0) >>> 24);
+        assertEquals(0, matte.getPixel(23, 0) >>> 24);
+        assertEquals(255, matte.getPixel(5, 0) >>> 24);
+        assertEquals(255, matte.getPixel(18, 0) >>> 24);
+    }
+
+    private static Bitmap navigatorRoomRowCap(int bodyColor) {
+        Bitmap cap = new Bitmap(6, 16, 32);
+        for (int y = 0; y < 16; y++) {
+            int whiteWidth;
+            if (y == 0 || y == 15) {
+                whiteWidth = 5;
+            } else if (y == 1 || y == 14) {
+                whiteWidth = 3;
+            } else if (y == 2 || y == 13) {
+                whiteWidth = 2;
+            } else if (y == 3 || y == 4 || y == 11 || y == 12) {
+                whiteWidth = 1;
+            } else {
+                whiteWidth = 0;
+            }
+            for (int x = 0; x < 6; x++) {
+                cap.setPixel(x, y, x < whiteWidth ? 0xFFFFFFFF : bodyColor);
+            }
+        }
+        return cap;
     }
 
     @Test
