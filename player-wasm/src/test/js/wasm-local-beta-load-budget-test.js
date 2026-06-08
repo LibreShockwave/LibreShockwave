@@ -114,7 +114,7 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
     },
     onDebugLog: function(log) {
         var text = String(log);
-        if (/\\[WORKER\\] (fetch|relay)|\\[NetManager\\]|\\[MUS\\]|\\[MultiuserXtra\\]|preloadCasts|fetchStatus|netProvider/i.test(text)) {
+        if (/\\[WORKER\\] (fetch|relay)|\\[NetManager\\]|\\[MUS\\]|\\[MultiuserXtra\\]|fetchStatus|netProvider/i.test(text)) {
             _testState.lastNetworkActivityAt = performance.now();
             console.log(text);
         }

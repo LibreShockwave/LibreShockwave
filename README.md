@@ -657,9 +657,6 @@ Main thread (shockwave-lib.js)            Worker (shockwave-worker.js)
 fetch() .dcr file
   postMessage('loadMovie', bytes)  →      WasmEntry.loadMovie()
                                             → Player + QueuedNetProvider created
-  postMessage('preloadCasts')      →      preloadCasts() + pumpNetworkCollect()
-                                            → fetch() cast files
-  ← postMessage('castsDone')
 
   postMessage('play')              →      WasmEntry.play()
 
