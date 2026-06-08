@@ -108,6 +108,9 @@ public class Drawing {
         boolean keyNearWhiteMatte = effectiveInk == InkMode.BACKGROUND_TRANSPARENT
                 && shouldKeyNearWhiteMatte(effectiveSrc, effectiveSrcX, effectiveSrcY, width, height,
                         resolvedBackgroundKeyRgb);
+        byte[] effectivePaletteIndices = effectiveSrc.getPaletteIndices();
+        boolean keyDefaultIndexedMatte = effectiveInk == InkMode.BACKGROUND_TRANSPARENT
+                && shouldKeyDefaultIndexedMatte(effectiveSrc, resolvedBackgroundKeyRgb, effectivePaletteIndices);
         for (int y = 0; y < height; y++) {
             int sy = effectiveSrcY + y;
             int dy = destY + y;
@@ -135,8 +138,13 @@ public class Drawing {
 
                 int srcPixel = effectiveSrc.getPixel(sx, sy);
                 int destPixel = dest.getPixel(dx, dy);
+                int srcIndex = sy * effectiveSrc.getWidth() + sx;
+                boolean skipSource = keyDefaultIndexedMatte
+                        && srcIndex >= 0 && srcIndex < effectivePaletteIndices.length
+                        && (effectivePaletteIndices[srcIndex] & 0xFF) == 0;
+                skipSource = skipSource || (keyNearWhiteMatte && isNearWhiteMattePixel(srcPixel));
 
-                int resultPixel = keyNearWhiteMatte && isNearWhiteMattePixel(srcPixel)
+                int resultPixel = skipSource
                         ? destPixel
                         : applyInk(srcPixel, destPixel, effectiveInk, blend, resolvedBackgroundKeyRgb);
                 dest.setPixelPreservePaletteIndex(dx, dy, resultPixel);
@@ -186,6 +194,48 @@ public class Drawing {
         return r >= 240 && g >= 240 && b >= 240
                 && Math.abs(r - g) <= 2
                 && Math.abs(g - b) <= 2;
+    }
+
+    private static boolean shouldKeyDefaultIndexedMatte(Bitmap src, Integer backgroundKeyRgb,
+                                                        byte[] paletteIndices) {
+        if (src == null || src.getBitDepth() > 8
+                || backgroundKeyRgb == null || (backgroundKeyRgb & 0xFFFFFF) != DEFAULT_RGB_MATTE
+                || !hasPaletteIndices(paletteIndices, src.getWidth(), src.getHeight())) {
+            return false;
+        }
+        if (isUniformPaletteIndex(paletteIndices, 0)) {
+            return false;
+        }
+
+        int[] pixels = src.getPixels();
+        if (!edgeContainsOpaquePaletteIndex(pixels, paletteIndices, src.getWidth(), src.getHeight(), 0)) {
+            return false;
+        }
+
+        int indexZeroRgb = resolvePaletteIndexRgb(pixels, paletteIndices, 0);
+        return isNearWhiteGrayscale(indexZeroRgb, 232, 16)
+                && hasOpaqueNonPaletteIndexContent(pixels, paletteIndices, 0);
+    }
+
+    private static boolean edgeContainsOpaquePaletteIndex(int[] pixels, byte[] paletteIndices,
+                                                          int w, int h, int paletteIndex) {
+        for (int index : iterateEdgeIndices(w, h)) {
+            if (((pixels[index] >>> 24) & 0xFF) != 0
+                    && (paletteIndices[index] & 0xFF) == paletteIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasOpaqueNonPaletteIndexContent(int[] pixels, byte[] paletteIndices, int paletteIndex) {
+        for (int i = 0; i < pixels.length && i < paletteIndices.length; i++) {
+            if (((pixels[i] >>> 24) & 0xFF) != 0
+                    && (paletteIndices[i] & 0xFF) != paletteIndex) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean copyMatteToMaskImage(Bitmap dest, Bitmap src,

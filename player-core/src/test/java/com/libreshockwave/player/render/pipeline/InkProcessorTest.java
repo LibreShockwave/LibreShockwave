@@ -58,6 +58,27 @@ class InkProcessorTest {
     }
 
     @Test
+    void backgroundTransparentKeysIndexedNearWhiteMatteSlotWithoutErasingDuplicateRgb() {
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+            0xFFEFEFEF, 0xFF6794A7, 0xFFEFEFEF,
+            0xFF6794A7, 0xFFEFEFEF, 0xFF6794A7,
+            0xFFEFEFEF, 0xFF6794A7, 0xFFEFEFEF
+        });
+        src.setPaletteIndices(new byte[] {
+            0, 1, 0,
+            1, 5, 1,
+            0, 1, 0
+        });
+
+        Bitmap result = InkProcessor.applyBackgroundTransparent(src, 0xFFFFFF);
+
+        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFF6794A7, result.getPixel(1, 0));
+        assertEquals(0xFFEFEFEF, result.getPixel(1, 1));
+        assertEquals(0x00000000, result.getPixel(2, 2));
+    }
+
+    @Test
     void backgroundTransparentKeepsOpaqueColored32BitUiPixels() {
         Bitmap src = new Bitmap(2, 1, 32, new int[] {
             0xFFFFFFFF,
@@ -298,6 +319,37 @@ class InkProcessorTest {
         assertEquals(0xFF000000, result.getPixel(1, 2));
         assertEquals(0xFFFFFFFF, result.getPixel(2, 2));
         assertEquals(0xFFFFCC00, result.getPixel(3, 3));
+    }
+
+    @Test
+    void matteUsesExplicitWhiteBackColorForIndexedWindowShadowBuffers() {
+        Bitmap src = new Bitmap(5, 5, 8, new int[] {
+            0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
+            0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000,
+            0xFF000000, 0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF, 0xFF000000,
+            0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000,
+            0xFF000000, 0xFF000000, 0xFFFFFFFF, 0xFF000000, 0xFF000000
+        });
+        src.setPaletteIndices(new byte[] {
+            1, 1, 1, 1, 1,
+            1, 0, 0, 0, 1,
+            1, 0, 1, 0, 1,
+            1, 0, 0, 0, 1,
+            1, 1, 0, 1, 1
+        });
+        Palette palette = new Palette(new int[] {
+            0xFFFFFFFF,
+            0xFF000000
+        }, "interface palette");
+        src.setImagePalette(palette);
+        src.markScriptModified();
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0xFFFFFF, false, palette);
+
+        assertEquals(0xFF000000, result.getPixel(0, 0));
+        assertEquals(0x00000000, result.getPixel(1, 1));
+        assertEquals(0xFF000000, result.getPixel(2, 2));
+        assertEquals(0x00000000, result.getPixel(2, 4));
     }
 
     @Test

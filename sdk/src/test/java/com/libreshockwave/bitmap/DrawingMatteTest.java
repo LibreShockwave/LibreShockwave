@@ -566,4 +566,30 @@ class DrawingMatteTest {
         assertEquals(0xFFEEEEEE, dest.getPixel(2, 2));
         assertEquals(0xFF222222, dest.getPixel(5, 3));
     }
+
+    @Test
+    void backgroundTransparentCopyPixelsKeysIndexedNearWhiteMatteSlotWithoutErasingDuplicateRgb() {
+        Bitmap dest = new Bitmap(3, 3, 32);
+        dest.fill(0xFF112233);
+        Bitmap src = new Bitmap(3, 3, 8, new int[] {
+                0xFFEFEFEF, 0xFF6794A7, 0xFFEFEFEF,
+                0xFF6794A7, 0xFFEFEFEF, 0xFF6794A7,
+                0xFFEFEFEF, 0xFF6794A7, 0xFFEFEFEF
+        });
+        src.setPaletteIndices(new byte[] {
+                0, 1, 0,
+                1, 5, 1,
+                0, 1, 0
+        });
+
+        Drawing.copyPixels(dest, src, 0, 0, 0, 0, 3, 3,
+                Palette.InkMode.BACKGROUND_TRANSPARENT, 255);
+
+        assertEquals(0xFF112233, dest.getPixel(0, 0),
+                "Authored palette slot 0 should stay transparent for default ink 36 window mattes");
+        assertEquals(0xFF6794A7, dest.getPixel(1, 0));
+        assertEquals(0xFFEFEFEF, dest.getPixel(1, 1),
+                "The same decoded RGB from a non-matte palette slot should remain visible");
+        assertEquals(0xFF112233, dest.getPixel(2, 2));
+    }
 }
