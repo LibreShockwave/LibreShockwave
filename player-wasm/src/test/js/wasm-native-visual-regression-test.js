@@ -19,7 +19,7 @@ const traceHandlers = readListEnv('LS_TRACE_HANDLERS');
 const V31_BETA_CLIENT_MOVIE_URL =
     'https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
 const V31_BETA_CLIENT_PARAMS = {
-    'venus.websocket.mode': 'ws',
+    'websocket.mode': 'ws',
     sw1: 'client.allow.cross.domain=1;client.notify.cross.domain=0',
     sw2: 'connection.info.host=verysecret.classichabbo.com;connection.info.port=30100',
     sw3: 'connection.mus.host=verysecret.classichabbo.com;connection.mus.port=38201',

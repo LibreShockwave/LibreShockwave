@@ -14,7 +14,7 @@ const movieUrl = process.env.LS_BETA_CLIENT_MOVIE_URL
     || 'http://127.0.0.1/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?';
 
 const betaClientParams = {
-    'venus.websocket.mode': 'ws',
+    'websocket.mode': 'ws',
     sw1: 'client.allow.cross.domain=1;client.notify.cross.domain=0',
     sw2: 'connection.info.host=127.0.0.1;connection.info.port=30100',
     sw3: 'connection.mus.host=127.0.0.1;connection.mus.port=38201',
