@@ -67,16 +67,49 @@ for future fixes and tests, not as a complete rendering specification.
 - If valid palette indices exist, prefer palette-index matte detection. Border
   index `0` white is normal matte/background when present and the image is not
   uniform.
+- For script-built indexed UI buffers, sprite-level `backColor` is still
+  meaningful for final `MATTE`. If it resolves to white through the active
+  palette or as packed RGB, prefer the matching indexed white matte before the
+  dominant-edge heuristic. This prevents dark shadow art on the edges from being
+  mistaken for the matte color while the original white backing remains visible.
 - Without valid indices, use the RGB flood-fill fallback, usually keyed from
   white.
 - `BACKGROUND_TRANSPARENT` ink defaults the background key to white unless
   `bgColor` provides a different key.
+- `BACKGROUND_TRANSPARENT` copies from indexed sources with the default white
+  key should skip the authored matte index when palette index `0` is near-white,
+  but must not erase duplicate white or near-white RGB pixels that came from
+  other palette entries.
 - Background-transparent copies should treat border-connected key pixels as
   transparent while preserving enclosed key-colored content when required.
 - Near-white matte preprocessing must stay narrow. Apply it only when the source
   has a border-connected near-white matte and real non-near-white content. A
   broad near-white rule can erase legitimate light text, highlights, and
   overlays.
+- Outlined-white-body preservation is not a general script-buffer rule. Keep it
+  for authored low-depth assets and explicitly scoped script-built 32-bit chat
+  backgrounds. Do not apply it to script-modified indexed window buffers, where
+  white is usually the matte backing.
+
+## Window Buffers And Grouped UI
+
+- Habbo window layouts group repeated element IDs into one bitmap buffer per
+  group. In `habbo_simple.window`, `shadow` is built before `back`; the shadow
+  group uses mixed item inks with a shared blend, so the final sprite stays
+  `MATTE` and receives the shared blend.
+- When all items in a group share `blend`, item-level copies into the group
+  buffer should render at full strength and the final sprite should carry the
+  shared blend. For the loader/window shadow this means black shadow pixels are
+  stored opaque in the buffer, then the whole sprite blends at 30 percent.
+- Script-created indexed window buffers start as opaque white with palette
+  indices initialized. The final `MATTE` pass must remove that white backing so
+  only the authored shadow or chrome pixels remain. If the white backing survives
+  and the sprite has partial blend, it appears as a grey halo on black stage
+  backgrounds.
+- Window shadow artifacts are usually a matte/index problem before they are a
+  z-order problem. Verify the baked shadow bitmap first: black shadow pixels
+  should remain opaque, and edge-connected white backing should become fully
+  transparent.
 
 ## Masks
 
