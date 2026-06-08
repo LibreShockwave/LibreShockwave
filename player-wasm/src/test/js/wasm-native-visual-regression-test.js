@@ -444,7 +444,6 @@ var betaClientPlayer = LibreShockwave.create("beta-client-stage", {
         }
         if (text.indexOf('[WORKER] fetch') >= 0
                 || text.indexOf('[WORKER] relay') >= 0
-                || text.indexOf('[WORKER] preloadCasts') >= 0
                 || text.indexOf('[MUS]') >= 0
                 || text.indexOf('[NetManager]') >= 0) {
             _testState.lastNetworkActivityAt = Date.now();

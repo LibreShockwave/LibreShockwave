@@ -581,10 +581,6 @@ var LibreShockwave = (function() {
                 this._resolveOnce('movieLoaded', msg.info);
                 break;
 
-            case 'castsDone':
-                this._resolveOnce('castsDone', null);
-                break;
-
             case 'frame':
                 this._resolveOnce('frame', msg);
                 break;
@@ -619,25 +615,6 @@ var LibreShockwave = (function() {
                 var worker = this._worker;
                 var relayId = msg.relayId;
                 var relayUrl = msg.url;
-
-                // Check relay cache first (with and without query string for cache-busted URLs)
-                var relayBuf = this._getRelayCacheBuffer(relayUrl);
-                if (relayBuf) {
-                    var copy = relayBuf.slice(0); // copy so original stays reusable
-                    worker.postMessage({ type: 'fetchRelayResult', relayId: relayId, data: copy }, [copy]);
-                    break;
-                }
-                var inflightRelay = this._getRelayCacheInflight(relayUrl);
-                if (inflightRelay) {
-                    inflightRelay.then(function(buf) {
-                        var copy = buf.slice(0);
-                        worker.postMessage({ type: 'fetchRelayResult', relayId: relayId, data: copy }, [copy]);
-                    }).catch(function(e) {
-                        worker.postMessage({ type: 'fetchRelayResult', relayId: relayId,
-                                             error: true, status: (e && e.status) || 0 });
-                    });
-                    break;
-                }
 
                 var opts = {};
                 if (msg.method === 'POST') {
@@ -1007,8 +984,7 @@ var LibreShockwave = (function() {
         await this._onMovieLoaded(info);
     };
 
-    ShockwavePlayer.prototype._onMovieLoaded = async function(info) {
-        var mySeq = this._loadSeq;
+    ShockwavePlayer.prototype._onMovieLoaded = function(info) {
         // Push external params into the worker
         this._worker.postMessage({ type: 'clearParams' });
         for (var k in this._params) {
@@ -1048,21 +1024,6 @@ var LibreShockwave = (function() {
             }
         }
 
-        // Pre-fetch sw1 URLs from main thread into relay cache in the background.
-        // The worker cannot reliably fetch cross-origin URLs (Chrome hang bug),
-        // so we do it here and serve from cache when the relay arrives. Cache
-        // misses still fall through to an async relay fetch.
-        this._relayCache = {};
-        this._relayCacheInflight = {};
-        this._prefetchRelayCache(mySeq);
-
-        // Preload external casts before starting. The worker queues async fetches
-        // and returns immediately; completed network responses are delivered on
-        // subsequent ticks so HTTP I/O does not block rendering or input.
-        this._worker.postMessage({ type: 'preloadCasts' });
-        await this._waitFor('castsDone');
-        if (this._loadSeq !== mySeq) return;
-
         console.log('[LS] Ready to play after ' +
                     Math.round(performance.now() - this._loadStartTime) + 'ms');
         if (this._opts.onLoad) this._opts.onLoad(info);
@@ -1070,172 +1031,6 @@ var LibreShockwave = (function() {
             this.setTempo(this._tempoOverride);
         }
         if (this._autoplay && !this._playing) this.play();
-    };
-
-    // Parse all sw1-sw9 params for URLs (key=value;key=value format)
-    function _parseSwUrls(params) {
-        var urls = [];
-        for (var i = 1; i <= 9; i++) {
-            var sw = params['sw' + i] || params['SW' + i] || '';
-            if (!sw) continue;
-            sw.split(';').forEach(function(pair) {
-                pair = pair.trim();
-                var eq = pair.indexOf('=');
-                if (eq < 0) return;
-                var val = pair.substring(eq + 1).trim();
-                if (val.indexOf('://') !== -1) urls.push(val);
-            });
-        }
-        return urls;
-    }
-
-    function _relayCacheKeys(url) {
-        var keys = [];
-        function add(key) {
-            if (key && keys.indexOf(key) < 0) keys.push(key);
-        }
-        add(url);
-        var q = url.indexOf('?');
-        if (q >= 0) add(url.substring(0, q));
-        try {
-            var parsed = new URL(url, window.location.href);
-            add(parsed.href);
-            var noQuery = parsed.href.indexOf('?') >= 0 ? parsed.href.substring(0, parsed.href.indexOf('?')) : parsed.href;
-            add(noQuery);
-        } catch (e) {}
-        return keys;
-    }
-
-    ShockwavePlayer.prototype._getRelayCacheBuffer = function(url) {
-        if (!this._relayCache) return null;
-        var keys = _relayCacheKeys(url);
-        for (var i = 0; i < keys.length; i++) {
-            if (this._relayCache[keys[i]]) return this._relayCache[keys[i]];
-        }
-        return null;
-    };
-
-    ShockwavePlayer.prototype._getRelayCacheInflight = function(url) {
-        if (!this._relayCacheInflight) return null;
-        var keys = _relayCacheKeys(url);
-        for (var i = 0; i < keys.length; i++) {
-            if (this._relayCacheInflight[keys[i]]) return this._relayCacheInflight[keys[i]];
-        }
-        return null;
-    };
-
-    ShockwavePlayer.prototype._storeRelayCacheBuffer = function(url, buf) {
-        var keys = _relayCacheKeys(url);
-        for (var i = 0; i < keys.length; i++) {
-            this._relayCache[keys[i]] = buf;
-        }
-    };
-
-    ShockwavePlayer.prototype._storeRelayCacheInflight = function(url, promise) {
-        var keys = _relayCacheKeys(url);
-        for (var i = 0; i < keys.length; i++) {
-            this._relayCacheInflight[keys[i]] = promise;
-        }
-        return keys;
-    };
-
-    ShockwavePlayer.prototype._clearRelayCacheInflight = function(keys) {
-        if (!this._relayCacheInflight || !keys) return;
-        for (var i = 0; i < keys.length; i++) {
-            delete this._relayCacheInflight[keys[i]];
-        }
-    };
-
-    function _castBaseUrl(movieUrl, fallbackBasePath) {
-        var source = movieUrl || fallbackBasePath || '';
-        try {
-            var parsed = new URL(source, window.location.href);
-            parsed.search = '';
-            parsed.hash = '';
-            var href = parsed.href;
-            return href.substring(0, href.lastIndexOf('/') + 1);
-        } catch (e) {
-            var q = source.indexOf('?');
-            if (q >= 0) source = source.substring(0, q);
-            return source.substring(0, source.lastIndexOf('/') + 1);
-        }
-    }
-
-    function _parseRoomCastHints(text) {
-        var casts = [];
-        String(text || '').split(/\r?\n/).forEach(function(line) {
-            var m = line.match(/^room\.cast\.[^=]+=\[(.*)\]\s*$/);
-            if (!m) return;
-            var re = /"([^"]+)"/g;
-            var item;
-            while ((item = re.exec(m[1])) !== null) {
-                if (casts.indexOf(item[1]) < 0) casts.push(item[1]);
-            }
-        });
-        return casts;
-    }
-
-    ShockwavePlayer.prototype._prefetchRoomCastHints = function(loadSeq, externalVariablesUrl, buf) {
-        var text;
-        try {
-            text = new TextDecoder().decode(new Uint8Array(buf));
-        } catch (e) {
-            return;
-        }
-        var casts = _parseRoomCastHints(text);
-        if (casts.length === 0) return;
-        var base = _castBaseUrl(this._loadedMovieUrl, this._basePath);
-        var self = this;
-        casts.forEach(function(castName) {
-            var url = base + castName + '.cct';
-            if (self._getRelayCacheBuffer(url) || self._getRelayCacheInflight(url)) return;
-            var promise = _fetchWithTimeout(url)
-                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-                .then(function(castBuf) {
-                    if (loadSeq !== undefined && self._loadSeq !== loadSeq) return;
-                    self._storeRelayCacheBuffer(url, castBuf);
-                    console.log('[LS] Pre-fetched room cast hint: ' + url + ' (' + castBuf.byteLength + ' bytes)');
-                    return castBuf;
-                })
-                .catch(function(e) {
-                    if (!e || !e.message) e = { message: String(e) };
-                    console.warn('[LS] Room cast hint pre-fetch failed: ' + url + ' - ' + e.message);
-                    throw e;
-                });
-            var keys = self._storeRelayCacheInflight(url, promise);
-            promise.finally(function() {
-                self._clearRelayCacheInflight(keys);
-            }).catch(function() {});
-        });
-    };
-
-    ShockwavePlayer.prototype._prefetchRelayCache = function(loadSeq) {
-        var urls = _parseSwUrls(this._params);
-        if (urls.length === 0) return;
-        console.log('[LS] Pre-fetching ' + urls.length + ' sw URLs for relay cache in background');
-        var self = this;
-        urls.forEach(function(url) {
-            var promise = _fetchWithTimeout(url)
-                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-                .then(function(buf) {
-                    if (loadSeq !== undefined && self._loadSeq !== loadSeq) return;
-                    self._storeRelayCacheBuffer(url, buf);
-                    console.log('[LS] Pre-fetched: ' + url + ' (' + buf.byteLength + ' bytes)');
-                    if (/external_variables\.txt/i.test(url)) {
-                        self._prefetchRoomCastHints(loadSeq, url, buf);
-                    }
-                    return buf;
-                })
-                .catch(function(e) {
-                    if (!e || !e.message) e = { message: String(e) };
-                    console.warn('[LS] Pre-fetch failed: ' + url + ' - ' + e.message);
-                    throw e;
-                });
-            var keys = self._storeRelayCacheInflight(url, promise);
-            promise.finally(function() {
-                self._clearRelayCacheInflight(keys);
-            }).catch(function() {});
-        });
     };
 
     // --- Playback control ---
@@ -1340,7 +1135,6 @@ var LibreShockwave = (function() {
         this._pending = null;
         this._pendingUrl = null;
         this._pendingFile = null;
-        this._relayCache = {};
         this._lastSpriteCount = 0;
         this._lastFrame = 0;
         this._lastFrameCount = 0;

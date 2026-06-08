@@ -63,7 +63,6 @@ function _musPreview(data) {
  *   {type:'setParam',  key, value}
  *   {type:'clearParams'}
  *   {type:'setMovieProperty', key, value}
- *   {type:'preloadCasts'}
  *   {type:'play'|'pause'|'stop'}
  *   {type:'tick'}
  *   {type:'goToFrame', frame}
@@ -78,7 +77,6 @@ function _musPreview(data) {
  * Message protocol (worker → main):
  *   {type:'ready'}
  *   {type:'movieLoaded',  info:{width,height,frameCount,tempo} | null}
- *   {type:'castsDone'}
  *   {type:'frame', playing, enginePlaying, tempo, lastFrame, frameCount,
  *                  rgba:Uint8ClampedArray, width, height}
  *   {type:'error', msg}
@@ -204,7 +202,7 @@ function _drainGotoNetMovies() {
     } catch (navErr) {}
 }
 
-// --- External params stored locally for pre-fetch access ---
+// --- External params stored locally for runtime checks ---
 var _params = {};
 
 // --- Diagnostic tick counter ---
@@ -397,10 +395,6 @@ WasmEngine.prototype.removeTraceHandler = function(name) {
 WasmEngine.prototype.clearTraceHandlers = function() {
     this.exports.clearTraceHandlers();
     this._clearEx();
-};
-
-WasmEngine.prototype.preloadCasts = function() {
-    var n = this.exports.preloadCasts(); this._clearEx(); return n;
 };
 
 WasmEngine.prototype.tick = function() {
@@ -1175,7 +1169,7 @@ self.onmessage = async function(e) {
 
             case 'setParam':
                 _e.setExternalParam(msg.key, msg.value);
-                _params[msg.key] = msg.value; // Store locally for pre-fetch
+                _params[msg.key] = msg.value;
                 break;
 
             case 'setDebugPlayback':
@@ -1208,20 +1202,6 @@ self.onmessage = async function(e) {
             case 'setMovieProperty':
                 _e.setMovieProperty(msg.key, msg.value);
                 break;
-
-            case 'preloadCasts': {
-                var castT0 = performance.now();
-                _loadStartTime = castT0;
-                var n = _e.preloadCasts();
-                console.log('[WORKER] preloadCasts: ' + n + ' casts queued');
-                var fired = _e.pumpNetworkFire();
-                console.log('[WORKER] preloadCasts fired ' + fired + ' async fetches in ' +
-                            Math.round(performance.now() - castT0) + 'ms');
-
-                _flushWasmDiagnostics();
-                self.postMessage({ type: 'castsDone' });
-                break;
-            }
 
             case 'play':
                 console.log('[WORKER] play() — starting animation');
