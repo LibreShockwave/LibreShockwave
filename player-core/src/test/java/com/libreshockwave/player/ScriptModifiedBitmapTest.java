@@ -1895,6 +1895,76 @@ public class ScriptModifiedBitmapTest {
     }
 
     @Test
+    void palettedMatteCopyPreservesStretchedWhiteChatBubbleMiddleStrip() {
+        Palette bubblePalette = new Palette(new int[]{0xFFFFFF, 0x666666}, "bubble-ui");
+        Bitmap dest = new Bitmap(3, 5, 32);
+        dest.fill(0x00000000);
+
+        Bitmap src = new Bitmap(1, 5, 8);
+        src.setImagePalette(bubblePalette);
+        src.fillRectPaletteIndex(0, 0, 1, 1, 1, 0xFF666666);
+        src.fillRectPaletteIndex(0, 1, 1, 3, 0, 0xFFFFFFFF);
+        src.fillRectPaletteIndex(0, 4, 1, 1, 1, 0xFF666666);
+
+        ImageMethodDispatcher.dispatch(new Datum.ImageRef(dest), "copyPixels",
+                List.of(new Datum.ImageRef(src), new Datum.Rect(0, 0, 3, 5),
+                        new Datum.Rect(0, 0, 1, 5),
+                        inkProps(8)));
+
+        assertEquals(0xFF666666, dest.getPixel(1, 0));
+        assertEquals(0xFFFFFFFF, dest.getPixel(1, 2));
+        assertEquals(0xFF666666, dest.getPixel(1, 4));
+    }
+
+    @Test
+    void matteInkPreservesRgbOnlyBalloonMiddleStripBody() {
+        Bitmap src = new Bitmap(1, 19, 8, new int[] {
+                0xFF000000,
+                0xFF000000,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFFFFFFFF,
+                0xFF000000,
+                0xFF000000
+        });
+
+        Bitmap inked = InkProcessor.applyInk(src, 8, 0, false, null);
+
+        assertEquals(0xFF000000, inked.getPixel(0, 0));
+        assertEquals(0xFFFFFFFF, inked.getPixel(0, 9));
+        assertEquals(0xFF000000, inked.getPixel(0, 18));
+    }
+
+    @Test
+    void twoColorMatteDoesNotPreserveWhiteHaloAroundCenteredGlyph() {
+        Bitmap src = new Bitmap(5, 5, 8, new int[] {
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+        });
+
+        Bitmap inked = InkProcessor.applyInk(src, 8, 0, false, null);
+
+        assertEquals(0x00000000, inked.getPixel(2, 1));
+        assertEquals(0xFF000000, inked.getPixel(2, 2));
+        assertEquals(0x00000000, inked.getPixel(2, 3));
+    }
+
+    @Test
     void rgbCopyIntoPalettedImageKeepsMatteWhiteSlotAvailable() {
         Palette windowPalette = new Palette(new int[]{0xFFFFFF, 0xEFEFEF, 0x000000}, "window-ui");
         Bitmap dest = new Bitmap(3, 1, 8);
@@ -2200,6 +2270,80 @@ public class ScriptModifiedBitmapTest {
         assertEquals(0xFF196633, baked.getBakedBitmap().getPixel(0, 1));
         assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(1, 1));
         assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(2, 1));
+    }
+
+    @Test
+    void spriteBakerPreservesScriptBuiltWhiteBodyOnlyForChatBackgroundMembers() {
+        CastMember member = new CastMember(1, 10006, MemberType.BITMAP);
+        member.setName("chat_item_background_10006");
+        member.setBitmapDirectly(scriptBuilt32BitBubbleFixture());
+
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, 20, 10, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0, false, false,
+                8, 100, false, false, null, false
+        );
+
+        RenderSprite baked = new SpriteBaker(new BitmapCache(), null, null).bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0xFFFFFFFF, baked.getBakedBitmap().getPixel(10, 4));
+        assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(6, 4));
+    }
+
+    @Test
+    void spriteBakerDoesNotPreserveScriptBuiltWhiteBodyForGenericUiMembers() {
+        CastMember member = new CastMember(1, 10007, MemberType.BITMAP);
+        member.setName("navigator_window_background_10007");
+        member.setBitmapDirectly(scriptBuilt32BitBubbleFixture());
+
+        RenderSprite sprite = new RenderSprite(
+                1, 0, 0, 20, 10, 0, true,
+                RenderSprite.SpriteType.BITMAP,
+                null, member,
+                0, 0, false, false,
+                8, 100, false, false, null, false
+        );
+
+        RenderSprite baked = new SpriteBaker(new BitmapCache(), null, null).bake(sprite);
+
+        assertNotNull(baked.getBakedBitmap());
+        assertEquals(0x00000000, baked.getBakedBitmap().getPixel(10, 4));
+        assertEquals(0xFF000000, baked.getBakedBitmap().getPixel(6, 4));
+    }
+
+    private static Bitmap scriptBuilt32BitBubbleFixture() {
+        Bitmap src = new Bitmap(20, 10, 32);
+        src.fill(0xFFFFFFFF);
+
+        for (int x = 4; x <= 15; x++) {
+            src.setPixel(x, 0, 0xFF000000);
+        }
+        for (int y = 1; y <= 7; y++) {
+            src.setPixel(0, y, 0xFF000000);
+            src.setPixel(19, y, 0xFF000000);
+        }
+        for (int x = 0; x <= 7; x++) {
+            src.setPixel(x, 7, 0xFF000000);
+        }
+        for (int x = 12; x <= 19; x++) {
+            src.setPixel(x, 7, 0xFF000000);
+        }
+        src.setPixel(9, 8, 0xFF000000);
+        src.setPixel(10, 8, 0xFF000000);
+        src.setPixel(9, 9, 0xFF000000);
+        src.setPixel(10, 9, 0xFF000000);
+
+        src.setPixel(2, 2, 0xFF3A8ABF);
+        for (int x = 6; x <= 9; x++) {
+            src.setPixel(x, 4, 0xFF000000);
+        }
+        src.setPixel(6, 5, 0xFF000000);
+        src.setPixel(9, 5, 0xFF000000);
+        src.markScriptModified();
+        return src;
     }
 
     @Test

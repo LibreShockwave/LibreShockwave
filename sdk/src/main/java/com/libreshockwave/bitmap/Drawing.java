@@ -887,12 +887,14 @@ public class Drawing {
         Integer matteIndex = inferDominantEdgePaletteIndex(pixels, paletteIndices, w, h);
         if (matteIndex != null) {
             int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, matteIndex);
-            return new FloodFillMatte(matteIndex, matteRgb, 0);
+            if (matteIndex == 0 && isDefaultIndexedMatteRgb(matteRgb)) {
+                return new FloodFillMatte(matteIndex, matteRgb, 0);
+            }
         }
 
-        if (edgeContainsPaletteIndex(paletteIndices, w, h, 0)) {
+        if (cornerContainsPaletteIndex(paletteIndices, w, h, 0)) {
             int indexZeroRgb = resolvePaletteIndexRgb(pixels, paletteIndices, 0);
-            if (indexZeroRgb == 0x000000 || indexZeroRgb == DEFAULT_RGB_MATTE) {
+            if (isDefaultIndexedMatteRgb(indexZeroRgb)) {
                 return new FloodFillMatte(0, indexZeroRgb, 0);
             }
         }
@@ -903,13 +905,23 @@ public class Drawing {
         return paletteIndices != null && paletteIndices.length >= w * h;
     }
 
-    private static boolean edgeContainsPaletteIndex(byte[] paletteIndices, int w, int h, int paletteIndex) {
-        for (int index : iterateEdgeIndices(w, h)) {
+    private static boolean cornerContainsPaletteIndex(byte[] paletteIndices, int w, int h, int paletteIndex) {
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+        for (int index : cornerIndices) {
             if ((paletteIndices[index] & 0xFF) == paletteIndex) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isDefaultIndexedMatteRgb(int rgb) {
+        return rgb == 0x000000 || rgb == DEFAULT_RGB_MATTE;
     }
 
     private static Integer inferDominantEdgePaletteIndex(int[] pixels, byte[] paletteIndices, int w, int h) {
@@ -1014,7 +1026,26 @@ public class Drawing {
         if (matteRgb != null) {
             return new FloodFillMatte(matteRgb, 0);
         }
+        if (!cornerContainsOpaqueRgb(pixels, w, h, DEFAULT_RGB_MATTE)) {
+            return null;
+        }
         return new FloodFillMatte(DEFAULT_RGB_MATTE, 0);
+    }
+
+    private static boolean cornerContainsOpaqueRgb(int[] pixels, int w, int h, int rgb) {
+        int[] cornerIndices = {
+                0,
+                Math.max(0, w - 1),
+                Math.max(0, (h - 1) * w),
+                Math.max(0, (h - 1) * w + (w - 1))
+        };
+        for (int index : cornerIndices) {
+            int pixel = pixels[index];
+            if (((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) == rgb) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static FloodFillMatte resolveBackgroundTransparentMatte(int[] pixels, byte[] paletteIndices, int w, int h) {

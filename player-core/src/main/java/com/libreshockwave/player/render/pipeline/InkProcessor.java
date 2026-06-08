@@ -52,7 +52,12 @@ public final class InkProcessor {
 
     public static Bitmap applyInk(Bitmap src, int ink, int backColor,
                                    boolean useAlpha, Palette palette, boolean skipGraduatedAlpha) {
-        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette, skipGraduatedAlpha);
+        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette, skipGraduatedAlpha, false);
+    }
+
+    public static Bitmap applyInkPreservingOutlinedWhiteBody(Bitmap src, int ink, int backColor,
+                                   boolean useAlpha, Palette palette, boolean skipGraduatedAlpha) {
+        return applyInk(src, InkMode.fromCode(ink), backColor, useAlpha, palette, skipGraduatedAlpha, true);
     }
 
     /**
@@ -72,6 +77,12 @@ public final class InkProcessor {
 
     public static Bitmap applyInk(Bitmap src, InkMode ink, int backColor,
                                    boolean useAlpha, Palette palette, boolean skipGraduatedAlpha) {
+        return applyInk(src, ink, backColor, useAlpha, palette, skipGraduatedAlpha, false);
+    }
+
+    private static Bitmap applyInk(Bitmap src, InkMode ink, int backColor,
+                                   boolean useAlpha, Palette palette, boolean skipGraduatedAlpha,
+                                   boolean preserveScriptOutlinedWhiteBody) {
         if (src == null || src.getWidth() == 0 || src.getHeight() == 0) {
             return src;
         }
@@ -82,11 +93,12 @@ public final class InkProcessor {
 
         if (ink == InkMode.MATTE) {
             // Matte ink: flood-fill from edges
-            Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+            Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette,
+                    preserveScriptOutlinedWhiteBody);
             if (matteSpec == null) {
                 return src;
             }
-            Bitmap outlined = applyOutlinedWhiteBodyMatteIfNeeded(src, matteSpec);
+            Bitmap outlined = applyOutlinedWhiteBodyMatteIfNeeded(src, matteSpec, preserveScriptOutlinedWhiteBody);
             if (outlined != null) {
                 return outlined;
             }
@@ -175,15 +187,21 @@ public final class InkProcessor {
      */
     static int resolveMatteColor(Bitmap src, InkMode ink, int backColor,
                                   boolean useAlpha, Palette palette) {
-        Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette);
+        Drawing.FloodFillMatte matteSpec = resolveMatteSpec(src, ink, backColor, useAlpha, palette, false);
         return matteSpec != null ? matteSpec.matteColorRgb() : -1;
     }
 
     private static Drawing.FloodFillMatte resolveMatteSpec(Bitmap src, InkMode ink, int backColor,
-                                              boolean useAlpha, Palette palette) {
+                                              boolean useAlpha, Palette palette,
+                                              boolean preserveScriptOutlinedWhiteBody) {
         // Native 32-bit alpha drives matte directly; no white-border extraction.
         if (src.hasNativeMatteAlpha() && useAlpha) {
             return null;
+        }
+        if (preserveScriptOutlinedWhiteBody
+                && ink == InkMode.MATTE && src.getBitDepth() == 32 && src.isScriptModified() && !src.isNativeAlpha()
+                && hasOpaqueBorderColor(src, 0xFFFFFF)) {
+            return new Drawing.FloodFillMatte(0xFFFFFF, 0);
         }
         if (src.getBitDepth() == 32 && !src.isScriptModified()) {
             return new Drawing.FloodFillMatte(0xFFFFFF, 0);
@@ -434,11 +452,16 @@ public final class InkProcessor {
         queue.add(idx);
     }
 
-    private static Bitmap applyOutlinedWhiteBodyMatteIfNeeded(Bitmap src, Drawing.FloodFillMatte matteSpec) {
+    private static Bitmap applyOutlinedWhiteBodyMatteIfNeeded(Bitmap src, Drawing.FloodFillMatte matteSpec,
+                                                              boolean allowScriptBuilt32Bit) {
         if (src == null || matteSpec == null || matteSpec.matteColorRgb() != 0xFFFFFF) {
             return null;
         }
-        if (src.getBitDepth() <= 1 || src.getBitDepth() > 8) {
+        int bitDepth = src.getBitDepth();
+        boolean lowDepthAsset = bitDepth >= 1 && bitDepth <= 8;
+        boolean scriptBuilt32Bit = allowScriptBuilt32Bit
+                && bitDepth == 32 && src.isScriptModified() && !src.isNativeAlpha();
+        if (!lowDepthAsset && !scriptBuilt32Bit) {
             return null;
         }
 
@@ -446,6 +469,7 @@ public final class InkProcessor {
         int white = 0;
         int dark = 0;
         int gray = 0;
+        int colored = 0;
         for (int pixel : pixels) {
             if (((pixel >>> 24) & 0xFF) == 0) {
                 continue;
@@ -455,7 +479,11 @@ public final class InkProcessor {
             int g = (rgb >> 8) & 0xFF;
             int b = rgb & 0xFF;
             if (Math.abs(r - g) > 4 || Math.abs(g - b) > 4) {
-                return null;
+                if (!scriptBuilt32Bit) {
+                    return null;
+                }
+                colored++;
+                continue;
             }
             if (rgb == 0xFFFFFF) {
                 white++;
@@ -466,7 +494,11 @@ public final class InkProcessor {
             }
         }
 
-        if (white == 0 || dark == 0 || gray == 0) {
+        int nonWhite = dark + gray + colored;
+        if (white == 0 || nonWhite == 0 || !outlineTouchesMultipleEdges(src)) {
+            return null;
+        }
+        if (scriptBuilt32Bit && white < nonWhite) {
             return null;
         }
 
@@ -484,6 +516,38 @@ public final class InkProcessor {
         }
 
         return applyOutlinedWhiteBodyMatte(src);
+    }
+
+    private static boolean outlineTouchesMultipleEdges(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) {
+            return false;
+        }
+        int touchedEdges = 0;
+        boolean top = false;
+        boolean bottom = false;
+        boolean left = false;
+        boolean right = false;
+
+        for (int x = 0; x < w; x++) {
+            top |= isOpaqueNonWhite(src.getPixel(x, 0));
+            bottom |= isOpaqueNonWhite(src.getPixel(x, h - 1));
+        }
+        for (int y = 0; y < h; y++) {
+            left |= isOpaqueNonWhite(src.getPixel(0, y));
+            right |= isOpaqueNonWhite(src.getPixel(w - 1, y));
+        }
+
+        if (top) touchedEdges++;
+        if (bottom) touchedEdges++;
+        if (left) touchedEdges++;
+        if (right) touchedEdges++;
+        return touchedEdges >= 3 || (w == 1 && top && bottom) || (h == 1 && left && right);
+    }
+
+    private static boolean isOpaqueNonWhite(int pixel) {
+        return ((pixel >>> 24) & 0xFF) != 0 && (pixel & 0xFFFFFF) != 0xFFFFFF;
     }
 
     private static Bitmap applyOutlinedWhiteBodyMatte(Bitmap src) {
