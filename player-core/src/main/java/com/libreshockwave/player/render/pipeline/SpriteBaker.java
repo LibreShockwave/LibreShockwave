@@ -234,10 +234,14 @@ public class SpriteBaker {
                         inkSrc = InkProcessor.convertOpaqueWhiteToTransparent(inkSrc);
                     }
                     boolean hasNativeAlpha = inkSrc.getBitDepth() == 32 && inkSrc.isNativeAlpha();
+                    Bitmap inked = shouldPreserveOutlinedWhiteBodyForScriptCanvas(sprite, liveMember, inkSrc)
+                            ? InkProcessor.applyInkPreservingOutlinedWhiteBody(inkSrc, sprite.getInk(),
+                                    sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true)
+                            : InkProcessor.applyInk(inkSrc, sprite.getInk(),
+                                    sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true);
                     return BitmapCache.applyIndexedMatteColorRemapIfNeeded(
                             liveBmp,
-                            InkProcessor.applyInk(inkSrc, sprite.getInk(),
-                                    sprite.getBackColor(), hasNativeAlpha, inkSrc.getImagePalette(), true),
+                            inked,
                             sprite.getInk(),
                             sprite.getForeColor(),
                             sprite.getBackColor(),
@@ -277,6 +281,24 @@ public class SpriteBaker {
                     sprite.getForeColor(), sprite.hasForeColor(), sprite.hasBackColor());
         }
         return b;
+    }
+
+    private boolean shouldPreserveOutlinedWhiteBodyForScriptCanvas(RenderSprite sprite,
+                                                                   CastMember member,
+                                                                   Bitmap bmp) {
+        if (sprite == null || member == null || bmp == null) {
+            return false;
+        }
+        if (sprite.getInkMode() != InkMode.MATTE
+                || bmp.getBitDepth() != 32
+                || !bmp.isScriptModified()
+                || bmp.isNativeAlpha()) {
+            return false;
+        }
+        String name = member.getName();
+        return name != null
+                && (name.startsWith("chat_item_background_")
+                || name.startsWith("chat_item_sing_background_"));
     }
 
     /**

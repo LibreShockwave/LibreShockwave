@@ -276,7 +276,7 @@ class InkProcessorTest {
     }
 
     @Test
-    void matteUsesDominantIndexedEdgeColorAndPreservesInteriorWhiteContent() {
+    void matteKeepsNonDefaultDominantIndexedEdgeColorOpaque() {
         Bitmap src = new Bitmap(4, 4, 8, new int[] {
             0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00, 0xFFFFCC00,
             0xFFFFCC00, 0xFFFFFFFF, 0xFFCCCCCC, 0xFFFFCC00,
@@ -292,12 +292,12 @@ class InkProcessorTest {
 
         Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, false, null);
 
-        assertEquals(0x00000000, result.getPixel(0, 0));
+        assertEquals(0xFFFFCC00, result.getPixel(0, 0));
         assertEquals(0xFFFFFFFF, result.getPixel(1, 1));
         assertEquals(0xFFCCCCCC, result.getPixel(2, 1));
         assertEquals(0xFF000000, result.getPixel(1, 2));
         assertEquals(0xFFFFFFFF, result.getPixel(2, 2));
-        assertEquals(0x00000000, result.getPixel(3, 3));
+        assertEquals(0xFFFFCC00, result.getPixel(3, 3));
     }
 
     @Test
@@ -324,6 +324,63 @@ class InkProcessorTest {
         assertEquals(0xFFFFFFFF, result.getPixel(2, 2));
         assertEquals(0xFFBBBBBB, result.getPixel(3, 2));
         assertEquals(0xFF000000, result.getPixel(0, 2));
+    }
+
+    @Test
+    void mattePreservesWhiteBodyAndTextForScriptBuilt32BitChatBubble() {
+        Bitmap src = scriptBuilt32BitBubbleFixture();
+
+        Bitmap result = InkProcessor.applyInkPreservingOutlinedWhiteBody(src,
+                InkMode.MATTE.code(), 0, false, null, false);
+
+        assertEquals(0x00000000, result.getPixel(0, 9));
+        assertEquals(0xFFFFFFFF, result.getPixel(10, 4));
+        assertEquals(0xFF000000, result.getPixel(6, 4));
+        assertEquals(0xFF3A8ABF, result.getPixel(2, 2));
+        assertEquals(0xFF000000, result.getPixel(9, 9));
+    }
+
+    @Test
+    void defaultMatteDoesNotPreserveWhiteBodyForGenericScriptBuilt32BitUi() {
+        Bitmap src = scriptBuilt32BitBubbleFixture();
+
+        Bitmap result = InkProcessor.applyInk(src, InkMode.MATTE, 0, false, null);
+
+        assertEquals(0x00000000, result.getPixel(10, 4));
+        assertEquals(0xFF000000, result.getPixel(6, 4));
+        assertEquals(0xFF3A8ABF, result.getPixel(2, 2));
+    }
+
+    private static Bitmap scriptBuilt32BitBubbleFixture() {
+        Bitmap src = new Bitmap(20, 10, 32);
+        src.fill(0xFFFFFFFF);
+
+        for (int x = 4; x <= 15; x++) {
+            src.setPixel(x, 0, 0xFF000000);
+        }
+        for (int y = 1; y <= 7; y++) {
+            src.setPixel(0, y, 0xFF000000);
+            src.setPixel(19, y, 0xFF000000);
+        }
+        for (int x = 0; x <= 7; x++) {
+            src.setPixel(x, 7, 0xFF000000);
+        }
+        for (int x = 12; x <= 19; x++) {
+            src.setPixel(x, 7, 0xFF000000);
+        }
+        src.setPixel(9, 8, 0xFF000000);
+        src.setPixel(10, 8, 0xFF000000);
+        src.setPixel(9, 9, 0xFF000000);
+        src.setPixel(10, 9, 0xFF000000);
+
+        src.setPixel(2, 2, 0xFF3A8ABF);
+        for (int x = 6; x <= 9; x++) {
+            src.setPixel(x, 4, 0xFF000000);
+        }
+        src.setPixel(6, 5, 0xFF000000);
+        src.setPixel(9, 5, 0xFF000000);
+        src.markScriptModified();
+        return src;
     }
 
     @Test
