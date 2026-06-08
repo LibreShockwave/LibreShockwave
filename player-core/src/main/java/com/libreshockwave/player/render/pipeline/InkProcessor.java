@@ -209,7 +209,94 @@ public final class InkProcessor {
         if ((ink == InkMode.DARKEN || ink == InkMode.LIGHTEN) && src.isRectangularMedia()) {
             return null;
         }
+        Drawing.FloodFillMatte explicitIndexedMatte = resolveExplicitIndexedMatteSpec(src, backColor, palette);
+        if (explicitIndexedMatte != null) {
+            return explicitIndexedMatte;
+        }
         return Drawing.resolveFloodFillMatte(src);
+    }
+
+    private static Drawing.FloodFillMatte resolveExplicitIndexedMatteSpec(Bitmap src, int backColor,
+                                                                          Palette palette) {
+        if (src == null || src.getBitDepth() > 8) {
+            return null;
+        }
+        byte[] paletteIndices = src.getPaletteIndices();
+        if (paletteIndices == null || paletteIndices.length < src.getWidth() * src.getHeight()) {
+            return null;
+        }
+
+        int matteRgb = resolveBackColorIgnoringAlpha(src, backColor,
+                palette != null ? palette : src.getImagePalette()) & 0xFFFFFF;
+        if (matteRgb != 0xFFFFFF) {
+            return null;
+        }
+
+        int matteIndex = explicitIndexedMatteIndex(src, paletteIndices, matteRgb,
+                palette != null ? palette : src.getImagePalette());
+        if (matteIndex < 0 || isUniformPaletteIndex(paletteIndices, matteIndex)) {
+            return null;
+        }
+        if (!hasOpaqueNonPaletteIndexContent(src.getPixels(), paletteIndices, matteIndex)) {
+            return null;
+        }
+        return new Drawing.FloodFillMatte(matteIndex, matteRgb, 0);
+    }
+
+    private static int explicitIndexedMatteIndex(Bitmap src, byte[] paletteIndices, int matteRgb,
+                                                 Palette palette) {
+        if (indexMatchesRgb(src, paletteIndices, palette, 0, matteRgb)
+                && edgeContainsOpaquePaletteIndex(src.getPixels(), paletteIndices,
+                        src.getWidth(), src.getHeight(), 0)) {
+            return 0;
+        }
+
+        int[] counts = new int[256];
+        for (int index : iterateEdgeIndices(src.getWidth(), src.getHeight())) {
+            if (((src.getPixels()[index] >>> 24) & 0xFF) == 0) {
+                continue;
+            }
+            int paletteIndex = paletteIndices[index] & 0xFF;
+            if (indexMatchesRgb(src, paletteIndices, palette, paletteIndex, matteRgb)) {
+                counts[paletteIndex]++;
+            }
+        }
+
+        int bestIndex = -1;
+        int bestCount = 0;
+        for (int i = 0; i < counts.length; i++) {
+            if (counts[i] > bestCount) {
+                bestIndex = i;
+                bestCount = counts[i];
+            }
+        }
+        return bestIndex;
+    }
+
+    private static boolean indexMatchesRgb(Bitmap src, byte[] paletteIndices, Palette palette,
+                                           int paletteIndex, int rgb) {
+        int indexRgb = palette != null && paletteIndex >= 0 && paletteIndex < palette.size()
+                ? palette.getColor(paletteIndex) & 0xFFFFFF
+                : resolvePaletteIndexRgb(src.getPixels(), paletteIndices, paletteIndex);
+        return indexRgb == (rgb & 0xFFFFFF);
+    }
+
+    private static Iterable<Integer> iterateEdgeIndices(int w, int h) {
+        java.util.List<Integer> indices = new java.util.ArrayList<>(
+                Math.max(1, (w * 2) + Math.max(0, h - 2) * 2));
+        for (int x = 0; x < w; x++) {
+            indices.add(x);
+            if (h > 1) {
+                indices.add((h - 1) * w + x);
+            }
+        }
+        for (int y = 1; y < h - 1; y++) {
+            indices.add(y * w);
+            if (w > 1) {
+                indices.add(y * w + (w - 1));
+            }
+        }
+        return indices;
     }
 
     /**
@@ -298,6 +385,8 @@ public final class InkProcessor {
         int h = src.getHeight();
         int[] srcPixels = src.getPixels();
         int[] result = new int[w * h];
+        byte[] paletteIndices = src.getPaletteIndices();
+        boolean keyDefaultIndexedMatte = shouldKeyDefaultIndexedMatte(src, bgColorRGB, paletteIndices);
 
         for (int i = 0; i < srcPixels.length; i++) {
             int pixel = srcPixels[i];
@@ -308,6 +397,10 @@ public final class InkProcessor {
             }
 
             int rgb = pixel & 0xFFFFFF;
+            if (keyDefaultIndexedMatte && i < paletteIndices.length && (paletteIndices[i] & 0xFF) == 0) {
+                result[i] = 0x00000000;
+                continue;
+            }
             if (rgb == bgColorRGB) {
                 result[i] = 0x00000000; // Fully transparent
                 continue;
@@ -319,6 +412,92 @@ public final class InkProcessor {
         }
 
         return newDerivedBitmap(src, result);
+    }
+
+    private static boolean shouldKeyDefaultIndexedMatte(Bitmap src, int backgroundKeyRgb, byte[] paletteIndices) {
+        if (src == null || src.getBitDepth() > 8 || (backgroundKeyRgb & 0xFFFFFF) != 0xFFFFFF
+                || paletteIndices == null || paletteIndices.length < src.getWidth() * src.getHeight()) {
+            return false;
+        }
+        if (isUniformPaletteIndex(paletteIndices, 0)) {
+            return false;
+        }
+
+        int[] pixels = src.getPixels();
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (!edgeContainsOpaquePaletteIndex(pixels, paletteIndices, w, h, 0)) {
+            return false;
+        }
+
+        int indexZeroRgb = resolvePaletteIndexRgb(pixels, paletteIndices, 0);
+        return isNearWhiteGrayscale(indexZeroRgb, 232, 16)
+                && hasOpaqueNonPaletteIndexContent(pixels, paletteIndices, 0);
+    }
+
+    private static boolean isUniformPaletteIndex(byte[] paletteIndices, int paletteIndex) {
+        for (byte paletteEntry : paletteIndices) {
+            if ((paletteEntry & 0xFF) != paletteIndex) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean edgeContainsOpaquePaletteIndex(int[] pixels, byte[] paletteIndices,
+                                                          int w, int h, int paletteIndex) {
+        for (int x = 0; x < w; x++) {
+            int top = x;
+            int bottom = (h - 1) * w + x;
+            if (isOpaquePaletteIndex(pixels, paletteIndices, top, paletteIndex)
+                    || isOpaquePaletteIndex(pixels, paletteIndices, bottom, paletteIndex)) {
+                return true;
+            }
+        }
+        for (int y = 1; y < h - 1; y++) {
+            int left = y * w;
+            int right = y * w + (w - 1);
+            if (isOpaquePaletteIndex(pixels, paletteIndices, left, paletteIndex)
+                    || isOpaquePaletteIndex(pixels, paletteIndices, right, paletteIndex)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isOpaquePaletteIndex(int[] pixels, byte[] paletteIndices, int index, int paletteIndex) {
+        return index >= 0 && index < pixels.length && index < paletteIndices.length
+                && ((pixels[index] >>> 24) & 0xFF) != 0
+                && (paletteIndices[index] & 0xFF) == paletteIndex;
+    }
+
+    private static int resolvePaletteIndexRgb(int[] pixels, byte[] paletteIndices, int paletteIndex) {
+        for (int i = 0; i < pixels.length && i < paletteIndices.length; i++) {
+            if ((paletteIndices[i] & 0xFF) == paletteIndex) {
+                return pixels[i] & 0xFFFFFF;
+            }
+        }
+        return 0xFFFFFF;
+    }
+
+    private static boolean hasOpaqueNonPaletteIndexContent(int[] pixels, byte[] paletteIndices, int paletteIndex) {
+        for (int i = 0; i < pixels.length && i < paletteIndices.length; i++) {
+            if (((pixels[i] >>> 24) & 0xFF) != 0
+                    && (paletteIndices[i] & 0xFF) != paletteIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isNearWhiteGrayscale(int rgb, int minChannel, int maxDelta) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        return r >= minChannel && g >= minChannel && b >= minChannel
+                && Math.abs(r - g) <= maxDelta
+                && Math.abs(g - b) <= maxDelta
+                && Math.abs(r - b) <= maxDelta;
     }
 
     static Bitmap applyMask(Bitmap src) {
@@ -458,7 +637,7 @@ public final class InkProcessor {
             return null;
         }
         int bitDepth = src.getBitDepth();
-        boolean lowDepthAsset = bitDepth >= 1 && bitDepth <= 8;
+        boolean lowDepthAsset = bitDepth >= 1 && bitDepth <= 8 && !src.isScriptModified();
         boolean scriptBuilt32Bit = allowScriptBuilt32Bit
                 && bitDepth == 32 && src.isScriptModified() && !src.isNativeAlpha();
         if (!lowDepthAsset && !scriptBuilt32Bit) {
