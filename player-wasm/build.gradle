@@ -33,8 +33,8 @@ teavm {
     // Standard Wasm target (broad browser support, MVP)
     wasm {
         mainClass = 'com.libreshockwave.player.wasm.WasmEntry'
-        // Generate debug info for development
-        debugInformation = true
+        // Keep production artifacts compact; debug sections add several MB.
+        debugInformation = false
         // 32MB initial, 128MB max (WASM pages: 512 × 64KB, 2048 × 64KB).
         // Reduced from 64MB to help mobile devices; memory.grow handles expansion on demand.
         minHeapSize = 512
@@ -46,7 +46,7 @@ teavm {
     wasmGC {
         mainClass = 'com.libreshockwave.player.wasm.WasmEntry'
         targetFileName = 'player-wasm-gc.wasm'
-        debugInformation = true
+        debugInformation = false
         minDirectBuffersSize = 32
         maxDirectBuffersSize = 128
         importedWasmMemory = true
@@ -64,7 +64,7 @@ teavm {
 def distDir = layout.buildDirectory.dir('dist')
 
 tasks.register('assembleWasm', Sync) {
-    dependsOn 'generateWasm'
+    dependsOn 'generateWasm', 'stripWasmCustomSections'
     // Explicit input tracking: forces Gradle to detect additions/removals in the web
     // resources directory even when the WASM binary itself hasn't changed.
     inputs.dir file('src/main/resources/web')
@@ -75,6 +75,82 @@ tasks.register('assembleWasm', Sync) {
     // Web resources (shockwave-lib.js, shockwave-worker.js, index.html, CSS) — canonical source
     from 'src/main/resources/web'
     into distDir
+}
+
+tasks.register('stripWasmCustomSections') {
+    group = 'build'
+    description = 'Strip non-executable custom sections from player-wasm.wasm'
+    dependsOn 'generateWasm'
+
+    def wasmFile = layout.buildDirectory.file('generated/teavm/wasm/player-wasm.wasm')
+    inputs.file wasmFile
+    outputs.file wasmFile
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def f = wasmFile.get().asFile
+        if (!f.exists()) {
+            logger.warn('WASM binary not found, skipping custom section strip')
+            return
+        }
+
+        byte[] bytes = f.bytes
+        byte[] stripped = stripWasmCustomSections(bytes)
+        if (stripped.length != bytes.length) {
+            f.bytes = stripped
+            logger.lifecycle("Stripped ${bytes.length - stripped.length} bytes of WASM custom sections")
+        } else {
+            logger.lifecycle('No WASM custom sections found')
+        }
+    }
+}
+
+def stripWasmCustomSections(byte[] bytes) {
+    if (bytes.length < 8
+            || bytes[0] != 0 || bytes[1] != 0x61 || bytes[2] != 0x73 || bytes[3] != 0x6D) {
+        throw new GradleException('Invalid WASM binary header')
+    }
+
+    def out = new ByteArrayOutputStream(bytes.length)
+    out.write(bytes, 0, 8)
+
+    int pos = 8
+    while (pos < bytes.length) {
+        int sectionStart = pos
+        int sectionId = bytes[pos++] & 0xFF
+        def sizeInfo = readWasmVarUInt32(bytes, pos)
+        int payloadSize = sizeInfo.value
+        pos = sizeInfo.next
+        int payloadEnd = pos + payloadSize
+        if (payloadEnd > bytes.length) {
+            throw new GradleException('Invalid WASM section size')
+        }
+
+        if (sectionId != 0) {
+            out.write(bytes, sectionStart, payloadEnd - sectionStart)
+        }
+        pos = payloadEnd
+    }
+
+    return out.toByteArray()
+}
+
+def readWasmVarUInt32(byte[] bytes, int offset) {
+    int result = 0
+    int shift = 0
+    int pos = offset
+    while (pos < bytes.length) {
+        int b = bytes[pos++] & 0xFF
+        result |= (b & 0x7F) << shift
+        if ((b & 0x80) == 0) {
+            return [value: result, next: pos]
+        }
+        shift += 7
+        if (shift > 28) {
+            throw new GradleException('Invalid WASM LEB128 section size')
+        }
+    }
+    throw new GradleException('Truncated WASM LEB128 section size')
 }
 
 tasks.matching { it.name == 'generateWasm' }.configureEach {
