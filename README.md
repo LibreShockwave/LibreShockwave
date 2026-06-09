@@ -59,7 +59,7 @@ The `editor` module is a Swing-based Director MX 2004–style authoring environm
 
 Panels include: Stage, Score, Cast, Script Editor, Property Inspector, Behavior Inspector, Color Palettes, Library Palette, Paint, Text/Field Editors, Vector Shape, Markers, Message Window, and a Bytecode Debugger. Layouts are persisted to `~/.libreshockwave/layout.json`.
 
-![](https://cdn.discordapp.com/attachments/1481540357849354272/1482322819680309258/image.png?ex=69b68834&is=69b536b4&hm=78debce49e047fe4e4e2c1ea7ca875cc7174ba95c7f89c873dd34a9438c28f29&)
+<img width="2559" height="1395" alt="image" src="https://github.com/user-attachments/assets/699e5472-c9d5-4e15-b7a2-4defebaad2a5" />
 
 ### Running
 
