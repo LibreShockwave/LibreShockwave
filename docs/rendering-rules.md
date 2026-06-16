@@ -1,13 +1,17 @@
 # Rendering Rules So Far
 
-These notes capture renderer behavior that has been validated while fixing image,
-ink, palette, matte, mask, and quad-copy regressions. They are intended as rules
-for future fixes and tests, not as a complete rendering specification.
+These notes capture C++ renderer behavior that has been validated while fixing
+image, ink, palette, matte, mask, dynamic runtime image, and quad-copy
+regressions. They are intended as rules for future fixes and tests, not as a
+complete rendering specification.
 
 ## General Approach
 
 - Prefer root-cause fixes in image storage, VM image methods, ink handling, and
   copy paths over post-render pixel repair.
+- Keep fixes in the C++ runtime, renderer, VM, and cast/member layers. Do not
+  compensate with client-side shims, harness-specific patches, or hardcoded
+  Lingo implementations.
 - Keep indexed-image metadata and rendered ARGB pixels consistent. If a path
   changes visible pixels on an indexed image, it may also need to update
   `paletteIndices`.
@@ -16,6 +20,10 @@ for future fixes and tests, not as a complete rendering specification.
 - When changing one rendering path, rerun focused tests for adjacent behavior:
   palette copies, matte/background-transparent ink, masks, quad transforms, and
   text or color remap.
+- If a visual regression appears in a script-created UI surface, inspect the
+  baked `RenderSprite`, its dynamic `CastMember`, and the member's runtime
+  bitmap before changing matte heuristics. A missing sprite can be a bake-source
+  selection problem, not a transparency problem.
 
 ## Image Creation And Palette State
 
@@ -140,6 +148,28 @@ for future fixes and tests, not as a complete rendering specification.
 - White-backed grayscale text copied into a compatible destination may treat
   white as transparent.
 - Near-white text glyphs and overlays must not be stripped by matte heuristics.
+- In the C++ `SpriteBaker`, live runtime images for text members take precedence
+  over text re-rendering. If a field/text member has a runtime bitmap supplied
+  by the live bitmap provider, bake that image through the normal live-bitmap
+  processing path instead of invoking `TextRenderer`.
+
+## Dynamic Runtime Bitmaps
+
+- A dynamic runtime bitmap can be authoritative even when
+  `Bitmap::isScriptModified()` is false. Runtime-created members and script-fed
+  UI buffers may carry valid pixel content without that flag.
+- In `SpriteBaker::bakeBitmap`, use the live bitmap provider for dynamic
+  members when the live bitmap has meaningful dimensions, not only when
+  `isScriptModified()` is true. This is required for script-built UI images such
+  as the Habbo Navigator Public Spaces illustration.
+- Preserve the existing `processLiveBitmap` path for runtime images so
+  background-transparent and matte handling remains centralized.
+- Do not add special cases for individual member names, room names, or harness
+  states. If a runtime bitmap is present but not rendering, fix the generic
+  dynamic-member bake path.
+- If a runtime bitmap bakes as fully transparent, inspect the source runtime
+  bitmap first. An all-white source after script composition means the producer
+  path failed; changing final matte handling would only hide the real bug.
 
 ## Darken, Lighten, And Color Ramps
 
@@ -155,6 +185,11 @@ for future fixes and tests, not as a complete rendering specification.
 
 - Prefer focused tests that recreate script image operations and assert both
   visible pixels and palette indices where relevant.
+- For `SpriteBaker` changes, add tests for authored bitmap members, dynamic
+  bitmap members, authored text members, and dynamic text members when the
+  change affects live bitmap selection.
+- Include a non-`scriptModified` dynamic runtime bitmap test. The expected
+  behavior is that a meaningful dynamic runtime image still bakes.
 - Keep landscape and mask regression coverage in the test set when touching
   quad-copy, mask, matte, or background-transparent paths.
 - Run narrow tests for the affected behavior first, then broader bitmap or VM
