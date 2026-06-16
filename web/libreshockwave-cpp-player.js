@@ -311,7 +311,7 @@
     };
   }
 
-  global.LibreShockwaveCppPlayer = {
+  global.LibreShockwavePlayer = {
     create,
     defaultHabboParams,
     defaultHabboSocketProxy
