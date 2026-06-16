@@ -88,7 +88,7 @@ LibreShockwave includes a Lingo bytecode VM and player that can load and run Dir
 The player can be used in two ways:
 
 - Native C++: link against `LibreShockwave::libreshockwave` and drive `libreshockwave::player::Player` directly.
-- Browser/WASM: build the Emscripten target and use the assets in `cpp/web/`.
+- Browser/WASM: build the Emscripten target and use the assets in `web/`.
 
 ### Native Player
 
@@ -446,10 +446,14 @@ cpp/
   CMakeLists.txt
   include/libreshockwave/       Public C++ headers
   src/                          Runtime, SDK, VM, and player sources
+  apps/
+    player/                     GTK player executable source
+    tools/                      Native probes and browser fixture checker
+    wasm/                       WASM bridge entry points
   resources/fonts/              Bundled runtime font assets
   tests/                        C++ regression and contract tests
-  tools/                        Native probes and browser fixture checker
-  web/                          Browser player and worker assets
+web/
+  ...                          Browser player and worker assets
 docs/
   rendering-rules.md            Renderer behavior notes
   inks.txt                      Director ink behavior reference
@@ -458,10 +462,10 @@ docs/
 ## Verification Before Committing
 
 ```bash
-node --check cpp/web/libreshockwave-cpp-player.js
-node --check cpp/web/libreshockwave-cpp-worker.js
-node --check cpp/tools/browser_fixture_check.js
-node --check cpp/tools/browser_index_check.js
+node --check web/libreshockwave-cpp-player.js
+node --check web/libreshockwave-cpp-worker.js
+node --check cpp/apps/tools/browser_fixture_check.js
+node --check cpp/apps/tools/browser_index_check.js
 ./build.sh
 git diff --check
 ```

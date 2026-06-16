@@ -6,11 +6,11 @@ add_custom_command(
         "-DINPUT_REGULAR=${LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR}/volter.ttf"
         "-DINPUT_BOLD=${LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR}/volter_bold.ttf"
         "-DOUTPUT_FILE=${LIBRESHOCKWAVE_VOLTER_DATA_CPP}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVolterData.cmake"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GenerateVolterData.cmake"
     DEPENDS
         "${LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR}/volter.ttf"
         "${LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR}/volter_bold.ttf"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVolterData.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GenerateVolterData.cmake"
     VERBATIM
 )
 set_source_files_properties("${LIBRESHOCKWAVE_VOLTER_DATA_CPP}" PROPERTIES GENERATED TRUE)
@@ -27,10 +27,10 @@ add_custom_command(
         "-DMAC_FONT_DIR=${LIBRESHOCKWAVE_PLATFORM_FONT_RESOURCE_DIR}/mac"
         "-DWINDOWS_FONT_DIR=${LIBRESHOCKWAVE_PLATFORM_FONT_RESOURCE_DIR}/windows"
         "-DOUTPUT_FILE=${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GeneratePlatformFontData.cmake"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GeneratePlatformFontData.cmake"
     DEPENDS
         ${LIBRESHOCKWAVE_PLATFORM_FONT_FILES}
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GeneratePlatformFontData.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GeneratePlatformFontData.cmake"
     VERBATIM
 )
 set_source_files_properties("${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}" PROPERTIES GENERATED TRUE)
@@ -197,20 +197,20 @@ target_include_directories(libreshockwave
 target_compile_features(libreshockwave PUBLIC cxx_std_20)
 
 add_executable(libreshockwave_probe
-    tools/DirectorProbe.cpp
+    apps/tools/DirectorProbe.cpp
 )
 target_link_libraries(libreshockwave_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_render_probe
-    tools/RenderProbe.cpp
+    apps/tools/RenderProbe.cpp
 )
 target_link_libraries(libreshockwave_render_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_render_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_wasm_bridge_probe
-    wasm/WasmBridge.cpp
-    tools/WasmBridgeProbe.cpp
+    apps/wasm/WasmBridge.cpp
+    apps/tools/WasmBridgeProbe.cpp
 )
 target_link_libraries(libreshockwave_wasm_bridge_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_wasm_bridge_probe PRIVATE cxx_std_20)
@@ -312,7 +312,7 @@ if(EMSCRIPTEN)
     set(LIBRESHOCKWAVE_WASM_EXPORTS_FLAG "['${LIBRESHOCKWAVE_WASM_EXPORTS_JOINED}']")
 
     add_executable(libreshockwave_cpp_wasm
-        wasm/WasmBridge.cpp
+        apps/wasm/WasmBridge.cpp
     )
     target_link_libraries(libreshockwave_cpp_wasm PRIVATE LibreShockwave::libreshockwave)
     target_compile_features(libreshockwave_cpp_wasm PRIVATE cxx_std_20)
@@ -337,7 +337,7 @@ if(EMSCRIPTEN)
     add_custom_target(libreshockwave_cpp_wasm_dist
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/web"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../web"
                 "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
         DEPENDS libreshockwave_cpp_wasm
         VERBATIM
