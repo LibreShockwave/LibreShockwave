@@ -1,0 +1,28 @@
+name: CMake
+
+on:
+  schedule:
+    # Run every day at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ zlib1g-dev
+
+      - name: Configure
+        run: cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build cmake-build-debug --target libreshockwave_tests libreshockwave_probe libreshockwave_render_probe libreshockwave_wasm_bridge_probe -j 2
+
+      - name: Test
+        run: ctest --test-dir cmake-build-debug --output-on-failure
