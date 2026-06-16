@@ -180,6 +180,11 @@ for (const auto& member : file->castMembers()) {
 ### Extracting Bitmaps
 
 ```cpp
+#include <cstdint>
+#include <vector>
+// #define STB_IMAGE_WRITE_IMPLEMENTATION
+// #include "stb_image_write.h"
+
 for (const auto& member : file->castMembers()) {
     if (!member->isBitmap()) {
         continue;
@@ -189,7 +194,23 @@ for (const auto& member : file->castMembers()) {
         const int width = bitmap->width();
         const int height = bitmap->height();
         const auto& argbPixels = bitmap->pixels();
-        // Encode or inspect argbPixels in your own tool.
+        // Example uses stb_image_write.h (https://github.com/nothings/stb).
+        std::vector<std::uint8_t> rgbaPixels;
+        rgbaPixels.reserve(static_cast<size_t>(width) * height * 4);
+        for (const auto argb : argbPixels) {
+            rgbaPixels.push_back((argb >> 16) & 0xFF);
+            rgbaPixels.push_back((argb >> 8) & 0xFF);
+            rgbaPixels.push_back(argb & 0xFF);
+            rgbaPixels.push_back((argb >> 24) & 0xFF);
+        }
+
+        stbi_write_png(
+            (member->name() + ".png").c_str(),
+            width,
+            height,
+            4,
+            rgbaPixels.data(),
+            width * 4);
     }
 }
 ```
@@ -406,13 +427,13 @@ Cross-Origin-Resource-Policy: same-origin
 
 ### Embedding
 
-The browser target exposes `LibreShockwaveCppPlayer` from `libreshockwave-cpp-player.js`.
+The browser target exposes `LibreShockwavePlayer` from `libreshockwave-cpp-player.js`.
 
 ```html
 <canvas id="stage" width="640" height="480"></canvas>
 <script src="libreshockwave-cpp-player.js"></script>
 <script>
-  const player = LibreShockwaveCppPlayer.create("stage", {
+  const player = LibreShockwavePlayer.create("stage", {
     params: {
       sw1: "external.variables.txt=http://example.com/vars.txt"
     },
