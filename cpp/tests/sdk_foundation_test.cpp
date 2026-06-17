@@ -3598,8 +3598,11 @@ void testPlayerInputFoundation() {
     secondEditableSprite->setDynamicMember(1, secondEditableField->memberNum());
     auto lockedSprite = editableRenderer.spriteRegistry().getOrCreateDynamic(14);
     lockedSprite->setDynamicMember(1, nonEditableField->memberNum());
+    std::vector<std::uint32_t> transparentFieldPixels(80 * 18, 0x00000000U);
+    auto transparentFieldBitmap = std::make_shared<Bitmap>(80, 18, 32, transparentFieldPixels);
     editableRenderer.setLastBakedSprites({
-        RenderSprite(12, 50, 40, 80, 18, 1, true, SpriteType::Text, nullptr, editableField, 0, 0, false, false, 0, 100, false, false, nullptr, false),
+        RenderSprite(12, 50, 40, 80, 18, 1, true, SpriteType::Text, nullptr, editableField, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, transparentFieldBitmap, false),
         RenderSprite(13, 50, 70, 80, 18, 2, true, SpriteType::Text, nullptr, secondEditableField, 0, 0, false, false, 0, 100, false, false, nullptr, false),
         RenderSprite(14, 50, 100, 80, 18, 3, true, SpriteType::Text, nullptr, nonEditableField, 0, 0, false, false, 0, 100, false, false, nullptr, false),
     });
@@ -3710,20 +3713,36 @@ void testPlayerInputFoundation() {
     assert(editableState.selStart() == 2);
     assert(editableState.selEnd() == 2);
 
+    bool legacyKeyScriptRan = false;
+    editableInput.setLegacyEventScriptDispatcher([&legacyKeyScriptRan](PlayerEvent event) {
+        if (event == PlayerEvent::KeyDown) {
+            legacyKeyScriptRan = true;
+            return InputHandler::LegacyEventScriptResult{true, false};
+        }
+        return InputHandler::LegacyEventScriptResult{};
+    });
+    editableInput.onKeyDown(0, "!", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(legacyKeyScriptRan);
+    assert(editableField->textContent() == "Zy!c");
+    assert(editableState.selStart() == 3);
+    assert(editableState.selEnd() == 3);
+    editableInput.setLegacyEventScriptDispatcher({});
+
     editableInput.onKeyDown(51, "", false, false, false);
     assert(editableInput.processInputEvents());
-    assert(editableField->textContent() == "Zc");
-    assert(editableState.selStart() == 1);
-    assert(editableState.selEnd() == 1);
+    assert(editableField->textContent() == "Zyc");
+    assert(editableState.selStart() == 2);
+    assert(editableState.selEnd() == 2);
 
     editableInput.onKeyDown(124, "", false, false, false);
     assert(editableInput.processInputEvents());
-    assert(editableState.selStart() == 2);
-    assert(editableState.selEnd() == 2);
+    assert(editableState.selStart() == 3);
+    assert(editableState.selEnd() == 3);
     editableInput.onKeyDown(123, "", false, false, false);
     assert(editableInput.processInputEvents());
-    assert(editableState.selStart() == 1);
-    assert(editableState.selEnd() == 1);
+    assert(editableState.selStart() == 2);
+    assert(editableState.selEnd() == 2);
 
     editableInput.onKeyDown(48, "\t", false, false, false);
     assert(editableInput.processInputEvents());
