@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <string>
 
 #include "libreshockwave/lingo/Opcode.hpp"
 #include "libreshockwave/lingo/vm/ExecutionContext.hpp"
@@ -74,5 +75,8 @@ class CallOpcodes {
 public:
     static void registerHandlers(OpcodeRegistry& registry);
 };
+
+[[nodiscard]] std::string imageOperationTraceJson();
+void clearImageOperationTrace();
 
 } // namespace libreshockwave::lingo::vm

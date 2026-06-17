@@ -966,7 +966,15 @@ void testBitmapFontAndFontRegistry() {
             return ((pixel >> 24U) & 0xFFU) != 0;
         }));
     };
-
+    auto countOpaqueOnRow = [](const Bitmap& bitmap, int y) {
+        int count = 0;
+        for (int x = 0; x < bitmap.width(); ++x) {
+            if (((bitmap.getPixel(x, y) >> 24U) & 0xFFU) != 0) {
+                ++count;
+            }
+        }
+        return count;
+    };
     const auto verdanaBytes = readFixtureBytes("cpp/resources/fonts/windows/Verdana.ttf");
     assert(verdanaBytes.size() == 171811);
     auto verdanaFont = TtfBitmapRasterizer::rasterize(verdanaBytes, 9, "Verdana");
@@ -1082,6 +1090,25 @@ void testBitmapFontAndFontRegistry() {
     const auto defaultVolterBold = FontRegistry::getBitmapFont("Volter", 9, true, false);
     assert(defaultVolterBold != nullptr);
     assert(defaultVolterBold->getFontName() == "Volter");
+    FontRegistry::registerFontAlias("vb", "Volter", true);
+    SimpleTextRenderer volterRenderer;
+    auto volterRendered = volterRenderer.renderText("Welcome Lounge",
+                                                    120,
+                                                    12,
+                                                    "vb",
+                                                    9,
+                                                    "plain",
+                                                    "left",
+                                                    static_cast<int>(0xFF010203U),
+                                                    0,
+                                                    false,
+                                                    false,
+                                                    0,
+                                                    0);
+    assert(volterRendered != nullptr);
+    assert(countOpaqueOnRow(*volterRendered, 0) == 0);
+    assert(countOpaqueOnRow(*volterRendered, 1) > 0);
+    assert(countOpaqueOnRow(*volterRendered, 9) > 0);
     assert(FontRegistry::getBitmapFont("Tiny", 9) == nullptr);
     FontRegistry::registerBitmapFont("Tiny", 9, font);
     assert(FontRegistry::getBitmapFont("tiny", 9) == font);
@@ -11628,6 +11655,159 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(directMatteCopyDest.getPixel(0, 0) == 0xFF112233U);
     assert(directMatteCopyDest.getPixel(1, 1) == 0xFF224466U);
     assert(directMatteCopyDest.getPixel(2, 2) == 0xFF112233U);
+    Bitmap blackOutlinedWhiteCanvasSource(5, 5, 32, {
+        0xFF000000U, 0xFF000000U, 0xFFFFFFFFU, 0xFF000000U, 0xFF000000U,
+        0xFF000000U, 0xFFFF0000U, 0xFFFFFFFFU, 0xFF770000U, 0xFF000000U,
+        0xFFFFFFFFU, 0xFFFFFFFFU, 0xFF770000U, 0xFFFFFFFFU, 0xFFFFFFFFU,
+        0xFF000000U, 0xFF669999U, 0xFF669999U, 0xFF669999U, 0xFF000000U,
+        0xFF000000U, 0xFF000000U, 0xFF669999U, 0xFF000000U, 0xFF000000U
+    });
+    Bitmap blackOutlinedWhiteCanvasDest(5, 5, 32);
+    blackOutlinedWhiteCanvasDest.fill(0xFFD4DDE1U);
+    libreshockwave::bitmap::Drawing::copyPixels(blackOutlinedWhiteCanvasDest,
+                                                blackOutlinedWhiteCanvasSource,
+                                                0,
+                                                0,
+                                                0,
+                                                0,
+                                                5,
+                                                5,
+                                                InkMode::MATTE,
+                                                255);
+    assert(blackOutlinedWhiteCanvasDest.getPixel(0, 0) == 0xFF000000U);
+    assert(blackOutlinedWhiteCanvasDest.getPixel(2, 0) == 0xFFD4DDE1U);
+    assert(blackOutlinedWhiteCanvasDest.getPixel(1, 3) == 0xFF669999U);
+    assert(blackOutlinedWhiteCanvasDest.getPixel(2, 4) == 0xFF669999U);
+    auto lingoBlackOutlinedSource = std::make_shared<Bitmap>(blackOutlinedWhiteCanvasSource.copy());
+    auto lingoBlackOutlinedDest = std::make_shared<Bitmap>(5, 5, 32);
+    lingoBlackOutlinedDest->fill(0xFFD4DDE1U);
+    auto lingoMatteCopyProps = Datum::propList();
+    lingoMatteCopyProps.propListValue().put(Datum::symbol("ink"), Datum::symbol("matte"));
+    assert(runObjCall(110, {Datum::imageRef(lingoBlackOutlinedDest),
+                            Datum::imageRef(lingoBlackOutlinedSource),
+                            Datum::intRect(0, 0, 5, 5),
+                            Datum::intRect(0, 0, 5, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(lingoBlackOutlinedDest->getPixel(0, 0) == 0xFF000000U);
+    assert(lingoBlackOutlinedDest->getPixel(2, 0) == 0xFFD4DDE1U);
+    assert(lingoBlackOutlinedDest->getPixel(1, 3) == 0xFF669999U);
+    assert(lingoBlackOutlinedDest->getPixel(2, 4) == 0xFF669999U);
+    Bitmap indexedBlackOutlinedSource = blackOutlinedWhiteCanvasSource.copy();
+    indexedBlackOutlinedSource.setPaletteIndices({
+        0, 0, 1, 0, 0,
+        0, 2, 1, 3, 0,
+        1, 1, 3, 1, 1,
+        0, 4, 4, 4, 0,
+        0, 0, 4, 0, 0
+    });
+    Bitmap indexedBlackOutlinedDest(5, 5, 32);
+    indexedBlackOutlinedDest.fill(0xFFD4DDE1U);
+    libreshockwave::bitmap::Drawing::copyPixels(indexedBlackOutlinedDest,
+                                                indexedBlackOutlinedSource,
+                                                0,
+                                                0,
+                                                0,
+                                                0,
+                                                5,
+                                                5,
+                                                InkMode::MATTE,
+                                                255);
+    assert(indexedBlackOutlinedDest.getPixel(0, 0) == 0xFF000000U);
+    assert(indexedBlackOutlinedDest.getPixel(2, 0) == 0xFFD4DDE1U);
+    assert(indexedBlackOutlinedDest.getPixel(1, 3) == 0xFF669999U);
+    assert(indexedBlackOutlinedDest.getPixel(2, 4) == 0xFF669999U);
+    auto lingoIndexedBlackOutlinedSource = std::make_shared<Bitmap>(indexedBlackOutlinedSource.copy());
+    auto lingoIndexedBlackOutlinedDest = std::make_shared<Bitmap>(5, 5, 32);
+    lingoIndexedBlackOutlinedDest->fill(0xFFD4DDE1U);
+    assert(runObjCall(110, {Datum::imageRef(lingoIndexedBlackOutlinedDest),
+                            Datum::imageRef(lingoIndexedBlackOutlinedSource),
+                            Datum::intRect(0, 0, 5, 5),
+                            Datum::intRect(0, 0, 5, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(lingoIndexedBlackOutlinedDest->getPixel(0, 0) == 0xFF000000U);
+    assert(lingoIndexedBlackOutlinedDest->getPixel(2, 0) == 0xFFD4DDE1U);
+    assert(lingoIndexedBlackOutlinedDest->getPixel(1, 3) == 0xFF669999U);
+    assert(lingoIndexedBlackOutlinedDest->getPixel(2, 4) == 0xFF669999U);
+    Bitmap nearWhiteUiStripSource(1, 5, 32, {
+        0xFF000000U,
+        0xFFEFEFEFU,
+        0xFFEFEFEFU,
+        0xFFEFEFEFU,
+        0xFFEFEFEFU
+    });
+    Bitmap nearWhiteUiStripDest(1, 5, 32);
+    nearWhiteUiStripDest.fill(0xFFD4DDE1U);
+    libreshockwave::bitmap::Drawing::copyPixels(nearWhiteUiStripDest,
+                                                nearWhiteUiStripSource,
+                                                0,
+                                                0,
+                                                0,
+                                                0,
+                                                1,
+                                                5,
+                                                InkMode::MATTE,
+                                                255);
+    assert(nearWhiteUiStripDest.getPixel(0, 0) == 0xFF000000U);
+    assert(nearWhiteUiStripDest.getPixel(0, 1) == 0xFFEFEFEFU);
+    assert(nearWhiteUiStripDest.getPixel(0, 4) == 0xFFEFEFEFU);
+    auto lingoNearWhiteUiStripSource = std::make_shared<Bitmap>(nearWhiteUiStripSource.copy());
+    auto lingoNearWhiteUiStripDest = std::make_shared<Bitmap>(1, 5, 32);
+    lingoNearWhiteUiStripDest->fill(0xFFD4DDE1U);
+    assert(runObjCall(110, {Datum::imageRef(lingoNearWhiteUiStripDest),
+                            Datum::imageRef(lingoNearWhiteUiStripSource),
+                            Datum::intRect(0, 0, 1, 5),
+                            Datum::intRect(0, 0, 1, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(lingoNearWhiteUiStripDest->getPixel(0, 0) == 0xFF000000U);
+    assert(lingoNearWhiteUiStripDest->getPixel(0, 1) == 0xFFEFEFEFU);
+    assert(lingoNearWhiteUiStripDest->getPixel(0, 4) == 0xFFEFEFEFU);
+    auto indexedNearWhiteUiStripPalette = std::make_shared<Palette>(
+        std::vector<std::uint32_t>{0xFFFFFFU, 0xEFEFEFU, 0x000000U}, "near-white-ui");
+    auto indexedNearWhiteUiStripSource = std::make_shared<Bitmap>(1, 5, 8, nearWhiteUiStripSource.pixels());
+    indexedNearWhiteUiStripSource->setImagePalette(indexedNearWhiteUiStripPalette);
+    indexedNearWhiteUiStripSource->setPaletteIndices({2, 1, 1, 1, 1});
+    auto indexedNearWhiteUiStripDest = std::make_shared<Bitmap>(1, 5, 32);
+    indexedNearWhiteUiStripDest->fill(0xFFD4DDE1U);
+    assert(runObjCall(110, {Datum::imageRef(indexedNearWhiteUiStripDest),
+                            Datum::imageRef(indexedNearWhiteUiStripSource),
+                            Datum::intRect(0, 0, 1, 5),
+                            Datum::intRect(0, 0, 1, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(indexedNearWhiteUiStripDest->getPixel(0, 0) == 0xFF000000U);
+    assert(indexedNearWhiteUiStripDest->getPixel(0, 1) == 0xFFEFEFEFU);
+    assert(indexedNearWhiteUiStripDest->getPixel(0, 4) == 0xFFEFEFEFU);
+    auto indexedWrapperPalette = std::make_shared<Palette>(
+        std::vector<std::uint32_t>{0x000000U, 0xFFFFFFU, 0xFF0000U, 0x770000U, 0x669999U},
+        "indexed-wrapper");
+    auto indexedWrapperSource = std::make_shared<Bitmap>(5, 5, 8, blackOutlinedWhiteCanvasSource.pixels());
+    indexedWrapperSource->setImagePalette(indexedWrapperPalette);
+    indexedWrapperSource->setPaletteIndices({
+        0, 0, 1, 0, 0,
+        0, 2, 1, 3, 0,
+        1, 1, 3, 1, 1,
+        0, 4, 4, 4, 0,
+        0, 0, 4, 0, 0
+    });
+    auto deepPreview = std::make_shared<Bitmap>(5, 5, 32);
+    deepPreview->fill(0xFFFFFFFFU);
+    assert(runObjCall(110, {Datum::imageRef(deepPreview),
+                            Datum::imageRef(indexedWrapperSource),
+                            Datum::intRect(0, 0, 5, 5),
+                            Datum::intRect(0, 0, 5, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(deepPreview->imagePalette() == indexedWrapperPalette);
+    assert(!deepPreview->paletteIndices().has_value());
+    assert(deepPreview->getPixel(1, 3) == 0xFF669999U);
+    assert(deepPreview->getPixel(2, 4) == 0xFF669999U);
+    auto secondDeepPreview = std::make_shared<Bitmap>(5, 5, 32);
+    secondDeepPreview->fill(0xFFFFFFFFU);
+    assert(runObjCall(110, {Datum::imageRef(secondDeepPreview),
+                            Datum::imageRef(deepPreview),
+                            Datum::intRect(0, 0, 5, 5),
+                            Datum::intRect(0, 0, 5, 5),
+                            lingoMatteCopyProps}).isVoid());
+    assert(secondDeepPreview->getPixel(1, 3) == 0xFF669999U);
+    assert(secondDeepPreview->getPixel(2, 4) == 0xFF669999U);
     Bitmap directBackgroundCopySrc(2, 1, 32, {0xFFFFFFFFU, 0xFFFF0000U});
     Bitmap directBackgroundCopyDest(2, 1, 32, {0xFF000000U, 0xFF000000U});
     libreshockwave::bitmap::Drawing::copyPixels(
@@ -19094,6 +19274,35 @@ void testSimpleTextRendererFoundation() {
                                   10);
     };
 
+    auto makeDefaultLeadingFont = []() {
+        const int cellWidth = 3;
+        const int cellHeight = 9;
+        const int bitmapWidth = cellWidth * BitmapFont::GRID_COLUMNS;
+        const int bitmapHeight = cellHeight * BitmapFont::GRID_ROWS;
+        std::vector<std::uint32_t> bitmap(static_cast<std::size_t>(bitmapWidth * bitmapHeight), 0);
+        auto setGlyphPixel = [&](int ch, int x, int y) {
+            const int cellX = (ch % BitmapFont::GRID_COLUMNS) * cellWidth;
+            const int cellY = (ch / BitmapFont::GRID_COLUMNS) * cellHeight;
+            bitmap[static_cast<std::size_t>((cellY + y) * bitmapWidth + cellX + x)] = 0xFFFFFFFFU;
+        };
+        for (int y = 0; y < cellHeight; ++y) {
+            setGlyphPixel('g', 1, y);
+        }
+
+        std::vector<int> widths(BitmapFont::NUM_CHARS, cellWidth);
+        widths[static_cast<std::size_t>(' ')] = 2;
+        return BitmapFont::create(std::move(bitmap),
+                                  bitmapWidth,
+                                  bitmapHeight,
+                                  cellWidth,
+                                  cellHeight,
+                                  widths,
+                                  "DefaultLeadingFont",
+                                  9,
+                                  7,
+                                  9);
+    };
+
     auto countPixels = [](const Bitmap& bitmap, std::uint32_t color) {
         return static_cast<int>(std::count(bitmap.pixels().begin(), bitmap.pixels().end(), color));
     };
@@ -19129,9 +19338,11 @@ void testSimpleTextRendererFoundation() {
     try {
         auto tinyFont = makeTinyFont("TinyRenderFont", 3);
         auto wideFont = makeTinyFont("WideSpanFont", 5);
+        auto defaultLeadingFont = makeDefaultLeadingFont();
         auto registerSyntheticFonts = [&]() {
             FontRegistry::registerBitmapFont("TinyRenderFont", 9, tinyFont);
             FontRegistry::registerBitmapFont("WideSpanFont", 9, wideFont);
+            FontRegistry::registerBitmapFont("DefaultLeadingFont", 9, defaultLeadingFont);
             FontRegistry::registerFontAlias("TR", "TinyRenderFont", false);
         };
         registerSyntheticFonts();
@@ -19158,6 +19369,25 @@ void testSimpleTextRendererFoundation() {
         const int underlineRow = findLastOpaqueRow(*rendered);
         assert(underlineRow >= 0);
         assert(countOpaqueOnRow(*rendered, underlineRow) >= tinyFont->getStringWidth("A"));
+
+        auto defaultLeadingRendered = renderer.renderText("g",
+                                                          8,
+                                                          9,
+                                                          "DefaultLeadingFont",
+                                                          9,
+                                                          "plain",
+                                                          "left",
+                                                          static_cast<int>(0xFF010203U),
+                                                          0,
+                                                          false,
+                                                          false,
+                                                          9,
+                                                          1);
+        assert(defaultLeadingRendered != nullptr);
+        assert(defaultLeadingRendered->height() == 10);
+        assert(defaultLeadingRendered->getPixel(1, 0) == 0x00000000U);
+        assert(defaultLeadingRendered->getPixel(1, 1) == 0xFF010203U);
+        assert(defaultLeadingRendered->getPixel(1, 9) == 0xFF010203U);
 
         auto wrapped = renderer.renderText("AB AB",
                                            7,
@@ -24328,7 +24558,7 @@ void testCastLibManagerFoundation() {
     auto assignedTextRuntime = manager.resolveMember(1, 10001)->runtimeBitmap();
     assert(assignedTextRuntime != nullptr);
     assert(assignedTextRuntime != assignedTextImage);
-    assert(!assignedTextRuntime->isScriptModified());
+    assert(assignedTextRuntime->isScriptModified());
     assert(assignedTextRuntime->width() == 4);
     assert(assignedTextRuntime->height() == 2);
     assert(assignedTextRuntime->getPixel(3, 1) == 0xFF445566U);

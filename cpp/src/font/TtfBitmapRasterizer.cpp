@@ -556,6 +556,7 @@ std::shared_ptr<BitmapFont> buildBitmapFont(const TtfData& ttf,
     const int ascentPx = javaRound(std::abs(static_cast<float>(ttf.ascender)) * scale);
     const int descentPx = javaRound(std::abs(static_cast<float>(ttf.descender)) * scale);
     const int metricsLineHeight = ascentPx + descentPx;
+    const int baselinePx = std::max(0, ascentPx - 1);
     const int cellHeight = metricsLineHeight + 1;
     const int cellWidth = std::max(1, std::max(maxAdvancePx, maxGlyphWidthPx));
     const int bitmapWidth = cellWidth * BitmapFont::GRID_COLUMNS;
@@ -595,7 +596,7 @@ std::shared_ptr<BitmapFont> buildBitmapFont(const TtfData& ttf,
                                                       cellWidth,
                                                       cellHeight,
                                                       scale,
-                                                      ascentPx) ||
+                                                      baselinePx) ||
                                    hasRasterizedInk;
             }
         } else {
@@ -612,7 +613,7 @@ std::shared_ptr<BitmapFont> buildBitmapFont(const TtfData& ttf,
                                       cellWidth,
                                       cellHeight,
                                       scale,
-                                      ascentPx)) {
+                                      baselinePx)) {
                     hasRasterizedInk = true;
                     overflowGlyphs[charCode] = std::move(cellBuffer);
                 }

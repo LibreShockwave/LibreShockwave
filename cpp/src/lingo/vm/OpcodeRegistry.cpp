@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -39,6 +40,110 @@ namespace {
 
 std::function<void()> imageMutationCallback;
 void* imageMutationCallbackOwner = nullptr;
+std::deque<std::string> imageOperationTrace;
+int imageOperationTraceNextId = 1;
+constexpr std::size_t kMaxImageOperationTraceEntries = 512;
+
+void appendTraceJsonString(std::ostringstream& out, std::string_view value) {
+    out << '"';
+    for (const char ch : value) {
+        switch (ch) {
+            case '\\': out << "\\\\"; break;
+            case '"': out << "\\\""; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(ch) < 0x20) {
+                    out << "\\u00";
+                    constexpr char hex[] = "0123456789abcdef";
+                    out << hex[(static_cast<unsigned char>(ch) >> 4U) & 0x0FU]
+                        << hex[static_cast<unsigned char>(ch) & 0x0FU];
+                } else {
+                    out << ch;
+                }
+                break;
+        }
+    }
+    out << '"';
+}
+
+void appendTraceRectJson(std::ostringstream& out, const Datum::IntRect* rect) {
+    if (rect == nullptr) {
+        out << "null";
+        return;
+    }
+    out << "{\"left\":" << rect->left
+        << ",\"top\":" << rect->top
+        << ",\"right\":" << rect->right
+        << ",\"bottom\":" << rect->bottom
+        << ",\"width\":" << rect->width()
+        << ",\"height\":" << rect->height()
+        << '}';
+}
+
+int countOpaqueRgb(const bitmap::Bitmap& bitmap, std::uint32_t rgb) {
+    int count = 0;
+    for (const auto pixel : bitmap.pixels()) {
+        if (((pixel >> 24U) & 0xFFU) != 0 && (pixel & 0x00FFFFFFU) == rgb) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+void appendTraceBitmapSummary(std::ostringstream& out, const char* key, const bitmap::Bitmap& bitmap) {
+    int minX = bitmap.width();
+    int minY = bitmap.height();
+    int maxX = -1;
+    int maxY = -1;
+    int opaquePixels = 0;
+    int transparentPixels = 0;
+    for (int y = 0; y < bitmap.height(); ++y) {
+        for (int x = 0; x < bitmap.width(); ++x) {
+            const auto pixel = bitmap.getPixel(x, y);
+            const int alpha = static_cast<int>((pixel >> 24U) & 0xFFU);
+            if (alpha == 0) {
+                ++transparentPixels;
+                continue;
+            }
+            ++opaquePixels;
+            minX = std::min(minX, x);
+            minY = std::min(minY, y);
+            maxX = std::max(maxX, x);
+            maxY = std::max(maxY, y);
+        }
+    }
+    out << ",\"" << key << "\":{\"width\":" << bitmap.width()
+        << ",\"height\":" << bitmap.height()
+        << ",\"bitDepth\":" << bitmap.bitDepth()
+        << ",\"nativeAlpha\":" << (bitmap.isNativeAlpha() ? "true" : "false")
+        << ",\"scriptModified\":" << (bitmap.isScriptModified() ? "true" : "false")
+        << ",\"paletteIndices\":" << (bitmap.paletteIndices().has_value() ? "true" : "false")
+        << ",\"opaquePixels\":" << opaquePixels
+        << ",\"transparentPixels\":" << transparentPixels;
+    if (maxX >= 0) {
+        out << ",\"alphaBounds\":{\"left\":" << minX
+            << ",\"top\":" << minY
+            << ",\"right\":" << (maxX + 1)
+            << ",\"bottom\":" << (maxY + 1)
+            << '}';
+    } else {
+        out << ",\"alphaBounds\":null";
+    }
+    out << ",\"colors\":{\"black\":" << countOpaqueRgb(bitmap, 0x000000U)
+        << ",\"white\":" << countOpaqueRgb(bitmap, 0xFFFFFFU)
+        << ",\"cyan669999\":" << countOpaqueRgb(bitmap, 0x669999U)
+        << ",\"gray777777\":" << countOpaqueRgb(bitmap, 0x777777U)
+        << "}}";
+}
+
+void pushImageOperationTrace(std::string entry) {
+    if (imageOperationTrace.size() >= kMaxImageOperationTraceEntries) {
+        imageOperationTrace.pop_front();
+    }
+    imageOperationTrace.push_back(std::move(entry));
+}
 
 Datum literalToDatum(const chunks::ScriptChunk::LiteralEntry& literal) {
     switch (literal.type) {
@@ -2836,14 +2941,50 @@ std::optional<int> imageInferDominantEdgePaletteIndex(const std::vector<std::uin
     return dominantIndex;
 }
 
+std::optional<int> imageInferWhiteEdgePaletteIndex(const std::vector<std::uint32_t>& pixels,
+                                                   const std::vector<std::uint8_t>& paletteIndices,
+                                                   int width,
+                                                   int height) {
+    if (width <= 0 || height <= 0) return std::nullopt;
+
+    std::array<int, 256> counts{};
+    int bestIndex = -1;
+    int bestCount = 0;
+    for (const int index : imageEdgeIndices(width, height)) {
+        const auto offset = static_cast<std::size_t>(index);
+        if (offset >= pixels.size() || offset >= paletteIndices.size() ||
+            ((pixels[offset] >> 24) & 0xFFU) == 0) {
+            continue;
+        }
+        const int paletteIndex = static_cast<int>(paletteIndices[offset]);
+        const int rgb = imageResolvePaletteIndexRgb(pixels, paletteIndices, paletteIndex);
+        if (rgb != 0xFFFFFF) {
+            continue;
+        }
+        const int count = ++counts[static_cast<std::size_t>(paletteIndex)];
+        if (count > bestCount) {
+            bestCount = count;
+            bestIndex = paletteIndex;
+        }
+    }
+    return bestIndex >= 0 && !imageIsUniformPaletteIndex(paletteIndices, bestIndex)
+        ? std::optional<int>(bestIndex)
+        : std::nullopt;
+}
+
 std::optional<ImageFloodFillMatte> imageResolveIndexedFloodFillMatte(
     const std::vector<std::uint32_t>& pixels,
     const std::vector<std::uint8_t>& paletteIndices,
     int width,
     int height) {
+    if (const auto whiteEdge = imageInferWhiteEdgePaletteIndex(pixels, paletteIndices, width, height)) {
+        return ImageFloodFillMatte{
+            *whiteEdge, imageResolvePaletteIndexRgb(pixels, paletteIndices, *whiteEdge), 0};
+    }
     if (const auto dominant = imageInferDominantEdgePaletteIndex(pixels, paletteIndices, width, height)) {
         const int matteRgb = imageResolvePaletteIndexRgb(pixels, paletteIndices, *dominant);
-        if (*dominant == 0 && imageDefaultIndexedMatteRgb(matteRgb)) {
+        if (matteRgb == 0xFFFFFF ||
+            (*dominant == 0 && imageDefaultIndexedMatteRgb(matteRgb))) {
             return ImageFloodFillMatte{*dominant, matteRgb, 0};
         }
     }
@@ -2916,16 +3057,29 @@ bool imageCornerContainsOpaqueRgb(const std::vector<std::uint32_t>& pixels, int 
     return false;
 }
 
+bool imageEdgeContainsOpaqueRgb(const std::vector<std::uint32_t>& pixels, int width, int height, int rgb) {
+    for (const int index : imageEdgeIndices(width, height)) {
+        const auto pixel = pixels[static_cast<std::size_t>(index)];
+        if (((pixel >> 24) & 0xFFU) != 0 && static_cast<int>(pixel & 0x00FFFFFFU) == rgb) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<ImageFloodFillMatte> imageResolveRgbFloodFillMatte(const std::vector<std::uint32_t>& pixels,
                                                                  int width,
                                                                  int height) {
+    if (imageEdgeContainsOpaqueRgb(pixels, width, height, 0xFFFFFF)) {
+        return ImageFloodFillMatte{std::nullopt, 0xFFFFFF, 0};
+    }
     if (const auto dominant = imageInferDominantEdgeRgb(pixels, width, height)) {
+        if (imageIsNearWhiteGrayscale(*dominant, 232, 16) && *dominant != 0xFFFFFF) {
+            return std::nullopt;
+        }
         return ImageFloodFillMatte{std::nullopt, *dominant, 0};
     }
-    if (!imageCornerContainsOpaqueRgb(pixels, width, height, 0xFFFFFF)) {
-        return std::nullopt;
-    }
-    return ImageFloodFillMatte{std::nullopt, 0xFFFFFF, 0};
+    return std::nullopt;
 }
 
 std::optional<ImageFloodFillMatte> imageResolveFloodFillMatte(
@@ -3415,6 +3569,7 @@ bool imageCanPreservePaletteIndices(const bitmap::Bitmap& dest,
     return srcPaletteIndices.has_value() &&
            srcPaletteIndices->size() == src.pixels().size() &&
            src.bitDepth() <= 8 &&
+           dest.bitDepth() <= 8 &&
            dest.bitDepth() >= src.bitDepth() &&
            imagePalettesCompatibleForIndexPreserve(dest, src) &&
            (ink == id::InkMode::COPY ||
@@ -3805,6 +3960,9 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
 
     if (dest.imagePalette() == nullptr && src.imagePalette() != nullptr) {
         dest.copyPaletteMetadataFrom(&src);
+        if (dest.bitDepth() > 8) {
+            dest.clearPaletteIndices();
+        }
     }
     if (!dest.hasAnchorPoint() && src.hasAnchorPoint()) {
         dest.setAnchorPoint(destRect->left + src.anchorX() - srcRect->left,
@@ -4026,11 +4184,44 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view methodNam
         return Datum::imageRef(bitmap::Drawing::createMask(bmp, alphaThreshold));
     }
     if (equalsIgnoreCase(methodName, "copyPixels")) {
+        const auto* srcRef = args.size() >= 1 ? args[0].asImageRef() : nullptr;
+        const auto* destRect = args.size() >= 2 ? args[1].asIntRect() : nullptr;
+        const auto* srcRect = args.size() >= 3 ? args[2].asIntRect() : nullptr;
+        int traceInk = 0;
+        if (args.size() >= 4 && args[3].isPropList()) {
+            const Datum inkDatum = getPropListKey(args[3].propListValue(), "ink");
+            if (!inkDatum.isVoid()) {
+                traceInk = toIntLikeJava(inkDatum);
+            }
+        }
+        std::ostringstream traceBefore;
+        traceBefore << "{\"id\":" << imageOperationTraceNextId++
+                    << ",\"op\":\"copyPixels.before\",\"ink\":" << traceInk
+                    << ",\"destRect\":";
+        appendTraceRectJson(traceBefore, destRect);
+        traceBefore << ",\"srcRect\":";
+        appendTraceRectJson(traceBefore, srcRect);
+        appendTraceBitmapSummary(traceBefore, "dest", bmp);
+        if (srcRef != nullptr && srcRef->bitmap != nullptr) {
+            appendTraceBitmapSummary(traceBefore, "src", *srcRef->bitmap);
+        }
+        traceBefore << '}';
+        pushImageOperationTrace(traceBefore.str());
         notifyImageMutation(bmp);
         auto result = imageCopyPixels(bmp, args);
         if (image.mutationCallback) {
             image.mutationCallback(bmp);
         }
+        std::ostringstream traceAfter;
+        traceAfter << "{\"id\":" << imageOperationTraceNextId++
+                   << ",\"op\":\"copyPixels.after\",\"ink\":" << traceInk
+                   << ",\"destRect\":";
+        appendTraceRectJson(traceAfter, destRect);
+        traceAfter << ",\"srcRect\":";
+        appendTraceRectJson(traceAfter, srcRect);
+        appendTraceBitmapSummary(traceAfter, "dest", bmp);
+        traceAfter << '}';
+        pushImageOperationTrace(traceAfter.str());
         return result;
     }
     if (equalsIgnoreCase(methodName, "duplicate")) {
@@ -4047,6 +4238,14 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view methodNam
     }
     if (equalsIgnoreCase(methodName, "trimWhiteSpace")) {
         const auto bounds = bmp.trimWhiteSpace();
+        std::ostringstream trace;
+        trace << "{\"id\":" << imageOperationTraceNextId++
+              << ",\"op\":\"trimWhiteSpace\",\"bounds\":";
+        const Datum::IntRect boundsRect{bounds.left, bounds.top, bounds.right, bounds.bottom};
+        appendTraceRectJson(trace, &boundsRect);
+        appendTraceBitmapSummary(trace, "src", bmp);
+        trace << '}';
+        pushImageOperationTrace(trace.str());
         if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
             auto empty = std::make_shared<bitmap::Bitmap>(1, 1, bmp.bitDepth());
             empty->fill(0xFFFFFFFFU);
@@ -7491,6 +7690,23 @@ bool objCall(ExecutionContext& context) {
 }
 
 } // namespace
+
+std::string imageOperationTraceJson() {
+    std::ostringstream out;
+    out << "{\"events\":[";
+    for (std::size_t index = 0; index < imageOperationTrace.size(); ++index) {
+        if (index > 0) {
+            out << ',';
+        }
+        out << imageOperationTrace[index];
+    }
+    out << "]}";
+    return out.str();
+}
+
+void clearImageOperationTrace() {
+    imageOperationTrace.clear();
+}
 
 namespace dispatch {
 

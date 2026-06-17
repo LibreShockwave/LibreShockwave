@@ -168,6 +168,18 @@
           callbacks.delete(message.requestId);
           resolve(message.text || "");
         }
+      } else if (message.type === "debugSprites") {
+        const resolve = callbacks.get(message.requestId);
+        if (resolve) {
+          callbacks.delete(message.requestId);
+          resolve(message.sprites || []);
+        }
+      } else if (message.type === "debugImageTrace") {
+        const resolve = callbacks.get(message.requestId);
+        if (resolve) {
+          callbacks.delete(message.requestId);
+          resolve(message.events || []);
+        }
       } else if (message.type === "socket" && typeof options.onSocket === "function") {
         options.onSocket(message);
       } else if (message.type === "tempo" && typeof options.onTempo === "function") {
@@ -301,6 +313,8 @@
       },
       pasteText(text) { send("paste", { text: text || "" }); },
       selectedText() { return request("selectedText"); },
+      debugSprites() { return request("debugSprites"); },
+      debugImageTrace(options = {}) { return request("debugImageTrace", { clear: !!options.clear }); },
       destroy() {
         destroyed = true;
         worker.postMessage({ type: "destroy" });
