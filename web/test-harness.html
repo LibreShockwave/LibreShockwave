@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LibreShockwave Harness</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #0b0c0b;
+      color: #d6e6dc;
+      font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #stage-wrap {
+      display: grid;
+      place-items: start center;
+      padding: 12px;
+    }
+    #stage {
+      width: 960px;
+      height: 540px;
+      image-rendering: pixelated;
+      background: #000;
+      outline: 1px solid #202820;
+    }
+    #status {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      max-width: calc(100vw - 24px);
+      padding: 6px 8px;
+      background: rgba(0, 0, 0, .72);
+      color: #d6e6dc;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage-wrap">
+    <canvas id="stage" width="960" height="540"></canvas>
+  </div>
+  <pre id="status">Starting...</pre>
+  <script src="libreshockwave-cpp-player.js"></script>
+  <script>
+    const movieUrl = "http://127.0.0.1/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?";
+    const params = {
+      "venus.websocket.mode": "ws",
+      "sw1": "client.allow.cross.domain=1;client.notify.cross.domain=0",
+      "sw2": "connection.info.host=verysecret.classichabbo.com;connection.info.port=30100",
+      "sw3": "connection.mus.host=verysecret.classichabbo.com;connection.mus.port=38201",
+      "sw4": "site.url=http://127.0.0.1;url.prefix=http://127.0.0.1",
+      "sw5": "client.reload.url=http://127.0.0.1/client/beta?x=reauthenticate;client.fatal.error.url=http://127.0.0.1/clientutils?key=error",
+      "sw6": "client.connection.failed.url=http://127.0.0.1/clientutils?key=connection_failed;external.variables.txt=http://127.0.0.1/gamedata/external_variables.txt?",
+      "sw7": "external.texts.txt=http://127.0.0.1/gamedata/external_texts.txt?",
+      "sw8": "use.sso.ticket=1;sso.ticket="
+    };
+    const debugPlaybackEnabled = new URLSearchParams(location.search).get("debug") === "1";
+
+    const status = document.getElementById("status");
+    window.__venusHarness = {
+      movieUrl,
+      params,
+      frames: [],
+      debug: [],
+      sockets: [],
+      errors: [],
+      warnings: []
+    };
+
+    function append(kind, message) {
+      const entry = {
+        time: new Date().toISOString(),
+        kind,
+        message: String(message || "")
+      };
+      window.__venusHarness.debug.push(entry);
+      status.textContent = `${kind}: ${entry.message}`;
+      console.log(`[${kind}] ${entry.message}`);
+    }
+
+    window.__player = LibreShockwavePlayer.create("stage", {
+      url: movieUrl,
+      params,
+      autoload: true,
+      autoplay: true,
+      tempoOverride: 24,
+      debugPlaybackEnabled,
+      websocketSsl: false,
+      onReady() {
+        append("ready", "player ready");
+      },
+      onLoad(info) {
+        window.__venusHarness.lastInfo = info;
+        append("load", `loaded ${info.width || 0}x${info.height || 0}`);
+      },
+      onFrame(info) {
+        window.__venusHarness.lastInfo = info;
+        window.__venusHarness.frames.push({
+          time: Date.now(),
+          frame: info.frame || 0,
+          width: info.width || 0,
+          height: info.height || 0
+        });
+        if (window.__venusHarness.frames.length > 240) {
+          window.__venusHarness.frames.shift();
+        }
+      },
+      onSocket(event) {
+        window.__venusHarness.sockets.push(event);
+        const preview = event.preview && event.preview.hex ? ` ${event.preview.hex} ${event.preview.ascii || ""}` : "";
+        append("socket", `${event.phase || "event"} ${event.url || event.host || ""}${preview}`);
+      },
+      onDebug(event) {
+        append(event.level || "debug", event.message || "");
+      },
+      onWarning(message) {
+        window.__venusHarness.warnings.push(message);
+        append("warning", message);
+      },
+      onError(message) {
+        window.__venusHarness.errors.push(message);
+        append("error", message);
+      }
+    });
+  </script>
+</body>
+</html>
