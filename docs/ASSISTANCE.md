@@ -68,6 +68,8 @@ Historical and completed goal notes live in `docs/goals/`:
   preserve and dispatch real authored broker script instances and their
   properties.
 - Do not commit real SSO tickets or sensitive runtime credentials.
+- Commit messages must not mention game, asset, harness, room, user, or
+  endpoint names. Describe the generic runtime behavior being fixed instead.
 
 ## Harness Workflow
 
