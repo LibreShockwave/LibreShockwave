@@ -157,14 +157,48 @@ std::optional<int> inferDominantEdgePaletteIndex(const std::vector<std::uint32_t
     return dominantIndex;
 }
 
+std::optional<int> inferWhiteEdgePaletteIndex(const std::vector<std::uint32_t>& pixels,
+                                              const std::vector<std::uint8_t>& paletteIndices,
+                                              int width,
+                                              int height) {
+    if (width <= 0 || height <= 0) return std::nullopt;
+
+    std::array<int, 256> counts{};
+    int bestIndex = -1;
+    int bestCount = 0;
+    for (const int index : edgeIndices(width, height)) {
+        const auto offset = static_cast<std::size_t>(index);
+        if (offset >= pixels.size() || offset >= paletteIndices.size() ||
+            ((pixels[offset] >> 24) & 0xFFU) == 0) {
+            continue;
+        }
+        const int paletteIndex = static_cast<int>(paletteIndices[offset]);
+        const int rgb = resolvePaletteIndexRgb(pixels, paletteIndices, paletteIndex);
+        if (rgb != 0xFFFFFF) {
+            continue;
+        }
+        const int count = ++counts[static_cast<std::size_t>(paletteIndex)];
+        if (count > bestCount) {
+            bestCount = count;
+            bestIndex = paletteIndex;
+        }
+    }
+    return bestIndex >= 0 && !isUniformPaletteIndex(paletteIndices, bestIndex)
+        ? std::optional<int>(bestIndex)
+        : std::nullopt;
+}
+
 std::optional<FloodFillMatte> resolveIndexedFloodFillMatte(
     const std::vector<std::uint32_t>& pixels,
     const std::vector<std::uint8_t>& paletteIndices,
     int width,
     int height) {
+    if (const auto whiteEdge = inferWhiteEdgePaletteIndex(pixels, paletteIndices, width, height)) {
+        return FloodFillMatte{*whiteEdge, resolvePaletteIndexRgb(pixels, paletteIndices, *whiteEdge), 0};
+    }
     if (const auto dominant = inferDominantEdgePaletteIndex(pixels, paletteIndices, width, height)) {
         const int matteRgb = resolvePaletteIndexRgb(pixels, paletteIndices, *dominant);
-        if (*dominant == 0 && defaultIndexedMatteRgb(matteRgb)) {
+        if (matteRgb == 0xFFFFFF || (*dominant == 0 && defaultIndexedMatteRgb(matteRgb))) {
             return FloodFillMatte{*dominant, matteRgb, 0};
         }
     }
@@ -237,16 +271,29 @@ bool cornerContainsOpaqueRgb(const std::vector<std::uint32_t>& pixels, int width
     return false;
 }
 
+bool edgeContainsOpaqueRgb(const std::vector<std::uint32_t>& pixels, int width, int height, int rgb) {
+    for (const int index : edgeIndices(width, height)) {
+        const auto pixel = pixels[static_cast<std::size_t>(index)];
+        if (((pixel >> 24) & 0xFFU) != 0 && static_cast<int>(pixel & 0x00FFFFFFU) == rgb) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<FloodFillMatte> resolveRgbFloodFillMatte(const std::vector<std::uint32_t>& pixels,
                                                        int width,
                                                        int height) {
+    if (edgeContainsOpaqueRgb(pixels, width, height, 0xFFFFFF)) {
+        return FloodFillMatte{std::nullopt, 0xFFFFFF, 0};
+    }
     if (const auto dominant = inferDominantEdgeRgb(pixels, width, height)) {
+        if (isNearWhiteGrayscale(*dominant, 232, 16) && *dominant != 0xFFFFFF) {
+            return std::nullopt;
+        }
         return FloodFillMatte{std::nullopt, *dominant, 0};
     }
-    if (!cornerContainsOpaqueRgb(pixels, width, height, 0xFFFFFF)) {
-        return std::nullopt;
-    }
-    return FloodFillMatte{std::nullopt, 0xFFFFFF, 0};
+    return std::nullopt;
 }
 
 std::optional<FloodFillMatte> resolveFloodFillMatte(

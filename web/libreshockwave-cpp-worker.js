@@ -94,6 +94,9 @@ function ensureModule() {
       framePixels: Module.cwrap("lsw_frame_pixels", "number", ["number"]),
       frameByteLength: Module.cwrap("lsw_frame_byte_length", "number", ["number"]),
       frameInfoJson: Module.cwrap("lsw_frame_info_json", "string", ["number"]),
+      frameSpritesJson: Module.cwrap("lsw_frame_sprites_json", "string", ["number"]),
+      imageOperationTraceJson: Module.cwrap("lsw_image_operation_trace_json", "string", ["number"]),
+      clearImageOperationTrace: Module.cwrap("lsw_clear_image_operation_trace", null, ["number"]),
       lastError: Module.cwrap("lsw_last_error", "string", ["number"]),
       pollDebugMessages: Module.cwrap("lsw_poll_debug_messages", "string", ["number"]),
       drainDebugMessages: Module.cwrap("lsw_drain_debug_messages", null, ["number"]),
@@ -710,6 +713,29 @@ self.addEventListener("message", (event) => {
       case "selectedText":
         post("selectedText", { requestId: message.requestId, text: bridgeCall("selected text", () => api.selectedText(handle), "") || "" });
         break;
+      case "debugSprites": {
+        let sprites = { sprites: [] };
+        try {
+          sprites = JSON.parse(bridgeCall("frame sprites", () => api.frameSpritesJson(handle), "{\"sprites\":[]}"));
+        } catch {
+          sprites = { sprites: [] };
+        }
+        post("debugSprites", { requestId: message.requestId, ...sprites });
+        break;
+      }
+      case "debugImageTrace": {
+        let trace = { events: [] };
+        try {
+          trace = JSON.parse(bridgeCall("image operation trace", () => api.imageOperationTraceJson(handle), "{\"events\":[]}"));
+        } catch {
+          trace = { events: [] };
+        }
+        if (message.clear) {
+          bridgeCall("clear image operation trace", () => api.clearImageOperationTrace(handle));
+        }
+        post("debugImageTrace", { requestId: message.requestId, ...trace });
+        break;
+      }
       case "cut":
         post("cut", { requestId: message.requestId, text: bridgeCall("cut", () => api.cutSelectedText(handle), "") || "" });
         sendFrame();

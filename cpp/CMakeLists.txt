@@ -281,6 +281,7 @@ if(EMSCRIPTEN)
         "_lsw_frame_width"
         "_lsw_frame_height"
         "_lsw_frame_info_json"
+        "_lsw_frame_sprites_json"
         "_lsw_last_error"
         "_lsw_poll_debug_messages"
         "_lsw_drain_debug_messages"

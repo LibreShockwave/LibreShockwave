@@ -991,7 +991,7 @@ bool CastLib::setMemberProp(int memberNumber, const std::string& propName, const
             if (image == nullptr || image->bitmap == nullptr) {
                 return false;
             }
-            member->setRuntimeBitmap(*image->bitmap, false);
+            member->setRuntimeBitmap(*image->bitmap);
             return true;
         }
         if (prop == "font") {

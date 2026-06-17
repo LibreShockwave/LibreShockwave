@@ -84,6 +84,10 @@ int excludedLeading(const BitmapFont* font, int lineHeight, int topSpacing) {
     return isDefaultLeading(font, lineHeight, topSpacing) ? topSpacing : 0;
 }
 
+int initialBitmapTextY(const BitmapFont* font, int lineHeight, int topSpacing) {
+    return topSpacing + (topSpacing > 1 ? 1 : 0);
+}
+
 int findInkBottom(const std::vector<std::uint32_t>& pixels,
                   int width,
                   int height,
@@ -624,7 +628,10 @@ std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& 
 
     const int leading = std::max(0, lineHeight - font->getLineHeight());
     const int verticalOverflow = std::max(0, font->getLineHeight() - lineHeight);
-    int y = topSpacing + (topSpacing > 1 ? 1 : 0);
+    int y = initialBitmapTextY(font.get(), lineHeight, topSpacing);
+    if (fixedLineSpace <= 0 && topSpacing == 0) {
+        ++y;
+    }
     for (const auto& line : lines) {
         if (y >= height) {
             break;
@@ -862,7 +869,7 @@ std::shared_ptr<Bitmap> renderStyledXmedText(const std::vector<ResolvedXmedSpan>
         : 0;
 
     std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width * neededHeight), bgColor);
-    int y = 0;
+    int y = styledText.fixedLineSpace > 0 ? 0 : 1;
     for (const auto& line : lines) {
         if (y >= neededHeight) {
             break;

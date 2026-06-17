@@ -24,10 +24,13 @@
 
 #include "libreshockwave/DirectorFile.hpp"
 #include "libreshockwave/bitmap/Bitmap.hpp"
+#include "libreshockwave/cast/CastMember.hpp"
+#include "libreshockwave/lingo/vm/OpcodeRegistry.hpp"
 #include "libreshockwave/player/InputHandler.hpp"
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/PlayerState.hpp"
 #include "libreshockwave/player/input/DirectorKeyCodes.hpp"
+#include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
 #include "libreshockwave/player/net/QueuedNetProvider.hpp"
 #include "libreshockwave/player/xtra/QueuedMultiuserBridge.hpp"
 #include "libreshockwave/util/FileUtil.hpp"
@@ -41,6 +44,7 @@ using libreshockwave::player::Player;
 using libreshockwave::player::PlayerState;
 using libreshockwave::player::input::DirectorKeyCodes;
 using libreshockwave::player::net::QueuedNetProvider;
+using libreshockwave::player::render::pipeline::RenderSprite;
 using libreshockwave::player::xtra::QueuedMultiuserBridge;
 
 // Fetch completion can synchronously finish Director cast-load callbacks.
@@ -433,6 +437,295 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
         }
     }
     out << "}}";
+    return out.str();
+}
+
+std::string frameSpritesJson(WasmPlayerContext& ctx) {
+    struct ColorBounds {
+        int count = 0;
+        int minX = 0;
+        int minY = 0;
+        int maxX = 0;
+        int maxY = 0;
+    };
+
+    std::ostringstream out;
+    auto appendBitmapSummary = [](std::ostringstream& stream, const char* key, const Bitmap& bitmap) {
+        int minX = bitmap.width();
+        int minY = bitmap.height();
+        int maxX = -1;
+        int maxY = -1;
+        int opaquePixels = 0;
+        int translucentPixels = 0;
+        std::unordered_map<std::uint32_t, ColorBounds> colorBounds;
+        for (int y = 0; y < bitmap.height(); ++y) {
+            for (int x = 0; x < bitmap.width(); ++x) {
+                const auto pixel = bitmap.getPixel(x, y);
+                const int alpha = static_cast<int>((pixel >> 24U) & 0xFFU);
+                if (alpha == 0) {
+                    continue;
+                }
+                minX = std::min(minX, x);
+                minY = std::min(minY, y);
+                maxX = std::max(maxX, x);
+                maxY = std::max(maxY, y);
+                if (alpha == 255) {
+                    ++opaquePixels;
+                } else {
+                    ++translucentPixels;
+                }
+                const std::uint32_t rgb = pixel & 0x00FFFFFFU;
+                auto& bounds = colorBounds[rgb];
+                if (bounds.count == 0) {
+                    bounds.minX = bounds.maxX = x;
+                    bounds.minY = bounds.maxY = y;
+                } else {
+                    bounds.minX = std::min(bounds.minX, x);
+                    bounds.minY = std::min(bounds.minY, y);
+                    bounds.maxX = std::max(bounds.maxX, x);
+                    bounds.maxY = std::max(bounds.maxY, y);
+                }
+                ++bounds.count;
+            }
+        }
+        stream << ",\"" << key << "\":{\"width\":" << bitmap.width()
+               << ",\"height\":" << bitmap.height()
+               << ",\"bitDepth\":" << bitmap.bitDepth()
+               << ",\"paletteIndices\":" << (bitmap.paletteIndices().has_value() ? "true" : "false")
+               << ",\"nativeAlpha\":" << (bitmap.isNativeAlpha() ? "true" : "false")
+               << ",\"scriptModified\":" << (bitmap.isScriptModified() ? "true" : "false")
+               << ",\"transparent\":" << (bitmap.hasTransparentPixels() ? "true" : "false")
+               << ",\"translucent\":" << (bitmap.hasTranslucentPixels() ? "true" : "false")
+               << ",\"opaquePixels\":" << opaquePixels
+               << ",\"translucentPixels\":" << translucentPixels;
+        if (maxX >= 0) {
+            stream << ",\"alphaBounds\":{\"left\":" << minX
+                   << ",\"top\":" << minY
+                   << ",\"right\":" << (maxX + 1)
+                   << ",\"bottom\":" << (maxY + 1)
+                   << '}';
+        } else {
+            stream << ",\"alphaBounds\":null";
+        }
+        std::vector<std::pair<std::uint32_t, ColorBounds>> colors(colorBounds.begin(), colorBounds.end());
+        std::sort(colors.begin(), colors.end(), [](const auto& lhs, const auto& rhs) {
+            if (lhs.second.count != rhs.second.count) {
+                return lhs.second.count > rhs.second.count;
+            }
+            return lhs.first < rhs.first;
+        });
+        stream << ",\"topColors\":[";
+        const std::size_t colorLimit = std::min<std::size_t>(colors.size(), 16);
+        for (std::size_t index = 0; index < colorLimit; ++index) {
+            if (index > 0) {
+                stream << ',';
+            }
+            const auto& [rgb, bounds] = colors[index];
+            stream << "{\"rgb\":" << rgb
+                   << ",\"count\":" << bounds.count
+                   << ",\"bounds\":{\"left\":" << bounds.minX
+                   << ",\"top\":" << bounds.minY
+                   << ",\"right\":" << (bounds.maxX + 1)
+                   << ",\"bottom\":" << (bounds.maxY + 1)
+                   << "}}";
+        }
+        stream << ']';
+        const std::array<std::pair<int, int>, 12> probePoints{{
+            {0, 0}, {1, 1}, {4, 1}, {5, 1}, {5, 2}, {5, 3},
+            {5, 4}, {5, 5}, {bitmap.width() / 2, 1}, {bitmap.width() / 2, 2},
+            {std::max(0, bitmap.width() - 6), 2}, {std::max(0, bitmap.width() - 2), 1}
+        }};
+        stream << ",\"probePixels\":[";
+        bool firstProbe = true;
+        const auto paletteIndices = bitmap.paletteIndices();
+        for (const auto& [x, y] : probePoints) {
+            if (x < 0 || y < 0 || x >= bitmap.width() || y >= bitmap.height()) {
+                continue;
+            }
+            if (!firstProbe) {
+                stream << ',';
+            }
+            firstProbe = false;
+            const auto pixel = bitmap.getPixel(x, y);
+            stream << "{\"x\":" << x
+                   << ",\"y\":" << y
+                   << ",\"argb\":" << pixel;
+            if (paletteIndices.has_value()) {
+                const auto offset = static_cast<std::size_t>(y * bitmap.width() + x);
+                if (offset < paletteIndices->size()) {
+                    stream << ",\"paletteIndex\":" << static_cast<int>((*paletteIndices)[offset]);
+                }
+            }
+            stream << '}';
+        }
+        stream << "]}";
+    };
+
+    out << "{\"sprites\":[";
+    if (ctx.player != nullptr) {
+        const auto& sprites = ctx.player->stageRenderer().lastBakedSprites();
+        bool first = true;
+        for (const auto& sprite : sprites) {
+            if (!first) {
+                out << ',';
+            }
+            first = false;
+            const auto baked = sprite.bakedBitmap();
+            out << "{\"channel\":" << sprite.channel()
+                << ",\"x\":" << sprite.x()
+                << ",\"y\":" << sprite.y()
+                << ",\"width\":" << sprite.width()
+                << ",\"height\":" << sprite.height()
+                << ",\"locZ\":" << sprite.locZ()
+                << ",\"visible\":" << (sprite.isVisible() ? "true" : "false")
+                << ",\"type\":";
+            appendJsonString(out, std::string(libreshockwave::player::render::pipeline::name(sprite.type())));
+            out << ",\"castMemberId\":" << sprite.castMemberId()
+                << ",\"memberName\":";
+            if (auto memberName = sprite.memberName(); memberName.has_value()) {
+                appendJsonString(out, *memberName);
+            } else {
+                out << "null";
+            }
+            out << ",\"ink\":" << sprite.ink()
+                << ",\"blend\":" << sprite.blend()
+                << ",\"foreColor\":" << sprite.foreColor()
+                << ",\"backColor\":" << sprite.backColor()
+                << ",\"hasBakedBitmap\":" << (baked != nullptr ? "true" : "false");
+            if (baked != nullptr) {
+                int minX = baked->width();
+                int minY = baked->height();
+                int maxX = -1;
+                int maxY = -1;
+                int opaquePixels = 0;
+                int translucentPixels = 0;
+                std::unordered_map<std::uint32_t, ColorBounds> colorBounds;
+                for (int y = 0; y < baked->height(); ++y) {
+                    for (int x = 0; x < baked->width(); ++x) {
+                        const auto pixel = baked->getPixel(x, y);
+                        const int alpha = static_cast<int>((pixel >> 24U) & 0xFFU);
+                        if (alpha == 0) {
+                            continue;
+                        }
+                        minX = std::min(minX, x);
+                        minY = std::min(minY, y);
+                        maxX = std::max(maxX, x);
+                        maxY = std::max(maxY, y);
+                        if (alpha == 255) {
+                            ++opaquePixels;
+                        } else {
+                            ++translucentPixels;
+                        }
+                        const std::uint32_t rgb = pixel & 0x00FFFFFFU;
+                        auto& bounds = colorBounds[rgb];
+                        if (bounds.count == 0) {
+                            bounds.minX = bounds.maxX = x;
+                            bounds.minY = bounds.maxY = y;
+                        } else {
+                            bounds.minX = std::min(bounds.minX, x);
+                            bounds.minY = std::min(bounds.minY, y);
+                            bounds.maxX = std::max(bounds.maxX, x);
+                            bounds.maxY = std::max(bounds.maxY, y);
+                        }
+                        ++bounds.count;
+                    }
+                }
+                out << ",\"bitmap\":{\"width\":" << baked->width()
+                    << ",\"height\":" << baked->height()
+                    << ",\"bitDepth\":" << baked->bitDepth()
+                    << ",\"paletteIndices\":" << (baked->paletteIndices().has_value() ? "true" : "false")
+                    << ",\"nativeAlpha\":" << (baked->isNativeAlpha() ? "true" : "false")
+                    << ",\"scriptModified\":" << (baked->isScriptModified() ? "true" : "false")
+                    << ",\"transparent\":" << (baked->hasTransparentPixels() ? "true" : "false")
+                    << ",\"translucent\":" << (baked->hasTranslucentPixels() ? "true" : "false")
+                    << ",\"opaquePixels\":" << opaquePixels
+                    << ",\"translucentPixels\":" << translucentPixels;
+                if (maxX >= 0) {
+                    out << ",\"alphaBounds\":{\"left\":" << minX
+                        << ",\"top\":" << minY
+                        << ",\"right\":" << (maxX + 1)
+                        << ",\"bottom\":" << (maxY + 1)
+                        << '}';
+                } else {
+                    out << ",\"alphaBounds\":null";
+                }
+                std::vector<std::pair<std::uint32_t, ColorBounds>> colors(colorBounds.begin(), colorBounds.end());
+                std::sort(colors.begin(), colors.end(), [](const auto& lhs, const auto& rhs) {
+                    if (lhs.second.count != rhs.second.count) {
+                        return lhs.second.count > rhs.second.count;
+                    }
+                    return lhs.first < rhs.first;
+                });
+                out << ",\"topColors\":[";
+                const std::size_t colorLimit = std::min<std::size_t>(colors.size(), 16);
+                for (std::size_t index = 0; index < colorLimit; ++index) {
+                    if (index > 0) {
+                        out << ',';
+                    }
+                    const auto& [rgb, bounds] = colors[index];
+                    out << "{\"rgb\":" << rgb
+                        << ",\"count\":" << bounds.count
+                        << ",\"bounds\":{\"left\":" << bounds.minX
+                        << ",\"top\":" << bounds.minY
+                        << ",\"right\":" << (bounds.maxX + 1)
+                        << ",\"bottom\":" << (bounds.maxY + 1)
+                        << "}}";
+                }
+                out << ']';
+                const std::array<std::pair<int, int>, 12> probePoints{{
+                    {0, 0}, {1, 1}, {4, 1}, {5, 1}, {5, 2}, {5, 3},
+                    {5, 4}, {5, 5}, {baked->width() / 2, 1}, {baked->width() / 2, 2},
+                    {std::max(0, baked->width() - 6), 2}, {std::max(0, baked->width() - 2), 1}
+                }};
+                out << ",\"probePixels\":[";
+                bool firstProbe = true;
+                const auto paletteIndices = baked->paletteIndices();
+                for (const auto& [x, y] : probePoints) {
+                    if (x < 0 || y < 0 || x >= baked->width() || y >= baked->height()) {
+                        continue;
+                    }
+                    if (!firstProbe) {
+                        out << ',';
+                    }
+                    firstProbe = false;
+                    const auto pixel = baked->getPixel(x, y);
+                    out << "{\"x\":" << x
+                        << ",\"y\":" << y
+                        << ",\"argb\":" << pixel;
+                    if (paletteIndices.has_value()) {
+                        const auto offset = static_cast<std::size_t>(y * baked->width() + x);
+                        if (offset < paletteIndices->size()) {
+                            out << ",\"paletteIndex\":" << static_cast<int>((*paletteIndices)[offset]);
+                        }
+                    }
+                    out << '}';
+                }
+                out << ']';
+                out << '}';
+            }
+            if (auto dynamicMember = sprite.dynamicMember(); dynamicMember != nullptr) {
+                out << ",\"dynamicMember\":{\"id\":" << dynamicMember->id()
+                    << ",\"castLib\":" << dynamicMember->castLib()
+                    << ",\"memberNum\":" << dynamicMember->memberNum()
+                    << ",\"name\":";
+                appendJsonString(out, dynamicMember->name());
+                out << ",\"width\":" << dynamicMember->width()
+                    << ",\"height\":" << dynamicMember->height()
+                    << ",\"regX\":" << dynamicMember->regX()
+                    << ",\"regY\":" << dynamicMember->regY()
+                    << ",\"runtimeDynamic\":" << (dynamicMember->isRuntimeDynamic() ? "true" : "false")
+                    << ",\"hasRuntimeBitmap\":" << (dynamicMember->runtimeBitmap() != nullptr ? "true" : "false")
+                    << '}';
+                if (auto live = dynamicMember->runtimeBitmap(); live != nullptr) {
+                    appendBitmapSummary(out, "liveBitmap", *live);
+                }
+            } else {
+                out << ",\"dynamicMember\":null";
+            }
+            out << '}';
+        }
+    }
+    out << "]}";
     return out.str();
 }
 
@@ -895,6 +1188,44 @@ EMSCRIPTEN_KEEPALIVE const char* lsw_frame_info_json(int handle) {
         appendJsonString(out, ctx->lastError);
         out << ",\"cursor\":{\"code\":-1,\"css\":\"default\"}}";
         return scratch(*ctx, out.str());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* lsw_frame_sprites_json(int handle) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr) {
+        return "{\"sprites\":[]}";
+    }
+    try {
+        return scratch(*ctx, frameSpritesJson(*ctx));
+    } catch (const std::exception& error) {
+        setError(*ctx, error.what());
+        return "{\"sprites\":[]}";
+    } catch (...) {
+        setError(*ctx, "Unknown frame sprites error");
+        return "{\"sprites\":[]}";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* lsw_image_operation_trace_json(int handle) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr) {
+        return "{\"events\":[]}";
+    }
+    try {
+        return scratch(*ctx, libreshockwave::lingo::vm::imageOperationTraceJson());
+    } catch (const std::exception& error) {
+        setError(*ctx, error.what());
+        return "{\"events\":[]}";
+    } catch (...) {
+        setError(*ctx, "Unknown image operation trace error");
+        return "{\"events\":[]}";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void lsw_clear_image_operation_trace(int handle) {
+    if (getContext(handle) != nullptr) {
+        libreshockwave::lingo::vm::clearImageOperationTrace();
     }
 }
 
