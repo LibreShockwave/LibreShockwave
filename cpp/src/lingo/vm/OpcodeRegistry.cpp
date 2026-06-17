@@ -4347,8 +4347,8 @@ Datum spriteObjectMethod(ExecutionContext& context,
     }
 
     if (builtinContext->spriteProperties != nullptr) {
-        auto scripts = builtinContext->spriteProperties->getScriptInstanceList(sprite.channel);
-        if (scripts.has_value()) {
+        auto* scripts = builtinContext->spriteProperties->mutableScriptInstanceList(sprite.channel);
+        if (scripts != nullptr) {
             for (auto& scriptInstance : *scripts) {
                 if (scriptInstance.type() != DatumType::ScriptInstanceRef) {
                     continue;

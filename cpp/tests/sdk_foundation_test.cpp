@@ -1347,6 +1347,28 @@ void testLingoDatumTypes() {
                .intValue() == 1);
     assert(StringBuiltins::offset(stringBuiltinContext, {Datum::of(std::string("z")),
                                                          Datum::of(std::string("abc"))}).intValue() == 0);
+    BuiltinContext scriptConstructorContext;
+    scriptConstructorContext.castMemberNameResolver = [](int castLib, const std::string& memberName) {
+        if (castLib == 0 && memberName == "Named Behavior") {
+            return Datum::castMemberRef(CastLibId(7), MemberId(3));
+        }
+        return Datum::voidValue();
+    };
+    scriptConstructorContext.scriptPropertyNamesResolver = [](int castLib, int memberNum) {
+        if (castLib == 7 && memberNum == 3) {
+            return std::vector<std::string>{"pState"};
+        }
+        return std::vector<std::string>{};
+    };
+    const Datum namedScriptInstance = libreshockwave::lingo::builtin::ConstructorBuiltins::newInstance(
+        scriptConstructorContext,
+        {Datum::of(std::string("Named Behavior"))});
+    assert(namedScriptInstance.type() == DatumType::ScriptInstanceRef);
+    assert(namedScriptInstance.scriptInstanceValue().scriptRef().has_value());
+    assert(namedScriptInstance.scriptInstanceValue().scriptRef()->castLib == 7);
+    assert(namedScriptInstance.scriptInstanceValue().scriptRef()->memberNum() == 3);
+    assert(namedScriptInstance.scriptInstanceValue().hasProperty("pState"));
+
     Datum dispatcherListDatum = Datum::list({Datum::of(3), Datum::of(1)});
     auto& dispatcherList = dispatcherListDatum.listValue();
     assert(ListMethodDispatcher::dispatch(dispatcherList, "count", {}).intValue() == 2);
@@ -3237,6 +3259,45 @@ void testPlayerInputFoundation() {
 
     InputHandler inputHandler(&handlerState, &stageRenderer, &dispatcher);
     assert(inputHandler.hitTestExact(5, 5) == 2);
+    auto transparentOverlay = stageRenderer.spriteRegistry().getOrCreateDynamic(4);
+    transparentOverlay->setScriptInstanceList({Datum::scriptInstance("transparent-overlay")});
+    auto transparentBitmap = std::make_shared<Bitmap>(20, 20, 32, std::vector<std::uint32_t>(20 * 20, 0x00000000U));
+    auto transparentMemberChunk = std::make_shared<CastMemberChunk>(nullptr,
+                                                                    ChunkId(3260),
+                                                                    MemberType::Bitmap,
+                                                                    0,
+                                                                    0,
+                                                                    std::vector<std::uint8_t>{},
+                                                                    std::vector<std::uint8_t>{},
+                                                                    "transparent-overlay",
+                                                                    0,
+                                                                    0,
+                                                                    0);
+    auto transparentMember = std::make_shared<CastMember>(1, 1, 3260, transparentMemberChunk);
+    stageRenderer.setLastBakedSprites({
+        RenderSprite(2, 0, 0, 20, 20, 2, true, SpriteType::Shape, nullptr, nullptr, 0, 0, false, false, 0, 100, false, false, nullptr, true),
+        RenderSprite(4,
+                     0,
+                     0,
+                     20,
+                     20,
+                     4,
+                     true,
+                     SpriteType::Bitmap,
+                     nullptr,
+                     transparentMember,
+                     0,
+                     0,
+                     false,
+                     false,
+                     libreshockwave::id::code(InkMode::MATTE),
+                     100,
+                     false,
+                     false,
+                     transparentBitmap,
+                     false),
+    });
+    assert(inputHandler.hitTestExact(5, 5) == 2);
 
     auto makeNativeAlphaSpecificData = [](int alphaThreshold) {
         return std::vector<std::uint8_t>{
@@ -3319,7 +3380,7 @@ void testPlayerInputFoundation() {
                      true),
     });
     assert(HitTester::hitTest(stageRenderer.lastBakedSprites(), 5, 5) == 4);
-    assert(inputHandler.hitTestExact(5, 5) == 5);
+    assert(inputHandler.hitTestExact(5, 5) == 4);
 
     stageRenderer.setLastBakedSprites({
         RenderSprite(1,
@@ -8450,7 +8511,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                     std::move(indexMap)};
     };
 
-    auto brokerRegisterHandler = makeBytecodeHandler(
+    auto routeStoreHandler = makeBytecodeHandler(
         185,
         {
             {Opcode::GET_PROP, 180},
@@ -8484,7 +8545,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                              ChunkId(704),
                              ScriptChunkType::Behavior,
                              0,
-                             {brokerRegisterHandler, brokerReadClientHandler},
+                             {routeStoreHandler, brokerReadClientHandler},
                              {},
                              {ScriptChunk::PropertyEntry{180}},
                              {},
@@ -8492,16 +8553,16 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     std::vector<std::string> brokerNames(187);
     brokerNames[64] = "getAt";
     brokerNames[65] = "setAt";
-    brokerNames[180] = "pEventRoutes";
+    brokerNames[180] = "pRoutes";
     brokerNames[181] = "me";
     brokerNames[182] = "tMethod";
     brokerNames[183] = "tClientID";
     brokerNames[184] = "tEvent";
-    brokerNames[185] = "registerProcedure";
+    brokerNames[185] = "storeRoute";
     brokerNames[186] = "readClient";
     auto brokerScriptNames = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(705), brokerNames);
-    auto eventBroker = Datum::scriptInstance("Event Broker Behavior", Datum::CastMemberRef{7, 3});
-    eventBroker.scriptInstanceValue().setProperty("pEventRoutes", Datum::propList());
+    auto eventBroker = Datum::scriptInstance("Route Behavior", Datum::CastMemberRef{7, 3});
+    eventBroker.scriptInstanceValue().setProperty("pRoutes", Datum::propList());
     LingoVM brokerVm;
     const HandlerRef brokerRegisterRef{
         &brokerScript,
@@ -8519,18 +8580,190 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         ScriptChunkType::Behavior};
     assert(brokerVm.executeHandler(brokerRegisterRef,
                                    {Datum::symbol("eventProcDefault"),
-                                    Datum::of(std::string("navigator")),
+                                    Datum::of(std::string("client-one")),
                                     Datum::symbol("mouseUp")},
                                    eventBroker)
                .intValue() == 1);
     const Datum registeredProc = eventBroker.scriptInstanceValue()
-                                     .getProperty("pEventRoutes")
+                                     .getProperty("pRoutes")
                                      .propListValue()
                                      .get(Datum::symbol("mouseUp"));
     assert(registeredProc.listValue().getAt(1).asSymbol()->name == "eventProcDefault");
-    assert(registeredProc.listValue().getAt(2).stringValue() == "navigator");
+    assert(registeredProc.listValue().getAt(2).stringValue() == "client-one");
     assert(brokerVm.executeHandler(brokerReadClientRef, {Datum::symbol("mouseUp")}, eventBroker).stringValue() ==
-           "navigator");
+           "client-one");
+
+    auto spriteRegisterCallerHandler = makeBytecodeHandler(
+        187,
+        {
+            {Opcode::GET_PARAM, 0},
+            {Opcode::GET_PARAM, 1},
+            {Opcode::GET_PARAM, 2},
+            {Opcode::GET_PARAM, 3},
+            {Opcode::PUSH_ARG_LIST_NO_RET, 4},
+            {Opcode::OBJ_CALL, 185},
+            {Opcode::PUSH_INT8, 1},
+            {Opcode::RET, 0},
+        },
+        0,
+        {188, 182, 183, 184});
+    std::vector<std::string> spriteRegisterNames = brokerNames;
+    spriteRegisterNames.resize(189);
+    spriteRegisterNames[187] = "callSpriteStore";
+    spriteRegisterNames[188] = "tSprite";
+    auto spriteRegisterScriptNames = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(706), spriteRegisterNames);
+    ScriptChunk spriteRegisterScript(nullptr,
+                                     ChunkId(707),
+                                     ScriptChunkType::MovieScript,
+                                     0,
+                                     {spriteRegisterCallerHandler},
+                                     {},
+                                     {},
+                                     {},
+                                     {});
+    SpriteRegistry brokerSpriteRegistry;
+    SpriteProperties brokerSpriteProps(&brokerSpriteRegistry);
+    auto brokerSprite = brokerSpriteRegistry.getOrCreateDynamic(51);
+    auto liveBroker = Datum::scriptInstance("Route Behavior", Datum::CastMemberRef{7, 3});
+    liveBroker.scriptInstanceValue().setProperty("pRoutes", Datum::propList());
+    brokerSprite->setScriptInstanceList({liveBroker});
+    LingoVM spriteRegisterVm;
+    spriteRegisterVm.builtinContext().spriteProperties = &brokerSpriteProps;
+    bool spriteRegisterFinderCalled = false;
+    spriteRegisterVm.builtinContext().scriptHandlerFinder = [&brokerScript,
+                                                             brokerScriptNames,
+                                                             &spriteRegisterFinderCalled](int castLib,
+                                                                                          int memberNum,
+                                                                                          const std::string& handlerName)
+        -> std::optional<libreshockwave::lingo::builtin::BuiltinContext::ScriptHandlerLocation> {
+        if (castLib == 7 && memberNum == 3 &&
+            libreshockwave::lingo::TransparentCaseInsensitiveStringEqual{}(handlerName, "storeRoute")) {
+            spriteRegisterFinderCalled = true;
+            return libreshockwave::lingo::builtin::BuiltinContext::ScriptHandlerLocation{
+                &brokerScript,
+                brokerScript.handlers()[0],
+                nullptr,
+                nullptr,
+                brokerScriptNames,
+                ScriptChunkType::Behavior
+            };
+        }
+        return std::nullopt;
+    };
+    const HandlerRef spriteRegisterRef{
+        &spriteRegisterScript,
+        &spriteRegisterScript.handlers()[0],
+        nullptr,
+        nullptr,
+        spriteRegisterScriptNames,
+        ScriptChunkType::MovieScript};
+    assert(spriteRegisterVm.executeHandler(spriteRegisterRef,
+                                           {Datum::spriteRef(ChannelId(51)),
+                                            Datum::symbol("eventProcDefault"),
+                                            Datum::of(std::string("client-one")),
+                                            Datum::symbol("mouseUp")})
+               .intValue() == 1);
+    assert(spriteRegisterFinderCalled);
+    auto liveBrokerScripts = brokerSpriteProps.getScriptInstanceList(51);
+    assert(liveBrokerScripts.has_value());
+    const Datum liveRegisteredProc = (*liveBrokerScripts)[0]
+                                         .scriptInstanceValue()
+                                         .getProperty("pRoutes")
+                                         .propListValue()
+                                         .get(Datum::symbol("mouseUp"));
+    assert(liveRegisteredProc.listValue().getAt(1).asSymbol()->name == "eventProcDefault");
+    assert(liveRegisteredProc.listValue().getAt(2).stringValue() == "client-one");
+
+    auto defaultRouteRegisterHandler = makeBytecodeHandler(
+        185,
+        {
+            {Opcode::GET_PARAM, 3},
+            {Opcode::PUSH_ARG_LIST, 1},
+            {Opcode::EXT_CALL, 21},
+            {Opcode::GET_PARAM, 1},
+            {Opcode::PUSH_ARG_LIST, 1},
+            {Opcode::EXT_CALL, 21},
+            {Opcode::AND, 0},
+            {Opcode::JMP_IF_Z, 24},
+            {Opcode::PUSH_INT8, 1},
+            {Opcode::SET_LOCAL, 0},
+            {Opcode::GET_LOCAL, 0},
+            {Opcode::GET_PROP, 180},
+            {Opcode::GET_OBJ_PROP, 23},
+            {Opcode::LT_EQ, 0},
+            {Opcode::JMP_IF_Z, 17},
+            {Opcode::GET_PROP, 180},
+            {Opcode::GET_LOCAL, 0},
+            {Opcode::GET_PROP, 180},
+            {Opcode::GET_LOCAL, 0},
+            {Opcode::PUSH_ARG_LIST, 2},
+            {Opcode::OBJ_CALL, 24},
+            {Opcode::GET_PARAM, 2},
+            {Opcode::PUSH_ARG_LIST, 2},
+            {Opcode::PUSH_LIST, 0},
+            {Opcode::PUSH_ARG_LIST_NO_RET, 3},
+            {Opcode::OBJ_CALL, 25},
+            {Opcode::PUSH_INT8, 1},
+            {Opcode::GET_LOCAL, 0},
+            {Opcode::ADD, 0},
+            {Opcode::SET_LOCAL, 0},
+            {Opcode::END_REPEAT, 20},
+            {Opcode::PUSH_INT8, 1},
+            {Opcode::RET, 0},
+        },
+        1,
+        {181, 182, 183, 184});
+    ScriptChunk defaultRouteScript(nullptr,
+                                   ChunkId(708),
+                                   ScriptChunkType::Behavior,
+                                   0,
+                                   {defaultRouteRegisterHandler},
+                                   {},
+                                   {ScriptChunk::PropertyEntry{180}},
+                                   {},
+                                   {});
+    std::vector<std::string> defaultRouteNames = brokerNames;
+    defaultRouteNames.resize(189);
+    defaultRouteNames[21] = "voidp";
+    defaultRouteNames[23] = "count";
+    defaultRouteNames[24] = "getPropAt";
+    defaultRouteNames[25] = "setAt";
+    auto defaultRouteScriptNames = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(709), defaultRouteNames);
+    auto defaultRouteInstance = Datum::scriptInstance("Route Behavior", Datum::CastMemberRef{7, 3});
+    auto procTemplate = Datum::propList();
+    procTemplate.propListValue().putTyped(Datum::symbol("mouseDown"),
+                                          Datum::list({Datum::symbol("null"), Datum::of(0)}));
+    procTemplate.propListValue().putTyped(Datum::symbol("mouseUp"),
+                                          Datum::list({Datum::symbol("null"), Datum::of(0)}));
+    procTemplate.propListValue().putTyped(Datum::symbol("keyDown"),
+                                          Datum::list({Datum::symbol("null"), Datum::of(0)}));
+    defaultRouteInstance.scriptInstanceValue().setProperty("pRoutes", procTemplate);
+    LingoVM defaultRouteVm;
+    const HandlerRef defaultRouteRegisterRef{
+        &defaultRouteScript,
+        &defaultRouteScript.handlers()[0],
+        nullptr,
+        nullptr,
+        defaultRouteScriptNames,
+        ScriptChunkType::Behavior};
+    assert(defaultRouteVm.executeHandler(defaultRouteRegisterRef,
+                                         {Datum::voidValue(),
+                                          Datum::of(std::string("window-object")),
+                                          Datum::voidValue()},
+                                         defaultRouteInstance)
+               .intValue() == 1);
+    const auto& defaultRoutes = defaultRouteInstance.scriptInstanceValue()
+                                    .getProperty("pRoutes")
+                                    .propListValue();
+    const Datum defaultMouseDown = defaultRoutes.get(Datum::symbol("mouseDown"));
+    const Datum defaultMouseUp = defaultRoutes.get(Datum::symbol("mouseUp"));
+    const Datum defaultKeyDown = defaultRoutes.get(Datum::symbol("keyDown"));
+    assert(defaultMouseDown.listValue().getAt(1).asSymbol()->name == "mouseDown");
+    assert(defaultMouseDown.listValue().getAt(2).stringValue() == "window-object");
+    assert(defaultMouseUp.listValue().getAt(1).asSymbol()->name == "mouseUp");
+    assert(defaultMouseUp.listValue().getAt(2).stringValue() == "window-object");
+    assert(defaultKeyDown.listValue().getAt(1).asSymbol()->name == "keyDown");
+    assert(defaultKeyDown.listValue().getAt(2).stringValue() == "window-object");
 
     const auto moviePropName = PropertyIdMappings::getMoviePropName(0x00);
     assert(moviePropName.has_value() && *moviePropName == "floatPrecision");
