@@ -11969,6 +11969,212 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             Datum::intRect(0, 0, 1, 1),
                             matteCopyProps}).isVoid());
     assert(nativeAlphaMatteCopyDest->getPixel(0, 0) == 0xFFFFFFFFU);
+    auto makeUiCornerPiece = [](const std::vector<std::string>& rows,
+                                const std::shared_ptr<Palette>& palette) {
+        auto piece = std::make_shared<Bitmap>(6, 6, 8);
+        piece->setImagePalette(palette);
+        for (int y = 0; y < 6; ++y) {
+            for (int x = 0; x < 6; ++x) {
+                const char token = rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)];
+                const int index = token == 'K' ? 1 : (token == 'w' ? 2 : 0);
+                const std::uint32_t rgb = palette->getColor(index) & 0x00FFFFFFU;
+                piece->fillRectPaletteIndex(x, y, 1, 1, index, 0xFF000000U | rgb);
+            }
+        }
+        return piece;
+    };
+    const auto bubblePalette = std::make_shared<Palette>(
+        std::vector<std::uint32_t>{0xFFFFFFU, 0x000000U, 0xF0F0F0U}, "details-bubble-ui");
+    const auto bubbleTopLeft = makeUiCornerPiece({
+        "WWWWWK",
+        "WWWKKw",
+        "WWKwww",
+        "WKwwww",
+        "WKwwww",
+        "Kwwwww",
+    }, bubblePalette);
+    const auto bubbleTopRight = makeUiCornerPiece({
+        "KWWWWW",
+        "wKKWWW",
+        "wwwKWW",
+        "wwwwKW",
+        "wwwwKw",
+        "wwwwwK",
+    }, bubblePalette);
+    const auto bubbleBottomLeft = makeUiCornerPiece({
+        "Kwwwww",
+        "WKwwww",
+        "WKwwww",
+        "WWKwww",
+        "WWWKKw",
+        "WWWWWK",
+    }, bubblePalette);
+    const auto bubbleBottomRight = makeUiCornerPiece({
+        "wwwwwK",
+        "wwwwKW",
+        "wwwwKW",
+        "wwwKWW",
+        "wKKWWW",
+        "KWWWWW",
+    }, bubblePalette);
+    auto bubbleWindow = std::make_shared<Bitmap>(34, 22, 8);
+    bubbleWindow->setImagePalette(bubblePalette);
+    bubbleWindow->fillRectPaletteIndex(0, 0, 34, 22, 0, 0xFFFFFFFFU);
+    bubbleWindow->fillRectPaletteIndex(11, 6, 12, 10, 2, 0xFFF0F0F0U);
+    bubbleWindow->fillRectPaletteIndex(11, 0, 12, 6, 2, 0xFFF0F0F0U);
+    bubbleWindow->fillRectPaletteIndex(5, 6, 6, 10, 2, 0xFFF0F0F0U);
+    bubbleWindow->fillRectPaletteIndex(23, 6, 6, 10, 2, 0xFFF0F0F0U);
+    bubbleWindow->fillRectPaletteIndex(11, 16, 12, 6, 2, 0xFFF0F0F0U);
+    assert(runObjCall(110, {Datum::imageRef(bubbleWindow),
+                            Datum::imageRef(bubbleTopLeft),
+                            Datum::intRect(5, 0, 11, 6),
+                            Datum::intRect(0, 0, 6, 6),
+                            matteCopyProps}).isVoid());
+    assert(runObjCall(110, {Datum::imageRef(bubbleWindow),
+                            Datum::imageRef(bubbleTopRight),
+                            Datum::intRect(23, 0, 29, 6),
+                            Datum::intRect(0, 0, 6, 6),
+                            matteCopyProps}).isVoid());
+    assert(runObjCall(110, {Datum::imageRef(bubbleWindow),
+                            Datum::imageRef(bubbleBottomLeft),
+                            Datum::intRect(5, 16, 11, 22),
+                            Datum::intRect(0, 0, 6, 6),
+                            matteCopyProps}).isVoid());
+    assert(runObjCall(110, {Datum::imageRef(bubbleWindow),
+                            Datum::imageRef(bubbleBottomRight),
+                            Datum::intRect(23, 16, 29, 22),
+                            Datum::intRect(0, 0, 6, 6),
+                            matteCopyProps}).isVoid());
+    assert(bubbleWindow->paletteIndex(5, 0).value() == 0);
+    assert(bubbleWindow->paletteIndex(10, 0).value() == 1);
+    assert(bubbleWindow->paletteIndex(10, 5).value() == 2);
+    assert(bubbleWindow->paletteIndex(28, 21).value() == 0);
+    auto bubbleStage = std::make_shared<Bitmap>(46, 34, 32);
+    bubbleStage->fill(0xFF000000U);
+    auto bubbleStageProps = Datum::propList();
+    bubbleStageProps.propListValue().put(Datum::symbol("ink"), Datum::of(36));
+    assert(runObjCall(110, {Datum::imageRef(bubbleStage),
+                            Datum::imageRef(bubbleWindow),
+                            Datum::intRect(6, 6, 40, 28),
+                            Datum::intRect(0, 0, 34, 22),
+                            bubbleStageProps}).isVoid());
+    assert(bubbleStage->getPixel(6, 6) == 0xFF000000U);
+    assert(bubbleStage->getPixel(16, 11) == 0xFFF0F0F0U);
+    std::filesystem::create_directories("artifacts");
+    {
+        std::ofstream out("artifacts/window-corner-matte-regression.ppm", std::ios::binary);
+        out << "P6\n" << bubbleStage->width() << " " << bubbleStage->height() << "\n255\n";
+        for (const auto pixel : bubbleStage->pixels()) {
+            const unsigned char rgb[3] = {
+                static_cast<unsigned char>((pixel >> 16) & 0xFFU),
+                static_cast<unsigned char>((pixel >> 8) & 0xFFU),
+                static_cast<unsigned char>(pixel & 0xFFU),
+            };
+            out.write(reinterpret_cast<const char*>(rgb), sizeof(rgb));
+        }
+    }
+    {
+        const int width = bubbleStage->width();
+        const int height = bubbleStage->height();
+        const int rowStride = ((width * 3) + 3) & ~3;
+        const std::uint32_t pixelBytes = static_cast<std::uint32_t>(rowStride * height);
+        std::ofstream out("artifacts/window-corner-matte-regression.bmp", std::ios::binary);
+        auto write16 = [&](std::uint16_t value) {
+            out.put(static_cast<char>(value & 0xFFU));
+            out.put(static_cast<char>((value >> 8) & 0xFFU));
+        };
+        auto write32 = [&](std::uint32_t value) {
+            out.put(static_cast<char>(value & 0xFFU));
+            out.put(static_cast<char>((value >> 8) & 0xFFU));
+            out.put(static_cast<char>((value >> 16) & 0xFFU));
+            out.put(static_cast<char>((value >> 24) & 0xFFU));
+        };
+        write16(0x4D42);
+        write32(14 + 40 + pixelBytes);
+        write16(0);
+        write16(0);
+        write32(14 + 40);
+        write32(40);
+        write32(static_cast<std::uint32_t>(width));
+        write32(static_cast<std::uint32_t>(-height));
+        write16(1);
+        write16(24);
+        write32(0);
+        write32(pixelBytes);
+        write32(2835);
+        write32(2835);
+        write32(0);
+        write32(0);
+        std::vector<unsigned char> row(static_cast<std::size_t>(rowStride), 0);
+        for (int y = 0; y < height; ++y) {
+            std::fill(row.begin(), row.end(), 0);
+            for (int x = 0; x < width; ++x) {
+                const auto pixel = bubbleStage->getPixel(x, y);
+                const auto offset = static_cast<std::size_t>(x * 3);
+                row[offset] = static_cast<unsigned char>(pixel & 0xFFU);
+                row[offset + 1] = static_cast<unsigned char>((pixel >> 8) & 0xFFU);
+                row[offset + 2] = static_cast<unsigned char>((pixel >> 16) & 0xFFU);
+            }
+            out.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row.size()));
+        }
+    }
+#ifdef LIBRESHOCKWAVE_HAVE_ZLIB
+    {
+        auto append32 = [](std::vector<std::uint8_t>& data, std::uint32_t value) {
+            data.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFFU));
+            data.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFFU));
+            data.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFFU));
+            data.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+        };
+        auto appendPngChunk = [&](std::vector<std::uint8_t>& data,
+                                  const std::string& type,
+                                  const std::vector<std::uint8_t>& payload) {
+            append32(data, static_cast<std::uint32_t>(payload.size()));
+            const auto crcOffset = data.size();
+            data.insert(data.end(), type.begin(), type.end());
+            data.insert(data.end(), payload.begin(), payload.end());
+            uLong crc = crc32(0L, Z_NULL, 0);
+            crc = crc32(crc,
+                        reinterpret_cast<const Bytef*>(data.data() + crcOffset),
+                        static_cast<uInt>(data.size() - crcOffset));
+            append32(data, static_cast<std::uint32_t>(crc));
+        };
+
+        std::vector<std::uint8_t> ihdr;
+        append32(ihdr, static_cast<std::uint32_t>(bubbleStage->width()));
+        append32(ihdr, static_cast<std::uint32_t>(bubbleStage->height()));
+        ihdr.insert(ihdr.end(), {8, 6, 0, 0, 0});
+
+        std::vector<std::uint8_t> scanlines;
+        scanlines.reserve(static_cast<std::size_t>((bubbleStage->width() * 4 + 1) * bubbleStage->height()));
+        for (int y = 0; y < bubbleStage->height(); ++y) {
+            scanlines.push_back(0);
+            for (int x = 0; x < bubbleStage->width(); ++x) {
+                const auto pixel = bubbleStage->getPixel(x, y);
+                scanlines.push_back(static_cast<std::uint8_t>((pixel >> 16) & 0xFFU));
+                scanlines.push_back(static_cast<std::uint8_t>((pixel >> 8) & 0xFFU));
+                scanlines.push_back(static_cast<std::uint8_t>(pixel & 0xFFU));
+                scanlines.push_back(static_cast<std::uint8_t>((pixel >> 24) & 0xFFU));
+            }
+        }
+        uLongf compressedLength = compressBound(static_cast<uLong>(scanlines.size()));
+        std::vector<std::uint8_t> compressed(static_cast<std::size_t>(compressedLength));
+        const int status = compress2(compressed.data(),
+                                     &compressedLength,
+                                     scanlines.data(),
+                                     static_cast<uLong>(scanlines.size()),
+                                     Z_BEST_SPEED);
+        assert(status == Z_OK);
+        compressed.resize(static_cast<std::size_t>(compressedLength));
+
+        std::vector<std::uint8_t> png{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+        appendPngChunk(png, "IHDR", ihdr);
+        appendPngChunk(png, "IDAT", compressed);
+        appendPngChunk(png, "IEND", {});
+        std::ofstream out("artifacts/window-corner-matte-regression.png", std::ios::binary);
+        out.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+    }
+#endif
     auto blackOnWhiteMaskDest = std::make_shared<Bitmap>(
         3, 3, 8, std::vector<std::uint32_t>{
             0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
