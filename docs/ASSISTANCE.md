@@ -275,6 +275,10 @@ later top-level callbacks, or script-instance mutation.
   `.lasm`, `.window`, `.props`, `manifest.tsv`, and bitmap/text exports before
   editing C++.
 - Use app-authored Lingo paths to locate the failing generic runtime behavior.
+- After reading the relevant assets, make a separate focused regression test
+  that asserts the generic runtime behavior the assets depend on. Do not encode
+  the asset names, member names, room names, or script-specific workaround into
+  the test; model the Director behavior in isolation.
 - Capture screenshots or state JSON for visual/browser verification when the
   acceptance criteria are visual or interactive.
 - If a diagnostic hardcoded path is used briefly to prove a cause, remove it
