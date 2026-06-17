@@ -13,6 +13,8 @@
 #include "libreshockwave/cast/StyledSpan.hpp"
 #include "libreshockwave/cast/XmedStyledText.hpp"
 #include "libreshockwave/player/cast/FontRegistry.hpp"
+#include "libreshockwave/player/cast/MacFontBundle.hpp"
+#include "libreshockwave/player/cast/WindowsFontBundle.hpp"
 
 namespace libreshockwave::player::render::output {
 namespace {
@@ -22,6 +24,8 @@ using font::BitmapFont;
 using ::libreshockwave::cast::StyledSpan;
 using ::libreshockwave::cast::XmedStyledText;
 using ::libreshockwave::player::cast::FontRegistry;
+using ::libreshockwave::player::cast::MacFontBundle;
+using ::libreshockwave::player::cast::WindowsFontBundle;
 
 struct ResolvedXmedSpan {
     std::shared_ptr<BitmapFont> font;
@@ -1272,6 +1276,7 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveBitmapFont(const std::str
                                               bold,
                                               italic,
                                               usedRealBold,
+                                              false,
                                               preferRegisteredDirectorFonts);
     if (aliasFont != nullptr) {
         return aliasFont;
@@ -1306,13 +1311,28 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveDirectorFontAlias(
     bool bold,
     bool italic,
     bool* usedRealBold,
+    bool preferMacFonts,
     bool preferRegisteredDirectorFonts) {
     const auto alias = FontRegistry::getFontAlias(fontName);
     const std::string resolvedName = alias.has_value() ? alias->fontName : fontName;
     const bool resolvedBold = bold || (alias.has_value() && alias->bold);
     const int aliasSize = directorAliasFontSize(fontSize);
 
-    if (preferRegisteredDirectorFonts || alias.has_value()) {
+    auto embeddedDirectorFont = [&]() -> std::shared_ptr<BitmapFont> {
+        auto embedded = FontRegistry::getEmbeddedBitmapFont(resolvedName, aliasSize, resolvedBold, italic);
+        if (embedded != nullptr && usedRealBold != nullptr) {
+            *usedRealBold = resolvedBold && FontRegistry::hasEmbeddedBoldVariant(resolvedName);
+        }
+        return embedded;
+    };
+
+    if (alias.has_value()) {
+        if (auto embedded = embeddedDirectorFont(); embedded != nullptr) {
+            return embedded;
+        }
+    }
+
+    if (preferRegisteredDirectorFonts) {
         auto registered = resolveRegisteredDirectorFont(fontName,
                                                         resolvedName,
                                                         aliasSize,
@@ -1325,14 +1345,44 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveDirectorFontAlias(
     }
 
     if (!alias.has_value()) {
-        return nullptr;
+        return embeddedDirectorFont();
     }
 
-    if (auto embedded = FontRegistry::getBitmapFont(resolvedName, aliasSize, resolvedBold, italic); embedded != nullptr) {
-        if (usedRealBold != nullptr) {
-            *usedRealBold = resolvedBold && FontRegistry::hasEmbeddedBoldVariant(resolvedName);
+    if (!preferRegisteredDirectorFonts) {
+        const std::string& registeredOriginalName = resolvedName;
+        auto registered = resolveRegisteredDirectorFont(registeredOriginalName,
+                                                        resolvedName,
+                                                        aliasSize,
+                                                        resolvedBold,
+                                                        italic,
+                                                        usedRealBold);
+        if (registered != nullptr) {
+            return registered;
         }
-        return embedded;
+    }
+
+    auto firstPlatformFont = preferMacFonts
+        ? MacFontBundle::getFont(resolvedName, aliasSize, resolvedBold, italic)
+        : WindowsFontBundle::getFont(resolvedName, aliasSize, resolvedBold, italic);
+    if (firstPlatformFont != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = resolvedBold && (preferMacFonts
+                ? MacFontBundle::hasBoldVariant(resolvedName)
+                : WindowsFontBundle::hasBoldVariant(resolvedName));
+        }
+        return firstPlatformFont;
+    }
+
+    auto secondPlatformFont = preferMacFonts
+        ? WindowsFontBundle::getFont(resolvedName, aliasSize, resolvedBold, italic)
+        : MacFontBundle::getFont(resolvedName, aliasSize, resolvedBold, italic);
+    if (secondPlatformFont != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = resolvedBold && (preferMacFonts
+                ? WindowsFontBundle::hasBoldVariant(resolvedName)
+                : MacFontBundle::hasBoldVariant(resolvedName));
+        }
+        return secondPlatformFont;
     }
 
     if (auto registered = FontRegistry::getBitmapFont(resolvedName, aliasSize); registered != nullptr) {
@@ -1420,7 +1470,7 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveXmedFontByName(
         }
     }
 
-    if (auto aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, false);
+    if (auto aliasFont = resolveDirectorFontAlias(fontName, fontSize, bold, italic, usedRealBold, true, false);
         aliasFont != nullptr) {
         return aliasFont;
     }
@@ -1428,6 +1478,20 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveXmedFontByName(
     if (auto movieFont = resolveMovieFontCandidate(fontCandidates, fontName, fontSize, bold, italic, usedRealBold);
         movieFont != nullptr) {
         return movieFont;
+    }
+
+    if (auto macFont = MacFontBundle::getFont(fontName, fontSize, bold, italic); macFont != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && MacFontBundle::hasBoldVariant(fontName);
+        }
+        return macFont;
+    }
+
+    if (auto windowsFont = WindowsFontBundle::getFont(fontName, fontSize, bold, italic); windowsFont != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && WindowsFontBundle::hasBoldVariant(fontName);
+        }
+        return windowsFont;
     }
 
     if (auto exact = FontRegistry::getBitmapFont(fontName, fontSize, bold, italic); exact != nullptr) {

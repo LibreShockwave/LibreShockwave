@@ -342,6 +342,48 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
     return nullptr;
 }
 
+std::shared_ptr<font::BitmapFont> FontRegistry::getEmbeddedBitmapFont(const std::string& fontName,
+                                                                      int fontSize,
+                                                                      bool bold,
+                                                                      bool italic) {
+    if (fontName.empty()) {
+        return nullptr;
+    }
+    auto& registry = state();
+    std::lock_guard lock(registry.mutex);
+    const auto key = lowerAscii(fontName);
+    const auto embeddedKey = registry.embeddedTtfFonts.contains(key)
+        ? key
+        : [&registry, &fontName]() -> std::string {
+              if (const auto mapped = registry.canonicalIndex.find(canonicalFontName(fontName));
+                  mapped != registry.canonicalIndex.end() && registry.embeddedTtfFonts.contains(mapped->second)) {
+                  return mapped->second;
+              }
+              return {};
+          }();
+    if (embeddedKey.empty()) {
+        return nullptr;
+    }
+
+    const auto selected = selectEmbeddedTtf(registry.embeddedTtfFonts.at(embeddedKey), fontSize);
+    if (!selected.has_value() || selected->variants == nullptr) {
+        return nullptr;
+    }
+    const auto cacheKey = embeddedFontCacheKey(embeddedKey, selected->fontSize, bold, italic);
+    if (const auto cached = registry.rasterizedCache.find(cacheKey); cached != registry.rasterizedCache.end()) {
+        return cached->second;
+    }
+    const auto* ttfBytes = selected->variants->get(bold, italic);
+    if (ttfBytes == nullptr) {
+        return nullptr;
+    }
+    auto rasterized = font::TtfBitmapRasterizer::rasterize(*ttfBytes, selected->fontSize, fontName);
+    if (rasterized != nullptr) {
+        registry.rasterizedCache[cacheKey] = rasterized;
+    }
+    return rasterized;
+}
+
 std::shared_ptr<font::BitmapFont> FontRegistry::getPfrBitmapFont(const std::string& fontName,
                                                                  int fontSize) {
     if (fontName.empty() || fontSize <= 0) {

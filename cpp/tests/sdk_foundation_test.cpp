@@ -19129,9 +19129,12 @@ void testSimpleTextRendererFoundation() {
     try {
         auto tinyFont = makeTinyFont("TinyRenderFont", 3);
         auto wideFont = makeTinyFont("WideSpanFont", 5);
-        FontRegistry::registerBitmapFont("TinyRenderFont", 9, tinyFont);
-        FontRegistry::registerBitmapFont("WideSpanFont", 9, wideFont);
-        FontRegistry::registerFontAlias("TR", "TinyRenderFont", false);
+        auto registerSyntheticFonts = [&]() {
+            FontRegistry::registerBitmapFont("TinyRenderFont", 9, tinyFont);
+            FontRegistry::registerBitmapFont("WideSpanFont", 9, wideFont);
+            FontRegistry::registerFontAlias("TR", "TinyRenderFont", false);
+        };
+        registerSyntheticFonts();
 
         SimpleTextRenderer renderer;
         auto rendered = renderer.renderText("AB\r\nA",
@@ -19179,6 +19182,52 @@ void testSimpleTextRendererFoundation() {
         assert(renderer.locToCharPos("A\nB", 0, 10, "TinyRenderFont", 9, "plain", 10, "left", 24) == 2);
         assert(renderer.getLineHeight("TinyRenderFont", 9, "plain", 0) == 10);
         assert(renderer.getLineHeight("TinyRenderFont", 9, "plain", 12) == 12);
+
+        FontRegistry::registerFontAlias("vb", "Volter", true);
+        auto directorAliasEnd = renderer.charPosToLoc("Hotel Navigator", 16, "vb", 9, "plain", 10, "left", 200);
+        assert(directorAliasEnd.size() == 2);
+        assert(directorAliasEnd[0] >= 90);
+        auto directorAliasTitle = renderer.renderText("Hotel Navigator",
+                                                      200,
+                                                      15,
+                                                      "vb",
+                                                      9,
+                                                      "plain",
+                                                      "left",
+                                                      static_cast<int>(0xFFEEEEEEU),
+                                                      static_cast<int>(0xFF6794A7U),
+                                                      false,
+                                                      false,
+                                                      10,
+                                                      0);
+        assert(directorAliasTitle != nullptr);
+        assert(countPixels(*directorAliasTitle, 0xFFEEEEEEU) == 284);
+
+        const std::filesystem::path v31AliasNamedPfrPath =
+            "/opt/git/v31_assets/hh_interface/raw_chunks/01330_vb_3302_XMED.bin";
+        if (std::filesystem::exists(v31AliasNamedPfrPath)) {
+            const auto v31AliasNamedPfr = readFixtureBytes(v31AliasNamedPfrPath);
+            FontRegistry::clear();
+            FontRegistry::registerPfr1Font("vb", v31AliasNamedPfr);
+            FontRegistry::registerFontAlias("vb", "Volter", true);
+            auto aliasWithAliasNamedPfr = renderer.renderText("Hotel Navigator",
+                                                              200,
+                                                              15,
+                                                              "vb",
+                                                              9,
+                                                              "plain",
+                                                              "left",
+                                                              static_cast<int>(0xFFEEEEEEU),
+                                                              static_cast<int>(0xFF6794A7U),
+                                                              false,
+                                                              false,
+                                                              10,
+                                                              0);
+            assert(aliasWithAliasNamedPfr != nullptr);
+            assert(countPixels(*aliasWithAliasNamedPfr, 0xFFEEEEEEU) == 284);
+            FontRegistry::clear();
+            registerSyntheticFonts();
+        }
 
         XmedStyledText xmed{};
         xmed.text = "ABA";
@@ -19232,6 +19281,44 @@ void testSimpleTextRendererFoundation() {
         auto candidateRendered = renderer.renderXmedText(&candidateXmed, 40, 14, 0, 0x00FFFFFF);
         assert(candidateRendered != nullptr);
         assert(findLastNonBackgroundColumn(*candidateRendered, 0x00FFFFFF) >= 4);
+
+        XmedStyledText platformPrimaryWithMovieCandidate = xmed;
+        platformPrimaryWithMovieCandidate.text = "A";
+        platformPrimaryWithMovieCandidate.styledSpans.clear();
+        platformPrimaryWithMovieCandidate.fontName = "Verdana";
+        platformPrimaryWithMovieCandidate.fontCandidates = {"Verdana", "WideSpanFont"};
+        auto movieCandidateRendered = renderer.renderXmedText(&platformPrimaryWithMovieCandidate, 40, 14, 0, 0x00FFFFFF);
+        auto explicitWideRendered = renderer.renderText("A",
+                                                        40,
+                                                        14,
+                                                        "WideSpanFont",
+                                                        9,
+                                                        "plain",
+                                                        "left",
+                                                        static_cast<int>(0xFF000000U),
+                                                        static_cast<int>(0x00FFFFFFU),
+                                                        false,
+                                                        false,
+                                                        10,
+                                                        0);
+        auto explicitVerdanaRendered = renderer.renderText("A",
+                                                           40,
+                                                           14,
+                                                           "Verdana",
+                                                           9,
+                                                           "plain",
+                                                           "left",
+                                                           static_cast<int>(0xFF000000U),
+                                                           static_cast<int>(0x00FFFFFFU),
+                                                           false,
+                                                           false,
+                                                           10,
+                                                           0);
+        assert(movieCandidateRendered != nullptr);
+        assert(explicitWideRendered != nullptr);
+        assert(explicitVerdanaRendered != nullptr);
+        assert(movieCandidateRendered->pixels() == explicitWideRendered->pixels());
+        assert(movieCandidateRendered->pixels() != explicitVerdanaRendered->pixels());
     } catch (...) {
         FontRegistry::clear();
         throw;
