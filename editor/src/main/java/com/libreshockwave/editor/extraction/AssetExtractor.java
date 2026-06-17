@@ -66,7 +66,11 @@ public class AssetExtractor {
 
             var bitmapOpt = dirFile.decodeBitmap(memberInfo.member());
             if (bitmapOpt.isPresent()) {
-                BufferedImage image = bitmapOpt.get().toBufferedImage();
+                // Director treats 32-bit member pixels as opaque unless the member carries native
+                // alpha; decoded data can retain RGB with a zero alpha byte. The render pipeline
+                // already accounts for this (see player-core BitmapCache), but exporting the raw
+                // BufferedImage did not, so such bitmaps were written fully transparent (invisible).
+                BufferedImage image = bitmapOpt.get().copyWithNonNativeAlphaOpaque().toBufferedImage();
                 Path outputFile = resolveUnique(subDir, safeName, ".png");
                 ImageIO.write(image, "PNG", outputFile.toFile());
                 return true;
@@ -96,7 +100,11 @@ public class AssetExtractor {
                     extension = ".wav";
                 }
 
-                if (audioData != null && audioData.length > 0) {
+                // Sounds can be linked/external (common for music) rather than embedded in the movie.
+                // Those have no sample data, so toWav() yields just a 44-byte WAV header. Don't write
+                // an empty placeholder file and report success for it.
+                boolean emptyWav = ".wav".equals(extension) && audioData != null && audioData.length <= 44;
+                if (audioData != null && audioData.length > 0 && !emptyWav) {
                     Path outputFile = resolveUnique(subDir, safeName, extension);
                     Files.write(outputFile, audioData);
                     return true;

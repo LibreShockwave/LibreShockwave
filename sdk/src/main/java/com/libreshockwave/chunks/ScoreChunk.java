@@ -315,8 +315,28 @@ public record ScoreChunk(
         FrameIntervalSecondary secondary
     ) {}
 
+    /** Upper bound on real channel indices; intervals beyond this indicate parse overrun, not channels. */
+    private static final int MAX_PLAUSIBLE_CHANNEL = 1024;
+
     public int getFrameCount() {
-        return frameData != null ? frameData.header().frameCount() : 0;
+        int headerCount = frameData != null ? frameData.header().frameCount() : 0;
+        if (headerCount > 0) {
+            return headerCount;
+        }
+        // Interval-based scores leave the per-frame channel buffer empty, so the header frame count
+        // is 0 even though the movie has many frames. Derive the count from the frame intervals,
+        // ignoring entries with implausible channel indices (parse overrun rather than real channels).
+        int maxFrame = 0;
+        if (frameIntervals != null) {
+            for (FrameInterval interval : frameIntervals) {
+                FrameIntervalPrimary p = interval.primary();
+                if (p == null || p.channelIndex() < 0 || p.channelIndex() > MAX_PLAUSIBLE_CHANNEL) {
+                    continue;
+                }
+                maxFrame = Math.max(maxFrame, p.endFrame());
+            }
+        }
+        return maxFrame;
     }
 
     public int getChannelCount() {

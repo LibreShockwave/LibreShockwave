@@ -36,6 +36,21 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+// Headless asset export, e.g.:
+//   ./gradlew :editor:exportAssets -Pinput=movie.dir -Poutput=assets
+tasks.register('exportAssets', JavaExec) {
+    group = 'application'
+    description = 'Export all cast assets from a Director movie. Usage: -Pinput=<movie> -Poutput=<dir>'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.libreshockwave.editor.cli.AssetExportCli'
+    doFirst {
+        if (!project.hasProperty('input') || !project.hasProperty('output')) {
+            throw new GradleException('Provide -Pinput=<movie> -Poutput=<dir>')
+        }
+        args = [project.property('input').toString(), project.property('output').toString()]
+    }
+}
+
 jar {
     manifest {
         attributes(
