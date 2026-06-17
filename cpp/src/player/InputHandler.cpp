@@ -542,13 +542,16 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
         case input::InputEventType::MouseDown: {
             const int hitSprite = hitTestExact(inputEvent.stageX, inputEvent.stageY);
             const int stageHitSprite = hitTestStage(inputEvent.stageX, inputEvent.stageY);
+            const int editableHitSprite = hitTestEditableField(inputEvent.stageX, inputEvent.stageY);
             const int lastClicked = inputState_->clickOnSprite();
             if (lastClicked > 0 && lastClicked != hitSprite) {
                 dispatcher->dispatchSpriteEvent(lastClicked, "mouseUpOutSide");
             }
 
             inputState_->setClickOnSprite(hitSprite);
-            autoFocusEditableField(stageHitSprite, inputEvent.stageX, inputEvent.stageY);
+            autoFocusEditableField(editableHitSprite > 0 ? editableHitSprite : stageHitSprite,
+                                   inputEvent.stageX,
+                                   inputEvent.stageY);
             dispatcher->resetEventStopped();
             if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
                 if (hitSprite > 0) {
@@ -590,10 +593,12 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
             dispatcher->resetEventStopped();
             inputState_->setLastKey(inputEvent.keyChar);
             inputState_->setLastKeyCode(inputEvent.keyCode);
+            const int focusSprite = inputState_->keyboardFocusSprite();
+            if (focusSprite > 0) {
+                handleEditableFieldInput(focusSprite, inputEvent.keyChar);
+            }
             if (!dispatchLegacyEventScript(PlayerEvent::KeyDown) && !dispatcher->isEventStopped()) {
-                const int focusSprite = inputState_->keyboardFocusSprite();
                 if (focusSprite > 0) {
-                    handleEditableFieldInput(focusSprite, inputEvent.keyChar);
                     dispatcher->dispatchSpriteEvent(focusSprite, PlayerEvent::KeyDown);
                 }
                 dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::KeyDown);
@@ -627,6 +632,26 @@ bool InputHandler::dispatchLegacyEventScript(PlayerEvent event) {
 
 int InputHandler::hitTestStage(int stageX, int stageY) const {
     return input::HitTester::hitTest(hitSprites(), stageX, stageY);
+}
+
+int InputHandler::hitTestEditableField(int stageX, int stageY) const {
+    const auto sprites = hitSprites();
+    for (auto it = sprites.rbegin(); it != sprites.rend(); ++it) {
+        const auto& sprite = *it;
+        if (!sprite.isVisible() || sprite.channel() <= 0 || sprite.width() <= 0 || sprite.height() <= 0) {
+            continue;
+        }
+        if (stageX < sprite.x() || stageY < sprite.y() ||
+            stageX >= sprite.x() + sprite.width() ||
+            stageY >= sprite.y() + sprite.height()) {
+            continue;
+        }
+        auto member = resolveSpriteMember(sprite.channel());
+        if (member != nullptr && isEditableFieldSprite(sprite.channel(), *member)) {
+            return sprite.channel();
+        }
+    }
+    return 0;
 }
 
 int InputHandler::hitTestMoveableSprite(int stageX, int stageY) const {
@@ -706,9 +731,7 @@ bool InputHandler::isMoveableSprite(int channel) const {
 }
 
 bool InputHandler::isEditableFieldSprite(int channel, const ::libreshockwave::cast::CastMember& member) const {
-    const auto type = member.memberType();
-    if (type != ::libreshockwave::cast::MemberType::Text &&
-        type != ::libreshockwave::cast::MemberType::Button) {
+    if (!member.isTextLike()) {
         return false;
     }
     if (member.editable()) {
@@ -794,7 +817,7 @@ void InputHandler::autoFocusEditableField(int hitChannel, int stageX, int stageY
     auto member = resolveSpriteMember(hitChannel);
     auto sprite = findHitSprite(hitChannel);
     if (member != nullptr && sprite.has_value() && isEditableFieldSprite(hitChannel, *member) &&
-        member->memberType() == ::libreshockwave::cast::MemberType::Text) {
+        member->isTextLike()) {
         inputState_->setKeyboardFocusSprite(hitChannel);
         const int localX = stageX - sprite->x();
         const int localY = stageY - sprite->y();
@@ -820,11 +843,6 @@ void InputHandler::handleEditableFieldInput(int channel, const std::string& keyC
 
     auto member = resolveSpriteMember(channel);
     if (member == nullptr || !isEditableFieldSprite(channel, *member)) {
-        return;
-    }
-    const auto type = member->memberType();
-    if (type != ::libreshockwave::cast::MemberType::Text &&
-        type != ::libreshockwave::cast::MemberType::Button) {
         return;
     }
 
@@ -877,9 +895,7 @@ void InputHandler::tabToNextField(int currentChannel, bool reverse) {
             continue;
         }
         auto member = castLibManager_->resolveMember(state->effectiveCastLib(), state->effectiveCastMember());
-        if (member != nullptr &&
-            member->memberType() == ::libreshockwave::cast::MemberType::Text &&
-            isEditableFieldSprite(channel, *member)) {
+        if (member != nullptr && isEditableFieldSprite(channel, *member)) {
             editableChannels.push_back(channel);
         }
     }

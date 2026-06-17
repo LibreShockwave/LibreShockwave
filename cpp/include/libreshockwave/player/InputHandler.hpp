@@ -126,6 +126,7 @@ private:
     [[nodiscard]] event::EventDispatcher* eventDispatcher() const;
     [[nodiscard]] std::vector<render::pipeline::RenderSprite> hitSprites() const;
     [[nodiscard]] int hitTestStage(int stageX, int stageY) const;
+    [[nodiscard]] int hitTestEditableField(int stageX, int stageY) const;
     [[nodiscard]] int hitTestMoveableSprite(int stageX, int stageY) const;
     [[nodiscard]] std::vector<int> getInteractiveHits(int stageX, int stageY, bool forceBoundingBox) const;
     [[nodiscard]] std::shared_ptr<::libreshockwave::cast::CastMember> resolveSpriteMember(int channel) const;
