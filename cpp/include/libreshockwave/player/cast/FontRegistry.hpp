@@ -31,6 +31,10 @@ public:
                                                                          int fontSize,
                                                                          bool bold,
                                                                          bool italic);
+    [[nodiscard]] static std::shared_ptr<font::BitmapFont> getEmbeddedBitmapFont(const std::string& fontName,
+                                                                                 int fontSize,
+                                                                                 bool bold,
+                                                                                 bool italic);
     [[nodiscard]] static std::shared_ptr<font::BitmapFont> getPfrBitmapFont(const std::string& fontName,
                                                                             int fontSize);
     static void registerEmbeddedTtfFont(const std::string& fontName,

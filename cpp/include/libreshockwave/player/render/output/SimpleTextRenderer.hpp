@@ -104,6 +104,7 @@ private:
         bool bold,
         bool italic,
         bool* usedRealBold,
+        bool preferMacFonts,
         bool preferRegisteredDirectorFonts);
 
     [[nodiscard]] static std::shared_ptr<font::BitmapFont> resolveRegisteredDirectorFont(
