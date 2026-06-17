@@ -52,6 +52,7 @@ public:
     void setLegacyRoundedRegistrationScale(bool enabled);
 
     [[nodiscard]] std::optional<std::vector<lingo::Datum>> getScriptInstanceList(int spriteNum) const;
+    [[nodiscard]] std::vector<lingo::Datum>* mutableScriptInstanceList(int spriteNum);
     [[nodiscard]] lingo::Datum getSpriteProp(int spriteNum, std::string_view propName) const;
     [[nodiscard]] bool setSpriteProp(int spriteNum, std::string_view propName, const lingo::Datum& value);
     [[nodiscard]] bool setSpriteMember(int spriteNum, const lingo::Datum& value);

@@ -72,13 +72,13 @@ int InputHandler::hitTestExact(int stageX, int stageY) const {
         return 0;
     }
 
-    auto boundingHits = getInteractiveHits(stageX, stageY, true);
-    if (!boundingHits.empty()) {
-        return boundingHits.front();
+    auto exactHits = getInteractiveHits(stageX, stageY, false);
+    if (!exactHits.empty()) {
+        return exactHits.front();
     }
 
-    auto exactHits = getInteractiveHits(stageX, stageY, false);
-    return exactHits.empty() ? 0 : exactHits.front();
+    auto boundingHits = getInteractiveHits(stageX, stageY, true);
+    return boundingHits.empty() ? 0 : boundingHits.front();
 }
 
 void InputHandler::onMouseMove(int stageX, int stageY) {
