@@ -3269,6 +3269,7 @@ bool imageCopyMatteToMaskImage(bitmap::Bitmap& dest,
     if (src.width() <= 0 || src.height() <= 0 ||
         srcWidth <= 0 || srcHeight <= 0 ||
         destWidth <= 0 || destHeight <= 0 ||
+        dest.imagePalette() != nullptr ||
         !imageIsMostlyWhiteRegion(dest, destRect)) {
         return false;
     }
