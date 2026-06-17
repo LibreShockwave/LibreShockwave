@@ -68,6 +68,8 @@ Historical and completed goal notes live in `docs/goals/`:
   preserve and dispatch real authored broker script instances and their
   properties.
 - Do not commit real SSO tickets or sensitive runtime credentials.
+- Commit messages must not mention game, asset, harness, room, user, or
+  endpoint names. Describe the generic runtime behavior being fixed instead.
 
 ## Harness Workflow
 
@@ -273,6 +275,10 @@ later top-level callbacks, or script-instance mutation.
   `.lasm`, `.window`, `.props`, `manifest.tsv`, and bitmap/text exports before
   editing C++.
 - Use app-authored Lingo paths to locate the failing generic runtime behavior.
+- After reading the relevant assets, make a separate focused regression test
+  that asserts the generic runtime behavior the assets depend on. Do not encode
+  the asset names, member names, room names, or script-specific workaround into
+  the test; model the Director behavior in isolation.
 - Capture screenshots or state JSON for visual/browser verification when the
   acceptance criteria are visual or interactive.
 - If a diagnostic hardcoded path is used briefly to prove a cause, remove it
