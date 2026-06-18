@@ -7516,12 +7516,26 @@ bool executeObjCallWithArgs(ExecutionContext& context,
         const std::span<const Datum> methodArgs(args.data() + 1, args.size() - 1);
         result = scriptInstanceObjectMethod(context, target, methodName, method, methodArgs);
     } else {
-        std::vector<Datum> methodArgsStorage;
-        const std::vector<Datum>& methodArgs = args.size() <= 1 ? emptyDatumArgs() : methodArgsStorage;
-        if (args.size() > 1) {
-            methodArgsStorage.assign(args.begin() + 1, args.end());
+        const std::span<const Datum> methodArgs = args.size() <= 1
+                                                      ? std::span<const Datum>()
+                                                      : std::span<const Datum>(args.data() + 1, args.size() - 1);
+        if (target.isList()) {
+            result = dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, methodArgs);
+        } else if (target.isPropList()) {
+            result = dispatch::PropListMethodDispatcher::dispatch(target.propListValue(), methodName, methodArgs);
+        } else if (target.isString()) {
+            result = dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(target),
+                                                                methodName,
+                                                                methodArgs,
+                                                                currentItemDelimiter(context));
+        } else {
+            std::vector<Datum> methodArgsStorage;
+            const std::vector<Datum>& methodArgsVector = args.size() <= 1 ? emptyDatumArgs() : methodArgsStorage;
+            if (args.size() > 1) {
+                methodArgsStorage.assign(args.begin() + 1, args.end());
+            }
+            result = dispatchObjectMethod(context, std::move(target), methodName, methodArgsVector);
         }
-        result = dispatchObjectMethod(context, std::move(target), methodName, methodArgs);
     }
     if (!noReturn) {
         context.push(std::move(result));

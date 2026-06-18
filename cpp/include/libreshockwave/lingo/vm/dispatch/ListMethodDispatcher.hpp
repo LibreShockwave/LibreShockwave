@@ -2,6 +2,8 @@
 
 #include "libreshockwave/lingo/Datum.hpp"
 
+#include <initializer_list>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -11,7 +13,17 @@ class ListMethodDispatcher {
 public:
     [[nodiscard]] static Datum dispatch(Datum::List& list,
                                         std::string_view methodName,
-                                        const std::vector<Datum>& args);
+                                        std::span<const Datum> args);
+    [[nodiscard]] static Datum dispatch(Datum::List& list,
+                                        std::string_view methodName,
+                                        const std::vector<Datum>& args) {
+        return dispatch(list, methodName, std::span<const Datum>(args));
+    }
+    [[nodiscard]] static Datum dispatch(Datum::List& list,
+                                        std::string_view methodName,
+                                        std::initializer_list<Datum> args) {
+        return dispatch(list, methodName, std::span<const Datum>(args.begin(), args.size()));
+    }
 };
 
 } // namespace libreshockwave::lingo::vm::dispatch
