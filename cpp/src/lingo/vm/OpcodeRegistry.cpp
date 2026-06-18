@@ -6456,7 +6456,7 @@ Datum propListObjectGetAtValue(const Datum::PropList& propList, const Datum& key
     return index >= 0 ? propList.properties()[static_cast<std::size_t>(index)].second : Datum::voidValue();
 }
 
-std::optional<Datum> fastListBuiltinCall(std::string_view handlerName, const std::vector<Datum>& args) {
+std::optional<Datum> fastListBuiltinCall(std::string_view handlerName, std::span<const Datum> args) {
     if (args.empty()) {
         return std::nullopt;
     }
@@ -6488,7 +6488,7 @@ std::optional<Datum> fastListBuiltinCall(std::string_view handlerName, const std
 
 std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
                                               std::string_view handlerName,
-                                              const std::vector<Datum>& args) {
+                                              std::span<const Datum> args) {
     if (context.builtins() == nullptr) {
         return std::nullopt;
     }
@@ -8117,24 +8117,35 @@ bool tryImmediateObjCall(ExecutionContext& context, bool noReturn) {
     return executeObjCallWithArgs(context, methodName, method, args, noReturn);
 }
 
-bool executeExtCallWithArgs(ExecutionContext& context,
-                            std::string_view handlerName,
-                            const std::vector<Datum>& args,
-                            bool noReturn) {
+bool executeExtCallWithArgsImpl(ExecutionContext& context,
+                                std::string_view handlerName,
+                                std::span<const Datum> args,
+                                bool noReturn,
+                                const std::vector<Datum>* existingArgs) {
+    std::vector<Datum> materializedArgs;
+    const std::vector<Datum>* materializedArgsPtr = existingArgs;
+    auto vectorArgs = [&]() -> const std::vector<Datum>& {
+        if (materializedArgsPtr == nullptr) {
+            materializedArgs.assign(args.begin(), args.end());
+            materializedArgsPtr = &materializedArgs;
+        }
+        return *materializedArgsPtr;
+    };
+
     Datum result = Datum::voidValue();
     if (equalsIgnoreCase(handlerName, "return")) {
         context.setReturnValue(args.empty() ? Datum::voidValue() : args[0]);
     } else if (equalsIgnoreCase(handlerName, "voidp")) {
         result = (args.empty() || args[0].isVoid()) ? Datum::TRUE : Datum::FALSE;
     } else if (equalsIgnoreCase(handlerName, "new")) {
-        if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+        if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, vectorArgs())) {
             result = std::move(*builtinResult);
         } else if (const auto handler = context.findHandler(handlerName)) {
             result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
         }
     } else if (const auto handler = context.findHandler(handlerName)) {
         if (handler->script != nullptr && handler->scriptType == chunks::ScriptChunkType::Parent) {
-            if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+            if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, vectorArgs())) {
                 result = std::move(*builtinResult);
             } else {
                 result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
@@ -8146,7 +8157,7 @@ bool executeExtCallWithArgs(ExecutionContext& context,
         result = std::move(*fastPrimitiveResult);
     } else if (auto fastBuiltinResult = fastListBuiltinCall(handlerName, args)) {
         result = std::move(*fastBuiltinResult);
-    } else if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+    } else if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, vectorArgs())) {
         result = std::move(*builtinResult);
     } else if (!args.empty()) {
         Datum target = args.front();
@@ -8162,6 +8173,20 @@ bool executeExtCallWithArgs(ExecutionContext& context,
         context.push(std::move(result));
     }
     return true;
+}
+
+bool executeExtCallWithArgs(ExecutionContext& context,
+                            std::string_view handlerName,
+                            std::span<const Datum> args,
+                            bool noReturn) {
+    return executeExtCallWithArgsImpl(context, handlerName, args, noReturn, nullptr);
+}
+
+bool executeExtCallWithArgs(ExecutionContext& context,
+                            std::string_view handlerName,
+                            const std::vector<Datum>& args,
+                            bool noReturn) {
+    return executeExtCallWithArgsImpl(context, handlerName, std::span<const Datum>(args), noReturn, &args);
 }
 
 bool tryImmediateCallBuiltin(ExecutionContext& context,
@@ -8267,6 +8292,19 @@ bool tryImmediateExtCall(ExecutionContext& context, bool noReturn) {
             }
             return true;
         }
+    }
+
+    if (argCount >= 0 && argCount <= 8) {
+        std::array<Datum, 8> argsStorage{};
+        for (int index = argCount - 1; index >= 0; --index) {
+            argsStorage[static_cast<std::size_t>(index)] = context.pop();
+        }
+        scope.setBytecodeIndex(nextIndex);
+        context.setInstruction(next);
+        return executeExtCallWithArgs(context,
+                                      handlerName,
+                                      std::span<const Datum>(argsStorage.data(), static_cast<std::size_t>(argCount)),
+                                      noReturn);
     }
 
     std::vector<Datum> args = context.popArgs(argCount);
