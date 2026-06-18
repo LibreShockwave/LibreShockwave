@@ -14,10 +14,12 @@ It **won't** *just* be an emulator: the goal is to eventually become a full soft
 - A C++20 compiler
 - zlib development headers, or a zlib-compatible zlib-ng package
 - Optional: Ninja for faster incremental builds
+- Optional: GTK4 and libcurl development packages for the native player
+- Optional: libpanel-1 and libadwaita-1 development packages for the editor
 - Optional: Emscripten for the browser/WASM target
 - Optional: Node.js and npm for browser/WASM verification
 
-## Linux Package Setup
+## Linux Setup
 
 Use the build script to print the dependency commands for your Linux distribution:
 
@@ -35,7 +37,7 @@ To let the script install native dependencies for the detected distribution:
 
 Automatic installation is optional; by default the script only builds.
 
-## Native Build
+## Build
 
 ```bash
 ./build.sh
@@ -55,7 +57,7 @@ Useful variants:
 
 The main library target is `LibreShockwave::libreshockwave`.
 
-## Supported Formats
+## Formats
 
 - RIFX, XFIR, RIFF, and FFIR containers
 - Big-endian and little-endian Director files
@@ -71,7 +73,7 @@ The main library target is `LibreShockwave::libreshockwave`.
 - Score and timeline data, including frames, channels, labels, palettes, tempos, and behavior intervals
 - File metadata, including stage dimensions, tempo, version, movie type, endian mode, and external cast paths
 
-### Asset Extraction
+### Extraction
 
 - Bitmaps: 1/2/4/8/16/32-bit depths, palette support, native alpha, matte data, and ARGB output buffers
 - Text: field and rich text cast members through STXT and XMED data
@@ -79,7 +81,7 @@ The main library target is `LibreShockwave::libreshockwave`.
 - Palettes: built-in Director palettes and custom CLUT chunks
 - Fonts: PFR1 font parsing and conversion to TrueType (`.ttf`) bytes
 
-## Player And Lingo VM
+## Player
 
 The Lingo VM, native player runtime, and browser/WASM player are under active development and are not production-ready. Expect missing features, incomplete Lingo coverage, and breaking changes.
 
@@ -110,7 +112,31 @@ The target requires GTK4 and libcurl development packages.
 By default settings are stored at `~/.config/libreshockwave/player.conf`. Run `libreshockwave_player --help`
 for all options, including `--settings`, `--clear-params`, `--script-timeout-ms`, and external-cast preload controls.
 
-## Using LibreShockwave As A Library
+## Editor
+
+`libreshockwave_editor` is a GTK/libadwaita Director Studio prototype for inspecting Director and Shockwave projects.
+It opens `.dcr`, `.dir`, `.dxr`, `.cct`, `.cst`, and `.libresw` workspace files, previews the stage, browses cast
+members, inspects score/chunk/property data, previews bitmap and palette images, decompiles script previews, applies
+external parameters, saves workspace layout, and exports selected or all cast members. Project editing is currently
+read-only.
+
+The target is enabled when libpanel-1 and libadwaita-1 development packages are available.
+
+```bash
+./build.sh --target libreshockwave_editor --no-tests
+./cmake-build-debug/cpp/libreshockwave_editor movie.dir
+./cmake-build-debug/cpp/libreshockwave_editor workspace.libresw
+```
+
+### Image
+
+Add the current Director Studio screenshot here after uploading the image to GitHub:
+
+```html
+<img width="1280" alt="LibreShockwave Director Studio editor" src="https://github.com/user-attachments/assets/REPLACE_WITH_EDITOR_IMAGE" />
+```
+
+## C++ API Examples
 
 When vendoring the repository inside another CMake project:
 
@@ -120,7 +146,7 @@ target_link_libraries(my_tool PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(my_tool PRIVATE cxx_std_20)
 ```
 
-### Loading A File
+### Load File Example
 
 The C++ API currently loads from memory. Read the file bytes, then call `DirectorFile::load`.
 
@@ -158,7 +184,7 @@ int main(int argc, char** argv) {
 }
 ```
 
-### Iterating Cast Members
+### Cast Example
 
 ```cpp
 for (const auto& member : file->castMembers()) {
@@ -177,7 +203,7 @@ for (const auto& member : file->castMembers()) {
 }
 ```
 
-### Extracting Bitmaps
+### Bitmap Example
 
 ```cpp
 #include <cstdint>
@@ -215,7 +241,7 @@ for (const auto& member : file->castMembers()) {
 }
 ```
 
-### Extracting Text
+### Text Example
 
 ```cpp
 for (const auto& member : file->castMembers()) {
@@ -226,7 +252,7 @@ for (const auto& member : file->castMembers()) {
 }
 ```
 
-### Extracting Sounds
+### Sound Example
 
 ```cpp
 #include <filesystem>
@@ -260,7 +286,7 @@ for (const auto& member : file->castMembers()) {
 }
 ```
 
-### Extracting Fonts
+### Font Example
 
 Director files can embed PFR1 font data inside XMED chunks. LibreShockwave can parse PFR1 data and convert it to standard TrueType bytes.
 
@@ -297,7 +323,7 @@ for (const auto& member : file->castMembers()) {
 }
 ```
 
-### Accessing Scripts And Bytecode
+### Script Example
 
 ```cpp
 for (const auto& script : file->scripts()) {
@@ -318,7 +344,7 @@ for (const auto& script : file->scripts()) {
 }
 ```
 
-### Reading Score Data
+### Score Example
 
 ```cpp
 if (auto score = file->scoreChunk()) {
@@ -342,7 +368,7 @@ if (auto labels = file->frameLabelsChunk()) {
 }
 ```
 
-### Rendering Frames
+### Frame Example
 
 ```cpp
 #include "libreshockwave/player/Player.hpp"
@@ -363,7 +389,7 @@ for (int frame = 0; frame < 10 && player.tick(); ++frame) {
 player.shutdown();
 ```
 
-### Error Handling And Debug Playback
+### Debug Example
 
 ```cpp
 player.setDebugEnabled(true);
@@ -376,7 +402,7 @@ auto callStack = player.formatLingoCallStack();
 
 For bytecode-level debugging, attach a `libreshockwave::player::debug::DebugControllerApi` implementation with `player.setDebugController(...)`.
 
-## Native Tools
+## Tools
 
 The C++ tools scan local Director fixture roots. With no path argument, the probes use `/var/html` when present and fall back to `/var/www/html`.
 
@@ -392,7 +418,7 @@ The C++ tools scan local Director fixture roots. With no path argument, the prob
 
 `libreshockwave_wasm_bridge_probe` exercises the browser-facing C ABI exports without requiring a browser.
 
-## Browser/WASM Player
+## Browser Player
 
 Build the Emscripten target from an Emscripten-enabled shell:
 
@@ -425,7 +451,7 @@ Cross-Origin-Embedder-Policy: require-corp
 Cross-Origin-Resource-Policy: same-origin
 ```
 
-### Embedding
+### Embed Example
 
 The browser target exposes `LibreShockwavePlayer` from `libreshockwave-cpp-player.js`.
 
@@ -460,7 +486,7 @@ The following files must be served from the same directory unless `basePath` is 
 | `libreshockwave-cpp-wasm.js` | Emscripten module loader |
 | `libreshockwave-cpp-wasm.wasm` | Compiled runtime |
 
-## Repository Layout
+## Layout
 
 ```text
 cpp/
@@ -468,6 +494,7 @@ cpp/
   include/libreshockwave/       Public C++ headers
   src/                          Runtime, SDK, VM, and player sources
   apps/
+    editor/                     GTK/libadwaita editor source
     player/                     GTK player executable source
     tools/                      Native probes and browser fixture checker
     wasm/                       WASM bridge entry points
@@ -480,7 +507,7 @@ docs/
   inks.txt                      Director ink behavior reference
 ```
 
-## Verification Before Committing
+## Verify
 
 ```bash
 node --check web/libreshockwave-cpp-player.js
