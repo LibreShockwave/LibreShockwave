@@ -17624,6 +17624,52 @@ void testSpriteBakerFoundation() {
     assert(bakedLiveDarken.bakedBitmap()->getPixel(1, 0) == 0xFF503810U);
     assert(bakedLiveDarken.bakedBitmap()->getPixel(2, 0) == 0x00000000U);
 
+    auto authoredDarkenMember = std::make_shared<CastMemberChunk>(nullptr,
+                                                                  ChunkId(805),
+                                                                  MemberType::Bitmap,
+                                                                  0,
+                                                                  0,
+                                                                  std::vector<std::uint8_t>{},
+                                                                  std::vector<std::uint8_t>{},
+                                                                  "authored-darken",
+                                                                  0,
+                                                                  0,
+                                                                  0);
+    SpriteBaker authoredDarkenBaker;
+    authoredDarkenBaker.setBitmapDecodeProvider([](const CastMemberChunk&, const Palette*) {
+        auto bitmap = std::make_shared<Bitmap>(3, 1, 8, std::vector<std::uint32_t>{
+            0xFFFFFFFFU,
+            0xFF808080U,
+            0xFFFFFFFFU
+        });
+        bitmap->setPaletteIndices({0, 127, 0});
+        return bitmap;
+    });
+    RenderSprite authoredDarkenSprite(10,
+                                      0,
+                                      0,
+                                      3,
+                                      1,
+                                      0,
+                                      true,
+                                      SpriteType::Bitmap,
+                                      authoredDarkenMember,
+                                      nullptr,
+                                      0,
+                                      0xA07020,
+                                      false,
+                                      true,
+                                      libreshockwave::id::code(InkMode::DARKEN),
+                                      100,
+                                      false,
+                                      false,
+                                      nullptr,
+                                      false);
+    auto bakedAuthoredDarken = authoredDarkenBaker.bake(authoredDarkenSprite);
+    assert(bakedAuthoredDarken.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedAuthoredDarken.bakedBitmap()->getPixel(1, 0) == 0xFF503810U);
+    assert(bakedAuthoredDarken.bakedBitmap()->getPixel(2, 0) == 0x00000000U);
+
     auto makeScriptBubbleBitmap = [] {
         auto bubble = std::make_shared<Bitmap>(20, 10, 32);
         bubble->fill(0xFFFFFFFFU);

@@ -47,6 +47,45 @@ bool shouldNeutralizeOpaqueWhiteForScriptCanvas(const RenderSprite& sprite, cons
     return sprite.inkMode() == id::InkMode::DARKEN || sprite.inkMode() == id::InkMode::LIGHTEN;
 }
 
+bool hasOpaqueWhiteEdgeAndContent(const bitmap::Bitmap& bitmap) {
+    const int width = bitmap.width();
+    const int height = bitmap.height();
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    bool hasWhiteEdge = false;
+    bool hasNonWhiteContent = false;
+    const auto visit = [&](int x, int y, bool edge) {
+        const auto pixel = bitmap.getPixel(x, y);
+        if (((pixel >> 24U) & 0xFFU) == 0) {
+            return;
+        }
+        if ((pixel & 0x00FFFFFFU) == 0x00FFFFFFU) {
+            hasWhiteEdge = hasWhiteEdge || edge;
+        } else {
+            hasNonWhiteContent = true;
+        }
+    };
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            visit(x, y, x == 0 || y == 0 || x == width - 1 || y == height - 1);
+        }
+    }
+    return hasWhiteEdge && hasNonWhiteContent;
+}
+
+bool shouldNeutralizeOpaqueWhiteForAuthoredTint(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
+    if (bitmap.isNativeAlpha() || bitmap.isRectangularMedia()) {
+        return false;
+    }
+    if (sprite.inkMode() != id::InkMode::DARKEN && sprite.inkMode() != id::InkMode::LIGHTEN) {
+        return false;
+    }
+    return hasOpaqueWhiteEdgeAndContent(bitmap);
+}
+
 bool shouldPreserveOutlinedWhiteBodyForScriptCanvas(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
     if (sprite.inkMode() != id::InkMode::MATTE ||
         bitmap.bitDepth() != 32 ||
@@ -1155,7 +1194,9 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
 }
 
 bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, const RenderSprite& sprite) const {
-    bitmap::Bitmap processed = raw.copy();
+    bitmap::Bitmap processed = shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, raw)
+        ? InkProcessor::convertOpaqueWhiteToTransparent(raw)
+        : raw.copy();
     if (processed.bitDepth() <= 1 && sprite.hasForeColor() && InkProcessor::allowsColorize(sprite.inkMode())) {
         processed = InkProcessor::applyForeColorRemap(processed,
                                                       static_cast<std::uint32_t>(sprite.foreColor()),
