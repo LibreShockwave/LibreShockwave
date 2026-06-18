@@ -113,7 +113,7 @@ std::string getStringChunk(std::string_view value,
 
 Datum StringMethodDispatcher::dispatch(std::string_view value,
                                        std::string_view methodName,
-                                       const std::vector<Datum>& args,
+                                       std::span<const Datum> args,
                                        char itemDelimiter) {
     if (equalsIgnoreCase(methodName, "length")) {
         return Datum::of(static_cast<int>(value.size()));

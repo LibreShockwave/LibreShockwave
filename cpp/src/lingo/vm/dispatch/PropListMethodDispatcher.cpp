@@ -296,7 +296,7 @@ void putPropListTypedKey(Datum::PropList& propList, const Datum& key, Datum valu
 
 Datum PropListMethodDispatcher::dispatch(Datum::PropList& propList,
                                          std::string_view methodName,
-                                         const std::vector<Datum>& args) {
+                                         std::span<const Datum> args) {
     if (equalsIgnoreCase(methodName, "count")) {
         if (!args.empty()) {
             const Datum value = getPropListKey(propList, keyNameLikeJava(args[0]));

@@ -310,7 +310,7 @@ const Datum::PropList* singlePropListWrapper(const Datum::List& list) {
 
 Datum ListMethodDispatcher::dispatch(Datum::List& list,
                                      std::string_view methodName,
-                                     const std::vector<Datum>& args) {
+                                     std::span<const Datum> args) {
     auto& items = list.items();
     if (equalsIgnoreCase(methodName, "getAt")) {
         if (args.empty()) {
