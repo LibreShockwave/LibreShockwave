@@ -14499,6 +14499,31 @@ void testLingoVmRuntimeFoundation() {
     assert(handlerTimeoutThrew);
     assert(handlerTimeoutVm.callStackDepth() == 0);
 
+    LingoVM slowWarningVm;
+    MovieProperties slowWarningMovie;
+    slowWarningVm.builtinContext().movieProperties = &slowWarningMovie;
+    slowWarningVm.setSlowHandlerWarningThresholdMs(0);
+    std::vector<std::int64_t> slowWarningTimes{0, 0, 100, 166, 200, 267};
+    std::size_t slowWarningTimeIndex = 0;
+    slowWarningVm.setTimeProvider([&slowWarningTimes, &slowWarningTimeIndex] {
+        const auto index = std::min(slowWarningTimeIndex++, slowWarningTimes.size() - 1);
+        return slowWarningTimes[index];
+    });
+    std::vector<std::pair<std::string, std::string>> slowWarnings;
+    slowWarningVm.builtinContext().outputHandler =
+        [&slowWarnings](std::string_view kind, const std::string& text) {
+            slowWarnings.emplace_back(std::string(kind), text);
+        };
+    (void)slowWarningVm.executeHandler(script, stackHandler);
+    assert(slowWarnings.empty());
+    (void)slowWarningVm.executeHandler(script, stackHandler);
+    assert(slowWarnings.empty());
+    (void)slowWarningVm.executeHandler(script, stackHandler);
+    assert(slowWarnings.size() == 1);
+    assert(slowWarnings[0].first == "WARNING");
+    assert(slowWarnings[0].second.find("handler ") != std::string::npos);
+    assert(slowWarnings[0].second.find(" took 67ms ") != std::string::npos);
+
     assert(vm.executeHandler(script, paramHandler, {Datum::of(123)}).intValue() == 123);
     assert(vm.callHandler("abs", {Datum::of(-11)}).intValue() == 11);
     assert(vm.callBuiltin("abs", {Datum::of(-12)}).intValue() == 12);
