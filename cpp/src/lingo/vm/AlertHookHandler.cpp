@@ -39,7 +39,7 @@ void AlertHookHandler::decrementDepth() {
     --errorHandlerDepth_;
 }
 
-bool AlertHookHandler::shouldSkipErrorHandler(std::string_view handlerName, const std::vector<Datum>& args) const {
+bool AlertHookHandler::shouldSkipErrorHandler(std::string_view handlerName, std::span<const Datum> args) const {
     if (!isErrorHandler(handlerName)) {
         return false;
     }
@@ -60,6 +60,14 @@ bool AlertHookHandler::shouldSkipErrorHandler(std::string_view handlerName, cons
         errorHandlerSkipCallback_(message);
     }
     return false;
+}
+
+bool AlertHookHandler::shouldSkipErrorHandler(std::string_view handlerName, const std::vector<Datum>& args) const {
+    return shouldSkipErrorHandler(handlerName, std::span<const Datum>(args));
+}
+
+bool AlertHookHandler::shouldSkipErrorHandler(std::string_view handlerName, std::initializer_list<Datum> args) const {
+    return shouldSkipErrorHandler(handlerName, std::span<const Datum>(args.begin(), args.size()));
 }
 
 bool AlertHookHandler::isErrorHandler(std::string_view handlerName) const {

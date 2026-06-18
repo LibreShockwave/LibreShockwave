@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "libreshockwave/lingo/Opcode.hpp"
 #include "libreshockwave/lingo/vm/ExecutionContext.hpp"
@@ -11,18 +13,30 @@
 namespace libreshockwave::lingo::vm {
 
 using OpcodeHandler = std::function<bool(ExecutionContext& context)>;
+using OpcodeHandlerFn = bool (*)(ExecutionContext& context);
 
 class OpcodeRegistry {
 public:
     OpcodeRegistry();
 
     [[nodiscard]] const OpcodeHandler* get(Opcode opcode) const;
+    [[nodiscard]] OpcodeHandlerFn getRaw(Opcode opcode) const;
+    [[nodiscard]] bool isDefaultRawHandler(Opcode opcode) const;
     [[nodiscard]] bool hasHandler(Opcode opcode) const;
     bool execute(Opcode opcode, ExecutionContext& context) const;
-    void registerHandler(Opcode opcode, OpcodeHandler handler);
+    void registerHandler(Opcode opcode, OpcodeHandlerFn handler);
+    template <typename Handler>
+        requires (!std::is_convertible_v<std::decay_t<Handler>, OpcodeHandlerFn>)
+    void registerHandler(Opcode opcode, Handler&& handler) {
+        registerFunctionHandler(opcode, OpcodeHandler(std::forward<Handler>(handler)));
+    }
 
 private:
     static constexpr std::size_t kHandlerCount = 0x74;
+    void registerFunctionHandler(Opcode opcode, OpcodeHandler handler);
+
+    std::array<OpcodeHandlerFn, kHandlerCount> rawHandlers_{};
+    std::array<OpcodeHandlerFn, kHandlerCount> defaultRawHandlers_{};
     std::array<OpcodeHandler, kHandlerCount> handlers_{};
 };
 

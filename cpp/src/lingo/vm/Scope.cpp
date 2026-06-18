@@ -39,8 +39,7 @@ Scope::Scope(const chunks::ScriptChunk* script,
       arguments_(std::move(arguments)),
       receiver_(std::move(receiver)),
       firstParamDeclaredMe_(firstParamDeclaredMe),
-      locals_(static_cast<std::size_t>(std::max(0, handler_ != nullptr ? handler_->localCount : 0)),
-              Datum::voidValue()) {
+      locals_(static_cast<std::size_t>(std::max(0, handler_ != nullptr ? handler_->localCount : 0))) {
     stack_.reserve(16);
     loopReturnStack_.reserve(4);
 }
@@ -94,100 +93,6 @@ const Datum& Scope::receiver() const {
     return receiver_;
 }
 
-int Scope::bytecodeIndex() const {
-    return bytecodeIndex_;
-}
-
-void Scope::setBytecodeIndex(int index) {
-    bytecodeIndex_ = index;
-}
-
-void Scope::advanceBytecodeIndex() {
-    ++bytecodeIndex_;
-}
-
-bool Scope::hasMoreInstructions() const {
-    return handler_ != nullptr && bytecodeIndex_ >= 0 &&
-           bytecodeIndex_ < static_cast<int>(handler_->instructions.size());
-}
-
-const chunks::ScriptChunk::Instruction* Scope::currentInstruction() const {
-    if (!hasMoreInstructions()) {
-        return nullptr;
-    }
-    return &handler_->instructions[static_cast<std::size_t>(bytecodeIndex_)];
-}
-
-void Scope::push(Datum value) {
-    stack_.push_back(std::move(value));
-}
-
-Datum Scope::pop() {
-    if (stack_.empty()) {
-        return Datum::voidValue();
-    }
-    Datum value = std::move(stack_.back());
-    stack_.pop_back();
-    return value;
-}
-
-Datum Scope::peek() const {
-    return peek(0);
-}
-
-Datum Scope::peek(int depth) const {
-    const int index = static_cast<int>(stack_.size()) - 1 - depth;
-    if (index < 0 || index >= static_cast<int>(stack_.size())) {
-        return Datum::voidValue();
-    }
-    return stack_[static_cast<std::size_t>(index)];
-}
-
-const Datum& Scope::peekRef(int depth) const {
-    static const Datum empty = Datum::voidValue();
-    const int index = static_cast<int>(stack_.size()) - 1 - depth;
-    if (index < 0 || index >= static_cast<int>(stack_.size())) {
-        return empty;
-    }
-    return stack_[static_cast<std::size_t>(index)];
-}
-
-int Scope::stackSize() const {
-    return static_cast<int>(stack_.size());
-}
-
-void Scope::swap() {
-    if (stack_.size() >= 2) {
-        std::iter_swap(stack_.end() - 1, stack_.end() - 2);
-    }
-}
-
-void Scope::replaceTop(Datum value) {
-    if (stack_.empty()) {
-        push(std::move(value));
-        return;
-    }
-    stack_.back() = std::move(value);
-}
-
-void Scope::replaceTopTwo(Datum value) {
-    if (stack_.size() >= 2) {
-        stack_[stack_.size() - 2] = std::move(value);
-        stack_.pop_back();
-        return;
-    }
-    stack_.clear();
-    push(std::move(value));
-}
-
-void Scope::drop(int count) {
-    if (count <= 0 || stack_.empty()) {
-        return;
-    }
-    const auto newSize = static_cast<std::size_t>(std::max(0, static_cast<int>(stack_.size()) - count));
-    stack_.resize(newSize);
-}
-
 Datum Scope::getParam(int index) const {
     const int actualIndex = index + paramOffset();
     if (index >= 0 && index < static_cast<int>(modifiedParams_.size())) {
@@ -202,6 +107,22 @@ Datum Scope::getParam(int index) const {
     return Datum::voidValue();
 }
 
+void Scope::pushParam(int index) {
+    const int actualIndex = index + paramOffset();
+    if (index >= 0 && index < static_cast<int>(modifiedParams_.size())) {
+        const auto& modified = modifiedParams_[static_cast<std::size_t>(index)];
+        if (modified) {
+            push(*modified);
+            return;
+        }
+    }
+    if (actualIndex >= 0 && actualIndex < static_cast<int>(arguments_.size())) {
+        pushCopy(arguments_[static_cast<std::size_t>(actualIndex)]);
+        return;
+    }
+    push(Datum::voidValue());
+}
+
 void Scope::setParam(int index, Datum value) {
     if (index < 0) {
         return;
@@ -211,36 +132,6 @@ void Scope::setParam(int index, Datum value) {
         modifiedParams_.resize(targetSize);
     }
     modifiedParams_[static_cast<std::size_t>(index)] = std::move(value);
-}
-
-Datum Scope::getLocal(int index) const {
-    if (index >= 0 && index < static_cast<int>(locals_.size())) {
-        return locals_[static_cast<std::size_t>(index)];
-    }
-    return Datum::voidValue();
-}
-
-void Scope::setLocal(int index, Datum value) {
-    if (index >= 0 && index < static_cast<int>(locals_.size())) {
-        locals_[static_cast<std::size_t>(index)] = std::move(value);
-    }
-}
-
-bool Scope::returned() const {
-    return returned_;
-}
-
-void Scope::setReturned(bool returned) {
-    returned_ = returned;
-}
-
-Datum Scope::returnValue() const {
-    return returnValue_;
-}
-
-void Scope::setReturnValue(Datum value) {
-    returnValue_ = std::move(value);
-    returned_ = true;
 }
 
 void Scope::pushLoopReturnIndex(int index) {

@@ -200,9 +200,16 @@ struct BuiltinContext {
     std::unordered_map<std::string, Datum> scriptResolutionCache;
     mutable std::unordered_set<std::uint64_t> aliasRefreshRegistryIds;
     mutable std::unordered_map<std::string, int> registryMemberSlotCache;
+    mutable std::unordered_map<std::uint64_t,
+                               std::unordered_map<std::string,
+                                                  std::optional<ScriptHandlerLocation>,
+                                                  TransparentCaseInsensitiveStringHash,
+                                                  TransparentCaseInsensitiveStringEqual>>
+        directScriptInstanceHandlerCache;
     mutable std::unordered_map<std::string, std::optional<ScriptHandlerLocation>> scriptInstanceHandlerCache;
     mutable std::unordered_map<std::string, vm::util::LineIndex> fieldLineIndexCache;
     mutable std::unordered_map<std::uint64_t, std::vector<std::string>> scriptPropertyNamesCache;
+    mutable std::unordered_map<std::string, int> indexedCollectionLoopHeaderCache;
 };
 
 using BuiltinFunction = std::function<Datum(BuiltinContext& context, const std::vector<Datum>& args)>;

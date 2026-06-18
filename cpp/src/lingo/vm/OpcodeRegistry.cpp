@@ -774,6 +774,39 @@ Datum getPropListKey(const Datum::PropList& propList, std::string_view keyName) 
     return Datum::voidValue();
 }
 
+bool isCallMessageStruct(const Datum::PropList& propList) {
+    if (getPropListKey(propList, "connection").type() != DatumType::ScriptInstanceRef) {
+        return false;
+    }
+
+    const Datum ilk = getPropListKey(propList, "ilk");
+    if (const auto* symbol = ilk.asSymbol(); symbol != nullptr && equalsIgnoreCase(symbol->name, "struct")) {
+        return true;
+    }
+
+    return !getPropListKey(propList, "subject").isVoid() &&
+           !getPropListKey(propList, "content").isVoid();
+}
+
+Datum snapshotCallArg(const Datum& arg) {
+    if (!arg.isPropList() || !isCallMessageStruct(arg.propListValue())) {
+        return arg;
+    }
+    return arg.deepCopy();
+}
+
+std::vector<Datum> snapshotCallArgsFromStack(ExecutionContext& context, int argCount) {
+    std::vector<Datum> callArgs;
+    if (argCount <= 2) {
+        return callArgs;
+    }
+    callArgs.reserve(static_cast<std::size_t>(argCount - 2));
+    for (int index = 2; index < argCount; ++index) {
+        callArgs.push_back(snapshotCallArg(context.peekRef(argCount - 1 - index)));
+    }
+    return callArgs;
+}
+
 void putPropListProp(Datum::PropList& propList, std::string_view propName, Datum value) {
     for (auto& entry : propList.properties()) {
         if (equalsIgnoreCase(keyNameLikeJava(entry.first), propName)) {
@@ -1318,7 +1351,19 @@ HandlerRef handlerRefFromLocation(const builtin::BuiltinContext::ScriptHandlerLo
 
 Datum safeExecuteHandler(ExecutionContext& context,
                          const HandlerRef& handler,
+                         std::span<const Datum> args,
+                         const Datum& receiver);
+
+Datum safeExecuteHandler(ExecutionContext& context,
+                         const HandlerRef& handler,
                          const std::vector<Datum>& args,
+                         const Datum& receiver) {
+    return safeExecuteHandler(context, handler, std::span<const Datum>(args), receiver);
+}
+
+Datum safeExecuteHandler(ExecutionContext& context,
+                         const HandlerRef& handler,
+                         std::span<const Datum> args,
                          const Datum& receiver) {
     try {
         return context.executeHandler(handler, args, receiver);
@@ -1335,6 +1380,16 @@ Datum safeExecuteHandler(ExecutionContext& context,
                          const Datum& receiver) {
     return safeExecuteHandler(context, HandlerRef{&script, &handler}, args, receiver);
 }
+
+Datum safeExecuteHandler(ExecutionContext& context,
+                         const chunks::ScriptChunk& script,
+                         const chunks::ScriptChunk::Handler& handler,
+                         std::span<const Datum> args,
+                         const Datum& receiver) {
+    return safeExecuteHandler(context, HandlerRef{&script, &handler}, args, receiver);
+}
+
+const std::vector<Datum>& emptyDatumArgs();
 
 std::string pickLineDelimiter(std::string_view value) {
     return util::pickLineDelimiter(value);
@@ -1862,6 +1917,35 @@ Datum scriptInstanceNestedProperty(const Datum& container, const Datum& subKey) 
     return Datum::voidValue();
 }
 
+Datum scriptInstancePropertyValue(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    if (const auto* value = util::findPropertyValue(instance, propName)) {
+        return *value;
+    }
+    if (equalsIgnoreCase(propName, "ancestor")) {
+        return util::getProperty(instance, propName);
+    }
+    return Datum::voidValue();
+}
+
+Datum scriptInstancePropertyCountValue(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    if (const auto* value = util::findPropertyValue(instance, propName)) {
+        return scriptInstanceCountValue(*value);
+    }
+    return Datum::of(0);
+}
+
+Datum scriptInstanceNestedPropertyValue(const Datum::ScriptInstanceRef& instance,
+                                        std::string_view propName,
+                                        const Datum& subKey) {
+    if (const auto* value = util::findPropertyValue(instance, propName)) {
+        return scriptInstanceNestedProperty(*value, subKey);
+    }
+    if (equalsIgnoreCase(propName, "ancestor")) {
+        return scriptInstanceNestedProperty(util::getProperty(instance, propName), subKey);
+    }
+    return Datum::voidValue();
+}
+
 void scriptInstanceSetNestedProperty(Datum& container, const Datum& subKey, Datum value) {
     if (container.isList()) {
         const int index = toIntLikeJava(subKey);
@@ -2344,7 +2428,9 @@ std::optional<int> scriptInstanceRegisteredMemberSlot(Datum::ScriptInstanceRef& 
     refreshAvailableAliasTexts(instance, builtinContext);
     std::string memberSlotCacheKey;
     if (builtinContext != nullptr) {
-        memberSlotCacheKey = lowerAscii(memberName);
+        appendInt(memberSlotCacheKey, instance.identityId());
+        memberSlotCacheKey.push_back('/');
+        appendLowerAscii(memberSlotCacheKey, memberName);
         if (const auto cached = builtinContext->registryMemberSlotCache.find(memberSlotCacheKey);
             cached != builtinContext->registryMemberSlotCache.end()) {
             const int cachedSlot = cached->second;
@@ -2435,6 +2521,26 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
         return std::nullopt;
     }
 
+    if (instance.ancestor() == nullptr) {
+        if (const auto& scriptRef = instance.scriptRef(); scriptRef.has_value()) {
+            const int castLib = scriptRef->castLib > 0 ? scriptRef->castLib : 1;
+            const int memberNum = scriptRef->memberNum();
+            const auto scriptKey = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(castLib)) << 32U) |
+                                   static_cast<std::uint32_t>(memberNum);
+            auto& scriptCache = builtinContext->directScriptInstanceHandlerCache[scriptKey];
+            if (const auto cached = scriptCache.find(methodName); cached != scriptCache.end()) {
+                return cached->second;
+            }
+            if (auto handler = builtinContext->scriptHandlerFinder(castLib, memberNum, std::string(methodName));
+                handler.has_value() && handler->script != nullptr) {
+                scriptCache.emplace(std::string(methodName), handler);
+                return handler;
+            }
+            scriptCache.emplace(std::string(methodName), std::nullopt);
+        }
+        return std::nullopt;
+    }
+
     std::string cacheKey;
     cacheKey.reserve(static_cast<std::size_t>(util::MAX_ANCESTOR_DEPTH * 4) + methodName.size());
     auto* current = &instance;
@@ -2471,22 +2577,91 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
     return std::nullopt;
 }
 
+enum class ImmediateObjectMethod {
+    Unknown,
+    Add,
+    AddAt,
+    AddProp,
+    Append,
+    Count,
+    DeleteProp,
+    DeleteAt,
+    Duplicate,
+    GetAProp,
+    GetAt,
+    GetFirst,
+    GetLast,
+    GetProp,
+    GetProperty,
+    GetPropRef,
+    Handler,
+    Ilk,
+    SetAProp,
+    SetAt,
+    SetProp
+};
+
+ImmediateObjectMethod classifyImmediateObjectMethod(std::string_view methodName) {
+    switch (methodName.size()) {
+        case 3:
+            if (equalsIgnoreCase(methodName, "add")) return ImmediateObjectMethod::Add;
+            if (equalsIgnoreCase(methodName, "ilk")) return ImmediateObjectMethod::Ilk;
+            break;
+        case 5:
+            if (equalsIgnoreCase(methodName, "addAt")) return ImmediateObjectMethod::AddAt;
+            if (equalsIgnoreCase(methodName, "count")) return ImmediateObjectMethod::Count;
+            if (equalsIgnoreCase(methodName, "getAt")) return ImmediateObjectMethod::GetAt;
+            if (equalsIgnoreCase(methodName, "setAt")) return ImmediateObjectMethod::SetAt;
+            break;
+        case 6:
+            if (equalsIgnoreCase(methodName, "append")) return ImmediateObjectMethod::Append;
+            break;
+        case 7:
+            if (equalsIgnoreCase(methodName, "addProp")) return ImmediateObjectMethod::AddProp;
+            if (equalsIgnoreCase(methodName, "getLast")) return ImmediateObjectMethod::GetLast;
+            if (equalsIgnoreCase(methodName, "getProp")) return ImmediateObjectMethod::GetProp;
+            if (equalsIgnoreCase(methodName, "handler")) return ImmediateObjectMethod::Handler;
+            if (equalsIgnoreCase(methodName, "setProp")) return ImmediateObjectMethod::SetProp;
+            break;
+        case 8:
+            if (equalsIgnoreCase(methodName, "deleteAt")) return ImmediateObjectMethod::DeleteAt;
+            if (equalsIgnoreCase(methodName, "getAProp")) return ImmediateObjectMethod::GetAProp;
+            if (equalsIgnoreCase(methodName, "getFirst")) return ImmediateObjectMethod::GetFirst;
+            if (equalsIgnoreCase(methodName, "setAProp")) return ImmediateObjectMethod::SetAProp;
+            break;
+        case 9:
+            if (equalsIgnoreCase(methodName, "duplicate")) return ImmediateObjectMethod::Duplicate;
+            break;
+        case 10:
+            if (equalsIgnoreCase(methodName, "deleteProp")) return ImmediateObjectMethod::DeleteProp;
+            if (equalsIgnoreCase(methodName, "getPropRef")) return ImmediateObjectMethod::GetPropRef;
+            break;
+        case 11:
+            if (equalsIgnoreCase(methodName, "getProperty")) return ImmediateObjectMethod::GetProperty;
+            break;
+        default:
+            break;
+    }
+    return ImmediateObjectMethod::Unknown;
+}
+
 Datum scriptInstanceObjectMethod(ExecutionContext& context,
                                  Datum& receiver,
                                  std::string_view methodName,
+                                 ImmediateObjectMethod method,
                                  std::span<const Datum> args) {
     auto& instance = receiver.scriptInstanceValue();
     if (shouldDeferNumericCloseThread(context, receiver, methodName, args)) {
         return Datum::TRUE;
     }
-    if (equalsIgnoreCase(methodName, "setAt") || equalsIgnoreCase(methodName, "setAProp")) {
+    if (method == ImmediateObjectMethod::SetAt || method == ImmediateObjectMethod::SetAProp) {
         if (args.size() >= 2) {
             std::string propNameStorage;
             util::setProperty(instance, keyNameLikeJavaView(args[0], propNameStorage), args[1]);
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "setProp")) {
+    if (method == ImmediateObjectMethod::SetProp) {
         if (args.size() == 2) {
             std::string propNameStorage;
             util::setProperty(instance, keyNameLikeJavaView(args[0], propNameStorage), args[1]);
@@ -2503,7 +2678,7 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "getAt")) {
+    if (method == ImmediateObjectMethod::GetAt) {
         if (args.empty()) return Datum::voidValue();
         std::string keyStorage;
         const std::string_view key = keyNameLikeJavaView(args[0], keyStorage);
@@ -2513,59 +2688,64 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
         }
         return util::getProperty(instance, key);
     }
-    if (equalsIgnoreCase(methodName, "getAProp")) {
+    if (method == ImmediateObjectMethod::GetAProp) {
         if (args.empty()) return Datum::voidValue();
         std::string propNameStorage;
-        return util::getProperty(instance, keyNameLikeJavaView(args[0], propNameStorage));
+        return scriptInstancePropertyValue(instance, keyNameLikeJavaView(args[0], propNameStorage));
     }
-    if (equalsIgnoreCase(methodName, "getProp") || equalsIgnoreCase(methodName, "getPropRef")) {
+    if (method == ImmediateObjectMethod::GetProp || method == ImmediateObjectMethod::GetPropRef) {
         if (args.empty()) return Datum::voidValue();
         std::string propNameStorage;
-        Datum localProp = util::getProperty(instance, keyNameLikeJavaView(args[0], propNameStorage));
+        const std::string_view propName = keyNameLikeJavaView(args[0], propNameStorage);
         if (args.size() >= 2) {
-            return scriptInstanceNestedProperty(localProp, args[1]);
+            return scriptInstanceNestedPropertyValue(instance, propName, args[1]);
         }
-        return localProp;
+        return scriptInstancePropertyValue(instance, propName);
     }
-    if (equalsIgnoreCase(methodName, "addProp")) {
+    if (method == ImmediateObjectMethod::AddProp) {
         if (args.size() >= 2) {
             std::string propNameStorage;
             scriptInstancePutLocalProperty(instance, keyNameLikeJavaView(args[0], propNameStorage), args[1]);
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "deleteProp")) {
+    if (method == ImmediateObjectMethod::DeleteProp) {
         if (!args.empty()) {
             std::string propNameStorage;
             scriptInstanceDeleteLocalProperty(instance, keyNameLikeJavaView(args[0], propNameStorage));
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "count")) {
+    if (method == ImmediateObjectMethod::Count) {
         if (!args.empty()) {
             std::string propNameStorage;
-            return scriptInstanceCountValue(util::getProperty(instance, keyNameLikeJavaView(args[0], propNameStorage)));
+            return scriptInstancePropertyCountValue(instance, keyNameLikeJavaView(args[0], propNameStorage));
         }
         return Datum::of(static_cast<int>(instance.properties().size()) + (instance.ancestor() ? 1 : 0));
     }
-    if (equalsIgnoreCase(methodName, "ilk")) {
+    if (method == ImmediateObjectMethod::Ilk) {
         return Datum::symbol("instance");
     }
-    if (equalsIgnoreCase(methodName, "addAt")) {
+    if (method == ImmediateObjectMethod::AddAt) {
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "handler")) {
+    if (method == ImmediateObjectMethod::Handler) {
         if (args.empty()) return Datum::FALSE;
         std::string handlerNameStorage;
         const std::string_view handlerName = keyNameLikeJavaView(args[0], handlerNameStorage);
         return findScriptInstanceScriptHandler(context, instance, handlerName).has_value() ? Datum::TRUE : Datum::FALSE;
     }
     auto* builtinContext = context.builtinContext();
-    (void)scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
+    std::optional<Datum> prefetchedRegistryResult;
+    if (dispatch::MemberRegistryMethodDispatcher::isMethod(methodName)) {
+        prefetchedRegistryResult = scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
+    }
     const auto handler = findScriptInstanceScriptHandler(context, instance, methodName);
     if (handler) {
-        const std::vector<Datum> argVector(args.begin(), args.end());
-        return safeExecuteHandler(context, handlerRefFromLocation(*handler), argVector, receiver);
+        return safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
+    }
+    if (prefetchedRegistryResult.has_value()) {
+        return *prefetchedRegistryResult;
     }
     const auto registryResult = scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
     if (registryResult.has_value()) {
@@ -2574,6 +2754,17 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
 
     const Datum property = util::getProperty(instance, methodName);
     return property.isVoid() ? Datum::voidValue() : property;
+}
+
+Datum scriptInstanceObjectMethod(ExecutionContext& context,
+                                 Datum& receiver,
+                                 std::string_view methodName,
+                                 std::span<const Datum> args) {
+    return scriptInstanceObjectMethod(context,
+                                      receiver,
+                                      methodName,
+                                      classifyImmediateObjectMethod(methodName),
+                                      args);
 }
 
 bool imageFill(bitmap::Bitmap& bmp, const std::vector<Datum>& args) {
@@ -4849,7 +5040,9 @@ bool jmp(ExecutionContext& context) {
 }
 
 bool jmpIfZero(ExecutionContext& context) {
-    if (!truthy(context.pop())) {
+    const bool condition = truthy(context.peekRef());
+    context.scope().drop(1);
+    if (!condition) {
         context.scope().clearIndexedCollectionSnapshots(context.scope().bytecodeIndex());
         context.jumpTo(context.instructionOffset() + context.argument());
         return false;
@@ -4863,15 +5056,17 @@ bool endRepeat(ExecutionContext& context) {
 }
 
 bool add(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) + bi->value)));
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) + bi->value)));
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
 
     if (const auto* point = a.asIntPoint()) {
         int dx = toIntLikeJava(b);
@@ -4939,15 +5134,17 @@ bool add(ExecutionContext& context) {
 }
 
 bool sub(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) - bi->value)));
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) - bi->value)));
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
 
     if (const auto* point = a.asIntPoint()) {
         int dx = toIntLikeJava(b);
@@ -5010,15 +5207,17 @@ bool sub(ExecutionContext& context) {
 }
 
 bool mul(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) * bi->value)));
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) * bi->value)));
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
 
     if (const auto* point = a.asIntPoint()) {
         const double scalar = toDoubleLikeJava(b);
@@ -5060,17 +5259,20 @@ bool mul(ExecutionContext& context) {
 }
 
 bool div(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
             if (bi->value == 0) {
                 throw context.error("Division by zero");
             }
-            context.push(Datum::of(ai->value / bi->value));
+            context.scope().replaceTopTwo(Datum::of(ai->value / bi->value));
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     const double divisor = toDoubleLikeJava(b);
     if (divisor == 0.0) {
         throw context.error("Division by zero");
@@ -5097,17 +5299,20 @@ bool div(ExecutionContext& context) {
 }
 
 bool mod(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
             if (bi->value == 0) {
                 throw context.error("Modulo by zero");
             }
-            context.push(Datum::of(ai->value % bi->value));
+            context.scope().replaceTopTwo(Datum::of(ai->value % bi->value));
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     const int divisor = toIntLikeJava(b);
     if (divisor == 0) {
         throw context.error("Modulo by zero");
@@ -5117,10 +5322,13 @@ bool mod(ExecutionContext& context) {
 }
 
 bool inv(ExecutionContext& context) {
+    if (const auto* intValue = context.peekRef().asInt()) {
+        context.scope().replaceTop(Datum::of(-intValue->value));
+        return true;
+    }
+
     const Datum value = context.pop();
-    if (const auto* intValue = value.asInt()) {
-        context.push(Datum::of(-intValue->value));
-    } else if (const auto* floatValue = value.asFloat()) {
+    if (const auto* floatValue = value.asFloat()) {
         context.push(Datum::of(-floatValue->value));
     } else if (const auto* point = value.asIntPoint()) {
         context.push(Datum::intPoint(-point->x, -point->y));
@@ -5133,79 +5341,97 @@ bool inv(ExecutionContext& context) {
 }
 
 bool lt(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value < bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value < bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(toDoubleLikeJava(a) < toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool ltEq(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value <= bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value <= bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(toDoubleLikeJava(a) <= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool gt(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value > bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value > bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(toDoubleLikeJava(a) > toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool gtEq(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value >= bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value >= bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(toDoubleLikeJava(a) >= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool eq(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value == bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value == bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool notEq(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    if (const auto* ai = a.asInt()) {
-        if (const auto* bi = b.asInt()) {
-            context.push(ai->value != bi->value ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const auto* bi = context.peekRef(0).asInt();
+        const auto* ai = context.peekRef(1).asInt();
+        if (ai != nullptr && bi != nullptr) {
+            context.scope().replaceTopTwo(ai->value != bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
     }
+
+    const Datum b = context.pop();
+    const Datum a = context.pop();
     context.push(!lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
@@ -5249,21 +5475,30 @@ bool spriteWithin(ExecutionContext& context) {
 }
 
 bool logicalAnd(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    context.push(truthy(a) && truthy(b) ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const bool result = truthy(context.peekRef(1)) && truthy(context.peekRef(0));
+        context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
+    } else {
+        context.scope().drop(context.scope().stackSize());
+        context.push(Datum::FALSE);
+    }
     return true;
 }
 
 bool logicalOr(ExecutionContext& context) {
-    const Datum b = context.pop();
-    const Datum a = context.pop();
-    context.push(truthy(a) || truthy(b) ? Datum::TRUE : Datum::FALSE);
+    if (context.scope().stackSize() >= 2) {
+        const bool result = truthy(context.peekRef(1)) || truthy(context.peekRef(0));
+        context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
+    } else {
+        context.scope().drop(context.scope().stackSize());
+        context.push(Datum::FALSE);
+    }
     return true;
 }
 
 bool logicalNot(ExecutionContext& context) {
-    context.push(truthy(context.pop()) ? Datum::FALSE : Datum::TRUE);
+    const bool result = truthy(context.peekRef());
+    context.scope().replaceTop(result ? Datum::FALSE : Datum::TRUE);
     return true;
 }
 
@@ -5315,36 +5550,41 @@ bool joinPadStr(ExecutionContext& context) {
 }
 
 bool containsStr(ExecutionContext& context) {
-    const Datum needle = context.pop();
-    const Datum haystack = context.pop();
-    context.push(containsIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle)) ? Datum::TRUE : Datum::FALSE);
+    const Datum& needle = context.peekRef(0);
+    const Datum& haystack = context.peekRef(1);
+    const bool result = containsIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle));
+    context.scope().drop(2);
+    context.push(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool contains0Str(ExecutionContext& context) {
-    const Datum needle = context.pop();
-    const Datum haystack = context.pop();
+    const Datum& needle = context.peekRef(0);
+    const Datum& haystack = context.peekRef(1);
     if (haystack.isVoid()) {
+        context.scope().drop(2);
         context.push(Datum::FALSE);
         return true;
     }
-    context.push(startsWithIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle)) ? Datum::TRUE : Datum::FALSE);
+    const bool result = startsWithIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle));
+    context.scope().drop(2);
+    context.push(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
 bool getChunk(ExecutionContext& context) {
-    const Datum stringDatum = context.pop();
-    const int lastLine = toIntLikeJava(context.pop());
-    const int firstLine = toIntLikeJava(context.pop());
-    const int lastItem = toIntLikeJava(context.pop());
-    const int firstItem = toIntLikeJava(context.pop());
-    const int lastWord = toIntLikeJava(context.pop());
-    const int firstWord = toIntLikeJava(context.pop());
-    const int lastChar = toIntLikeJava(context.pop());
-    const int firstChar = toIntLikeJava(context.pop());
+    const int lastLine = toIntLikeJava(context.peekRef(1));
+    const int firstLine = toIntLikeJava(context.peekRef(2));
+    const int lastItem = toIntLikeJava(context.peekRef(3));
+    const int firstItem = toIntLikeJava(context.peekRef(4));
+    const int lastWord = toIntLikeJava(context.peekRef(5));
+    const int firstWord = toIntLikeJava(context.peekRef(6));
+    const int lastChar = toIntLikeJava(context.peekRef(7));
+    const int firstChar = toIntLikeJava(context.peekRef(8));
 
     std::string valueStorage;
-    const std::string_view value = stringViewLikeJava(stringDatum, valueStorage);
+    const std::string_view value = stringViewLikeJava(context.peekRef(0), valueStorage);
+    Datum resultDatum;
     if (firstChar != 0 && lastChar == 0 &&
         firstWord == 0 && lastWord == 0 &&
         firstItem == 0 && lastItem == 0 &&
@@ -5352,10 +5592,12 @@ bool getChunk(ExecutionContext& context) {
         const int resolvedChar = firstChar < 0 ? static_cast<int>(value.size()) : firstChar;
         const int index = resolvedChar - 1;
         if (index >= 0 && index < static_cast<int>(value.size())) {
-            context.push(Datum::of(std::string(1, value[static_cast<std::size_t>(index)])));
+            resultDatum = Datum::of(std::string(1, value[static_cast<std::size_t>(index)]));
         } else {
-            context.push(Datum::of(std::string()));
+            resultDatum = Datum::of(std::string());
         }
+        context.scope().drop(9);
+        context.push(std::move(resultDatum));
         return true;
     }
 
@@ -5368,11 +5610,13 @@ bool getChunk(ExecutionContext& context) {
         const int start = resolvedFirst - 1;
         const int end = std::min(resolvedLast, static_cast<int>(value.size()));
         if (start >= 0 && start < static_cast<int>(value.size()) && end > start) {
-            context.push(Datum::of(std::string(value.substr(static_cast<std::size_t>(start),
-                                                           static_cast<std::size_t>(end - start)))));
+            resultDatum = Datum::of(std::string(value.substr(static_cast<std::size_t>(start),
+                                                             static_cast<std::size_t>(end - start))));
         } else {
-            context.push(Datum::of(std::string()));
+            resultDatum = Datum::of(std::string());
         }
+        context.scope().drop(9);
+        context.push(std::move(resultDatum));
         return true;
     }
 
@@ -5395,7 +5639,9 @@ bool getChunk(ExecutionContext& context) {
         resultStorage = resolveChunkRange(result, StringChunkType::Char, firstChar, lastChar, itemDelimiter);
         result = resultStorage;
     }
-    context.push(Datum::of(std::string(result)));
+    resultDatum = Datum::of(std::string(result));
+    context.scope().drop(9);
+    context.push(std::move(resultDatum));
     return true;
 }
 
@@ -5669,7 +5915,7 @@ bool putChunk(ExecutionContext& context) {
 }
 
 bool getLocal(ExecutionContext& context) {
-    context.push(context.getLocal(context.scaledArgument()));
+    context.scope().pushLocal(context.scaledArgument());
     return true;
 }
 
@@ -5679,7 +5925,7 @@ bool setLocal(ExecutionContext& context) {
 }
 
 bool getParam(ExecutionContext& context) {
-    context.push(context.getParam(context.scaledArgument()));
+    context.scope().pushParam(context.scaledArgument());
     return true;
 }
 
@@ -5701,11 +5947,11 @@ bool setGlobal(ExecutionContext& context) {
 }
 
 bool pushList(ExecutionContext& context) {
-    const Datum argListDatum = context.pop();
+    Datum argListDatum = context.pop();
     std::vector<Datum> items = argListItems(argListDatum);
     if (items.empty() && argListDatum.type() != DatumType::ArgList && argListDatum.type() != DatumType::ArgListNoRet &&
         !argListDatum.isVoid()) {
-        items.push_back(argListDatum);
+        items.push_back(std::move(argListDatum));
     }
     context.push(Datum::list(std::move(items)));
     return true;
@@ -5717,6 +5963,7 @@ bool pushPropList(ExecutionContext& context) {
     const std::vector<Datum>& items = argListItemsRef(argListDatum, itemStorage);
     Datum propList = Datum::propList();
     auto& properties = propList.propListValue().properties();
+    properties.reserve(items.size() / 2);
     for (std::size_t index = 0; index + 1 < items.size(); index += 2) {
         properties.emplace_back(items[index], items[index + 1]);
     }
@@ -5801,6 +6048,39 @@ std::optional<Datum> indexedCollectionSnapshotCount(ExecutionContext& context,
 
 bool getObjProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
+    const Datum& objectRef = context.peekRef();
+    if (const auto snapshotCount = indexedCollectionSnapshotCount(context, propName, objectRef)) {
+        context.scope().drop(1);
+        context.push(*snapshotCount);
+        return true;
+    }
+    if (objectRef.type() == DatumType::ScriptInstanceRef) {
+        Datum result = equalsIgnoreCase(propName, "ilk")
+            ? Datum::symbol("instance")
+            : util::getProperty(objectRef.scriptInstanceValue(), propName);
+        context.scope().drop(1);
+        context.push(std::move(result));
+        return true;
+    }
+    if (objectRef.isList()) {
+        Datum result = getListProp(objectRef.listValue(), propName);
+        context.scope().drop(1);
+        context.push(std::move(result));
+        return true;
+    }
+    if (objectRef.isPropList()) {
+        Datum result = getPropListProp(objectRef.propListValue(), propName);
+        context.scope().drop(1);
+        context.push(std::move(result));
+        return true;
+    }
+    if (objectRef.isString()) {
+        Datum result = getStringProp(objectRef.stringValue(), propName);
+        context.scope().drop(1);
+        context.push(std::move(result));
+        return true;
+    }
+
     const Datum object = context.pop();
     if (const auto snapshotCount = indexedCollectionSnapshotCount(context, propName, object)) {
         context.push(*snapshotCount);
@@ -5838,8 +6118,9 @@ bool getObjProp(ExecutionContext& context) {
 
 bool getChainedProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    const Datum object = context.pop();
-    context.push(getChainedObjectProperty(context, object, propName));
+    Datum result = getChainedObjectProperty(context, context.peekRef(), propName);
+    context.scope().drop(1);
+    context.push(std::move(result));
     return true;
 }
 
@@ -6348,6 +6629,9 @@ bool isImmediatePrimitiveExtCallCandidate(std::string_view handlerName, int argC
                equalsIgnoreCase(handlerName, "min") ||
                equalsIgnoreCase(handlerName, "max");
     }
+    if (argCount == 3) {
+        return equalsIgnoreCase(handlerName, "chars");
+    }
     return false;
 }
 
@@ -6427,7 +6711,8 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "charToNum") && argCount == 1) {
-        const Datum result = fastCharToNumValue(context.pop());
+        const Datum result = fastCharToNumValue(context.peekRef());
+        context.scope().drop(1);
         if (!noReturn) {
             context.push(result);
         }
@@ -6435,16 +6720,44 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "numToChar") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
         const int numericValue = value.asInt() != nullptr ? value.asInt()->value : toIntLikeJava(value);
+        context.scope().drop(1);
         if (!noReturn) {
             context.push(Datum::of(std::string(1, static_cast<char>(numericValue))));
         }
         return true;
     }
 
+    if (equalsIgnoreCase(handlerName, "chars") && argCount == 3) {
+        Datum result = Datum::voidValue();
+        if (!noReturn) {
+            std::string valueStorage;
+            const std::string_view value = stringViewLikeJava(context.peekRef(2), valueStorage);
+            int start = toIntLikeJava(context.peekRef(1)) - 1;
+            int end = toIntLikeJava(context.peekRef(0));
+            if (start < 0) {
+                start = 0;
+            }
+            if (end > static_cast<int>(value.size())) {
+                end = static_cast<int>(value.size());
+            }
+            if (start >= end) {
+                result = Datum::of(std::string());
+            } else {
+                result = Datum::of(std::string(value.substr(static_cast<std::size_t>(start),
+                                                            static_cast<std::size_t>(end - start))));
+            }
+        }
+        context.scope().drop(3);
+        if (!noReturn) {
+            context.push(std::move(result));
+        }
+        return true;
+    }
+
     if (equalsIgnoreCase(handlerName, "length") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
         Datum result = Datum::of(0);
         if (value.isList()) {
             result = Datum::of(value.listValue().count());
@@ -6455,6 +6768,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         } else {
             result = Datum::of(static_cast<int>(toStringLikeJava(value).size()));
         }
+        context.scope().drop(1);
         if (!noReturn) {
             context.push(result);
         }
@@ -6462,13 +6776,14 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "count") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
         Datum result = Datum::of(0);
         if (value.isList()) {
             result = Datum::of(value.listValue().count());
         } else if (value.isPropList()) {
             result = Datum::of(value.propListValue().count());
         }
+        context.scope().drop(1);
         if (!noReturn) {
             context.push(result);
         }
@@ -6478,63 +6793,86 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     if ((equalsIgnoreCase(handlerName, "bitAnd") ||
          equalsIgnoreCase(handlerName, "bitOr") ||
          equalsIgnoreCase(handlerName, "bitXor")) && argCount == 2) {
-        const Datum right = context.pop();
-        const Datum left = context.pop();
+        const Datum& right = context.peekRef(0);
+        const Datum& left = context.peekRef(1);
+        Datum result = Datum::voidValue();
         if (!noReturn) {
             if (equalsIgnoreCase(handlerName, "bitAnd")) {
-                context.push(Datum::of(toIntLikeJava(left) & toIntLikeJava(right)));
+                result = Datum::of(toIntLikeJava(left) & toIntLikeJava(right));
             } else if (equalsIgnoreCase(handlerName, "bitOr")) {
-                context.push(Datum::of(toIntLikeJava(left) | toIntLikeJava(right)));
+                result = Datum::of(toIntLikeJava(left) | toIntLikeJava(right));
             } else {
-                context.push(Datum::of(toIntLikeJava(left) ^ toIntLikeJava(right)));
+                result = Datum::of(toIntLikeJava(left) ^ toIntLikeJava(right));
             }
+        }
+        context.scope().drop(2);
+        if (!noReturn) {
+            context.push(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "string") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
+        Datum result = Datum::voidValue();
         if (!noReturn) {
-            context.push(Datum::of(toStringLikeJava(value)));
+            result = Datum::of(toStringLikeJava(value));
+        }
+        context.scope().drop(1);
+        if (!noReturn) {
+            context.push(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "integer") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
+        Datum result = Datum::voidValue();
         if (!noReturn) {
-            context.push(fastIntegerValue(value));
+            result = fastIntegerValue(value);
+        }
+        context.scope().drop(1);
+        if (!noReturn) {
+            context.push(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "abs") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
+        Datum result = Datum::voidValue();
         if (!noReturn) {
             if (value.isFloat()) {
-                context.push(Datum::of(std::fabs(toDoubleLikeJava(value))));
+                result = Datum::of(std::fabs(toDoubleLikeJava(value)));
             } else {
                 const int numericValue = toIntLikeJava(value);
-                context.push(numericValue == std::numeric_limits<int>::min()
+                result = numericValue == std::numeric_limits<int>::min()
                     ? Datum::of(numericValue)
-                    : Datum::of(std::abs(numericValue)));
+                    : Datum::of(std::abs(numericValue));
             }
+        }
+        context.scope().drop(1);
+        if (!noReturn) {
+            context.push(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "listp") && argCount == 1) {
-        const Datum value = context.pop();
+        const Datum& value = context.peekRef();
+        const bool result = value.isList() || value.isPropList();
+        context.scope().drop(1);
         if (!noReturn) {
-            context.push(value.isList() || value.isPropList() ? Datum::TRUE : Datum::FALSE);
+            context.push(result ? Datum::TRUE : Datum::FALSE);
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "voidp") && argCount == 1) {
-        const Datum value = context.pop();
+        const bool result = context.peekRef().isVoid();
+        context.scope().drop(1);
         if (!noReturn) {
-            context.push(value.isVoid() ? Datum::TRUE : Datum::FALSE);
+            context.push(result ? Datum::TRUE : Datum::FALSE);
         }
         return true;
     }
@@ -6571,26 +6909,36 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     if ((equalsIgnoreCase(handlerName, "min") || equalsIgnoreCase(handlerName, "max")) &&
         (argCount == 1 || argCount == 2)) {
         if (argCount == 1) {
-            const Datum value = context.pop();
+            const Datum& value = context.peekRef();
+            Datum result = Datum::voidValue();
             if (!noReturn) {
-                context.push(equalsIgnoreCase(handlerName, "min") ? fastMinValue(value) : fastMaxValue(value));
+                result = equalsIgnoreCase(handlerName, "min") ? fastMinValue(value) : fastMaxValue(value);
+            }
+            context.scope().drop(1);
+            if (!noReturn) {
+                context.push(std::move(result));
             }
             return true;
         }
 
-        const Datum right = context.pop();
-        const Datum left = context.pop();
+        const Datum& right = context.peekRef(0);
+        const Datum& left = context.peekRef(1);
+        Datum result = Datum::voidValue();
         if (!noReturn) {
             const bool isMin = equalsIgnoreCase(handlerName, "min");
             if (left.isFloat() || right.isFloat()) {
-                context.push(Datum::of(isMin
+                result = Datum::of(isMin
                     ? std::min(toDoubleLikeJava(left), toDoubleLikeJava(right))
-                    : std::max(toDoubleLikeJava(left), toDoubleLikeJava(right))));
+                    : std::max(toDoubleLikeJava(left), toDoubleLikeJava(right)));
             } else {
-                context.push(Datum::of(isMin
+                result = Datum::of(isMin
                     ? std::min(toIntLikeJava(left), toIntLikeJava(right))
-                    : std::max(toIntLikeJava(left), toIntLikeJava(right))));
+                    : std::max(toIntLikeJava(left), toIntLikeJava(right)));
             }
+        }
+        context.scope().drop(2);
+        if (!noReturn) {
+            context.push(std::move(result));
         }
         return true;
     }
@@ -6722,7 +7070,22 @@ bool loopBodyHasIndexedCollectionGetAt(const ExecutionContext& context,
     return false;
 }
 
-std::optional<int> indexedCollectionLoopHeader(const ExecutionContext& context) {
+std::string indexedCollectionLoopHeaderCacheKey(const ExecutionContext& context, char kind) {
+    std::string key;
+    key.reserve(32);
+    key.push_back(kind);
+    key.push_back(':');
+    key.append(std::to_string(reinterpret_cast<std::uintptr_t>(&context.scope().handler())));
+    key.push_back(':');
+    appendInt(key, context.scope().bytecodeIndex());
+    return key;
+}
+
+std::optional<int> cachedIndexedCollectionLoopHeader(const ExecutionContext& context,
+                                                     char kind,
+                                                     std::optional<int> (*compute)(const ExecutionContext&));
+
+std::optional<int> indexedCollectionLoopHeaderUncached(const ExecutionContext& context) {
     const auto& handler = context.scope().handler();
     const auto& instructions = handler.instructions;
     const int currentIndex = context.scope().bytecodeIndex();
@@ -6746,7 +7109,7 @@ std::optional<int> indexedCollectionLoopHeader(const ExecutionContext& context) 
     return std::nullopt;
 }
 
-std::optional<int> indexedCollectionCountLoopHeader(const ExecutionContext& context) {
+std::optional<int> indexedCollectionCountLoopHeaderUncached(const ExecutionContext& context) {
     const auto& handler = context.scope().handler();
     const auto& instructions = handler.instructions;
     const int currentIndex = context.scope().bytecodeIndex();
@@ -6765,6 +7128,33 @@ std::optional<int> indexedCollectionCountLoopHeader(const ExecutionContext& cont
         return headerIndex;
     }
     return std::nullopt;
+}
+
+std::optional<int> cachedIndexedCollectionLoopHeader(const ExecutionContext& context,
+                                                     char kind,
+                                                     std::optional<int> (*compute)(const ExecutionContext&)) {
+    auto* builtinContext = context.builtinContext();
+    if (builtinContext == nullptr) {
+        return compute(context);
+    }
+
+    const std::string key = indexedCollectionLoopHeaderCacheKey(context, kind);
+    const auto cached = builtinContext->indexedCollectionLoopHeaderCache.find(key);
+    if (cached != builtinContext->indexedCollectionLoopHeaderCache.end()) {
+        return cached->second >= 0 ? std::optional<int>{cached->second} : std::nullopt;
+    }
+
+    const auto result = compute(context);
+    builtinContext->indexedCollectionLoopHeaderCache.emplace(key, result.value_or(-1));
+    return result;
+}
+
+std::optional<int> indexedCollectionLoopHeader(const ExecutionContext& context) {
+    return cachedIndexedCollectionLoopHeader(context, 'g', indexedCollectionLoopHeaderUncached);
+}
+
+std::optional<int> indexedCollectionCountLoopHeader(const ExecutionContext& context) {
+    return cachedIndexedCollectionLoopHeader(context, 'c', indexedCollectionCountLoopHeaderUncached);
 }
 
 const void* collectionIdentity(const Datum& value) {
@@ -6795,7 +7185,7 @@ const Datum::PropList* singlePropListWrapper(const Datum::List& list) {
 
 std::optional<Datum> indexedCollectionSnapshotGetAt(ExecutionContext& context,
                                                     std::string_view methodName,
-                                                    const std::vector<Datum>& args) {
+                                                    std::span<const Datum> args) {
     if (!equalsIgnoreCase(methodName, "getAt") || args.size() < 2 ||
         (!args[0].isList() && !args[0].isPropList()) ||
         args[1].isString() || args[1].isSymbol()) {
@@ -6846,7 +7236,7 @@ std::optional<Datum> indexedCollectionSnapshotCount(ExecutionContext& context,
 }
 
 std::optional<Datum> fastListObjectCall(std::string_view methodName,
-                                        const std::vector<Datum>& args) {
+                                        std::span<const Datum> args) {
     if (args.empty()) {
         return std::nullopt;
     }
@@ -6930,7 +7320,7 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
             return Datum::voidValue();
         }
         if (equalsIgnoreCase(methodName, "duplicate")) {
-            return Datum::list(items, list.sorted()).deepCopy();
+            return list.deepCopyDatum();
         }
         if (equalsIgnoreCase(methodName, "getLast")) {
             return items.empty() ? Datum::voidValue() : items.back();
@@ -7021,14 +7411,21 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
     return std::nullopt;
 }
 
-std::optional<Datum> fastScriptInstanceObjectCall(std::string_view methodName, const std::vector<Datum>& args) {
+bool isFastScriptInstanceObjectMethod(ImmediateObjectMethod method) {
+    return method == ImmediateObjectMethod::Count ||
+           method == ImmediateObjectMethod::GetProp ||
+           method == ImmediateObjectMethod::GetPropRef ||
+           method == ImmediateObjectMethod::SetProp;
+}
+
+std::optional<Datum> fastScriptInstanceObjectCall(ImmediateObjectMethod method, std::span<const Datum> args) {
     if (args.size() < 2 || args.front().type() != DatumType::ScriptInstanceRef) {
         return std::nullopt;
     }
 
-    const bool isCount = equalsIgnoreCase(methodName, "count");
-    const bool isGetProp = equalsIgnoreCase(methodName, "getProp") || equalsIgnoreCase(methodName, "getPropRef");
-    const bool isSetProp = equalsIgnoreCase(methodName, "setProp");
+    const bool isCount = method == ImmediateObjectMethod::Count;
+    const bool isGetProp = method == ImmediateObjectMethod::GetProp || method == ImmediateObjectMethod::GetPropRef;
+    const bool isSetProp = method == ImmediateObjectMethod::SetProp;
     if (!isCount && !isGetProp && !isSetProp) {
         return std::nullopt;
     }
@@ -7039,15 +7436,14 @@ std::optional<Datum> fastScriptInstanceObjectCall(std::string_view methodName, c
     const std::string_view propName = keyNameLikeJavaView(args[1], propNameStorage);
 
     if (isCount) {
-        return scriptInstanceCountValue(util::getProperty(instance, propName));
+        return scriptInstancePropertyCountValue(instance, propName);
     }
 
     if (isGetProp) {
-        Datum localProp = util::getProperty(instance, propName);
         if (args.size() >= 3) {
-            return scriptInstanceNestedProperty(localProp, args[2]);
+            return scriptInstanceNestedPropertyValue(instance, propName, args[2]);
         }
-        return localProp;
+        return scriptInstancePropertyValue(instance, propName);
     }
 
     if (isSetProp) {
@@ -7068,25 +7464,34 @@ std::optional<Datum> fastScriptInstanceObjectCall(std::string_view methodName, c
     return std::nullopt;
 }
 
+std::optional<Datum> fastScriptInstanceObjectCall(std::string_view methodName, std::span<const Datum> args) {
+    return fastScriptInstanceObjectCall(classifyImmediateObjectMethod(methodName), args);
+}
+
+std::optional<Datum> fastScriptInstanceObjectCall(std::string_view methodName, const std::vector<Datum>& args) {
+    return fastScriptInstanceObjectCall(methodName, std::span<const Datum>(args));
+}
+
 bool executeObjCallWithArgs(ExecutionContext& context,
                             std::string_view methodName,
-                            const std::vector<Datum>& args,
+                            ImmediateObjectMethod method,
+                            std::span<const Datum> args,
                             bool noReturn) {
-    if (const auto snapshotResult = indexedCollectionSnapshotGetAt(context, methodName, args)) {
+    if (auto snapshotResult = indexedCollectionSnapshotGetAt(context, methodName, args)) {
         if (!noReturn) {
-            context.push(*snapshotResult);
+            context.push(std::move(*snapshotResult));
         }
         return true;
     }
-    if (const auto fastResult = fastListObjectCall(methodName, args)) {
+    if (auto fastResult = fastListObjectCall(methodName, args)) {
         if (!noReturn) {
-            context.push(*fastResult);
+            context.push(std::move(*fastResult));
         }
         return true;
     }
-    if (const auto fastResult = fastScriptInstanceObjectCall(methodName, args)) {
+    if (auto fastResult = fastScriptInstanceObjectCall(method, args)) {
         if (!noReturn) {
-            context.push(*fastResult);
+            context.push(std::move(*fastResult));
         }
         return true;
     }
@@ -7094,7 +7499,7 @@ bool executeObjCallWithArgs(ExecutionContext& context,
     Datum result = Datum::voidValue();
     if (target.type() == DatumType::ScriptInstanceRef) {
         const std::span<const Datum> methodArgs(args.data() + 1, args.size() - 1);
-        result = scriptInstanceObjectMethod(context, target, methodName, methodArgs);
+        result = scriptInstanceObjectMethod(context, target, methodName, method, methodArgs);
     } else {
         std::vector<Datum> methodArgsStorage;
         const std::vector<Datum>& methodArgs = args.size() <= 1 ? emptyDatumArgs() : methodArgsStorage;
@@ -7104,13 +7509,28 @@ bool executeObjCallWithArgs(ExecutionContext& context,
         result = dispatchObjectMethod(context, std::move(target), methodName, methodArgs);
     }
     if (!noReturn) {
-        context.push(result);
+        context.push(std::move(result));
     }
     return true;
 }
 
+bool executeObjCallWithArgs(ExecutionContext& context,
+                            std::string_view methodName,
+                            std::span<const Datum> args,
+                            bool noReturn) {
+    return executeObjCallWithArgs(context, methodName, classifyImmediateObjectMethod(methodName), args, noReturn);
+}
+
+bool executeObjCallWithArgs(ExecutionContext& context,
+                            std::string_view methodName,
+                            const std::vector<Datum>& args,
+                            bool noReturn) {
+    return executeObjCallWithArgs(context, methodName, std::span<const Datum>(args), noReturn);
+}
+
 bool tryImmediateFastObjCall(ExecutionContext& context,
                              std::string_view methodName,
+                             ImmediateObjectMethod method,
                              int argCount,
                              bool noReturn) {
     if (argCount <= 0 || context.scope().stackSize() < argCount) {
@@ -7119,7 +7539,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
 
     const Datum& target = context.peekRef(argCount - 1);
     if (target.isList()) {
-        if (argCount == 1 && equalsIgnoreCase(methodName, "count")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::Count) {
             const int count = target.listValue().count();
             context.scope().drop(argCount);
             if (!noReturn) {
@@ -7128,13 +7548,13 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "getAt")) {
+        if (argCount == 2 && method == ImmediateObjectMethod::GetAt) {
             const Datum& indexDatum = context.peekRef(0);
-            if (const auto snapshotResult =
+            if (auto snapshotResult =
                     indexedCollectionSnapshotGetAtDirect(context, methodName, target, indexDatum)) {
                 context.scope().drop(argCount);
                 if (!noReturn) {
-                    context.push(*snapshotResult);
+                    context.push(std::move(*snapshotResult));
                 }
                 return true;
             }
@@ -7142,12 +7562,12 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             if (indexDatum.isString() || indexDatum.isSymbol()) {
                 if (const auto* propList = singlePropListWrapper(target.listValue())) {
                     const int propIndex = propList->findTypedKey(indexDatum);
-                    const Datum result = propIndex >= 0
+                    Datum result = propIndex >= 0
                         ? propList->properties()[static_cast<std::size_t>(propIndex)].second
                         : Datum::voidValue();
                     context.scope().drop(argCount);
                     if (!noReturn) {
-                        context.push(result);
+                        context.push(std::move(result));
                     }
                     return true;
                 }
@@ -7159,35 +7579,35 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
                 throw LingoException("getAt: index " + std::to_string(index) +
                                      " out of range (list size: " + std::to_string(items.size()) + ")");
             }
-            const Datum result = items[static_cast<std::size_t>(index - 1)];
+            Datum result = items[static_cast<std::size_t>(index - 1)];
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 1 && equalsIgnoreCase(methodName, "getLast")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::GetLast) {
             const auto& items = target.listValue().items();
-            const Datum result = items.empty() ? Datum::voidValue() : items.back();
+            Datum result = items.empty() ? Datum::voidValue() : items.back();
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 1 && equalsIgnoreCase(methodName, "getFirst")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::GetFirst) {
             const auto& items = target.listValue().items();
-            const Datum result = items.empty() ? Datum::voidValue() : items.front();
+            Datum result = items.empty() ? Datum::voidValue() : items.front();
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 3 && equalsIgnoreCase(methodName, "setAt")) {
+        if (argCount == 3 && method == ImmediateObjectMethod::SetAt) {
             Datum value = context.pop();
             Datum indexDatum = context.pop();
             Datum mutableTarget = context.pop();
@@ -7215,7 +7635,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 3 && equalsIgnoreCase(methodName, "addAt")) {
+        if (argCount == 3 && method == ImmediateObjectMethod::AddAt) {
             Datum value = context.pop();
             const int rawIndex = toIntLikeJava(context.pop()) - 1;
             Datum mutableTarget = context.pop();
@@ -7233,7 +7653,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "deleteAt")) {
+        if (argCount == 2 && method == ImmediateObjectMethod::DeleteAt) {
             const int rawIndex = toIntLikeJava(context.pop()) - 1;
             Datum mutableTarget = context.pop();
             auto& items = mutableTarget.listValue().items();
@@ -7246,7 +7666,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 2 && (equalsIgnoreCase(methodName, "append") || equalsIgnoreCase(methodName, "add"))) {
+        if (argCount == 2 && (method == ImmediateObjectMethod::Append || method == ImmediateObjectMethod::Add)) {
             Datum value = context.pop();
             Datum mutableTarget = context.pop();
             mutableTarget.listValue().items().push_back(std::move(value));
@@ -7256,9 +7676,9 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 1 && equalsIgnoreCase(methodName, "duplicate")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::Duplicate) {
             const auto& list = target.listValue();
-            Datum result = Datum::list(list.items(), list.sorted()).deepCopy();
+            Datum result = list.deepCopyDatum();
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(std::move(result));
@@ -7268,7 +7688,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
     }
 
     if (target.isPropList()) {
-        if (argCount == 1 && equalsIgnoreCase(methodName, "count")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::Count) {
             const int count = target.propListValue().count();
             context.scope().drop(argCount);
             if (!noReturn) {
@@ -7278,37 +7698,40 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         }
 
         if (argCount == 2 &&
-            (equalsIgnoreCase(methodName, "getProp") || equalsIgnoreCase(methodName, "getPropRef") ||
-             equalsIgnoreCase(methodName, "getAProp") || equalsIgnoreCase(methodName, "getProperty"))) {
+            (method == ImmediateObjectMethod::GetProp || method == ImmediateObjectMethod::GetPropRef ||
+             method == ImmediateObjectMethod::GetAProp || method == ImmediateObjectMethod::GetProperty)) {
             const Datum& key = context.peekRef(0);
             std::string keyNameStorage;
             const int propIndex = target.propListValue().findUntypedKeyName(keyNameLikeJavaView(key, keyNameStorage));
-            const Datum result = propIndex >= 0
+            Datum result = propIndex >= 0
                 ? target.propListValue().properties()[static_cast<std::size_t>(propIndex)].second
                 : Datum::voidValue();
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "getAt") &&
-            (context.peekRef(0).isString() || context.peekRef(0).isSymbol())) {
+        if (argCount == 2 && method == ImmediateObjectMethod::GetAt) {
             const Datum& keyOrIndex = context.peekRef(0);
-            Datum result = Datum::voidValue();
-            const int propIndex = target.propListValue().findTypedKey(keyOrIndex);
-            if (propIndex >= 0) {
-                result = target.propListValue().properties()[static_cast<std::size_t>(propIndex)].second;
+            if (auto snapshotResult =
+                    indexedCollectionSnapshotGetAtDirect(context, methodName, target, keyOrIndex)) {
+                context.scope().drop(argCount);
+                if (!noReturn) {
+                    context.push(std::move(*snapshotResult));
+                }
+                return true;
             }
+            Datum result = propListObjectGetAtValue(target.propListValue(), keyOrIndex);
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 3 && equalsIgnoreCase(methodName, "setAt")) {
+        if (argCount == 3 && method == ImmediateObjectMethod::SetAt) {
             Datum value = context.pop();
             Datum keyOrIndex = context.pop();
             Datum mutableTarget = context.pop();
@@ -7327,7 +7750,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 3 && (equalsIgnoreCase(methodName, "setProp") || equalsIgnoreCase(methodName, "setAProp"))) {
+        if (argCount == 3 && (method == ImmediateObjectMethod::SetProp || method == ImmediateObjectMethod::SetAProp)) {
             Datum value = context.pop();
             Datum key = context.pop();
             Datum mutableTarget = context.pop();
@@ -7342,7 +7765,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
     if (target.type() == DatumType::ScriptInstanceRef) {
         Datum receiver = target;
         auto& instance = receiver.scriptInstanceValue();
-        if (argCount == 1 && equalsIgnoreCase(methodName, "count")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::Count) {
             const int count = static_cast<int>(static_cast<const Datum::ScriptInstanceRef&>(instance).properties().size()) +
                               (instance.ancestor() ? 1 : 0);
             context.scope().drop(argCount);
@@ -7352,53 +7775,51 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "count")) {
+        if (argCount == 2 && method == ImmediateObjectMethod::Count) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            const Datum result = scriptInstanceCountValue(util::getProperty(instance, propName));
+            Datum result = scriptInstancePropertyCountValue(instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if ((argCount == 2 || argCount == 3) && equalsIgnoreCase(methodName, "getAt")) {
+        if ((argCount == 2 || argCount == 3) && method == ImmediateObjectMethod::GetAt) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(argCount - 2), propNameStorage);
-            Datum result = util::getProperty(instance, propName);
-            if (argCount == 3) {
-                result = scriptInstanceNestedProperty(result, context.peekRef(0));
-            }
-            if (equalsIgnoreCase(propName, "ancestor") && result.isVoid()) {
+            Datum result = argCount == 3
+                ? scriptInstanceNestedPropertyValue(instance, propName, context.peekRef(0))
+                : scriptInstancePropertyValue(instance, propName);
+            if (argCount == 2 && equalsIgnoreCase(propName, "ancestor") && result.isVoid()) {
                 result = Datum::of(0);
             }
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "getAProp")) {
+        if (argCount == 2 && method == ImmediateObjectMethod::GetAProp) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            const Datum result = util::getProperty(instance, propName);
+            Datum result = scriptInstancePropertyValue(instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
 
         if ((argCount == 2 || argCount == 3) &&
-            (equalsIgnoreCase(methodName, "getProp") || equalsIgnoreCase(methodName, "getPropRef"))) {
+            (method == ImmediateObjectMethod::GetProp || method == ImmediateObjectMethod::GetPropRef)) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(argCount - 2), propNameStorage);
-            Datum result = util::getProperty(instance, propName);
-            if (argCount == 3) {
-                result = scriptInstanceNestedProperty(result, context.peekRef(0));
-            }
+            Datum result = argCount == 3
+                ? scriptInstanceNestedPropertyValue(instance, propName, context.peekRef(0))
+                : scriptInstancePropertyValue(instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(result);
@@ -7406,7 +7827,8 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if ((argCount == 3 || argCount == 4) && (equalsIgnoreCase(methodName, "setAt") || equalsIgnoreCase(methodName, "setAProp"))) {
+        if ((argCount == 3 || argCount == 4) &&
+            (method == ImmediateObjectMethod::SetAt || method == ImmediateObjectMethod::SetAProp)) {
             Datum value = context.pop();
             if (argCount == 3) {
                 std::string propNameStorage;
@@ -7432,7 +7854,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if ((argCount == 3 || argCount == 4) && equalsIgnoreCase(methodName, "setProp")) {
+        if ((argCount == 3 || argCount == 4) && method == ImmediateObjectMethod::SetProp) {
             Datum value = context.pop();
             if (argCount == 3) {
                 std::string propNameStorage;
@@ -7458,7 +7880,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 3 && equalsIgnoreCase(methodName, "addProp")) {
+        if (argCount == 3 && method == ImmediateObjectMethod::AddProp) {
             Datum value = context.pop();
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
@@ -7470,7 +7892,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 2 && equalsIgnoreCase(methodName, "deleteProp")) {
+        if (argCount == 2 && method == ImmediateObjectMethod::DeleteProp) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
             scriptInstanceDeleteLocalProperty(instance, propName);
@@ -7481,7 +7903,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 1 && equalsIgnoreCase(methodName, "ilk")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::Ilk) {
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(Datum::symbol("instance"));
@@ -7489,7 +7911,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             return true;
         }
 
-        if (argCount == 1 && equalsIgnoreCase(methodName, "addAt")) {
+        if (argCount == 1 && method == ImmediateObjectMethod::AddAt) {
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(Datum::voidValue());
@@ -7500,8 +7922,8 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
 
     if (target.isString() &&
         (argCount == 3 || argCount == 4) &&
-        (equalsIgnoreCase(methodName, "getProp") || equalsIgnoreCase(methodName, "getPropRef"))) {
-        const bool getPropRef = equalsIgnoreCase(methodName, "getPropRef");
+        (method == ImmediateObjectMethod::GetProp || method == ImmediateObjectMethod::GetPropRef)) {
+        const bool getPropRef = method == ImmediateObjectMethod::GetPropRef;
         std::string chunkNameStorage;
         const std::string_view chunkName = keyNameLikeJavaView(context.peekRef(argCount - 2), chunkNameStorage);
         const auto chunkType = stringChunkTypeByNameNoThrow(chunkName);
@@ -7534,7 +7956,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         return true;
     }
 
-    if (target.isString() && argCount == 2 && equalsIgnoreCase(methodName, "count")) {
+    if (target.isString() && argCount == 2 && method == ImmediateObjectMethod::Count) {
         std::string chunkNameStorage;
         const std::string_view chunkName = keyNameLikeJavaView(context.peekRef(0), chunkNameStorage);
         const auto chunkType = stringChunkTypeByNameNoThrow(chunkName);
@@ -7585,11 +8007,40 @@ bool tryImmediateObjCall(ExecutionContext& context, bool noReturn) {
     scope.setBytecodeIndex(nextIndex);
     context.setInstruction(next);
     const std::string& methodName = context.resolveNameRef(next.argument);
-    if (tryImmediateFastObjCall(context, methodName, argCount, noReturn)) {
+    const ImmediateObjectMethod method = classifyImmediateObjectMethod(methodName);
+    if (tryImmediateFastObjCall(context, methodName, method, argCount, noReturn)) {
         return true;
     }
+    if (argCount >= 2 && argCount <= 4 &&
+        isFastScriptInstanceObjectMethod(method) &&
+        context.peekRef(argCount - 1).type() == DatumType::ScriptInstanceRef) {
+        std::array<Datum, 4> argsStorage{};
+        for (int index = argCount - 1; index >= 0; --index) {
+            argsStorage[static_cast<std::size_t>(index)] = context.pop();
+        }
+        const std::span<const Datum> args(argsStorage.data(), static_cast<std::size_t>(argCount));
+        if (auto fastResult = fastScriptInstanceObjectCall(method, args)) {
+            if (!noReturn) {
+                context.push(std::move(*fastResult));
+            }
+            return true;
+        }
+        return executeObjCallWithArgs(context, methodName, method, args, noReturn);
+    }
+    if (argCount >= 0 && argCount <= 8) {
+        std::array<Datum, 8> argsStorage{};
+        for (int index = argCount - 1; index >= 0; --index) {
+            argsStorage[static_cast<std::size_t>(index)] = context.pop();
+        }
+        return executeObjCallWithArgs(context,
+                                      methodName,
+                                      method,
+                                      std::span<const Datum>(argsStorage.data(), static_cast<std::size_t>(argCount)),
+                                      noReturn);
+    }
+
     std::vector<Datum> args = context.popArgs(argCount);
-    return executeObjCallWithArgs(context, methodName, args, noReturn);
+    return executeObjCallWithArgs(context, methodName, method, args, noReturn);
 }
 
 bool executeExtCallWithArgs(ExecutionContext& context,
@@ -7636,7 +8087,58 @@ bool executeExtCallWithArgs(ExecutionContext& context,
     }
 
     if (!noReturn) {
-        context.push(result);
+        context.push(std::move(result));
+    }
+    return true;
+}
+
+bool tryImmediateCallBuiltin(ExecutionContext& context,
+                             std::string_view handlerName,
+                             int argCount,
+                             int nextIndex,
+                             const chunks::ScriptChunk::Instruction& nextInstruction,
+                             bool noReturn) {
+    if (!equalsIgnoreCase(handlerName, "call") || argCount < 2) {
+        return false;
+    }
+    auto* builtinContext = context.builtinContext();
+    if (builtinContext == nullptr || !builtinContext->callTargetHandler) {
+        return false;
+    }
+
+    const Datum& handlerDatum = context.peekRef(argCount - 1);
+    const std::string targetHandlerName = handlerDatum.asSymbol() != nullptr ? handlerDatum.asSymbol()->name
+                                                                             : toStringLikeJava(handlerDatum);
+    const Datum& targetRef = context.peekRef(argCount - 2);
+    std::vector<Datum> callArgs = snapshotCallArgsFromStack(context, argCount);
+    Datum lastResult = Datum::voidValue();
+    context.scope().setBytecodeIndex(nextIndex);
+    context.setInstruction(nextInstruction);
+
+    if (targetRef.isList()) {
+        std::vector<Datum> snapshot = targetRef.listValue().items();
+        context.scope().drop(argCount);
+        for (const auto& item : snapshot) {
+            lastResult = builtinContext->callTargetHandler(item, targetHandlerName, callArgs);
+        }
+    } else if (targetRef.isPropList()) {
+        std::vector<Datum> snapshot;
+        snapshot.reserve(targetRef.propListValue().properties().size());
+        for (const auto& entry : targetRef.propListValue().properties()) {
+            snapshot.push_back(entry.second);
+        }
+        context.scope().drop(argCount);
+        for (const auto& item : snapshot) {
+            lastResult = builtinContext->callTargetHandler(item, targetHandlerName, callArgs);
+        }
+    } else {
+        Datum target = targetRef;
+        context.scope().drop(argCount);
+        lastResult = builtinContext->callTargetHandler(target, targetHandlerName, callArgs);
+    }
+
+    if (!noReturn) {
+        context.push(std::move(lastResult));
     }
     return true;
 }
@@ -7660,13 +8162,42 @@ bool tryImmediateExtCall(ExecutionContext& context, bool noReturn) {
     }
 
     const std::string& handlerName = context.resolveNameRef(next.argument);
+    const int argCount = context.argument();
+    if (tryImmediateCallBuiltin(context, handlerName, argCount, nextIndex, next, noReturn)) {
+        return true;
+    }
     if (tryImmediatePrimitiveExtCall(context, handlerName, context.argument(), noReturn)) {
         scope.setBytecodeIndex(nextIndex);
         context.setInstruction(next);
         return true;
     }
 
-    std::vector<Datum> args = context.popArgs(context.argument());
+    if (argCount >= 0 && argCount <= 8 &&
+        !equalsIgnoreCase(handlerName, "return") &&
+        !equalsIgnoreCase(handlerName, "voidp") &&
+        !equalsIgnoreCase(handlerName, "new")) {
+        if (const auto handler = context.findHandler(handlerName);
+            handler.has_value() && handler->script != nullptr &&
+            handler->scriptType != chunks::ScriptChunkType::Parent) {
+            std::array<Datum, 8> argsStorage{};
+            for (int index = argCount - 1; index >= 0; --index) {
+                argsStorage[static_cast<std::size_t>(index)] = context.pop();
+            }
+            scope.setBytecodeIndex(nextIndex);
+            context.setInstruction(next);
+            Datum result = safeExecuteHandler(context,
+                                              *handler,
+                                              std::span<const Datum>(argsStorage.data(),
+                                                                     static_cast<std::size_t>(argCount)),
+                                              Datum::voidValue());
+            if (!noReturn) {
+                context.push(std::move(result));
+            }
+            return true;
+        }
+    }
+
+    std::vector<Datum> args = context.popArgs(argCount);
     scope.setBytecodeIndex(nextIndex);
     context.setInstruction(next);
     return executeExtCallWithArgs(context, handlerName, args, noReturn);
@@ -7808,6 +8339,7 @@ OpcodeRegistry::OpcodeRegistry() {
     ListOpcodes::registerHandlers(*this);
     CallOpcodes::registerHandlers(*this);
     PropertyOpcodes::registerHandlers(*this);
+    defaultRawHandlers_ = rawHandlers_;
 }
 
 const OpcodeHandler* OpcodeRegistry::get(Opcode opcode) const {
@@ -7818,18 +8350,42 @@ const OpcodeHandler* OpcodeRegistry::get(Opcode opcode) const {
     return &handlers_[index];
 }
 
+OpcodeHandlerFn OpcodeRegistry::getRaw(Opcode opcode) const {
+    const auto index = static_cast<std::size_t>(code(opcode));
+    return index < rawHandlers_.size() ? rawHandlers_[index] : nullptr;
+}
+
+bool OpcodeRegistry::isDefaultRawHandler(Opcode opcode) const {
+    const auto index = static_cast<std::size_t>(code(opcode));
+    return index < rawHandlers_.size() &&
+           rawHandlers_[index] != nullptr &&
+           rawHandlers_[index] == defaultRawHandlers_[index];
+}
+
 bool OpcodeRegistry::hasHandler(Opcode opcode) const {
-    return get(opcode) != nullptr;
+    return getRaw(opcode) != nullptr || get(opcode) != nullptr;
 }
 
 bool OpcodeRegistry::execute(Opcode opcode, ExecutionContext& context) const {
+    if (const auto handler = getRaw(opcode)) {
+        return handler(context);
+    }
     const auto* handler = get(opcode);
     return handler != nullptr && (*handler)(context);
 }
 
-void OpcodeRegistry::registerHandler(Opcode opcode, OpcodeHandler handler) {
+void OpcodeRegistry::registerHandler(Opcode opcode, OpcodeHandlerFn handler) {
     const auto index = static_cast<std::size_t>(code(opcode));
     if (index < handlers_.size()) {
+        rawHandlers_[index] = handler;
+        handlers_[index] = handler;
+    }
+}
+
+void OpcodeRegistry::registerFunctionHandler(Opcode opcode, OpcodeHandler handler) {
+    const auto index = static_cast<std::size_t>(code(opcode));
+    if (index < handlers_.size()) {
+        rawHandlers_[index] = nullptr;
         handlers_[index] = handler;
     }
 }

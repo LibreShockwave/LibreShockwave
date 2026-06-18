@@ -10,6 +10,8 @@ namespace libreshockwave::lingo::vm::util {
 inline constexpr int MAX_ANCESTOR_DEPTH = 100;
 
 [[nodiscard]] Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName);
+[[nodiscard]] const Datum* findPropertyValue(const Datum::ScriptInstanceRef& instance,
+                                             std::string_view propName);
 [[nodiscard]] bool hasProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName);
 [[nodiscard]] Datum::ScriptInstanceRef* findOwner(Datum::ScriptInstanceRef& instance, std::string_view propName);
 [[nodiscard]] const Datum::ScriptInstanceRef* findOwner(const Datum::ScriptInstanceRef& instance,

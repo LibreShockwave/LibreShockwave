@@ -670,6 +670,7 @@ void LingoVM::invalidateHandlerCache() {
     handlerCache_.clear();
     missingHandlerCache_.clear();
     handlerMetadataCache_.clear();
+    resolvedNameCache_.clear();
     builtinContext_.scriptPropertyNamesCache.clear();
 }
 
@@ -720,6 +721,12 @@ Datum LingoVM::executeHandler(const chunks::ScriptChunk& script,
 
 Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
                               const std::vector<Datum>& args,
+                              const Datum& receiver) {
+    return executeHandler(handlerRef, std::span<const Datum>(args), receiver);
+}
+
+Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
+                              std::span<const Datum> args,
                               const Datum& receiver) {
     if (inErrorState_) {
         return Datum::voidValue();
@@ -780,7 +787,8 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         throw LingoException("Call stack overflow (max " + std::to_string(MAX_CALL_STACK_DEPTH) + " frames)");
     }
     if (tracedHandlers_.contains(normalizedHandlerName)) {
-        emitTracedHandlerCall(currentHandlerName, script, args);
+        const std::vector<Datum> traceArgs(args.begin(), args.end());
+        emitTracedHandlerCall(currentHandlerName, script, traceArgs);
     }
 
     std::vector<Datum> effectiveArgs;
@@ -791,13 +799,13 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         effectiveArgs.push_back(receiver);
         effectiveArgs.insert(effectiveArgs.end(), args.begin(), args.end());
     } else {
-        effectiveArgs = args;
+        effectiveArgs.assign(args.begin(), args.end());
     }
 
     if (callStack_.empty()) {
         builtinContext_.aliasRefreshRegistryIds.clear();
-        builtinContext_.registryMemberSlotCache.clear();
         builtinContext_.scriptInstanceHandlerCache.clear();
+        builtinContext_.directScriptInstanceHandlerCache.clear();
     }
 
     callStack_.emplace_back(&script,
@@ -815,7 +823,9 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     std::optional<TraceListener::HandlerInfo> handlerInfo;
     bool alertHookDepthIncremented = false;
     const bool emitSlowHandlerWarnings = static_cast<bool>(builtinContext_.outputHandler);
-    const std::int64_t handlerStartTime = emitSlowHandlerWarnings ? currentTimeMillis() : 0;
+    const bool needsSafepointTime = gcCallback_ || handlerTimeoutMs_ > 0 || tickDeadline_ > 0;
+    const std::int64_t handlerStartTime =
+        (emitSlowHandlerWarnings || needsSafepointTime) ? currentTimeMillis() : 0;
     int executedSteps = 0;
     if (isAlertHookHandler) {
         alertHookHandler_.incrementDepth();
@@ -851,7 +861,8 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     try {
         const bool traceHandler = traceEnabled_ || (traceListener_ && traceListener_->needsHandlerTrace());
         if (traceHandler) {
-            handlerInfo = buildHandlerInfo(script, handler, args, receiver, fileOwner, scriptNamesOwner);
+            const std::vector<Datum> traceArgs(args.begin(), args.end());
+            handlerInfo = buildHandlerInfo(script, handler, traceArgs, receiver, fileOwner, scriptNamesOwner);
             if (traceEnabled_) {
                 emitConsoleHandlerEnter(*handlerInfo);
             }
@@ -871,7 +882,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
                                      std::move(callbacks),
                                      variableMultiplierForScript(script),
                                      traceInstruction);
-            const std::int64_t startTime = currentTimeMillis();
+            const std::int64_t startTime = needsSafepointTime ? handlerStartTime : 0;
             std::int64_t lastGcTime = startTime;
             while (scope.hasMoreInstructions() && !scope.returned()) {
                 ++executedSteps;
@@ -971,16 +982,10 @@ ExecutionContext::Callbacks LingoVM::callbacksFor(
     callbacks.handlerFinder = [this](std::string_view name) {
         return findHandler(name);
     };
-    callbacks.handlerRefExecutor = [this](const HandlerRef& handler,
-                                          const std::vector<Datum>& args,
-                                          const Datum& receiver) {
+    callbacks.handlerRefSpanExecutor = [this](const HandlerRef& handler,
+                                              std::span<const Datum> args,
+                                              const Datum& receiver) {
         return executeHandler(handler, args, receiver);
-    };
-    callbacks.handlerExecutor = [this](const chunks::ScriptChunk& targetScript,
-                                       const chunks::ScriptChunk::Handler& targetHandler,
-                                       const std::vector<Datum>& args,
-                                       const Datum& receiver) {
-        return executeHandler(targetScript, targetHandler, args, receiver);
     };
     callbacks.globalGetter = [this](std::string_view name) {
         return getGlobal(name);
@@ -1080,8 +1085,14 @@ std::string LingoVM::resolveName(const chunks::ScriptChunk& script,
                                  int nameId,
                                  const std::shared_ptr<const DirectorFile>& fileOwner,
                                  const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner) const {
+    const ResolvedNameKey key{&script, fileOwner.get(), scriptNamesOwner.get(), nameId};
+    if (const auto found = resolvedNameCache_.find(key); found != resolvedNameCache_.end()) {
+        return found->second;
+    }
     const auto names = scriptNamesForScript(script, fileOwner, scriptNamesOwner);
-    return script.resolveName(nameId, names.get());
+    std::string resolved = script.resolveName(nameId, names.get());
+    auto [inserted, _] = resolvedNameCache_.emplace(key, std::move(resolved));
+    return inserted->second;
 }
 
 std::string LingoVM::handlerName(const chunks::ScriptChunk& script,
@@ -1259,13 +1270,64 @@ void LingoVM::executeInstruction(Scope& scope, ExecutionContext& context, bool t
         }
     }
 
+    context.setInstruction(*instruction);
+    if (opcodeRegistry_.isDefaultRawHandler(instruction->opcode)) {
+        const int variableMultiplier = context.variableMultiplier();
+        auto scaledArgument = [&] {
+            if (variableMultiplier == 1) {
+                return instruction->argument;
+            }
+            if (variableMultiplier == 8) {
+                return instruction->argument / 8;
+            }
+            return instruction->argument / variableMultiplier;
+        };
+        switch (instruction->opcode) {
+            case Opcode::GET_LOCAL:
+                scope.pushLocal(scaledArgument());
+                scope.advanceBytecodeIndex();
+                return;
+            case Opcode::GET_PARAM:
+                scope.pushParam(scaledArgument());
+                scope.advanceBytecodeIndex();
+                return;
+            case Opcode::SET_LOCAL:
+                context.setLocal(scaledArgument(), context.pop());
+                scope.advanceBytecodeIndex();
+                return;
+            case Opcode::SET_PARAM:
+                context.setParam(scaledArgument(), context.pop());
+                scope.advanceBytecodeIndex();
+                return;
+            case Opcode::PUSH_ZERO:
+                scope.push(Datum::of(0));
+                scope.advanceBytecodeIndex();
+                return;
+            case Opcode::PUSH_INT8:
+            case Opcode::PUSH_INT16:
+            case Opcode::PUSH_INT32:
+                scope.push(Datum::of(instruction->argument));
+                scope.advanceBytecodeIndex();
+                return;
+            default:
+                break;
+        }
+    }
+
+    if (const auto handler = opcodeRegistry_.getRaw(instruction->opcode)) {
+        const bool advance = handler(context);
+        if (advance) {
+            scope.advanceBytecodeIndex();
+        }
+        return;
+    }
+
     const auto* handler = opcodeRegistry_.get(instruction->opcode);
     if (handler == nullptr) {
         scope.advanceBytecodeIndex();
         return;
     }
 
-    context.setInstruction(*instruction);
     const bool advance = (*handler)(context);
     if (advance) {
         scope.advanceBytecodeIndex();

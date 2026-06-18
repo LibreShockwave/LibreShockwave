@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "libreshockwave/chunks/ScriptChunk.hpp"
@@ -47,32 +49,104 @@ public:
     [[nodiscard]] Datum displayArgument(int index) const;
     [[nodiscard]] const Datum& receiver() const;
 
-    [[nodiscard]] int bytecodeIndex() const;
-    void setBytecodeIndex(int index);
-    void advanceBytecodeIndex();
-    [[nodiscard]] bool hasMoreInstructions() const;
-    [[nodiscard]] const chunks::ScriptChunk::Instruction* currentInstruction() const;
+    [[nodiscard]] int bytecodeIndex() const { return bytecodeIndex_; }
+    void setBytecodeIndex(int index) { bytecodeIndex_ = index; }
+    void advanceBytecodeIndex() { ++bytecodeIndex_; }
+    [[nodiscard]] bool hasMoreInstructions() const {
+        return handler_ != nullptr && bytecodeIndex_ >= 0 &&
+               bytecodeIndex_ < static_cast<int>(handler_->instructions.size());
+    }
+    [[nodiscard]] const chunks::ScriptChunk::Instruction* currentInstruction() const {
+        if (!hasMoreInstructions()) {
+            return nullptr;
+        }
+        return &handler_->instructions[static_cast<std::size_t>(bytecodeIndex_)];
+    }
 
-    void push(Datum value);
-    [[nodiscard]] Datum pop();
-    [[nodiscard]] Datum peek() const;
-    [[nodiscard]] Datum peek(int depth) const;
-    [[nodiscard]] const Datum& peekRef(int depth = 0) const;
-    [[nodiscard]] int stackSize() const;
-    void swap();
-    void replaceTop(Datum value);
-    void replaceTopTwo(Datum value);
-    void drop(int count);
+    void push(Datum value) { stack_.push_back(std::move(value)); }
+    [[nodiscard]] Datum pop() {
+        if (stack_.empty()) {
+            return Datum::voidValue();
+        }
+        Datum value = std::move(stack_.back());
+        stack_.pop_back();
+        return value;
+    }
+    [[nodiscard]] Datum peek() const { return peek(0); }
+    [[nodiscard]] Datum peek(int depth) const {
+        const int index = static_cast<int>(stack_.size()) - 1 - depth;
+        if (index < 0 || index >= static_cast<int>(stack_.size())) {
+            return Datum::voidValue();
+        }
+        return stack_[static_cast<std::size_t>(index)];
+    }
+    [[nodiscard]] const Datum& peekRef(int depth = 0) const {
+        static const Datum empty = Datum::voidValue();
+        const int index = static_cast<int>(stack_.size()) - 1 - depth;
+        if (index < 0 || index >= static_cast<int>(stack_.size())) {
+            return empty;
+        }
+        return stack_[static_cast<std::size_t>(index)];
+    }
+    [[nodiscard]] int stackSize() const { return static_cast<int>(stack_.size()); }
+    void swap() {
+        if (stack_.size() >= 2) {
+            std::iter_swap(stack_.end() - 1, stack_.end() - 2);
+        }
+    }
+    void replaceTop(Datum value) {
+        if (stack_.empty()) {
+            push(std::move(value));
+            return;
+        }
+        stack_.back() = std::move(value);
+    }
+    void replaceTopTwo(Datum value) {
+        if (stack_.size() >= 2) {
+            stack_[stack_.size() - 2] = std::move(value);
+            stack_.pop_back();
+            return;
+        }
+        stack_.clear();
+        push(std::move(value));
+    }
+    void drop(int count) {
+        if (count <= 0 || stack_.empty()) {
+            return;
+        }
+        const auto newSize = static_cast<std::size_t>(std::max(0, static_cast<int>(stack_.size()) - count));
+        stack_.resize(newSize);
+    }
 
     [[nodiscard]] Datum getParam(int index) const;
+    void pushParam(int index);
     void setParam(int index, Datum value);
-    [[nodiscard]] Datum getLocal(int index) const;
-    void setLocal(int index, Datum value);
+    [[nodiscard]] Datum getLocal(int index) const {
+        if (index >= 0 && index < static_cast<int>(locals_.size())) {
+            return locals_[static_cast<std::size_t>(index)];
+        }
+        return Datum::voidValue();
+    }
+    void pushLocal(int index) {
+        if (index >= 0 && index < static_cast<int>(locals_.size())) {
+            pushCopy(locals_[static_cast<std::size_t>(index)]);
+            return;
+        }
+        push(Datum::voidValue());
+    }
+    void setLocal(int index, Datum value) {
+        if (index >= 0 && index < static_cast<int>(locals_.size())) {
+            locals_[static_cast<std::size_t>(index)] = std::move(value);
+        }
+    }
 
-    [[nodiscard]] bool returned() const;
-    void setReturned(bool returned);
-    [[nodiscard]] Datum returnValue() const;
-    void setReturnValue(Datum value);
+    [[nodiscard]] bool returned() const { return returned_; }
+    void setReturned(bool returned) { returned_ = returned; }
+    [[nodiscard]] Datum returnValue() const { return returnValue_; }
+    void setReturnValue(Datum value) {
+        returnValue_ = std::move(value);
+        returned_ = true;
+    }
 
     void pushLoopReturnIndex(int index);
     [[nodiscard]] int popLoopReturnIndex();
@@ -97,6 +171,25 @@ private:
 
     [[nodiscard]] int paramOffset() const;
     [[nodiscard]] int displayArgumentOffset() const;
+    void pushCopy(const Datum& value) {
+        if (const auto* intValue = value.asInt()) {
+            push(Datum::of(intValue->value));
+            return;
+        }
+        if (const auto* floatValue = value.asFloat()) {
+            push(Datum::of(floatValue->value));
+            return;
+        }
+        if (value.isVoid()) {
+            push(Datum::voidValue());
+            return;
+        }
+        if (value.isNull()) {
+            push(Datum::nullValue());
+            return;
+        }
+        push(value);
+    }
     [[nodiscard]] IndexedCollectionSnapshot& indexedCollectionSnapshot(int loopHeaderIndex,
                                                                        const void* collectionIdentity,
                                                                        const Datum& collection);
