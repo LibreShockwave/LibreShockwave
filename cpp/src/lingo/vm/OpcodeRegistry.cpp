@@ -6366,21 +6366,18 @@ bool localCall(ExecutionContext& context) {
     const Datum argListDatum = context.pop();
     const bool noReturn = isNoReturnArgList(argListDatum);
     std::vector<Datum> argStorage;
-    const std::vector<Datum>* args = &argListItemsRef(argListDatum, argStorage);
-    std::vector<Datum> adjustedArgs;
+    const std::vector<Datum>& argItems = argListItemsRef(argListDatum, argStorage);
+    std::span<const Datum> args(argItems);
     Datum receiver = context.scope().receiver();
-    if (!receiver.isVoid() && !receiver.isNull() && !args->empty() && args->front() == receiver) {
+    if (!receiver.isVoid() && !receiver.isNull() && !args.empty() && args.front() == receiver) {
         bool handlerDeclaresMe = false;
         if (!targetHandler->argNameIds.empty()) {
             handlerDeclaresMe = equalsIgnoreCase(context.resolveNameRef(targetHandler->argNameIds.front()), "me");
         }
-        if (handlerDeclaresMe) {
-            adjustedArgs.assign(args->begin() + 1, args->end());
-        } else {
-            receiver = args->front();
-            adjustedArgs.assign(args->begin() + 1, args->end());
+        if (!handlerDeclaresMe) {
+            receiver = args.front();
         }
-        args = &adjustedArgs;
+        args = args.subspan(1);
     }
 
     Datum result = safeExecuteHandler(
@@ -6392,7 +6389,7 @@ bool localCall(ExecutionContext& context) {
             context.scope().fileOwner(),
             context.scope().scriptNamesOwner()
         },
-        *args,
+        args,
         receiver);
     if (!noReturn) {
         context.push(std::move(result));
