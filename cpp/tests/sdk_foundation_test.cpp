@@ -17624,6 +17624,42 @@ void testSpriteBakerFoundation() {
     assert(bakedLiveDarken.bakedBitmap()->getPixel(1, 0) == 0xFF503810U);
     assert(bakedLiveDarken.bakedBitmap()->getPixel(2, 0) == 0x00000000U);
 
+    auto indexedLiveDarkenBitmap = std::make_shared<Bitmap>(3, 1, 8, std::vector<std::uint32_t>{
+        0xFFFFFFFFU,
+        0xFF808080U,
+        0xFFFFFFFFU
+    });
+    indexedLiveDarkenBitmap->setPaletteIndices({0, 127, 0});
+    indexedLiveDarkenBitmap->markScriptModified();
+    SpriteBaker indexedLiveDarkenBaker;
+    indexedLiveDarkenBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return indexedLiveDarkenBitmap;
+    });
+    RenderSprite indexedLiveDarkenSprite(13,
+                                         0,
+                                         0,
+                                         3,
+                                         1,
+                                         0,
+                                         true,
+                                         SpriteType::Bitmap,
+                                         nullptr,
+                                         nullptr,
+                                         0,
+                                         0xA07020,
+                                         false,
+                                         true,
+                                         libreshockwave::id::code(InkMode::DARKEN),
+                                         100,
+                                         false,
+                                         false,
+                                         nullptr,
+                                         false);
+    auto bakedIndexedLiveDarken = indexedLiveDarkenBaker.bake(indexedLiveDarkenSprite);
+    assert(bakedIndexedLiveDarken.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedIndexedLiveDarken.bakedBitmap()->getPixel(1, 0) == 0xFF503810U);
+    assert(bakedIndexedLiveDarken.bakedBitmap()->getPixel(2, 0) == 0x00000000U);
+
     auto authoredDarkenMember = std::make_shared<CastMemberChunk>(nullptr,
                                                                   ChunkId(805),
                                                                   MemberType::Bitmap,
