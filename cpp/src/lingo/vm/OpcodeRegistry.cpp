@@ -649,8 +649,10 @@ bool lingoEquals(const Datum& a, const Datum& b) {
         return toDoubleLikeJava(a) == toDoubleLikeJava(b);
     }
     if ((a.isString() || a.isSymbol()) && (b.isString() || b.isSymbol())) {
-        const auto lhs = a.stringValue();
-        const auto rhs = b.stringValue();
+        std::string lhsStorage;
+        std::string rhsStorage;
+        const std::string_view lhs = stringViewLikeJava(a, lhsStorage);
+        const std::string_view rhs = stringViewLikeJava(b, rhsStorage);
         return equalsIgnoreCase(lhs, rhs) ||
                ((equalsIgnoreCase(lhs, "field") && equalsIgnoreCase(rhs, "text")) ||
                 (equalsIgnoreCase(lhs, "text") && equalsIgnoreCase(rhs, "field")));
