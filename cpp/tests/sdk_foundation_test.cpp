@@ -1910,13 +1910,13 @@ void testLingoDecompilerNodeFoundation() {
     block.addChild(std::make_unique<AssignmentStmtNode>(
         std::make_unique<VarNode>("x"),
         std::make_unique<LiteralNode>(1)));
-    assert(block.toLingo(true) == "  x = 1\n\n");
+    assert(block.toLingo(true) == "  x = 1\n");
 
     HandlerNode handler("demo", {"arg1", "arg2"}, {"gOne"});
     handler.block().addChild(std::make_unique<AssignmentStmtNode>(
         std::make_unique<VarNode>("x"),
         std::make_unique<LiteralNode>(1)));
-    assert(handler.toLingo(true) == "on demo arg1, arg2\n  global gOne\n  x = 1\n\nend");
+    assert(handler.toLingo(true) == "on demo arg1, arg2\n  global gOne\n  x = 1\nend");
 
     ScriptNamesChunk scriptNames(nullptr,
                                  ChunkId(501),
@@ -1997,9 +1997,9 @@ void testLingoDecompilerNodeFoundation() {
     const auto handlerSource = decompiler.decompileHandler(script.handlers().front(), script, &scriptNames);
     assert(handlerSource ==
            "on prepareMovie argOne\n"
-           "  pFlag = 7\n\n"
-           "  localOne = argOne + 3\n\n"
-           "  doThing(9)\n\n"
+           "  pFlag = 7\n"
+           "  localOne = argOne + 3\n"
+           "  doThing(9)\n"
            "end");
     const auto handlerBytecode = decompiler.formatHandlerBytecodeOnly(script.handlers().front(), &scriptNames);
     assert(handlerBytecode ==
@@ -2016,14 +2016,14 @@ void testLingoDecompilerNodeFoundation() {
            "  [0017] ret             \n"
            "end\n");
     assert(decompiler.decompile(script, &scriptNames) ==
-           "-- Movie Script\n\n"
-           "property pFlag\n\n"
+           "-- Movie Script\n"
+           "property pFlag\n"
            "global gFlag\n\n"
            "on prepareMovie argOne\n"
-           "  pFlag = 7\n\n"
-           "  localOne = argOne + 3\n\n"
-           "  doThing(9)\n\n"
-           "end\n");
+           "  pFlag = 7\n"
+           "  localOne = argOne + 3\n"
+           "  doThing(9)\n"
+           "end");
     const auto bytecodeMapping = decompiler.decompileHandlerWithMapping(script.handlers().front(), script, &scriptNames);
     assert(bytecodeMapping.toText() ==
            "on prepareMovie argOne\n"
@@ -2067,7 +2067,7 @@ void testLingoDecompilerNodeFoundation() {
                                      {});
     assert(decompiler.decompileHandler(unknownLiteralScript.handlers().front(), unknownLiteralScript, &scriptNames) ==
            "on literalOps\n"
-           "  localOne = \"[bytes:3]\"\n\n"
+           "  localOne = \"[bytes:3]\"\n"
            "end");
 
     ScriptChunk::Handler jsHandler{
@@ -2099,7 +2099,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(jsScript.handlers().front(), jsScript, &scriptNames) ==
            "on jsOps\n"
            "  -- @js\n"
-           "  window.alert('ok')\n\n"
+           "  window.alert('ok')\n"
            "end");
     const auto jsMapping = decompiler.decompileHandlerWithMapping(jsScript.handlers().front(),
                                                                   jsScript,
@@ -2198,12 +2198,12 @@ void testLingoDecompilerNodeFoundation() {
                             {});
     assert(decompiler.decompileHandler(chunkScript.handlers().front(), chunkScript, &scriptNames) ==
            "on chunkOps\n"
-           "  localOne = field(5)\n\n"
-           "  localOne = the member of sprite 2\n\n"
-           "  localOne = word 2 to 3 of fieldRef\n\n"
-           "  put \"Hi\" into fieldRef\n\n"
-           "  put \"!\" after char 1 to 2 of fieldRef\n\n"
-           "  delete line 4 of fieldRef\n\n"
+           "  localOne = field(5)\n"
+           "  localOne = the member of sprite 2\n"
+           "  localOne = word 2 to 3 of fieldRef\n"
+           "  put \"Hi\" into fieldRef\n"
+           "  put \"!\" after char 1 to 2 of fieldRef\n"
+           "  delete line 4 of fieldRef\n"
            "end");
     const auto chunkMapping = decompiler.decompileHandlerWithMapping(chunkScript.handlers().front(),
                                                                      chunkScript,
@@ -2300,16 +2300,16 @@ void testLingoDecompilerNodeFoundation() {
                              {});
     assert(decompiler.decompileHandler(objectScript.handlers().front(), objectScript, &scriptNames) ==
            "on objOps\n"
-           "  localOne = fieldRef[2]\n\n"
-           "  fieldRef[2] = 99\n\n"
-           "  localOne = fieldRef.propName[1..3]\n\n"
-           "  fieldRef.propName[1..3] = 44\n\n"
-           "  localOne = fieldRef.propName.count\n\n"
-           "  put \"Tail\" after fieldRef\n\n"
-           "  hilite fieldRef\n\n"
-           "  delete fieldRef\n\n"
-           "  fieldRef.doObj(5)\n\n"
-           "  fieldRef(propName, 8)\n\n"
+           "  localOne = fieldRef[2]\n"
+           "  fieldRef[2] = 99\n"
+           "  localOne = fieldRef.propName[1..3]\n"
+           "  fieldRef.propName[1..3] = 44\n"
+           "  localOne = fieldRef.propName.count\n"
+           "  put \"Tail\" after fieldRef\n"
+           "  hilite fieldRef\n"
+           "  delete fieldRef\n"
+           "  fieldRef.doObj(5)\n"
+           "  fieldRef(propName, 8)\n"
            "end");
     const auto objectMapping = decompiler.decompileHandlerWithMapping(objectScript.handlers().front(),
                                                                       objectScript,
@@ -2360,9 +2360,9 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(ifScript.handlers().front(), ifScript, &scriptNames) ==
            "on ifOps\n"
            "  if readyFlag then\n"
-           "    localOne = 1\n\n"
-           "  end if\n\n"
-           "  localOne = 2\n\n"
+           "    localOne = 1\n"
+           "  end if\n"
+           "  localOne = 2\n"
            "end");
 
     ScriptChunk::Handler elseHandler{
@@ -2402,11 +2402,11 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(elseScript.handlers().front(), elseScript, &scriptNames) ==
            "on elseOps\n"
            "  if readyFlag then\n"
-           "    localOne = 1\n\n"
+           "    localOne = 1\n"
            "  else\n"
-           "    localOne = 2\n\n"
-           "  end if\n\n"
-           "  localOne = 3\n\n"
+           "    localOne = 2\n"
+           "  end if\n"
+           "  localOne = 3\n"
            "end");
     const auto elseMapping = decompiler.decompileHandlerWithMapping(elseScript.handlers().front(),
                                                                     elseScript,
@@ -2465,9 +2465,9 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(repeatWhileScript.handlers().front(), repeatWhileScript, &scriptNames) ==
            "on loopOps\n"
            "  repeat while readyFlag\n"
-           "    localOne = 1\n\n"
-           "  end repeat\n\n"
-           "  localOne = 2\n\n"
+           "    localOne = 1\n"
+           "  end repeat\n"
+           "  localOne = 2\n"
            "end");
     const auto repeatWhileMapping = decompiler.decompileHandlerWithMapping(repeatWhileScript.handlers().front(),
                                                                            repeatWhileScript,
@@ -2528,8 +2528,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(toLoopScript.handlers().front(), toLoopScript, &scriptNames) ==
            "on toLoopOps\n"
            "  repeat with loopVar = 1 to 3\n"
-           "    localOne = 9\n\n"
-           "  end repeat\n\n"
+           "    localOne = 9\n"
+           "  end repeat\n"
            "end");
     const auto toLoopMapping = decompiler.decompileHandlerWithMapping(toLoopScript.handlers().front(),
                                                                       toLoopScript,
@@ -2588,8 +2588,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(downLoopScript.handlers().front(), downLoopScript, &scriptNames) ==
            "on downLoopOps\n"
            "  repeat with loopVar = 3 down to 1\n"
-           "    localOne = 9\n\n"
-           "  end repeat\n\n"
+           "    localOne = 9\n"
+           "  end repeat\n"
            "end");
 
     ScriptChunk::Handler inLoopHandler{
@@ -2640,8 +2640,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(inLoopScript.handlers().front(), inLoopScript, &scriptNames) ==
            "on inLoopOps\n"
            "  repeat with itemVar in itemsList\n"
-           "    localOne = 9\n\n"
-           "  end repeat\n\n"
+           "    localOne = 9\n"
+           "  end repeat\n"
            "end");
     const auto inLoopMapping = decompiler.decompileHandlerWithMapping(inLoopScript.handlers().front(),
                                                                       inLoopScript,
@@ -2692,8 +2692,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(tellScript.handlers().front(), tellScript, &scriptNames) ==
            "on tellOps\n"
            "  tell fieldRef\n"
-           "    localOne = 5\n\n"
-           "  end tell\n\n"
+           "    localOne = 5\n"
+           "  end tell\n"
            "end");
     const auto tellMapping = decompiler.decompileHandlerWithMapping(tellScript.handlers().front(),
                                                                     tellScript,
@@ -2756,11 +2756,11 @@ void testLingoDecompilerNodeFoundation() {
            "on caseOps\n"
            "  case caseValue of\n"
            "    1:\n"
-           "      localOne = 10\n\n"
+           "      localOne = 10\n"
            "    2:\n"
-           "      localOne = 20\n\n"
+           "      localOne = 20\n"
            "\n"
-           "  end case\n\n"
+           "  end case\n"
            "end");
     const auto caseMapping = decompiler.decompileHandlerWithMapping(caseScript.handlers().front(),
                                                                     caseScript,
@@ -2824,11 +2824,11 @@ void testLingoDecompilerNodeFoundation() {
            "on caseOtherwiseOps\n"
            "  case caseValue of\n"
            "    1:\n"
-           "      localOne = 10\n\n"
+           "      localOne = 10\n"
            "    otherwise:\n"
-           "      localOne = 99\n\n"
+           "      localOne = 99\n"
            "\n"
-           "  end case\n\n"
+           "  end case\n"
            "end");
 
     ScriptChunk::Handler caseOrHandler{
@@ -2873,9 +2873,9 @@ void testLingoDecompilerNodeFoundation() {
            "on caseOrOps\n"
            "  case caseValue of\n"
            "    1, 2:\n"
-           "      localOne = 12\n\n"
+           "      localOne = 12\n"
            "\n"
-           "  end case\n\n"
+           "  end case\n"
            "end");
     const auto caseOrMapping = decompiler.decompileHandlerWithMapping(caseOrScript.handlers().front(),
                                                                       caseOrScript,
@@ -2935,9 +2935,9 @@ void testLingoDecompilerNodeFoundation() {
            "on caseExpressionOps\n"
            "  case caseValue of\n"
            "    localOne + 1:\n"
-           "      localOne = 42\n\n"
+           "      localOne = 42\n"
            "\n"
-           "  end case\n\n"
+           "  end case\n"
            "end");
     const auto caseExpressionMapping = decompiler.decompileHandlerWithMapping(caseExpressionScript.handlers().front(),
                                                                               caseExpressionScript,
@@ -2989,8 +2989,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(nextLoopScript.handlers().front(), nextLoopScript, &scriptNames) ==
            "on nextLoopOps\n"
            "  repeat while readyFlag\n"
-           "    next repeat\n\n"
-           "  end repeat\n\n"
+           "    next repeat\n"
+           "  end repeat\n"
            "end");
 
     ScriptChunk::Handler exitLoopHandler{
@@ -3025,8 +3025,8 @@ void testLingoDecompilerNodeFoundation() {
     assert(decompiler.decompileHandler(exitLoopScript.handlers().front(), exitLoopScript, &scriptNames) ==
            "on exitLoopOps\n"
            "  repeat while readyFlag\n"
-           "    exit repeat\n\n"
-           "  end repeat\n\n"
+           "    exit repeat\n"
+           "  end repeat\n"
            "end");
 
     HandlerNode mappedHandler("mapped", {"me"}, {"gFlag"});

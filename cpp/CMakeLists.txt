@@ -227,6 +227,8 @@ endif()
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(GTK4 QUIET IMPORTED_TARGET gtk4)
+    pkg_check_modules(LIBPANEL QUIET IMPORTED_TARGET libpanel-1)
+    pkg_check_modules(LIBADWAITA QUIET IMPORTED_TARGET libadwaita-1)
 endif()
 find_package(CURL QUIET)
 
@@ -243,6 +245,23 @@ if(GTK4_FOUND AND CURL_FOUND)
     target_compile_features(libreshockwave_player PRIVATE cxx_std_20)
 else()
     message(STATUS "GTK4 or libcurl not found; libreshockwave_player target disabled. Install gtk4-devel and libcurl-devel to build it.")
+endif()
+
+if(LIBPANEL_FOUND AND LIBADWAITA_FOUND)
+    add_executable(libreshockwave_editor
+        apps/editor/EditorApp.cpp
+        apps/editor/EditorStyle.cpp
+        apps/editor/DirectorStudio.cpp
+    )
+    target_link_libraries(libreshockwave_editor
+        PRIVATE
+            LibreShockwave::libreshockwave
+            PkgConfig::LIBPANEL
+            PkgConfig::LIBADWAITA
+    )
+    target_compile_features(libreshockwave_editor PRIVATE cxx_std_20)
+else()
+    message(STATUS "libpanel-1 or libadwaita-1 not found; libreshockwave_editor target disabled. Install libpanel-devel/libpanel-dev and libadwaita-devel/libadwaita-1-dev to build it.")
 endif()
 
 if(BUILD_TESTING)
