@@ -6500,7 +6500,8 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         if (const auto directValue = directStringViewLikeJava(args[0])) {
             return Datum::of(static_cast<int>(directValue->size()));
         }
-        return Datum::of(static_cast<int>(toStringLikeJava(args[0]).size()));
+        std::string storage;
+        return Datum::of(static_cast<int>(stringViewLikeJava(args[0], storage).size()));
     }
     if (equalsIgnoreCase(handlerName, "count")) {
         if (args.empty()) {
@@ -6826,7 +6827,8 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         } else if (const auto directValue = directStringViewLikeJava(value)) {
             result = Datum::of(static_cast<int>(directValue->size()));
         } else {
-            result = Datum::of(static_cast<int>(toStringLikeJava(value).size()));
+            std::string storage;
+            result = Datum::of(static_cast<int>(stringViewLikeJava(value, storage).size()));
         }
         context.scope().drop(1);
         if (!noReturn) {
