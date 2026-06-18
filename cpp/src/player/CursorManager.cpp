@@ -68,7 +68,9 @@ int CursorManager::getCursorAtMouse() const {
     const int mouseH = inputState_->mouseH();
     const int mouseV = inputState_->mouseV();
     auto sprites = currentSprites();
-    const int hitChannel = hitTest(mouseH, mouseV);
+    const int interactiveHitChannel = hitTestInteractive(sprites, mouseH, mouseV);
+    const int visualHitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : hitTestVisual(sprites, mouseH, mouseV);
+    const int hitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : visualHitChannel;
     const auto hitSprite = findSpriteByChannel(sprites, hitChannel);
     const bool suppressInteractiveCursor = isNavigatorWhitespace(hitSprite ? &*hitSprite : nullptr, mouseH, mouseV);
 
@@ -97,7 +99,7 @@ int CursorManager::getCursorAtMouse() const {
             if (!suppressInteractiveCursor && spriteCursor != DEFAULT_CURSOR) {
                 return spriteCursor;
             }
-            if (!suppressInteractiveCursor && isInteractive(hitChannel)) {
+            if (!suppressInteractiveCursor && hitChannel == interactiveHitChannel) {
                 return POINTER_CURSOR;
             }
         }
@@ -119,7 +121,9 @@ std::optional<bitmap::Bitmap> CursorManager::getCursorBitmap() const {
     const int mouseH = inputState_->mouseH();
     const int mouseV = inputState_->mouseV();
     auto sprites = currentSprites();
-    const int hitChannel = hitTest(mouseH, mouseV);
+    const int interactiveHitChannel = hitTestInteractive(sprites, mouseH, mouseV);
+    const int visualHitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : hitTestVisual(sprites, mouseH, mouseV);
+    const int hitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : visualHitChannel;
     const auto hitSprite = findSpriteByChannel(sprites, hitChannel);
     if (isNavigatorWhitespace(hitSprite ? &*hitSprite : nullptr, mouseH, mouseV)) {
         return std::nullopt;
@@ -150,7 +154,9 @@ std::optional<std::array<int, 2>> CursorManager::getCursorRegPoint() const {
     const int mouseH = inputState_->mouseH();
     const int mouseV = inputState_->mouseV();
     auto sprites = currentSprites();
-    const int hitChannel = hitTest(mouseH, mouseV);
+    const int interactiveHitChannel = hitTestInteractive(sprites, mouseH, mouseV);
+    const int visualHitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : hitTestVisual(sprites, mouseH, mouseV);
+    const int hitChannel = interactiveHitChannel > 0 ? interactiveHitChannel : visualHitChannel;
     const auto hitSprite = findSpriteByChannel(sprites, hitChannel);
     if (isNavigatorWhitespace(hitSprite ? &*hitSprite : nullptr, mouseH, mouseV)) {
         return std::nullopt;
@@ -221,11 +227,32 @@ std::vector<render::pipeline::RenderSprite> CursorManager::currentSprites() cons
     return spriteProvider_ ? spriteProvider_() : std::vector<render::pipeline::RenderSprite>{};
 }
 
-int CursorManager::hitTest(int stageX, int stageY) const {
-    auto sprites = currentSprites();
-    return input::HitTester::hitTest(sprites, stageX, stageY, [this](int channel) {
+int CursorManager::hitTestVisual(const std::vector<render::pipeline::RenderSprite>& sprites,
+                                 int stageX,
+                                 int stageY) const {
+    return input::HitTester::hitTest(sprites, stageX, stageY);
+}
+
+int CursorManager::hitTestInteractive(const std::vector<render::pipeline::RenderSprite>& sprites,
+                                      int stageX,
+                                      int stageY) const {
+    auto exactHits = input::HitTester::hitTestAll(sprites, stageX, stageY, [](int) {
+        return false;
+    });
+    auto exact = std::ranges::find_if(exactHits, [this](int channel) {
         return isInteractive(channel);
     });
+    if (exact != exactHits.end()) {
+        return *exact;
+    }
+
+    auto boundingHits = input::HitTester::hitTestAll(sprites, stageX, stageY, [this](int channel) {
+        return isInteractive(channel);
+    });
+    auto bounding = std::ranges::find_if(boundingHits, [this](int channel) {
+        return isInteractive(channel);
+    });
+    return bounding == boundingHits.end() ? 0 : *bounding;
 }
 
 std::optional<render::pipeline::RenderSprite> CursorManager::findSpriteByChannel(
