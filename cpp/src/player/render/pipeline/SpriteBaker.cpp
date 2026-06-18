@@ -1230,7 +1230,9 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
 
     bitmap::Bitmap processed = source.copy();
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
-        bitmap::Bitmap inkSource = shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, source)
+        bitmap::Bitmap inkSource =
+            (shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, source) ||
+             shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, source))
             ? InkProcessor::convertOpaqueWhiteToTransparent(source)
             : source.copy();
         const bool hasNativeAlpha = inkSource.bitDepth() == 32 && inkSource.isNativeAlpha();
