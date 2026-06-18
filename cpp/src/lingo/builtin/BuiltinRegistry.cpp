@@ -483,7 +483,7 @@ bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
-bool lessIgnoreCase(const std::string& lhs, const std::string& rhs) {
+bool lessIgnoreCase(std::string_view lhs, std::string_view rhs) {
     const std::size_t length = std::min(lhs.size(), rhs.size());
     for (std::size_t index = 0; index < length; ++index) {
         const auto left = static_cast<unsigned char>(lhs[index]);
@@ -1057,14 +1057,19 @@ Datum StringBuiltins::length(BuiltinContext&, const std::vector<Datum>& args) {
     if (const auto* value = args[0].asFieldText()) {
         return Datum::of(static_cast<int>(value->value.size()));
     }
-    return Datum::of(static_cast<int>(toStringLikeJava(args[0]).size()));
+    if (const auto* value = args[0].asStringChunk()) {
+        return Datum::of(static_cast<int>(value->value.size()));
+    }
+    std::string storage;
+    return Datum::of(static_cast<int>(stringViewLikeJava(args[0], storage).size()));
 }
 
 Datum StringBuiltins::chars(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.size() < 3) {
         return Datum::of(std::string());
     }
-    const std::string value = toStringLikeJava(args[0]);
+    std::string valueStorage;
+    const std::string_view value = stringViewLikeJava(args[0], valueStorage);
     int start = toIntLikeJava(args[1]) - 1;
     int end = toIntLikeJava(args[2]);
     if (start < 0) {
@@ -1076,7 +1081,7 @@ Datum StringBuiltins::chars(BuiltinContext&, const std::vector<Datum>& args) {
     if (start >= end) {
         return Datum::of(std::string());
     }
-    return Datum::of(value.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start)));
+    return Datum::of(std::string(value.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start))));
 }
 
 Datum StringBuiltins::charToNum(BuiltinContext&, const std::vector<Datum>& args) {
@@ -1524,7 +1529,9 @@ Datum ListBuiltins::sort(BuiltinContext&, const std::vector<Datum>& args) {
         if (lhs.isInt() && rhs.isInt()) {
             return lhs.intValue() < rhs.intValue();
         }
-        return lessIgnoreCase(toStringLikeJava(lhs), toStringLikeJava(rhs));
+        std::string lhsStorage;
+        std::string rhsStorage;
+        return lessIgnoreCase(stringViewLikeJava(lhs, lhsStorage), stringViewLikeJava(rhs, rhsStorage));
     });
     return Datum::voidValue();
 }
