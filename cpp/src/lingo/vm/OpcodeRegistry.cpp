@@ -7430,33 +7430,32 @@ std::optional<Datum> fastScriptInstanceObjectCall(ImmediateObjectMethod method, 
         return std::nullopt;
     }
 
-    Datum receiver = args.front();
-    auto& instance = receiver.scriptInstanceValue();
+    auto instance = args.front().scriptInstancePtr();
     std::string propNameStorage;
     const std::string_view propName = keyNameLikeJavaView(args[1], propNameStorage);
 
     if (isCount) {
-        return scriptInstancePropertyCountValue(instance, propName);
+        return scriptInstancePropertyCountValue(*instance, propName);
     }
 
     if (isGetProp) {
         if (args.size() >= 3) {
-            return scriptInstanceNestedPropertyValue(instance, propName, args[2]);
+            return scriptInstanceNestedPropertyValue(*instance, propName, args[2]);
         }
-        return scriptInstancePropertyValue(instance, propName);
+        return scriptInstancePropertyValue(*instance, propName);
     }
 
     if (isSetProp) {
         if (args.size() == 3) {
-            util::setProperty(instance, propName, args[2]);
+            util::setProperty(*instance, propName, args[2]);
         } else if (args.size() >= 4) {
-            Datum localProp = util::getProperty(instance, propName);
+            Datum localProp = util::getProperty(*instance, propName);
             if (localProp.isVoid()) {
                 localProp = Datum::propList();
-                util::setProperty(instance, propName, localProp);
+                util::setProperty(*instance, propName, localProp);
             }
             scriptInstanceSetNestedProperty(localProp, args[2], args[3]);
-            util::setProperty(instance, propName, std::move(localProp));
+            util::setProperty(*instance, propName, std::move(localProp));
         }
         return Datum::voidValue();
     }
@@ -7763,11 +7762,10 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
     }
 
     if (target.type() == DatumType::ScriptInstanceRef) {
-        Datum receiver = target;
-        auto& instance = receiver.scriptInstanceValue();
+        auto instance = target.scriptInstancePtr();
         if (argCount == 1 && method == ImmediateObjectMethod::Count) {
-            const int count = static_cast<int>(static_cast<const Datum::ScriptInstanceRef&>(instance).properties().size()) +
-                              (instance.ancestor() ? 1 : 0);
+            const int count = static_cast<int>(instance->properties().size()) +
+                              (instance->ancestor() ? 1 : 0);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(Datum::of(count));
@@ -7778,7 +7776,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 2 && method == ImmediateObjectMethod::Count) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            Datum result = scriptInstancePropertyCountValue(instance, propName);
+            Datum result = scriptInstancePropertyCountValue(*instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(std::move(result));
@@ -7790,8 +7788,8 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(argCount - 2), propNameStorage);
             Datum result = argCount == 3
-                ? scriptInstanceNestedPropertyValue(instance, propName, context.peekRef(0))
-                : scriptInstancePropertyValue(instance, propName);
+                ? scriptInstanceNestedPropertyValue(*instance, propName, context.peekRef(0))
+                : scriptInstancePropertyValue(*instance, propName);
             if (argCount == 2 && equalsIgnoreCase(propName, "ancestor") && result.isVoid()) {
                 result = Datum::of(0);
             }
@@ -7805,7 +7803,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 2 && method == ImmediateObjectMethod::GetAProp) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            Datum result = scriptInstancePropertyValue(instance, propName);
+            Datum result = scriptInstancePropertyValue(*instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(std::move(result));
@@ -7818,8 +7816,8 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(argCount - 2), propNameStorage);
             Datum result = argCount == 3
-                ? scriptInstanceNestedPropertyValue(instance, propName, context.peekRef(0))
-                : scriptInstancePropertyValue(instance, propName);
+                ? scriptInstanceNestedPropertyValue(*instance, propName, context.peekRef(0))
+                : scriptInstancePropertyValue(*instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(std::move(result));
@@ -7833,19 +7831,19 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             if (argCount == 3) {
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                util::setProperty(instance, propName, std::move(value));
+                util::setProperty(*instance, propName, std::move(value));
                 context.scope().drop(2);
             } else {
                 Datum subKey = context.pop();
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                Datum localProp = util::getProperty(instance, propName);
+                Datum localProp = util::getProperty(*instance, propName);
                 if (localProp.isVoid()) {
                     localProp = Datum::propList();
-                    util::setProperty(instance, propName, localProp);
+                    util::setProperty(*instance, propName, localProp);
                 }
                 scriptInstanceSetNestedProperty(localProp, subKey, std::move(value));
-                util::setProperty(instance, propName, std::move(localProp));
+                util::setProperty(*instance, propName, std::move(localProp));
                 context.scope().drop(2);
             }
             if (!noReturn) {
@@ -7859,19 +7857,19 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             if (argCount == 3) {
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                util::setProperty(instance, propName, std::move(value));
+                util::setProperty(*instance, propName, std::move(value));
                 context.scope().drop(2);
             } else {
                 Datum subKey = context.pop();
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                Datum localProp = util::getProperty(instance, propName);
+                Datum localProp = util::getProperty(*instance, propName);
                 if (localProp.isVoid()) {
                     localProp = Datum::propList();
-                    util::setProperty(instance, propName, localProp);
+                    util::setProperty(*instance, propName, localProp);
                 }
                 scriptInstanceSetNestedProperty(localProp, subKey, std::move(value));
-                util::setProperty(instance, propName, std::move(localProp));
+                util::setProperty(*instance, propName, std::move(localProp));
                 context.scope().drop(2);
             }
             if (!noReturn) {
@@ -7884,7 +7882,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             Datum value = context.pop();
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            scriptInstancePutLocalProperty(instance, propName, std::move(value));
+            scriptInstancePutLocalProperty(*instance, propName, std::move(value));
             context.scope().drop(2);
             if (!noReturn) {
                 context.push(Datum::voidValue());
@@ -7895,7 +7893,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 2 && method == ImmediateObjectMethod::DeleteProp) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-            scriptInstanceDeleteLocalProperty(instance, propName);
+            scriptInstanceDeleteLocalProperty(*instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(Datum::voidValue());
