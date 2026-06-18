@@ -1225,7 +1225,8 @@ Datum getObjectProperty(ExecutionContext& context, const Datum& object, std::str
         return getListProp(object.listValue(), propName);
     }
     if (object.isString()) {
-        return getStringProp(object.stringValue(), propName);
+        std::string storage;
+        return getStringProp(stringViewLikeJava(object, storage), propName);
     }
     if (const auto* point = object.asIntPoint()) {
         return getPointProp(*point, propName);
@@ -1905,7 +1906,10 @@ Datum scriptInstanceCountValue(const Datum& value) {
     if (value.isVoid()) return Datum::of(0);
     if (value.isList()) return Datum::of(value.listValue().count());
     if (value.isPropList()) return Datum::of(value.propListValue().count());
-    if (value.isString()) return Datum::of(static_cast<int>(value.stringValue().size()));
+    if (value.isString()) {
+        std::string storage;
+        return Datum::of(static_cast<int>(stringViewLikeJava(value, storage).size()));
+    }
     return Datum::of(0);
 }
 
@@ -2082,7 +2086,11 @@ bool isBootstrapScriptMember(const builtin::BuiltinContext* builtinContext, int 
         return false;
     }
     const Datum memberType = builtinContext->castMemberPropertyGetter(castLib, memberNum, "type");
-    return (memberType.isString() || memberType.isSymbol()) && equalsIgnoreCase(memberType.stringValue(), "script");
+    if (!memberType.isString() && !memberType.isSymbol()) {
+        return false;
+    }
+    std::string storage;
+    return equalsIgnoreCase(stringViewLikeJava(memberType, storage), "script");
 }
 
 bool shouldSkipMemberRegistryFallbackLookup(std::string_view memberName) {
@@ -6115,7 +6123,8 @@ bool getObjProp(ExecutionContext& context) {
         return true;
     }
     if (objectRef.isString()) {
-        Datum result = getStringProp(objectRef.stringValue(), propName);
+        std::string storage;
+        Datum result = getStringProp(stringViewLikeJava(objectRef, storage), propName);
         context.scope().drop(1);
         context.push(std::move(result));
         return true;
@@ -6141,7 +6150,8 @@ bool getObjProp(ExecutionContext& context) {
         return true;
     }
     if (object.isString()) {
-        context.push(getStringProp(object.stringValue(), propName));
+        std::string storage;
+        context.push(getStringProp(stringViewLikeJava(object, storage), propName));
         return true;
     }
     if (const auto* image = object.asImageRef()) {
