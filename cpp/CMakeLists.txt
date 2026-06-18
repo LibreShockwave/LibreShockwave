@@ -255,7 +255,20 @@ if(BUILD_TESTING)
 endif()
 
 if(EMSCRIPTEN)
-    target_compile_options(libreshockwave PUBLIC -fexceptions)
+    set(LIBRESHOCKWAVE_WASM_PROFILING "off" CACHE STRING "Emscripten profiling mode: off, functions, full, cpu, or memory")
+    set_property(CACHE LIBRESHOCKWAVE_WASM_PROFILING PROPERTY STRINGS off functions full cpu memory)
+    if(NOT LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "off" AND
+       NOT LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "functions" AND
+       NOT LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "full" AND
+       NOT LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "cpu" AND
+       NOT LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "memory")
+        message(FATAL_ERROR "LIBRESHOCKWAVE_WASM_PROFILING must be one of: off, functions, full, cpu, memory")
+    endif()
+
+    target_compile_options(libreshockwave PUBLIC
+        -O3
+        -fwasm-exceptions
+    )
 
     set(LIBRESHOCKWAVE_WASM_DIST_DIR "${CMAKE_CURRENT_BINARY_DIR}/wasm-dist")
     set(LIBRESHOCKWAVE_WASM_EXPORTS
@@ -311,24 +324,38 @@ if(EMSCRIPTEN)
     )
     string(REPLACE ";" "','" LIBRESHOCKWAVE_WASM_EXPORTS_JOINED "${LIBRESHOCKWAVE_WASM_EXPORTS}")
     set(LIBRESHOCKWAVE_WASM_EXPORTS_FLAG "['${LIBRESHOCKWAVE_WASM_EXPORTS_JOINED}']")
+    set(LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS)
+    if(LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "functions")
+        list(APPEND LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS "SHELL:--profiling-funcs")
+    elseif(LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "full")
+        list(APPEND LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS "SHELL:--profiling")
+    elseif(LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "cpu")
+        list(APPEND LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS "SHELL:--profiling-funcs" "SHELL:--cpuprofiler")
+    elseif(LIBRESHOCKWAVE_WASM_PROFILING STREQUAL "memory")
+        list(APPEND LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS "SHELL:--profiling-funcs" "SHELL:--memoryprofiler")
+    endif()
 
     add_executable(libreshockwave_cpp_wasm
         apps/wasm/WasmBridge.cpp
     )
     target_link_libraries(libreshockwave_cpp_wasm PRIVATE LibreShockwave::libreshockwave)
     target_compile_features(libreshockwave_cpp_wasm PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_cpp_wasm PRIVATE -fexceptions)
+    target_compile_options(libreshockwave_cpp_wasm PRIVATE
+        -O3
+        -fwasm-exceptions
+    )
     target_link_options(libreshockwave_cpp_wasm PRIVATE
-        "SHELL:-fexceptions"
+        "SHELL:-O3"
+        "SHELL:-fwasm-exceptions"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_NAME=createLibreShockwaveCppWasm"
         "SHELL:-s ENVIRONMENT=worker"
-        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH"
         "SHELL:-s STACK_SIZE=8388608"
         "SHELL:-s EXIT_RUNTIME=0"
-        "SHELL:-s NO_DISABLE_EXCEPTION_CATCHING=1"
         "SHELL:-s EXPORTED_FUNCTIONS=${LIBRESHOCKWAVE_WASM_EXPORTS_FLAG}"
         "SHELL:-s EXPORTED_RUNTIME_METHODS=['cwrap','UTF8ToString','stringToUTF8','lengthBytesUTF8','HEAPU8']"
+        ${LIBRESHOCKWAVE_WASM_PROFILING_LINK_OPTIONS}
     )
     set_target_properties(libreshockwave_cpp_wasm PROPERTIES
         OUTPUT_NAME "libreshockwave-cpp-wasm"
