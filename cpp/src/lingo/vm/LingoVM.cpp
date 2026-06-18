@@ -34,6 +34,21 @@ constexpr std::int64_t RANDOM_MULTIPLIER = 0x5DEECE66DLL;
 constexpr std::int64_t RANDOM_ADDEND = 0xBLL;
 constexpr std::int64_t RANDOM_MASK = (1LL << 48) - 1;
 
+std::int64_t frameDurationMsForTempo(int tempo) {
+    return tempo > 0 ? std::max<std::int64_t>(1, 1000 / tempo) : 0;
+}
+
+std::int64_t frameDurationMsForMovie(const libreshockwave::player::MovieProperties* movieProperties) {
+    if (movieProperties == nullptr) {
+        return 0;
+    }
+    const Datum tempo = movieProperties->getMovieProp("tempo");
+    if (const auto* value = tempo.asInt()) {
+        return frameDurationMsForTempo(value->value);
+    }
+    return 0;
+}
+
 bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     if (lhs.size() != rhs.size()) {
         return false;
@@ -846,7 +861,9 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     auto leaveHandler = [&] {
         if (emitSlowHandlerWarnings) {
             const std::int64_t handlerElapsedMs = currentTimeMillis() - handlerStartTime;
-            if (handlerElapsedMs >= slowHandlerWarningThresholdMs_) {
+            const std::int64_t frameDurationMs = frameDurationMsForMovie(builtinContext_.movieProperties);
+            const std::int64_t warningThresholdMs = std::max(slowHandlerWarningThresholdMs_, frameDurationMs);
+            if (handlerElapsedMs > warningThresholdMs) {
                 builtinContext_.outputHandler(
                     "WARNING",
                     "handler " + currentHandlerName + " took " + std::to_string(handlerElapsedMs) +
