@@ -4780,6 +4780,27 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
     return Datum::voidValue();
 }
 
+Datum dispatchObjectMethodSpan(ExecutionContext& context,
+                               Datum target,
+                               std::string_view methodName,
+                               std::span<const Datum> args) {
+    if (target.isList()) {
+        return dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, args);
+    }
+    if (target.isPropList()) {
+        return dispatch::PropListMethodDispatcher::dispatch(target.propListValue(), methodName, args);
+    }
+    if (target.isString()) {
+        return dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(target),
+                                                          methodName,
+                                                          args,
+                                                          currentItemDelimiter(context));
+    }
+
+    const std::vector<Datum> argVector(args.begin(), args.end());
+    return dispatchObjectMethod(context, std::move(target), methodName, argVector);
+}
+
 const std::vector<Datum>& emptyDatumArgs() {
     static const std::vector<Datum> empty;
     return empty;
@@ -7519,23 +7540,7 @@ bool executeObjCallWithArgs(ExecutionContext& context,
         const std::span<const Datum> methodArgs = args.size() <= 1
                                                       ? std::span<const Datum>()
                                                       : std::span<const Datum>(args.data() + 1, args.size() - 1);
-        if (target.isList()) {
-            result = dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, methodArgs);
-        } else if (target.isPropList()) {
-            result = dispatch::PropListMethodDispatcher::dispatch(target.propListValue(), methodName, methodArgs);
-        } else if (target.isString()) {
-            result = dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(target),
-                                                                methodName,
-                                                                methodArgs,
-                                                                currentItemDelimiter(context));
-        } else {
-            std::vector<Datum> methodArgsStorage;
-            const std::vector<Datum>& methodArgsVector = args.size() <= 1 ? emptyDatumArgs() : methodArgsStorage;
-            if (args.size() > 1) {
-                methodArgsStorage.assign(args.begin() + 1, args.end());
-            }
-            result = dispatchObjectMethod(context, std::move(target), methodName, methodArgsVector);
-        }
+        result = dispatchObjectMethodSpan(context, std::move(target), methodName, methodArgs);
     }
     if (!noReturn) {
         context.push(std::move(result));
@@ -8112,12 +8117,10 @@ bool executeExtCallWithArgs(ExecutionContext& context,
         result = std::move(*builtinResult);
     } else if (!args.empty()) {
         Datum target = args.front();
-        std::vector<Datum> methodArgsStorage;
-        const std::vector<Datum>& methodArgs = args.size() <= 1 ? emptyDatumArgs() : methodArgsStorage;
-        if (args.size() > 1) {
-            methodArgsStorage.assign(args.begin() + 1, args.end());
-        }
-        result = dispatchObjectMethod(context, std::move(target), handlerName, methodArgs);
+        const std::span<const Datum> methodArgs = args.size() <= 1
+                                                      ? std::span<const Datum>()
+                                                      : std::span<const Datum>(args.data() + 1, args.size() - 1);
+        result = dispatchObjectMethodSpan(context, std::move(target), handlerName, methodArgs);
     } else if (args.empty()) {
         result = builtinConstant(handlerName).value_or(Datum::voidValue());
     }
