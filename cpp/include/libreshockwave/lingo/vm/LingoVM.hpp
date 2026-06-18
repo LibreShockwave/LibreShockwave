@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -136,6 +137,9 @@ public:
     [[nodiscard]] Datum executeHandler(const HandlerRef& handler,
                                        const std::vector<Datum>& args = {},
                                        const Datum& receiver = Datum::voidValue());
+    [[nodiscard]] Datum executeHandler(const HandlerRef& handler,
+                                       std::span<const Datum> args,
+                                       const Datum& receiver = Datum::voidValue());
 
     [[nodiscard]] static std::string normalizeLookupName(std::string_view name);
     [[nodiscard]] static std::string formatTraceArgument(const Datum& value);
@@ -246,6 +250,29 @@ private:
         mutable int disabledTraceScriptPrologueLength{-1};
     };
 
+    struct ResolvedNameKey {
+        const chunks::ScriptChunk* script{nullptr};
+        const DirectorFile* fileOwner{nullptr};
+        const chunks::ScriptNamesChunk* scriptNamesOwner{nullptr};
+        int nameId{0};
+
+        bool operator==(const ResolvedNameKey& other) const {
+            return script == other.script &&
+                   fileOwner == other.fileOwner &&
+                   scriptNamesOwner == other.scriptNamesOwner &&
+                   nameId == other.nameId;
+        }
+    };
+
+    struct ResolvedNameKeyHash {
+        std::size_t operator()(const ResolvedNameKey& key) const {
+            return std::hash<const void*>{}(key.script) ^
+                   (std::hash<const void*>{}(key.fileOwner) << 1U) ^
+                   (std::hash<const void*>{}(key.scriptNamesOwner) << 2U) ^
+                   (std::hash<int>{}(key.nameId) << 3U);
+        }
+    };
+
     DirectorFile* file_{nullptr};
     std::unordered_map<std::string, Datum> globals_;
     std::map<std::string, Datum> prefs_;
@@ -268,6 +295,7 @@ private:
                        TransparentCaseInsensitiveStringEqual> missingHandlerCache_;
     std::unordered_set<std::string> missingBuiltinDebugCache_;
     std::unordered_map<HandlerMetadataKey, std::shared_ptr<const HandlerMetadata>, HandlerMetadataKeyHash> handlerMetadataCache_;
+    mutable std::unordered_map<ResolvedNameKey, std::string, ResolvedNameKeyHash> resolvedNameCache_;
     std::function<void()> passCallback_;
     bool eventStopped_{false};
     bool inErrorState_{false};

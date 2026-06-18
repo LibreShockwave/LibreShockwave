@@ -1663,6 +1663,14 @@ void testLingoDatumTypes() {
            20);
     assert(libreshockwave::lingo::vm::util::getProperty(walkerChild.scriptInstanceValue(), "sharedvalue").intValue() ==
            10);
+    assert(libreshockwave::lingo::vm::util::findPropertyValue(walkerChild.scriptInstanceValue(), "LOCALVALUE")
+               ->intValue() == 20);
+    assert(libreshockwave::lingo::vm::util::findPropertyValue(walkerChild.scriptInstanceValue(), "sharedvalue")
+               ->intValue() == 10);
+    assert(libreshockwave::lingo::vm::util::findPropertyValue(walkerChild.scriptInstanceValue(), "missing") ==
+           nullptr);
+    assert(libreshockwave::lingo::vm::util::findPropertyValue(walkerChild.scriptInstanceValue(), "ancestor") ==
+           nullptr);
     assert(libreshockwave::lingo::vm::util::hasProperty(walkerChild.scriptInstanceValue(), "SHAREDVALUE"));
     assert(libreshockwave::lingo::vm::util::findOwner(walkerChild.scriptInstanceValue(), "sharedvalue") ==
            &walkerParent.scriptInstanceValue());
@@ -7747,11 +7755,19 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     scope.setLocal(99, Datum::of(88));
     assert(scope.getLocal(0).intValue() == 77);
     assert(scope.getLocal(99).isVoid());
+    scope.pushLocal(0);
+    assert(scope.pop().intValue() == 77);
+    scope.pushLocal(99);
+    assert(scope.pop().isVoid());
 
     assert(scope.getParam(0).intValue() == 1);
     scope.setParam(0, Datum::of(33));
     assert(scope.getParam(0).intValue() == 33);
     assert(scope.getParam(9).isVoid());
+    scope.pushParam(0);
+    assert(scope.pop().intValue() == 33);
+    scope.pushParam(9);
+    assert(scope.pop().isVoid());
 
     assert(!scope.returned());
     scope.setReturnValue(Datum::of(std::string("done")));
@@ -10922,6 +10938,47 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .get(Datum::symbol("offsetx"))
                .intValue() == 37);
 
+    auto immediatePropListNumericGetAtHandler = makeImmediateObjHandler(Opcode::PUSH_ARG_LIST, 2, 64);
+    ScriptChunk immediatePropListNumericGetAtScript(nullptr,
+                                                    ChunkId(741),
+                                                    ScriptChunkType::MovieScript,
+                                                    0,
+                                                    {immediatePropListNumericGetAtHandler},
+                                                    {},
+                                                    {},
+                                                    {},
+                                                    {});
+    auto numericPropList = Datum::propList();
+    numericPropList.propListValue().putTyped(Datum::symbol("first"), Datum::of(17));
+    numericPropList.propListValue().putTyped(Datum::of(std::string("9")), Datum::of(99));
+    Scope immediatePropListPositionGetAtScope(&immediatePropListNumericGetAtScript,
+                                              immediatePropListNumericGetAtHandler,
+                                              {});
+    ExecutionContext immediatePropListPositionGetAtContext(
+        immediatePropListPositionGetAtScope,
+        immediatePropListNumericGetAtHandler.instructions[0],
+        &registry,
+        &builtinContext,
+        callbacks);
+    immediatePropListPositionGetAtContext.push(numericPropList);
+    immediatePropListPositionGetAtContext.push(Datum::of(1));
+    assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediatePropListPositionGetAtContext));
+    assert(immediatePropListPositionGetAtContext.pop().intValue() == 17);
+
+    Scope immediatePropListStringFallbackGetAtScope(&immediatePropListNumericGetAtScript,
+                                                    immediatePropListNumericGetAtHandler,
+                                                    {});
+    ExecutionContext immediatePropListStringFallbackGetAtContext(
+        immediatePropListStringFallbackGetAtScope,
+        immediatePropListNumericGetAtHandler.instructions[0],
+        &registry,
+        &builtinContext,
+        callbacks);
+    immediatePropListStringFallbackGetAtContext.push(numericPropList);
+    immediatePropListStringFallbackGetAtContext.push(Datum::of(9));
+    assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediatePropListStringFallbackGetAtContext));
+    assert(immediatePropListStringFallbackGetAtContext.pop().intValue() == 99);
+
     auto immediateScriptNestedGetAtHandler = makeImmediateObjHandler(Opcode::PUSH_ARG_LIST, 3, 64);
     ScriptChunk immediateScriptNestedGetAtScript(nullptr,
                                                  ChunkId(737),
@@ -11236,12 +11293,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runObjCall(56, {scriptInstance}).asSymbol()->name == "instance");
     assert(!runObjCall(117, {scriptInstance, Datum::symbol("known")}).boolValue());
 
-    builtinContext.scriptHandlerFinder = [&script, directProviderHandler, ancestorProviderHandler](
+    int directProviderLookups = 0;
+    builtinContext.scriptHandlerFinder = [&script, directProviderHandler, ancestorProviderHandler, &directProviderLookups](
                                              int castLib,
                                              int memberNum,
                                              const std::string& methodName)
         -> std::optional<BuiltinContext::ScriptHandlerLocation> {
         if (castLib == 4 && memberNum == 12 && methodName == "directProvider") {
+            ++directProviderLookups;
             return BuiltinContext::ScriptHandlerLocation{&script, directProviderHandler};
         }
         if (castLib == 5 && memberNum == 13 && methodName == "ancestorProvider") {
@@ -11257,6 +11316,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runObjCall(117, {providerChild, Datum::symbol("directProvider")}).boolValue());
     assert(runObjCall(117, {providerChild, Datum::symbol("ancestorProvider")}).boolValue());
     assert(!runObjCall(117, {providerChild, Datum::symbol("missingProvider")}).boolValue());
+    builtinContext.directScriptInstanceHandlerCache.clear();
+    directProviderLookups = 0;
+    auto directProviderOnly = Datum::scriptInstance("directProviderOnly", Datum::CastMemberRef{4, 12});
+    auto secondDirectProviderOnly = Datum::scriptInstance("secondDirectProviderOnly", Datum::CastMemberRef{4, 12});
+    assert(runObjCall(133, {directProviderOnly, Datum::of(1)}).stringValue() == "receiver-exec:133:1");
+    assert(runObjCall(133, {directProviderOnly, Datum::of(2)}).stringValue() == "receiver-exec:133:1");
+    assert(runObjCall(133, {secondDirectProviderOnly, Datum::of(3)}).stringValue() == "receiver-exec:133:1");
+    assert(directProviderLookups == 1);
     builtinContext.scriptHandlerFinder = {};
 
     assert(runObjCall(116, {scriptInstance, Datum::symbol("newLocal")}).isVoid());
@@ -13605,7 +13672,10 @@ void testLingoVmRuntimeFoundation() {
     assert(vm.findHandler(script, "handler#1").has_value());
     assert(vm.findHandler(script, "#1").has_value());
     assert(!vm.findHandler(script, "missing").has_value());
+    vm.builtinContext().registryMemberSlotCache["registry/member"] = 1234;
     assert(vm.executeHandler(script, returnHandler).intValue() == 42);
+    assert(vm.builtinContext().registryMemberSlotCache.at("registry/member") == 1234);
+    vm.builtinContext().registryMemberSlotCache.clear();
     assert(vm.callStackDepth() == 0);
 
     auto externalReturnHandler = makeHandler(5, {

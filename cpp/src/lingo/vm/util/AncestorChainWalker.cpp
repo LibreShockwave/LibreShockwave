@@ -24,39 +24,9 @@ bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
-const Datum* exactProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
-    if (equalsIgnoreCase(propName, "ancestor")) {
-        return nullptr;
-    }
-    const int index = instance.findExactPropertyIndex(propName);
+const Datum* propertyValue(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    const int index = instance.findPropertyIndex(propName);
     return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
-}
-
-const Datum* caseInsensitiveProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
-    if (equalsIgnoreCase(propName, "ancestor")) {
-        return nullptr;
-    }
-    const int index = instance.findCaseInsensitivePropertyIndex(propName);
-    return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
-}
-
-std::pair<std::string*, Datum*> mutableProperty(Datum::ScriptInstanceRef& instance, std::string_view propName) {
-    if (equalsIgnoreCase(propName, "ancestor")) {
-        return {nullptr, nullptr};
-    }
-    const int exactIndex = instance.findExactPropertyIndex(propName);
-    if (exactIndex >= 0) {
-        auto& properties = instance.properties();
-        auto& entry = properties[static_cast<std::size_t>(exactIndex)];
-        return {&entry.first, &entry.second};
-    }
-    const int caseInsensitiveIndex = instance.findCaseInsensitivePropertyIndex(propName);
-    if (caseInsensitiveIndex >= 0) {
-        auto& properties = instance.properties();
-        auto& entry = properties[static_cast<std::size_t>(caseInsensitiveIndex)];
-        return {&entry.first, &entry.second};
-    }
-    return {nullptr, nullptr};
 }
 
 } // namespace
@@ -72,11 +42,8 @@ Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view pro
     const auto* current = &instance;
     std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
-        if (const auto* exact = exactProperty(*current, propName)) {
-            return *exact;
-        }
-        if (const auto* caseInsensitive = caseInsensitiveProperty(*current, propName)) {
-            return *caseInsensitive;
+        if (const auto* value = propertyValue(*current, propName)) {
+            return *value;
         }
 
         currentOwner = current->ancestor();
@@ -84,6 +51,25 @@ Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view pro
     }
 
     return Datum::voidValue();
+}
+
+const Datum* findPropertyValue(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    if (equalsIgnoreCase(propName, "ancestor")) {
+        return nullptr;
+    }
+
+    const auto* current = &instance;
+    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        if (const auto* value = propertyValue(*current, propName)) {
+            return value;
+        }
+
+        currentOwner = current->ancestor();
+        current = currentOwner.get();
+    }
+
+    return nullptr;
 }
 
 bool hasProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
@@ -101,8 +87,7 @@ Datum::ScriptInstanceRef* findOwner(Datum::ScriptInstanceRef& instance, std::str
     auto* current = &instance;
     std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
-        if (exactProperty(*current, propName) != nullptr ||
-            caseInsensitiveProperty(*current, propName) != nullptr) {
+        if (propertyValue(*current, propName) != nullptr) {
             return current;
         }
 
@@ -121,8 +106,7 @@ const Datum::ScriptInstanceRef* findOwner(const Datum::ScriptInstanceRef& instan
     const auto* current = &instance;
     std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
-        if (exactProperty(*current, propName) != nullptr ||
-            caseInsensitiveProperty(*current, propName) != nullptr) {
+        if (propertyValue(*current, propName) != nullptr) {
             return current;
         }
 
@@ -159,8 +143,7 @@ void setProperty(Datum::ScriptInstanceRef& instance, std::string_view propName, 
     }
 
     if (auto* owner = findOwner(instance, propName)) {
-        auto [actualKey, actualValue] = mutableProperty(*owner, propName);
-        if (actualKey != nullptr && actualValue != nullptr) {
+        if (auto* actualValue = owner->findMutablePropertyValue(propName)) {
             *actualValue = std::move(value);
         }
         return;

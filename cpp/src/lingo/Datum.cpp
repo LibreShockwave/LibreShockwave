@@ -314,36 +314,8 @@ Datum::ColorRef Datum::ColorRef::fromRgb(int r, int g, int b) {
     return ColorRef{r, g, b, std::nullopt};
 }
 
-Datum::Datum() : value_(Void{}) {}
-
-Datum::Datum(Value value) : value_(std::move(value)) {}
-
 const Datum Datum::TRUE = Datum::of(1);
 const Datum Datum::FALSE = Datum::of(0);
-
-Datum Datum::nullValue() {
-    return Datum(Null{});
-}
-
-Datum Datum::voidValue() {
-    return Datum(Void{});
-}
-
-Datum Datum::of(int value) {
-    return Datum(Int{value});
-}
-
-Datum Datum::of(float value) {
-    return Datum(DFloat{value});
-}
-
-Datum Datum::of(double value) {
-    return Datum(DFloat{static_cast<float>(value)});
-}
-
-Datum Datum::of(std::string value) {
-    return Datum(Str{std::move(value)});
-}
 
 Datum Datum::fieldText(std::string value, int castLib, int memberNum, std::uint64_t revision) {
     return Datum(FieldText{std::move(value), castLib, memberNum, revision});
@@ -719,13 +691,7 @@ const Datum::ArgListNoRet& Datum::argListNoRetValue() const {
 
 Datum Datum::deepCopy() const {
     if (isList()) {
-        const auto& source = listValue();
-        std::vector<Datum> copied;
-        copied.reserve(source.items().size());
-        for (const auto& item : source.items()) {
-            copied.push_back(item.deepCopy());
-        }
-        return Datum::list(std::move(copied), source.sorted());
+        return listValue().deepCopyDatum();
     }
 
     if (isPropList()) {
@@ -822,6 +788,15 @@ const std::vector<Datum>& Datum::List::items() const {
 
 std::vector<Datum>& Datum::List::items() {
     return items_;
+}
+
+Datum Datum::List::deepCopyDatum() const {
+    std::vector<Datum> copied;
+    copied.reserve(items_.size());
+    for (const auto& item : items_) {
+        copied.push_back(item.deepCopy());
+    }
+    return Datum::list(std::move(copied), sorted_);
 }
 
 bool operator==(const Datum::List& lhs, const Datum::List& rhs) {
@@ -1082,8 +1057,18 @@ int Datum::ScriptInstanceRef::findCaseInsensitivePropertyIndex(std::string_view 
 }
 
 int Datum::ScriptInstanceRef::findPropertyIndex(std::string_view name) const {
-    const int exactIndex = findExactPropertyIndex(name);
-    return exactIndex >= 0 ? exactIndex : findCaseInsensitivePropertyIndex(name);
+    rebuildPropertyIndex();
+    const auto exact = firstExactPropertyIndex_.find(name);
+    if (exact != firstExactPropertyIndex_.end()) {
+        return exact->second;
+    }
+    const auto caseInsensitive = firstCaseInsensitivePropertyIndex_.find(name);
+    return caseInsensitive != firstCaseInsensitivePropertyIndex_.end() ? caseInsensitive->second : -1;
+}
+
+Datum* Datum::ScriptInstanceRef::findMutablePropertyValue(std::string_view name) {
+    const int index = findPropertyIndex(name);
+    return index >= 0 ? &properties_[static_cast<std::size_t>(index)].second : nullptr;
 }
 
 const std::vector<std::pair<std::string, Datum>>& Datum::ScriptInstanceRef::properties() const {

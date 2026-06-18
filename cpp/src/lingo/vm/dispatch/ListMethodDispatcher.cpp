@@ -414,7 +414,7 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
         return Datum::voidValue();
     }
     if (equalsIgnoreCase(methodName, "duplicate")) {
-        return Datum::list(items, list.sorted()).deepCopy();
+        return list.deepCopyDatum();
     }
     return Datum::voidValue();
 }

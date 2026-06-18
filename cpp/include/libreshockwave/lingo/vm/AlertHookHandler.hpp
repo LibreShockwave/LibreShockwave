@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,7 +20,9 @@ public:
     [[nodiscard]] int getErrorHandlerDepth() const;
     void incrementDepth();
     void decrementDepth();
+    [[nodiscard]] bool shouldSkipErrorHandler(std::string_view handlerName, std::initializer_list<Datum> args) const;
     [[nodiscard]] bool shouldSkipErrorHandler(std::string_view handlerName, const std::vector<Datum>& args) const;
+    [[nodiscard]] bool shouldSkipErrorHandler(std::string_view handlerName, std::span<const Datum> args) const;
     [[nodiscard]] bool isErrorHandler(std::string_view handlerName) const;
     [[nodiscard]] bool fireAlertHook(std::string_view errorType,
                                      std::string_view errorMessage,

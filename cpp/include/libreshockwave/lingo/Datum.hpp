@@ -385,7 +385,7 @@ public:
         friend bool operator==(const ChunkRef&, const ChunkRef&) = default;
     };
 
-    Datum();
+    Datum() : value_(Void{}) {}
 
     [[nodiscard]] static Datum nullValue();
     [[nodiscard]] static Datum voidValue();
@@ -542,10 +542,34 @@ private:
         ArgListPtr,
         ArgListNoRetPtr>;
 
-    explicit Datum(Value value);
+    explicit Datum(Value value) : value_(std::move(value)) {}
 
     Value value_;
 };
+
+inline Datum Datum::nullValue() {
+    return Datum(Null{});
+}
+
+inline Datum Datum::voidValue() {
+    return Datum(Void{});
+}
+
+inline Datum Datum::of(int value) {
+    return Datum(Int{value});
+}
+
+inline Datum Datum::of(float value) {
+    return Datum(DFloat{value});
+}
+
+inline Datum Datum::of(double value) {
+    return Datum(DFloat{static_cast<float>(value)});
+}
+
+inline Datum Datum::of(std::string value) {
+    return Datum(Str{std::move(value)});
+}
 
 class Datum::List {
 public:
@@ -558,6 +582,7 @@ public:
     [[nodiscard]] bool sorted() const;
     [[nodiscard]] const std::vector<Datum>& items() const;
     [[nodiscard]] std::vector<Datum>& items();
+    [[nodiscard]] Datum deepCopyDatum() const;
 
     friend bool operator==(const List& lhs, const List& rhs);
 
@@ -621,6 +646,7 @@ public:
     [[nodiscard]] int findExactPropertyIndex(std::string_view name) const;
     [[nodiscard]] int findCaseInsensitivePropertyIndex(std::string_view name) const;
     [[nodiscard]] int findPropertyIndex(std::string_view name) const;
+    [[nodiscard]] Datum* findMutablePropertyValue(std::string_view name);
     [[nodiscard]] const std::vector<std::pair<std::string, Datum>>& properties() const;
     [[nodiscard]] std::vector<std::pair<std::string, Datum>>& properties();
     void reserveLocalProperties(std::size_t additionalCount);

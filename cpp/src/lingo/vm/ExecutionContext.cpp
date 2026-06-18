@@ -1,6 +1,5 @@
 #include "libreshockwave/lingo/vm/ExecutionContext.hpp"
 
-#include <algorithm>
 #include <limits>
 #include <string>
 #include <utility>
@@ -41,82 +40,16 @@ ExecutionContext::ExecutionContext(Scope& scope,
       instructionTraceEnabled_(instructionTraceEnabled),
       builtins_(builtins),
       builtinContext_(builtinContext),
-      callbacks_(std::move(callbacks)) {
-    scaledArgument_ = argument_ / variableMultiplier_;
-}
-
-void ExecutionContext::setInstruction(chunks::ScriptChunk::Instruction instruction) {
-    instruction_ = instruction;
-    argument_ = instruction.argument;
-    scaledArgument_ = argument_ / variableMultiplier_;
-}
-
-Scope& ExecutionContext::scope() {
-    return *scope_;
-}
-
-const Scope& ExecutionContext::scope() const {
-    return *scope_;
-}
-
-const chunks::ScriptChunk::Instruction& ExecutionContext::instruction() const {
-    return instruction_;
-}
-
-int ExecutionContext::argument() const {
-    return argument_;
-}
-
-int ExecutionContext::scaledArgument() const {
-    return scaledArgument_;
-}
-
-int ExecutionContext::variableMultiplier() const {
-    return variableMultiplier_;
-}
-
-int ExecutionContext::instructionOffset() const {
-    return instruction_.offset;
-}
-
-bool ExecutionContext::instructionTraceEnabled() const {
-    return instructionTraceEnabled_;
-}
-
-void ExecutionContext::push(Datum value) {
-    scope_->push(std::move(value));
-}
-
-Datum ExecutionContext::pop() {
-    return scope_->pop();
-}
-
-Datum ExecutionContext::peek() const {
-    return scope_->peek();
-}
-
-Datum ExecutionContext::peek(int depth) const {
-    return scope_->peek(depth);
-}
-
-const Datum& ExecutionContext::peekRef(int depth) const {
-    return scope_->peekRef(depth);
-}
-
-void ExecutionContext::swap() {
-    scope_->swap();
-}
+      callbacks_(std::move(callbacks)) {}
 
 std::vector<Datum> ExecutionContext::popArgs(int count) {
-    std::vector<Datum> args;
     if (count <= 0) {
-        return args;
+        return {};
     }
-    args.reserve(static_cast<std::size_t>(count));
-    for (int index = 0; index < count; ++index) {
-        args.push_back(pop());
+    std::vector<Datum> args(static_cast<std::size_t>(count));
+    for (int index = count - 1; index >= 0; --index) {
+        args[static_cast<std::size_t>(index)] = pop();
     }
-    std::reverse(args.begin(), args.end());
     return args;
 }
 
@@ -169,22 +102,10 @@ void ExecutionContext::setGlobal(std::string_view name, Datum value) {
     callbacks_.variableSetListener("global", name, tracedValue);
 }
 
-void ExecutionContext::setReturnValue(Datum value) {
-    scope_->setReturnValue(std::move(value));
-}
-
-void ExecutionContext::setReturned(bool returned) {
-    scope_->setReturned(returned);
-}
-
 void ExecutionContext::setErrorState(bool errorState) {
     if (callbacks_.errorStateSetter) {
         callbacks_.errorStateSetter(errorState);
     }
-}
-
-bool ExecutionContext::hasVariableSetListener() const {
-    return static_cast<bool>(callbacks_.variableSetListener);
 }
 
 void ExecutionContext::tracePropertySet(std::string_view propName, const Datum& value) const {
@@ -222,7 +143,12 @@ const std::vector<chunks::ScriptChunk::LiteralEntry>& ExecutionContext::literals
 }
 
 const std::string& ExecutionContext::resolveNameRef(int nameId) const {
+    if (nameId == cachedResolvedNameId_ && cachedResolvedName_ != nullptr) {
+        return *cachedResolvedName_;
+    }
     if (const auto found = resolvedNames_.find(nameId); found != resolvedNames_.end()) {
+        cachedResolvedNameId_ = nameId;
+        cachedResolvedName_ = &found->second;
         return found->second;
     }
     std::string resolved;
@@ -233,6 +159,8 @@ const std::string& ExecutionContext::resolveNameRef(int nameId) const {
         resolved = script != nullptr ? script->resolveName(nameId, nullptr) : "#" + std::to_string(nameId);
     }
     auto [inserted, _] = resolvedNames_.emplace(nameId, std::move(resolved));
+    cachedResolvedNameId_ = nameId;
+    cachedResolvedName_ = &inserted->second;
     return inserted->second;
 }
 
@@ -251,20 +179,37 @@ Datum ExecutionContext::executeHandler(const chunks::ScriptChunk& script,
                                        const chunks::ScriptChunk::Handler& handler,
                                        const std::vector<Datum>& args,
                                        const Datum& receiver) const {
+    return executeHandler(script, handler, std::span<const Datum>(args), receiver);
+}
+
+Datum ExecutionContext::executeHandler(const chunks::ScriptChunk& script,
+                                       const chunks::ScriptChunk::Handler& handler,
+                                       std::span<const Datum> args,
+                                       const Datum& receiver) const {
     return executeHandler(HandlerRef{&script, &handler}, args, receiver);
 }
 
 Datum ExecutionContext::executeHandler(const HandlerRef& handler,
                                        const std::vector<Datum>& args,
                                        const Datum& receiver) const {
+    return executeHandler(handler, std::span<const Datum>(args), receiver);
+}
+
+Datum ExecutionContext::executeHandler(const HandlerRef& handler,
+                                       std::span<const Datum> args,
+                                       const Datum& receiver) const {
+    if (callbacks_.handlerRefSpanExecutor) {
+        return callbacks_.handlerRefSpanExecutor(handler, args, receiver);
+    }
+    const std::vector<Datum> argVector(args.begin(), args.end());
     if (callbacks_.handlerRefExecutor) {
-        return callbacks_.handlerRefExecutor(handler, args, receiver);
+        return callbacks_.handlerRefExecutor(handler, argVector, receiver);
     }
     if (callbacks_.handlerExecutor) {
         if (handler.script == nullptr || handler.handler == nullptr) {
             return Datum::voidValue();
         }
-        return callbacks_.handlerExecutor(*handler.script, *handler.handler, args, receiver);
+        return callbacks_.handlerExecutor(*handler.script, *handler.handler, argVector, receiver);
     }
     return Datum::voidValue();
 }
@@ -302,22 +247,6 @@ std::optional<Datum> ExecutionContext::invokeBuiltinIfPresent(std::string_view n
         scope_->setReturnValue(std::move(*returnValue));
     }
     return result;
-}
-
-builtin::BuiltinRegistry* ExecutionContext::builtins() {
-    return builtins_;
-}
-
-const builtin::BuiltinRegistry* ExecutionContext::builtins() const {
-    return builtins_;
-}
-
-builtin::BuiltinContext* ExecutionContext::builtinContext() {
-    return builtinContext_;
-}
-
-const builtin::BuiltinContext* ExecutionContext::builtinContext() const {
-    return builtinContext_;
 }
 
 std::string ExecutionContext::formatCallStack() const {
