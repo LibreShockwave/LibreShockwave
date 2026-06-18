@@ -522,8 +522,14 @@ bool truthyLikeJava(const Datum& datum) {
     if (const auto* value = datum.asFloat()) {
         return value->value != 0.0F;
     }
-    if (datum.isString()) {
-        return !datum.stringValue().empty();
+    if (const auto* value = datum.asString()) {
+        return !value->value.empty();
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return !value->value.empty();
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return !value->value.empty();
     }
     return true;
 }
