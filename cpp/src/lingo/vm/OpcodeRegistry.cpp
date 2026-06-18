@@ -4750,8 +4750,8 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
         return dispatch::ScriptInstanceMethodDispatcher::dispatch(context, target, methodName, args);
     }
     if (target.type() == DatumType::MovieRef) {
-        if (const auto builtinResult = context.invokeBuiltinIfPresent(methodName, args)) {
-            return *builtinResult;
+        if (auto builtinResult = context.invokeBuiltinIfPresent(methodName, args)) {
+            return std::move(*builtinResult);
         }
         return Datum::voidValue();
     }
@@ -4760,8 +4760,8 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
     fullArgs.reserve(args.size() + 1);
     fullArgs.push_back(target);
     fullArgs.insert(fullArgs.end(), args.begin(), args.end());
-    if (const auto builtinResult = context.invokeBuiltinIfPresent(methodName, fullArgs)) {
-        return *builtinResult;
+    if (auto builtinResult = context.invokeBuiltinIfPresent(methodName, fullArgs)) {
+        return std::move(*builtinResult);
     }
     return Datum::voidValue();
 }
@@ -8061,27 +8061,27 @@ bool executeExtCallWithArgs(ExecutionContext& context,
     } else if (equalsIgnoreCase(handlerName, "voidp")) {
         result = (args.empty() || args[0].isVoid()) ? Datum::TRUE : Datum::FALSE;
     } else if (equalsIgnoreCase(handlerName, "new")) {
-        if (const auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
-            result = *builtinResult;
+        if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+            result = std::move(*builtinResult);
         } else if (const auto handler = context.findHandler(handlerName)) {
             result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
         }
     } else if (const auto handler = context.findHandler(handlerName)) {
         if (handler->script != nullptr && handler->scriptType == chunks::ScriptChunkType::Parent) {
-            if (const auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
-                result = *builtinResult;
+            if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+                result = std::move(*builtinResult);
             } else {
                 result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
             }
         } else {
             result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
         }
-    } else if (const auto fastPrimitiveResult = fastPrimitiveBuiltinCall(context, handlerName, args)) {
-        result = *fastPrimitiveResult;
-    } else if (const auto fastBuiltinResult = fastListBuiltinCall(handlerName, args)) {
-        result = *fastBuiltinResult;
-    } else if (const auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
-        result = *builtinResult;
+    } else if (auto fastPrimitiveResult = fastPrimitiveBuiltinCall(context, handlerName, args)) {
+        result = std::move(*fastPrimitiveResult);
+    } else if (auto fastBuiltinResult = fastListBuiltinCall(handlerName, args)) {
+        result = std::move(*fastBuiltinResult);
+    } else if (auto builtinResult = context.invokeBuiltinIfPresent(handlerName, args)) {
+        result = std::move(*builtinResult);
     } else if (!args.empty()) {
         Datum target = args.front();
         std::vector<Datum> methodArgsStorage;

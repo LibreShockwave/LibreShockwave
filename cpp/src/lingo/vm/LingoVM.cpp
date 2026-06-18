@@ -691,8 +691,8 @@ Datum LingoVM::callHandler(std::string_view handlerNameValue,
 }
 
 Datum LingoVM::callBuiltin(std::string_view handlerNameValue, const std::vector<Datum>& args) {
-    if (const auto result = builtinRegistry_.invokeIfPresent(handlerNameValue, builtinContext_, args)) {
-        return *result;
+    if (auto result = builtinRegistry_.invokeIfPresent(handlerNameValue, builtinContext_, args)) {
+        return std::move(*result);
     }
     if (!handlerNameValue.empty() &&
         (builtinContext_.debugPlaybackEnabled || DebugConfig::isDebugPlaybackEnabled())) {
