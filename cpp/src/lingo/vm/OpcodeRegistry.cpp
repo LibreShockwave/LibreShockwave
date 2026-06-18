@@ -6669,16 +6669,17 @@ bool isImmediatePrimitiveExtCallCandidate(std::string_view handlerName, int argC
 
 Datum fastIntegerValue(const Datum& value) {
     if (value.isString()) {
-        const std::string trimmed = trimCopy(value.stringValue());
+        std::string storage;
+        const std::string_view trimmed = trimView(stringViewLikeJava(value, storage));
         if (trimmed.empty()) {
             return Datum::of(0);
         }
         if (trimmed.front() == '*' && trimmed.size() > 1) {
-            if (const auto parsed = parseLongStrict(std::string_view(trimmed).substr(1), 16)) {
+            if (const auto parsed = parseLongStrictView(trimmed.substr(1), 16)) {
                 return Datum::of(static_cast<int>(*parsed));
             }
         }
-        if (const auto parsedInt = parseIntStrict(trimmed)) {
+        if (const auto parsedInt = parseIntStrictView(trimmed)) {
             return Datum::of(*parsedInt);
         }
         if (const auto parsedDouble = parseDoubleStrict(trimmed)) {
