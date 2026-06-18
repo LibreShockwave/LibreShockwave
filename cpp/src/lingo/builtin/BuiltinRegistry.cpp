@@ -505,7 +505,9 @@ bool lingoEquals(const Datum& lhs, const Datum& rhs) {
         return toDoubleLikeJava(lhs) == toDoubleLikeJava(rhs);
     }
     if ((lhs.isString() || lhs.isSymbol()) && (rhs.isString() || rhs.isSymbol())) {
-        return equalsIgnoreCase(keyName(lhs), keyName(rhs));
+        const auto lhsView = directStringViewLikeJava(lhs);
+        const auto rhsView = directStringViewLikeJava(rhs);
+        return lhsView.has_value() && rhsView.has_value() && equalsIgnoreCase(*lhsView, *rhsView);
     }
     return lhs == rhs;
 }
