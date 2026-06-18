@@ -5600,7 +5600,10 @@ bool joinPadStr(ExecutionContext& context) {
 bool containsStr(ExecutionContext& context) {
     const Datum& needle = context.peekRef(0);
     const Datum& haystack = context.peekRef(1);
-    const bool result = containsIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle));
+    std::string needleStorage;
+    std::string haystackStorage;
+    const bool result = containsIgnoreCase(stringViewLikeJava(haystack, haystackStorage),
+                                           stringViewLikeJava(needle, needleStorage));
     context.scope().drop(2);
     context.push(result ? Datum::TRUE : Datum::FALSE);
     return true;
@@ -5614,7 +5617,10 @@ bool contains0Str(ExecutionContext& context) {
         context.push(Datum::FALSE);
         return true;
     }
-    const bool result = startsWithIgnoreCase(toStringLikeJava(haystack), toStringLikeJava(needle));
+    std::string needleStorage;
+    std::string haystackStorage;
+    const bool result = startsWithIgnoreCase(stringViewLikeJava(haystack, haystackStorage),
+                                             stringViewLikeJava(needle, needleStorage));
     context.scope().drop(2);
     context.push(result ? Datum::TRUE : Datum::FALSE);
     return true;
