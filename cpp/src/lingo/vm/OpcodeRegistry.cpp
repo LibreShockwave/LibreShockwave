@@ -777,7 +777,8 @@ Datum getPropListProp(const Datum::PropList& propList, std::string_view propName
         return Datum::of(propList.count());
     }
     for (const auto& entry : propList.properties()) {
-        if (equalsIgnoreCase(keyNameLikeJava(entry.first), propName)) {
+        std::string keyStorage;
+        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), propName)) {
             return entry.second;
         }
     }
@@ -789,7 +790,8 @@ Datum getPropListProp(const Datum::PropList& propList, std::string_view propName
 
 Datum getPropListKey(const Datum::PropList& propList, std::string_view keyName) {
     for (const auto& entry : propList.properties()) {
-        if (equalsIgnoreCase(keyNameLikeJava(entry.first), keyName)) {
+        std::string keyStorage;
+        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), keyName)) {
             return entry.second;
         }
     }
@@ -831,7 +833,8 @@ std::vector<Datum> snapshotCallArgsFromStack(ExecutionContext& context, int argC
 
 void putPropListProp(Datum::PropList& propList, std::string_view propName, Datum value) {
     for (auto& entry : propList.properties()) {
-        if (equalsIgnoreCase(keyNameLikeJava(entry.first), propName)) {
+        std::string keyStorage;
+        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), propName)) {
             entry.second = std::move(value);
             return;
         }
@@ -2145,7 +2148,8 @@ void removePropListKey(Datum::PropList& propList, std::string_view keyName) {
     auto& properties = propList.properties();
     properties.erase(
         std::remove_if(properties.begin(), properties.end(), [&](const auto& entry) {
-            return equalsIgnoreCase(keyNameLikeJava(entry.first), keyName);
+            std::string keyStorage;
+            return equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), keyName);
         }),
         properties.end());
 }
