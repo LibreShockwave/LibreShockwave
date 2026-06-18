@@ -256,6 +256,23 @@ std::string keyNameLikeJava(const Datum& datum) {
     return toStringLikeJava(datum);
 }
 
+std::string_view keyNameLikeJavaView(const Datum& datum, std::string& storage) {
+    if (const auto* symbol = datum.asSymbol()) {
+        return symbol->name;
+    }
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    storage = toStringLikeJava(datum);
+    return storage;
+}
+
 bool lingoEquals(const Datum& a, const Datum& b) {
     if ((a.isVoid() && b.isNumber()) || (a.isNumber() && b.isVoid()) || (a.isNumber() && b.isNumber())) {
         return toDoubleLikeJava(a) == toDoubleLikeJava(b);
@@ -299,7 +316,8 @@ Datum PropListMethodDispatcher::dispatch(Datum::PropList& propList,
                                          std::span<const Datum> args) {
     if (equalsIgnoreCase(methodName, "count")) {
         if (!args.empty()) {
-            const Datum value = getPropListKey(propList, keyNameLikeJava(args[0]));
+            std::string keyStorage;
+            const Datum value = getPropListKey(propList, keyNameLikeJavaView(args[0], keyStorage));
             if (value.isList()) return Datum::of(value.listValue().count());
             if (value.isPropList()) return Datum::of(value.propListValue().count());
             return Datum::of(0);
@@ -311,7 +329,8 @@ Datum PropListMethodDispatcher::dispatch(Datum::PropList& propList,
         if (args.empty()) {
             return Datum::voidValue();
         }
-        Datum value = getPropListKey(propList, keyNameLikeJava(args[0]));
+        std::string keyStorage;
+        Datum value = getPropListKey(propList, keyNameLikeJavaView(args[0], keyStorage));
         if (args.size() >= 2 && value.isList()) {
             const int index = toIntLikeJava(args[1]);
             if (index >= 1 && index <= value.listValue().count()) {
