@@ -482,17 +482,19 @@ std::uint32_t imageColorArgb(const Datum& datum) {
         return 0xFF000000U | (gray << 16) | (gray << 8) | gray;
     }
     if (datum.isString()) {
-        std::string value = trimCopy(datum.stringValue());
+        std::string storage;
+        std::string_view value = trimView(stringViewLikeJava(datum, storage));
         if (value.size() >= 2 &&
             ((value.front() == '"' && value.back() == '"') || (value.front() == '\'' && value.back() == '\''))) {
-            value = trimCopy(value.substr(1, value.size() - 2));
+            value = trimView(value.substr(1, value.size() - 2));
         }
         if (!value.empty() && value.front() == '#') {
-            value.erase(value.begin());
+            value.remove_prefix(1);
         }
         if (value.size() == 6) {
             try {
-                return 0xFF000000U | (static_cast<std::uint32_t>(std::stoul(value, nullptr, 16)) & 0x00FFFFFFU);
+                return 0xFF000000U |
+                       (static_cast<std::uint32_t>(std::stoul(std::string(value), nullptr, 16)) & 0x00FFFFFFU);
             } catch (...) {
             }
         }
@@ -4797,6 +4799,9 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
                                                           currentItemDelimiter(context));
     }
 
+    if (args.empty()) {
+        return dispatchObjectMethod(context, std::move(target), methodName, emptyDatumArgs());
+    }
     const std::vector<Datum> argVector(args.begin(), args.end());
     return dispatchObjectMethod(context, std::move(target), methodName, argVector);
 }
