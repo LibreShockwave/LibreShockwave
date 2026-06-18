@@ -132,9 +132,7 @@ The target is enabled when libpanel-1 and libadwaita-1 development packages are 
 
 Add the current Director Studio screenshot here after uploading the image to GitHub:
 
-```html
-<img width="1280" alt="LibreShockwave Director Studio editor" src="https://github.com/user-attachments/assets/REPLACE_WITH_EDITOR_IMAGE" />
-```
+<img width="1819" height="1124" alt="Screenshot_20260618_222701" src="https://github.com/user-attachments/assets/1a60f0da-86f9-4d33-aa8e-ab9c90be47ea" />
 
 ## C++ API Examples
 
