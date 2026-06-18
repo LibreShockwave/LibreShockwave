@@ -122,6 +122,16 @@ double toDoubleLikeJava(const Datum& datum) {
 
 std::string toStringLikeJava(const Datum& datum);
 
+std::string_view stringOrSymbolView(const Datum& datum) {
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* symbol = datum.asSymbol()) {
+        return symbol->name;
+    }
+    return {};
+}
+
 std::string datumReprLikeJava(const Datum& datum) {
     if (datum.isVoid()) {
         return "<Void>";
@@ -239,7 +249,7 @@ bool lingoEquals(const Datum& a, const Datum& b) {
         return toDoubleLikeJava(a) == toDoubleLikeJava(b);
     }
     if ((a.isString() || a.isSymbol()) && (b.isString() || b.isSymbol())) {
-        return equalsIgnoreCase(a.stringValue(), b.stringValue());
+        return equalsIgnoreCase(stringOrSymbolView(a), stringOrSymbolView(b));
     }
     return a == b;
 }
