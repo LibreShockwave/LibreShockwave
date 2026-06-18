@@ -62,8 +62,8 @@ int toIntLikeJava(const Datum& datum) {
     if (const auto* value = datum.asFloat()) {
         return static_cast<int>(value->value);
     }
-    if (datum.isString()) {
-        return parseIntStrict(datum.stringValue()).value_or(0);
+    if (const auto* string = datum.asString()) {
+        return parseIntStrict(string->value).value_or(0);
     }
     if (const auto* value = datum.asCastLibRef()) {
         return value->castLib;
