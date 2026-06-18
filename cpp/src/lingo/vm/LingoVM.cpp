@@ -87,6 +87,19 @@ std::string_view trimView(std::string_view value) {
     return value;
 }
 
+std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> leadingValueIdentifier(std::string_view value) {
     const std::string_view text = trimView(value);
     if (text.empty()) {
@@ -177,10 +190,11 @@ LingoVM::LingoVM(DirectorFile* file)
         setRandomSeed(*initialRandomSeed);
     }
     builtinContext_.valueEvaluator = [this](const Datum& value) {
-        if (!value.isString()) {
+        const auto valueText = directStringViewLikeJava(value);
+        if (!valueText.has_value()) {
             return Datum::voidValue();
         }
-        const auto identifier = leadingValueIdentifier(value.stringValue());
+        const auto identifier = leadingValueIdentifier(*valueText);
         if (!identifier.has_value() || isValueLiteralKeyword(*identifier)) {
             return Datum::voidValue();
         }
