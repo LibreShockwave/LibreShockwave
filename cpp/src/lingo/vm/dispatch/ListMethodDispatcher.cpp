@@ -57,8 +57,20 @@ std::string trimCopy(std::string_view value) {
     return std::string(begin, end);
 }
 
+std::string_view trimView(std::string_view value) {
+    std::size_t begin = 0;
+    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin]))) {
+        ++begin;
+    }
+    std::size_t end = value.size();
+    while (end != begin && std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+        --end;
+    }
+    return value.substr(begin, end - begin);
+}
+
 std::optional<int> parseIntStrict(std::string_view value) {
-    const std::string trimmed = trimCopy(value);
+    const std::string_view trimmed = trimView(value);
     if (trimmed.empty()) {
         return std::nullopt;
     }
