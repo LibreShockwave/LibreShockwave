@@ -55,7 +55,12 @@ public:
 
 private:
     [[nodiscard]] std::vector<render::pipeline::RenderSprite> currentSprites() const;
-    [[nodiscard]] int hitTest(int stageX, int stageY) const;
+    [[nodiscard]] int hitTestVisual(const std::vector<render::pipeline::RenderSprite>& sprites,
+                                    int stageX,
+                                    int stageY) const;
+    [[nodiscard]] int hitTestInteractive(const std::vector<render::pipeline::RenderSprite>& sprites,
+                                         int stageX,
+                                         int stageY) const;
     [[nodiscard]] std::optional<render::pipeline::RenderSprite> findSpriteByChannel(
         const std::vector<render::pipeline::RenderSprite>& sprites,
         int channel) const;

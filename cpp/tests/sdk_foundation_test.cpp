@@ -14934,9 +14934,9 @@ void testCursorManagerFoundation() {
         return found == cursorBitmaps.end() ? std::nullopt : std::optional<Bitmap>(found->second);
     });
 
-    bool interactive = false;
-    manager.setInteractivePredicate([&interactive](int channel) {
-        return interactive && channel == 3;
+    std::set<int> interactiveChannels;
+    manager.setInteractivePredicate([&interactiveChannels](int channel) {
+        return interactiveChannels.contains(channel);
     });
 
     input.setMousePosition(11, 11);
@@ -14955,9 +14955,9 @@ void testCursorManagerFoundation() {
     assert(manager.getCursorAtMouse() == 2);
 
     state->setCursor(0);
-    interactive = true;
+    interactiveChannels.insert(3);
     assert(manager.getCursorAtMouse() == CursorManager::POINTER_CURSOR);
-    interactive = false;
+    interactiveChannels.clear();
 
     state->setCursorMembers((1 << 16) | 20, (1 << 16) | 21);
     cursorBitmaps.emplace(std::pair{1, 20}, Bitmap(2, 1, 32, {0xFFFF0000U, 0xFF00FF00U}));
@@ -14974,6 +14974,33 @@ void testCursorManagerFoundation() {
     assert(regPoint.has_value());
     assert((*regPoint)[0] == 4);
     assert((*regPoint)[1] == 5);
+
+    input.setMousePosition(11, 11);
+    auto lowerCursorTarget = registry.getOrCreateDynamic(4);
+    lowerCursorTarget->setCursor(CursorManager::DEFAULT_CURSOR);
+    auto transparentCursorOverlay = registry.getOrCreateDynamic(5);
+    transparentCursorOverlay->setCursor(CursorManager::WAIT_CURSOR);
+    auto transparentCursorChunk = makeHitBitmapMember(14990, 0);
+    auto transparentCursorMember = std::make_shared<CastMember>(1, 1, 14990, transparentCursorChunk);
+    auto transparentCursorBitmap = makeSolidHitBitmap(0xFFFF0000U);
+    transparentCursorBitmap->setPixel(1, 1, 0x00000000U);
+    sprites = {
+        makeHitSprite(4, makeSolidHitBitmap(0xFF00FF00U)),
+        makeHitSprite(5,
+                      transparentCursorBitmap,
+                      libreshockwave::id::code(InkMode::MATTE),
+                      nullptr,
+                      transparentCursorMember),
+    };
+    interactiveChannels = {4, 5};
+    assert(manager.getCursorAtMouse() == CursorManager::POINTER_CURSOR);
+    sprites = {makeHitSprite(5,
+                             transparentCursorBitmap,
+                             libreshockwave::id::code(InkMode::MATTE),
+                             nullptr,
+                             transparentCursorMember)};
+    assert(manager.getCursorAtMouse() == CursorManager::WAIT_CURSOR);
+    interactiveChannels.clear();
 
     assert(CursorManager::encodeCursorMember(Datum::castMemberRef(CastLibId(2), MemberId(9))) == ((2 << 16) | 9));
     assert(CursorManager::encodeCursorMember(Datum::of((3 << 16) | 7)) == ((3 << 16) | 7));
