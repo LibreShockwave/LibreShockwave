@@ -6348,7 +6348,7 @@ bool localCall(ExecutionContext& context) {
         args = &adjustedArgs;
     }
 
-    const Datum result = safeExecuteHandler(
+    Datum result = safeExecuteHandler(
         context,
         HandlerRef{
             script,
@@ -6360,7 +6360,7 @@ bool localCall(ExecutionContext& context) {
         *args,
         receiver);
     if (!noReturn) {
-        context.push(result);
+        context.push(std::move(result));
     }
     return true;
 }
@@ -6711,10 +6711,10 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "charToNum") && argCount == 1) {
-        const Datum result = fastCharToNumValue(context.peekRef());
+        Datum result = fastCharToNumValue(context.peekRef());
         context.scope().drop(1);
         if (!noReturn) {
-            context.push(result);
+            context.push(std::move(result));
         }
         return true;
     }
@@ -6770,7 +6770,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         }
         context.scope().drop(1);
         if (!noReturn) {
-            context.push(result);
+            context.push(std::move(result));
         }
         return true;
     }
@@ -6785,7 +6785,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         }
         context.scope().drop(1);
         if (!noReturn) {
-            context.push(result);
+            context.push(std::move(result));
         }
         return true;
     }
@@ -7822,7 +7822,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
                 : scriptInstancePropertyValue(instance, propName);
             context.scope().drop(argCount);
             if (!noReturn) {
-                context.push(result);
+                context.push(std::move(result));
             }
             return true;
         }
