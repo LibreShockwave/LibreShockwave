@@ -227,14 +227,11 @@ std::string LingoDecompiler::decompile(const chunks::ScriptChunk& script,
     names_ = names;
     initFileInfo(script);
 
-    std::string result = "-- " + format::getScriptTypeName(script.scriptType()) + "\n\n";
+    std::string result = "-- " + format::getScriptTypeName(script.scriptType()) + "\n";
 
     for (const auto& property : script.properties()) {
         result.append("property ");
         result.append(resolveName(property.nameId));
-        result.push_back('\n');
-    }
-    if (!script.properties().empty()) {
         result.push_back('\n');
     }
 
@@ -243,13 +240,18 @@ std::string LingoDecompiler::decompile(const chunks::ScriptChunk& script,
         result.append(resolveName(global.nameId));
         result.push_back('\n');
     }
-    if (!script.globals().empty()) {
+
+    const bool hasDeclarations = !script.properties().empty() || !script.globals().empty();
+    if (hasDeclarations && !script.handlers().empty()) {
         result.push_back('\n');
     }
 
-    for (const auto& handler : script.handlers()) {
+    for (std::size_t index = 0; index < script.handlers().size(); ++index) {
+        if (index > 0) {
+            result.push_back('\n');
+        }
+        const auto& handler = script.handlers()[index];
         result.append(decompileHandler(handler, script, names));
-        result.push_back('\n');
     }
 
     return result;

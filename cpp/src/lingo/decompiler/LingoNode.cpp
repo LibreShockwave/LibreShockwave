@@ -722,7 +722,8 @@ void BlockNode::addChild(NodePtr child) {
 std::string BlockNode::toLingo(bool dot) const {
     std::string result;
     for (const auto& child : children_) {
-        result.append(indent(child->toLingo(dot) + "\n"));
+        result.append(indent(child->toLingo(dot)));
+        result.push_back('\n');
     }
     return result;
 }
