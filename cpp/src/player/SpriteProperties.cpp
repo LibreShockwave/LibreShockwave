@@ -159,6 +159,17 @@ std::optional<std::vector<lingo::Datum>> SpriteProperties::getScriptInstanceList
     return sprite->scriptInstanceList();
 }
 
+std::vector<lingo::Datum>* SpriteProperties::mutableScriptInstanceList(int spriteNum) {
+    if (registry_ == nullptr) {
+        return nullptr;
+    }
+    auto sprite = registry_->get(spriteNum);
+    if (sprite == nullptr || sprite->scriptInstanceList().empty()) {
+        return nullptr;
+    }
+    return &sprite->scriptInstanceList();
+}
+
 lingo::Datum SpriteProperties::getSpriteProp(int spriteNum, std::string_view propName) const {
     const std::string prop = lowerProp(propName);
     if (registry_ == nullptr) {

@@ -2606,8 +2606,21 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
     if (context.newInstanceHandler) {
         return context.newInstanceHandler(target, constructorArgs());
     }
-    if (const auto* scriptRef = target.asScriptRef()) {
+
+    Datum resolvedTarget = target;
+    if (target.asScriptRef() == nullptr && target.asCastMemberRef() == nullptr &&
+        (target.isString() || target.isSymbol())) {
+        const Datum resolvedScript = TypeBuiltins::script(context, {target});
+        if (resolvedScript.asScriptRef() != nullptr) {
+            resolvedTarget = resolvedScript;
+        }
+    }
+
+    if (const auto* scriptRef = resolvedTarget.asScriptRef()) {
         return createScriptInstanceFromRef(context, scriptRef->memberRef, constructorArgs());
+    }
+    if (const auto* memberRef = resolvedTarget.asCastMemberRef()) {
+        return createScriptInstanceFromRef(context, *memberRef, constructorArgs());
     }
     return Datum::voidValue();
 }
