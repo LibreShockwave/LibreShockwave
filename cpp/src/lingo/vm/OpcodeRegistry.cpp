@@ -1843,7 +1843,7 @@ ChunkSpec chooseSingleChunkSpec(int firstChar,
     return {StringChunkType::Char, 1, 1};
 }
 
-Datum pointObjectMethod(Datum::IntPoint& point, std::string_view methodName, const std::vector<Datum>& args) {
+Datum pointObjectMethod(Datum::IntPoint& point, std::string_view methodName, std::span<const Datum> args) {
     if (equalsIgnoreCase(methodName, "getAt")) {
         if (args.empty()) return Datum::voidValue();
         const int index = toIntLikeJava(args[0]);
@@ -1878,7 +1878,7 @@ Datum pointObjectMethod(Datum::IntPoint& point, std::string_view methodName, con
     return Datum::voidValue();
 }
 
-Datum rectObjectMethod(Datum::IntRect& rect, std::string_view methodName, const std::vector<Datum>& args) {
+Datum rectObjectMethod(Datum::IntRect& rect, std::string_view methodName, std::span<const Datum> args) {
     if (equalsIgnoreCase(methodName, "getAt")) {
         if (args.empty()) return Datum::voidValue();
         switch (toIntLikeJava(args[0])) {
@@ -4811,6 +4811,12 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
                                                           methodName,
                                                           args,
                                                           currentItemDelimiter(context));
+    }
+    if (auto* point = target.asIntPoint()) {
+        return pointObjectMethod(*point, methodName, args);
+    }
+    if (auto* rect = target.asIntRect()) {
+        return rectObjectMethod(*rect, methodName, args);
     }
 
     if (args.empty()) {
