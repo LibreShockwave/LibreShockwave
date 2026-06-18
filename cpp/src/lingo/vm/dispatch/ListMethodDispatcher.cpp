@@ -264,6 +264,23 @@ std::string toStringLikeJava(const Datum& datum) {
     }
 }
 
+std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    storage = toStringLikeJava(datum);
+    return storage;
+}
+
 bool lingoEquals(const Datum& a, const Datum& b) {
     if ((a.isVoid() && b.isNumber()) || (a.isNumber() && b.isVoid()) || (a.isNumber() && b.isNumber())) {
         return toDoubleLikeJava(a) == toDoubleLikeJava(b);
@@ -431,7 +448,9 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
             if (lhs.isInt() && rhs.isInt()) {
                 return lhs.intValue() < rhs.intValue();
             }
-            return lessIgnoreCase(toStringLikeJava(lhs), toStringLikeJava(rhs));
+            std::string lhsStorage;
+            std::string rhsStorage;
+            return lessIgnoreCase(stringViewLikeJava(lhs, lhsStorage), stringViewLikeJava(rhs, rhsStorage));
         });
         return Datum::voidValue();
     }
