@@ -2745,15 +2745,15 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
         return safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
     }
     if (prefetchedRegistryResult.has_value()) {
-        return *prefetchedRegistryResult;
+        return std::move(*prefetchedRegistryResult);
     }
     const auto registryResult = scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
     if (registryResult.has_value()) {
-        return *registryResult;
+        return std::move(*registryResult);
     }
 
-    const Datum property = util::getProperty(instance, methodName);
-    return property.isVoid() ? Datum::voidValue() : property;
+    Datum property = util::getProperty(instance, methodName);
+    return property.isVoid() ? Datum::voidValue() : std::move(property);
 }
 
 Datum scriptInstanceObjectMethod(ExecutionContext& context,
