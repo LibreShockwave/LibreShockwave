@@ -92,8 +92,11 @@ std::optional<bitmap::Bitmap> BitmapResolver::decodeBitmap(
         }
     }
     auto withPaletteRefMetadata = [&](std::optional<bitmap::Bitmap> decoded) {
-        if (decoded.has_value() && memberPaletteOverride) {
-            applyPaletteRefMetadata(*decoded, runtimeMember);
+        if (decoded.has_value()) {
+            decoded = decoded->copyWithDegenerateNativeAlphaOpaque();
+            if (memberPaletteOverride) {
+                applyPaletteRefMetadata(*decoded, runtimeMember);
+            }
         }
         return decoded;
     };

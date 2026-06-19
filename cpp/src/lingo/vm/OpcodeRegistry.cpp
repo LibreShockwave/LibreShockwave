@@ -1,6 +1,7 @@
 #include "libreshockwave/lingo/vm/OpcodeRegistry.hpp"
 
 #include "libreshockwave/bitmap/Bitmap.hpp"
+#include "libreshockwave/bitmap/ColorRef.hpp"
 #include "libreshockwave/bitmap/Drawing.hpp"
 #include "libreshockwave/bitmap/Palette.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ImageMethodDispatcher.hpp"
@@ -981,9 +982,6 @@ bool applyImagePaletteProperty(bitmap::Bitmap& bmp, const Datum& value, builtin:
         const auto normalizedName = bitmap::Palette::normalizeBuiltInSymbolName(name);
         const bitmap::Palette* palette = bitmap::Palette::builtInBySymbolName(name);
         if (palette != nullptr && normalizedName) {
-            if (*normalizedName == "systemMac" && bmp.bitDepth() > 8 && !bmp.paletteIndices().has_value()) {
-                palette = &bitmap::Palette::systemWinPalette();
-            }
             if (bmp.bitDepth() <= 8) {
                 (void)bmp.remapImagePalette(palette);
             } else {
@@ -3483,6 +3481,83 @@ bool imageIsMostlyWhiteRegion(const bitmap::Bitmap& bitmap, const Datum::IntRect
     return sampled > 0 && white * 4 >= sampled * 3;
 }
 
+std::optional<int> imageRegionSolidOpaqueRgb(const bitmap::Bitmap& bitmap, const Datum::IntRect& rect) {
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return std::nullopt;
+    }
+
+    std::optional<int> rgb;
+    for (int y = rect.top; y < rect.bottom; ++y) {
+        if (y < 0 || y >= bitmap.height()) {
+            return std::nullopt;
+        }
+        for (int x = rect.left; x < rect.right; ++x) {
+            if (x < 0 || x >= bitmap.width()) {
+                return std::nullopt;
+            }
+            const auto pixel = bitmap.getPixel(x, y);
+            if (((pixel >> 24U) & 0xFFU) == 0U) {
+                return std::nullopt;
+            }
+            const int pixelRgb = static_cast<int>(pixel & 0x00FFFFFFU);
+            if (!rgb.has_value()) {
+                rgb = pixelRgb;
+            } else if (*rgb != pixelRgb) {
+                return std::nullopt;
+            }
+        }
+    }
+    return rgb;
+}
+
+std::optional<int> imageRegionSolidDegenerateRgb(const bitmap::Bitmap& bitmap, const Datum::IntRect& rect) {
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return std::nullopt;
+    }
+
+    std::optional<int> rgb;
+    for (int y = rect.top; y < rect.bottom; ++y) {
+        if (y < 0 || y >= bitmap.height()) {
+            return std::nullopt;
+        }
+        for (int x = rect.left; x < rect.right; ++x) {
+            if (x < 0 || x >= bitmap.width()) {
+                return std::nullopt;
+            }
+            const auto pixel = bitmap.getPixel(x, y);
+            if (((pixel >> 24U) & 0xFFU) > 1U) {
+                return std::nullopt;
+            }
+            const int pixelRgb = static_cast<int>(pixel & 0x00FFFFFFU);
+            if (!rgb.has_value()) {
+                rgb = pixelRgb;
+            } else if (*rgb != pixelRgb) {
+                return std::nullopt;
+            }
+        }
+    }
+    return rgb;
+}
+
+bool imageIsDefaultWhiteRgb(int rgb) {
+    return (rgb & 0x00FFFFFF) == static_cast<int>(bitmap::ColorRef::white().toPacked());
+}
+
+void imageNormalizeBackingThroughPalette(bitmap::Bitmap& bitmap,
+                                         int sourceRgb,
+                                         const bitmap::Palette& palette) {
+    const auto targetRgb = palette.getColor(palette.nearestIndex(static_cast<std::uint32_t>(sourceRgb)));
+    for (auto& pixel : bitmap.pixels()) {
+        if ((pixel & 0x00FFFFFFU) == (static_cast<std::uint32_t>(sourceRgb) & 0x00FFFFFFU)) {
+            pixel = (pixel & 0xFF000000U) | (targetRgb & 0x00FFFFFFU);
+        }
+    }
+}
+
 bool imageCopyMatteToMaskImage(bitmap::Bitmap& dest,
                                const bitmap::Bitmap& src,
                                const Datum::IntRect& destRect,
@@ -4203,6 +4278,7 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
 
     std::shared_ptr<bitmap::Bitmap> matteSource;
     std::shared_ptr<bitmap::Bitmap> backgroundTransparentSource;
+    std::shared_ptr<bitmap::Bitmap> degenerateAlphaSource;
     const bitmap::Bitmap* effectiveSource = &src;
     if (ink == id::InkMode::MATTE) {
         matteSource = std::make_shared<bitmap::Bitmap>(bitmap::Drawing::applyFloodFillTransparency(src));
@@ -4212,6 +4288,20 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
         if (backgroundTransparentSource != nullptr) {
             effectiveSource = backgroundTransparentSource.get();
         }
+    }
+    if (ink == id::InkMode::COPY && effectiveSource == &src && src.hasDegenerateAlphaWithRgbContent()) {
+        const auto sourceBackingRgb = imageRegionSolidDegenerateRgb(src, *srcRect);
+        const auto destBackingRgb = imageRegionSolidOpaqueRgb(dest, *destRect);
+        const bool paletteBackedDynamicBuffer =
+            sourceBackingRgb.has_value() &&
+            destBackingRgb.has_value() &&
+            imageIsDefaultWhiteRgb(*destBackingRgb) &&
+            src.imagePalette() != nullptr;
+        degenerateAlphaSource = std::make_shared<bitmap::Bitmap>(src.copyWithDegenerateAlphaOpaque());
+        if (paletteBackedDynamicBuffer) {
+            imageNormalizeBackingThroughPalette(*degenerateAlphaSource, *sourceBackingRgb, *src.imagePalette());
+        }
+        effectiveSource = degenerateAlphaSource.get();
     }
     const auto& copySrc = *effectiveSource;
     const auto srcPaletteIndices = copySrc.paletteIndices();

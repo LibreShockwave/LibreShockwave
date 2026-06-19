@@ -412,12 +412,18 @@ std::optional<bitmap::Bitmap> decodeBitmapMedia(const std::vector<std::uint8_t>&
     auto bitmap = decodeImportedImage(data);
     if (!bitmap.has_value()) {
         bitmap = bitmap::PngDecoder::decode(data);
+        if (bitmap.has_value()) {
+            bitmap = bitmap->copyWithDegenerateNativeAlphaOpaque();
+        }
     }
     if (!bitmap.has_value()) {
         bitmap = bitmap::GifDecoder::decode(data);
     }
     if (!bitmap.has_value()) {
         bitmap = decodeDirectorBitmapMedia(data, defaultCastLib, manager);
+        if (bitmap.has_value()) {
+            bitmap = bitmap->copyWithDegenerateNativeAlphaOpaque();
+        }
     }
     return bitmap;
 }

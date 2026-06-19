@@ -6243,6 +6243,15 @@ void testBuiltinRegistryFoundation() {
     assert(systemImageRef->bitmap->paletteRefSystemName().has_value());
     assert(systemImageRef->bitmap->paletteRefSystemName().value() == "systemMac");
 
+    const auto deepSystemImageDatum = registry.invoke("image",
+                                                      context,
+                                                      {Datum::of(1), Datum::of(1), Datum::of(32), Datum::symbol("systemMac")});
+    const auto* deepSystemImageRef = deepSystemImageDatum.asImageRef();
+    assert(deepSystemImageRef != nullptr);
+    assert(deepSystemImageRef->bitmap->imagePalette().get() == &Palette::systemMacPalette());
+    assert(deepSystemImageRef->bitmap->paletteRefSystemName().has_value());
+    assert(deepSystemImageRef->bitmap->paletteRefSystemName().value() == "systemMac");
+
     const auto customPalette = std::make_shared<Palette>(std::vector<std::uint32_t>{0xFFFFFFU, 0xDADADAU}, "custom");
     context.imagePaletteResolver = [customPalette](const Datum& paletteArg) -> std::optional<BuiltinContext::ResolvedPalette> {
         const auto* ref = paletteArg.asCastMemberRef();
@@ -12219,6 +12228,37 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             Datum::intRect(0, 0, 1, 1),
                             Datum::intRect(0, 0, 1, 1)}).isVoid());
     assert(alphaCopyDest->getPixel(0, 0) == 0xFF7F7F7FU);
+    auto degenerateAlphaCopySource = std::make_shared<Bitmap>(
+        1, 1, 32, std::vector<std::uint32_t>{0x00EEEEEEU});
+    auto degenerateAlphaCopyDest = std::make_shared<Bitmap>(1, 1, 32);
+    degenerateAlphaCopyDest->fill(0xFFFFFFFFU);
+    assert(runObjCall(110, {Datum::imageRef(degenerateAlphaCopyDest),
+                            Datum::imageRef(degenerateAlphaCopySource),
+                            Datum::intRect(0, 0, 1, 1),
+                            Datum::intRect(0, 0, 1, 1)}).isVoid());
+    assert(degenerateAlphaCopyDest->getPixel(0, 0) == 0xFFEEEEEEU);
+    const auto nearWhiteBackingRgb = Palette::systemWinPalette().getColor(
+        Palette::systemWinPalette().nearestIndex(ColorRef::Rgb(238, 238, 238).toPacked()));
+    const auto systemBackingRgb = Palette::systemMacPalette().getColor(
+        Palette::systemMacPalette().nearestIndex(nearWhiteBackingRgb));
+    auto nearWhiteBackingCopySource = std::make_shared<Bitmap>(
+        1, 1, 32, std::vector<std::uint32_t>{nearWhiteBackingRgb});
+    nearWhiteBackingCopySource->setImagePalette(&Palette::systemMacPalette());
+    auto nearWhiteBackingCopyDest = std::make_shared<Bitmap>(2, 2, 32);
+    nearWhiteBackingCopyDest->fill(0xFFFFFFFFU);
+    assert(runObjCall(110, {Datum::imageRef(nearWhiteBackingCopyDest),
+                            Datum::imageRef(nearWhiteBackingCopySource),
+                            Datum::intRect(0, 0, 2, 2),
+                            Datum::intRect(0, 0, 1, 1)}).isVoid());
+    assert(nearWhiteBackingCopyDest->getPixel(0, 0) == (0xFF000000U | systemBackingRgb));
+    assert(nearWhiteBackingCopyDest->getPixel(1, 1) == (0xFF000000U | systemBackingRgb));
+    auto nearWhiteNonBackingCopyDest = std::make_shared<Bitmap>(1, 1, 32);
+    nearWhiteNonBackingCopyDest->fill(0xFF000000U);
+    assert(runObjCall(110, {Datum::imageRef(nearWhiteNonBackingCopyDest),
+                            Datum::imageRef(nearWhiteBackingCopySource),
+                            Datum::intRect(0, 0, 1, 1),
+                            Datum::intRect(0, 0, 1, 1)}).isVoid());
+    assert(nearWhiteNonBackingCopyDest->getPixel(0, 0) == (0xFF000000U | nearWhiteBackingRgb));
     auto blendCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0xFF000000U});
     auto blendCopyDest = std::make_shared<Bitmap>(1, 1, 32);
@@ -20955,6 +20995,25 @@ void testBitmapAlphaAndPaletteBehavior() {
     assert(nativeResult.getPixel(0, 0) == 0x00F0F0F0U);
     assert(nativeResult.isNativeAlpha());
 
+    Bitmap degenerateAlpha(2, 1, 32, {0x00EEEEEEU, 0x01010203U});
+    Bitmap degenerateAlphaOpaque = degenerateAlpha.copyWithDegenerateAlphaOpaque();
+    assert(!degenerateAlphaOpaque.isNativeAlpha());
+    assert(degenerateAlphaOpaque.getPixel(0, 0) == 0xFFEEEEEEU);
+    assert(degenerateAlphaOpaque.getPixel(1, 0) == 0xFF010203U);
+
+    Bitmap degenerateNativeAlpha(2, 1, 32, {0x00EEEEEEU, 0x01010203U});
+    degenerateNativeAlpha.setNativeAlpha(true);
+    Bitmap degenerateOpaque = degenerateNativeAlpha.copyWithDegenerateNativeAlphaOpaque();
+    assert(!degenerateOpaque.isNativeAlpha());
+    assert(degenerateOpaque.getPixel(0, 0) == 0xFFEEEEEEU);
+    assert(degenerateOpaque.getPixel(1, 0) == 0xFF010203U);
+
+    Bitmap emptyDegenerateNativeAlpha(1, 1, 32, {0x00000000U});
+    emptyDegenerateNativeAlpha.setNativeAlpha(true);
+    Bitmap emptyDegenerateResult = emptyDegenerateNativeAlpha.copyWithDegenerateNativeAlphaOpaque();
+    assert(emptyDegenerateResult.isNativeAlpha());
+    assert(emptyDegenerateResult.getPixel(0, 0) == 0x00000000U);
+
     Bitmap indexedFill(2, 1, 8);
     indexedFill.setImagePalette(&Palette::systemWinPalette());
     indexedFill.fillRect(0, 0, 2, 1, 0xFFEEEEEEU);
@@ -22649,6 +22708,11 @@ void testCastListAndMemberChunks() {
     assert(parsedBitmap.runtimeBitmap()->isNativeAlpha());
     assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0x80112233U);
     assert(parsedBitmap.runtimeBitmap()->getPixel(1, 0) == 0x00445566U);
+    Bitmap transparentRgbBackingBitmap(1, 1, 32, {0x00EEEEEEU});
+    transparentRgbBackingBitmap.setNativeAlpha(true);
+    parsedBitmap.setRuntimeBitmapFromAuthoredSource(transparentRgbBackingBitmap);
+    assert(!parsedBitmap.runtimeBitmap()->isNativeAlpha());
+    assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0xFFEEEEEEU);
     assert(parsedBitmap.toString().find("BitmapName") != std::string::npos);
 
     auto scriptMemberPtr = std::make_shared<CastMemberChunk>(
