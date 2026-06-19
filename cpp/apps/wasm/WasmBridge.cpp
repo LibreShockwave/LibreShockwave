@@ -29,6 +29,7 @@
 #include "libreshockwave/player/InputHandler.hpp"
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/PlayerState.hpp"
+#include "libreshockwave/player/audio/QueuedAudioBackend.hpp"
 #include "libreshockwave/player/input/DirectorKeyCodes.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
 #include "libreshockwave/player/net/QueuedNetProvider.hpp"
@@ -42,6 +43,7 @@ using libreshockwave::bitmap::Bitmap;
 using libreshockwave::player::InputHandler;
 using libreshockwave::player::Player;
 using libreshockwave::player::PlayerState;
+using libreshockwave::player::audio::QueuedAudioBackend;
 using libreshockwave::player::input::DirectorKeyCodes;
 using libreshockwave::player::net::QueuedNetProvider;
 using libreshockwave::player::render::pipeline::RenderSprite;
@@ -57,6 +59,7 @@ struct WasmPlayerContext {
     std::shared_ptr<DirectorFile> file;
     std::unique_ptr<QueuedNetProvider> netProvider;
     std::unique_ptr<QueuedMultiuserBridge> multiuserBridge;
+    std::unique_ptr<QueuedAudioBackend> audioBackend;
     std::unique_ptr<Player> player;
     std::vector<std::pair<std::string, std::string>> externalParams;
     std::vector<std::uint8_t> frameRgba;
@@ -790,6 +793,34 @@ std::string multiuserRequestsJson(const std::vector<QueuedMultiuserBridge::Pendi
     return out.str();
 }
 
+std::string audioCommandsJson(const std::vector<QueuedAudioBackend::SoundCommand>& commands) {
+    std::ostringstream out;
+    out << '[';
+    bool first = true;
+    for (const auto& command : commands) {
+        if (!first) {
+            out << ',';
+        }
+        first = false;
+        out << "{\"action\":";
+        appendJsonString(out, command.action);
+        out << ",\"channel\":" << command.channelNum
+            << ",\"loopCount\":" << command.loopCount
+            << ",\"volume\":" << command.volume;
+        if (command.format.has_value()) {
+            out << ",\"format\":";
+            appendJsonString(out, *command.format);
+        }
+        if (command.audioData.has_value()) {
+            out << ",\"byteLength\":" << command.audioData->size()
+                << ",\"data\":\"" << base64Encode(*command.audioData) << '"';
+        }
+        out << '}';
+    }
+    out << ']';
+    return out.str();
+}
+
 void processQueuedInput(WasmPlayerContext& ctx) {
     if (ctx.player == nullptr) {
         return;
@@ -925,10 +956,11 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         if (ctx->player != nullptr) {
             ctx->player->shutdown();
         }
-        ctx->file.reset();
-        ctx->netProvider.reset();
-        ctx->multiuserBridge.reset();
         ctx->player.reset();
+        ctx->audioBackend.reset();
+        ctx->multiuserBridge.reset();
+        ctx->netProvider.reset();
+        ctx->file.reset();
         ctx->frameRgba.clear();
         ctx->frameWidth = 0;
         ctx->frameHeight = 0;
@@ -945,8 +977,10 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
 
         auto netProvider = std::make_unique<QueuedNetProvider>(ctx->movieSource);
         auto multiuserBridge = std::make_unique<QueuedMultiuserBridge>();
+        auto audioBackend = std::make_unique<QueuedAudioBackend>();
         auto player = std::make_unique<Player>(file, netProvider.get());
         player->registerMultiuserXtra(*multiuserBridge);
+        player->setAudioBackend(audioBackend.get());
         player->setExternalParams(ctx->externalParams);
         player->builtinContext().outputHandler = [ctx](std::string_view kind, const std::string& text) {
             if (ctx != nullptr) {
@@ -986,6 +1020,7 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         ctx->file = std::move(file);
         ctx->netProvider = std::move(netProvider);
         ctx->multiuserBridge = std::move(multiuserBridge);
+        ctx->audioBackend = std::move(audioBackend);
         ctx->player = std::move(player);
         ctx->player->setDebugEnabled(ctx->debugPlaybackEnabled);
         ctx->player->setSlowHandlerWarningThresholdMs(ctx->slowHandlerWarningMs);
@@ -1335,6 +1370,38 @@ EMSCRIPTEN_KEEPALIVE void lsw_drain_multiuser_requests(int handle) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->multiuserBridge != nullptr) {
         guardedVoid(*ctx, "drain multiuser requests", [&]() {
             ctx->multiuserBridge->drainPendingRequests();
+        });
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* lsw_poll_audio_commands(int handle) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr || ctx->audioBackend == nullptr) {
+        return "[]";
+    }
+    try {
+        return scratch(*ctx, audioCommandsJson(ctx->audioBackend->pendingCommands()));
+    } catch (const std::exception& error) {
+        setError(*ctx, error.what());
+        return "[]";
+    } catch (...) {
+        setError(*ctx, "Unknown audio command poll error");
+        return "[]";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void lsw_drain_audio_commands(int handle) {
+    if (auto* ctx = getContext(handle); ctx != nullptr && ctx->audioBackend != nullptr) {
+        guardedVoid(*ctx, "drain audio commands", [&]() {
+            ctx->audioBackend->drainPending();
+        });
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void lsw_audio_stopped(int handle, int channelNum) {
+    if (auto* ctx = getContext(handle); ctx != nullptr && ctx->audioBackend != nullptr) {
+        guardedVoid(*ctx, "audio stopped", [&]() {
+            ctx->audioBackend->notifyStopped(channelNum);
         });
     }
 }

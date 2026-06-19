@@ -107,6 +107,9 @@ function ensureModule() {
       fetchError: Module.cwrap("lsw_fetch_error", null, ["number", "number", "number"]),
       pollSockets: Module.cwrap("lsw_poll_multiuser_requests", "string", ["number"]),
       drainSockets: Module.cwrap("lsw_drain_multiuser_requests", null, ["number"]),
+      pollAudio: Module.cwrap("lsw_poll_audio_commands", "string", ["number"]),
+      drainAudio: Module.cwrap("lsw_drain_audio_commands", null, ["number"]),
+      audioStopped: Module.cwrap("lsw_audio_stopped", null, ["number", "number"]),
       socketConnected: Module.cwrap("lsw_multiuser_connected", null, ["number", "number"]),
       socketDisconnected: Module.cwrap("lsw_multiuser_disconnected", null, ["number", "number"]),
       socketError: Module.cwrap("lsw_multiuser_error", null, ["number", "number", "number"]),
@@ -406,6 +409,20 @@ function handleSocketRequest(request) {
   }
 }
 
+function emitAudioCommands() {
+  if (!handle || !api || !api.pollAudio) return 0;
+  const commands = parseJsonArray(bridgeCall("poll audio commands", () => api.pollAudio(handle), "[]"));
+  if (commands.length === 0) return 0;
+  bridgeCall("drain audio commands", () => api.drainAudio(handle));
+  for (const command of commands) {
+    if (!command || typeof command !== "object") continue;
+    const { data, ...payload } = command;
+    const bytes = data ? decodeBase64(data) : new Uint8Array();
+    post("audio", { command: payload, bytes }, bytes.byteLength > 0 ? [bytes.buffer] : undefined);
+  }
+  return commands.length;
+}
+
 async function pumpHostQueues() {
   if (!handle) return;
   for (let round = 0; round < 64; round += 1) {
@@ -437,7 +454,9 @@ async function pumpHostQueues() {
       socketRequests.forEach(handleSocketRequest);
     }
 
-    if (fetches.length === 0 && navigations.length === 0 && socketRequests.length === 0) {
+    const audioCommands = emitAudioCommands();
+
+    if (fetches.length === 0 && navigations.length === 0 && socketRequests.length === 0 && audioCommands === 0) {
       break;
     }
   }
@@ -536,6 +555,7 @@ function paramsObjectToText(params) {
 async function loadMovie(url, keepPlaying = false, requestId = 0) {
   movieUrl = resolveUrl(url || movieUrl);
   clearTimer();
+  post("audio", { command: { action: "stopAll" } });
   const wasPlaying = keepPlaying || playing;
   playing = false;
   nextTickAt = 0;
@@ -617,6 +637,7 @@ self.addEventListener("message", (event) => {
       case "play":
         playing = true;
         bridgeCall("play", () => api.play(handle));
+        await pumpHostQueues();
         nextTickAt = performance.now() + currentDelayMs();
         scheduleTick();
         break;
@@ -624,12 +645,14 @@ self.addEventListener("message", (event) => {
         playing = false;
         bridgeCall("pause", () => api.pause(handle));
         clearTimer();
+        await pumpHostQueues();
         sendFrame();
         break;
       case "stop":
         playing = false;
         bridgeCall("stop", () => api.stop(handle));
         clearTimer();
+        await pumpHostQueues();
         sendFrame();
         break;
       case "tempo":
@@ -720,7 +743,11 @@ self.addEventListener("message", (event) => {
       }
       case "cut":
         post("cut", { requestId: message.requestId, text: bridgeCall("cut", () => api.cutSelectedText(handle), "") || "" });
+        await pumpHostQueues();
         sendFrame();
+        break;
+      case "audioStopped":
+        bridgeCall("audio stopped", () => api.audioStopped(handle, message.channel | 0));
         break;
       case "destroy":
         clearTimer();

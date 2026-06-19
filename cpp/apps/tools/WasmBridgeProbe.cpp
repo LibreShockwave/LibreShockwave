@@ -34,6 +34,9 @@ const char* lsw_poll_fetch_requests(int handle);
 void lsw_drain_fetch_requests(int handle);
 const char* lsw_poll_multiuser_requests(int handle);
 void lsw_drain_multiuser_requests(int handle);
+const char* lsw_poll_audio_commands(int handle);
+void lsw_drain_audio_commands(int handle);
+void lsw_audio_stopped(int handle, int channelNum);
 void lsw_multiuser_connected(int handle, int instanceId);
 void lsw_multiuser_disconnected(int handle, int instanceId);
 void lsw_multiuser_error(int handle, int instanceId, int errorCode);
@@ -182,6 +185,9 @@ void probeLoadedMovieBridge(int handle) {
     lsw_drain_fetch_requests(handle);
     require(lsw_poll_multiuser_requests(handle) != nullptr, "multiuser request poll returned null");
     lsw_drain_multiuser_requests(handle);
+    require(lsw_poll_audio_commands(handle) != nullptr, "audio command poll returned null");
+    lsw_drain_audio_commands(handle);
+    lsw_audio_stopped(handle, 1);
     const std::uint8_t bytes[] = {'P', 'I', 'N', 'G'};
     lsw_multiuser_connected(handle, 99);
     lsw_multiuser_message_bytes(handle, 99, bytes, static_cast<int>(std::size(bytes)));
@@ -198,6 +204,9 @@ int main(int argc, char** argv) {
 
         const int handle = lsw_create();
         require(handle > 0, "create failed");
+        require(lsw_poll_audio_commands(handle) != nullptr, "empty audio command poll returned null");
+        lsw_drain_audio_commands(handle);
+        lsw_audio_stopped(handle, 1);
 
         if (argc > 1) {
             const fs::path movie = findFirstMovie(argv[1]);
