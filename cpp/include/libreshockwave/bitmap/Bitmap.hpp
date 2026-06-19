@@ -34,6 +34,7 @@ public:
     void markScriptModified();
     [[nodiscard]] bool hasTransparentPixels() const;
     [[nodiscard]] bool hasTranslucentPixels() const;
+    [[nodiscard]] bool hasDegenerateAlphaWithRgbContent() const;
     [[nodiscard]] bool hasNativeMatteAlpha() const;
     [[nodiscard]] bool isNativeAlpha() const;
     void setNativeAlpha(bool nativeAlpha);
@@ -41,6 +42,8 @@ public:
     void setRectangularMedia(bool rectangularMedia);
 
     [[nodiscard]] Bitmap copyWithNonNativeAlphaOpaque() const;
+    [[nodiscard]] Bitmap copyWithDegenerateAlphaOpaque() const;
+    [[nodiscard]] Bitmap copyWithDegenerateNativeAlphaOpaque() const;
 
     void setImagePalette(std::shared_ptr<const Palette> palette);
     void setImagePalette(const Palette* palette);

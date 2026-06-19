@@ -9,33 +9,6 @@
 #include "libreshockwave/chunks/CastMemberChunk.hpp"
 
 namespace libreshockwave::cast {
-namespace {
-
-bitmap::Bitmap normalizeAuthoredBitmapAlpha(bitmap::Bitmap bitmap) {
-    if (bitmap.bitDepth() != 32 || !bitmap.isNativeAlpha() || bitmap.pixels().empty()) {
-        return bitmap;
-    }
-
-    bool hasRgbContent = false;
-    for (const auto pixel : bitmap.pixels()) {
-        const auto alpha = (pixel >> 24U) & 0xFFU;
-        if (alpha > 1) {
-            return bitmap;
-        }
-        hasRgbContent = hasRgbContent || ((pixel & 0x00FFFFFFU) != 0);
-    }
-    if (!hasRgbContent) {
-        return bitmap;
-    }
-
-    for (auto& pixel : bitmap.pixels()) {
-        pixel = 0xFF000000U | (pixel & 0x00FFFFFFU);
-    }
-    bitmap.setNativeAlpha(false);
-    return bitmap;
-}
-
-} // namespace
 
 CastMember::CastMember(int id, int castLib, int memberNum, std::shared_ptr<chunks::CastMemberChunk> chunk)
     : id_(id),
@@ -374,7 +347,7 @@ void CastMember::setRuntimeBitmapInternal(const bitmap::Bitmap& bitmap,
                                           bool authoredSource) {
     const int currentRegX = regX();
     const int currentRegY = regY();
-    auto copy = authoredSource ? normalizeAuthoredBitmapAlpha(bitmap.copy()) : bitmap.copy();
+    auto copy = authoredSource ? bitmap.copyWithDegenerateNativeAlphaOpaque() : bitmap.copy();
     if (markScriptModified) {
         copy.markScriptModified();
     }

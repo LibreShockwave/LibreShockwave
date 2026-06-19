@@ -66,6 +66,22 @@ bool Bitmap::hasTranslucentPixels() const {
     });
 }
 
+bool Bitmap::hasDegenerateAlphaWithRgbContent() const {
+    if (bitDepth_ != 32 || pixels_.empty()) {
+        return false;
+    }
+
+    bool hasRgbContent = false;
+    for (const auto pixel : pixels_) {
+        const auto alpha = (pixel >> 24U) & 0xFFU;
+        if (alpha > 1U) {
+            return false;
+        }
+        hasRgbContent = hasRgbContent || ((pixel & 0x00FFFFFFU) != 0U);
+    }
+    return hasRgbContent;
+}
+
 bool Bitmap::hasNativeMatteAlpha() const {
     return bitDepth_ == 32 && nativeAlpha_;
 }
@@ -87,6 +103,26 @@ Bitmap Bitmap::copyWithNonNativeAlphaOpaque() const {
     }
     opaque.nativeAlpha_ = false;
     return opaque;
+}
+
+Bitmap Bitmap::copyWithDegenerateAlphaOpaque() const {
+    if (!hasDegenerateAlphaWithRgbContent()) {
+        return *this;
+    }
+
+    Bitmap opaque = copy();
+    for (auto& pixel : opaque.pixels_) {
+        pixel = 0xFF000000U | (pixel & 0x00FFFFFFU);
+    }
+    opaque.nativeAlpha_ = false;
+    return opaque;
+}
+
+Bitmap Bitmap::copyWithDegenerateNativeAlphaOpaque() const {
+    if (!nativeAlpha_) {
+        return *this;
+    }
+    return copyWithDegenerateAlphaOpaque();
 }
 
 void Bitmap::setImagePalette(std::shared_ptr<const Palette> palette) {
