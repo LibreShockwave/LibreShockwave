@@ -12,8 +12,6 @@
 namespace libreshockwave::player {
 namespace {
 
-constexpr const char* syntheticBrokerFlag = "__spriteEventBroker__";
-
 std::string lowerProp(std::string_view value) {
     std::string result(value);
     std::transform(result.begin(), result.end(), result.begin(), [](unsigned char ch) {
@@ -791,7 +789,7 @@ void SpriteProperties::applyEmptyMemberOverride(sprite::SpriteState& sprite) {
 }
 
 void SpriteProperties::resetReleasedEmptyChannel(sprite::SpriteState& sprite) {
-    sprite.setScriptInstanceList(retainSyntheticBrokerInstances(sprite.scriptInstanceList()));
+    sprite.setScriptInstanceList({});
     sprite.setVisible(false);
     sprite.setCursor(0);
     sprite.setBlend(100);
@@ -800,45 +798,19 @@ void SpriteProperties::resetReleasedEmptyChannel(sprite::SpriteState& sprite) {
     sprite.resetReleasedSpriteTransforms();
 }
 
-lingo::Datum SpriteProperties::createSyntheticBroker(int spriteNum) {
-    auto broker = lingo::Datum::scriptInstance("spriteEventBroker");
-    broker.scriptInstanceValue().setProperty("spritenum", lingo::Datum::of(spriteNum));
-    broker.scriptInstanceValue().setProperty("pLink", lingo::Datum::voidValue());
-    broker.scriptInstanceValue().setProperty(syntheticBrokerFlag, lingo::Datum::TRUE);
-    return broker;
-}
-
-std::vector<lingo::Datum> SpriteProperties::retainSyntheticBrokerInstances(
-    const std::vector<lingo::Datum>& scriptInstances) {
-    std::vector<lingo::Datum> retained;
-    for (const auto& script : scriptInstances) {
-        if (script.type() != lingo::DatumType::ScriptInstanceRef) {
-            continue;
-        }
-        if (script.scriptInstanceValue().getProperty(syntheticBrokerFlag).boolValue()) {
-            retained.push_back(script);
-        }
-    }
-    return retained;
-}
-
-std::vector<lingo::Datum>* SpriteProperties::getOrCreateBrokerScriptList(int spriteNum) {
+std::vector<lingo::Datum>* SpriteProperties::brokerScriptList(int spriteNum) {
     if (registry_ == nullptr) {
         return nullptr;
     }
-    auto sprite = registry_->getOrCreateDynamic(spriteNum);
-    if (sprite == nullptr) {
+    auto sprite = registry_->get(spriteNum);
+    if (sprite == nullptr || sprite->scriptInstanceList().empty()) {
         return nullptr;
-    }
-    if (sprite->scriptInstanceList().empty()) {
-        sprite->setScriptInstanceList({createSyntheticBroker(spriteNum)});
-        registry_->bumpRevision();
     }
     return &sprite->scriptInstanceList();
 }
 
 lingo::Datum* SpriteProperties::primaryBroker(int spriteNum) {
-    auto* scripts = getOrCreateBrokerScriptList(spriteNum);
+    auto* scripts = brokerScriptList(spriteNum);
     if (scripts == nullptr || scripts->empty()) {
         return nullptr;
     }

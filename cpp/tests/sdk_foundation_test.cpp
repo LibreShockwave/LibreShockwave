@@ -3306,6 +3306,62 @@ void testPlayerInputFoundation() {
                      false),
     });
     assert(inputHandler.hitTestExact(5, 5) == 2);
+    {
+        InputState propagationState;
+        StageRenderer propagationRenderer;
+        EventDispatcher propagationDispatcher;
+        propagationDispatcher.setSpriteRegistry(&propagationRenderer.spriteRegistry());
+        propagationDispatcher.setRespondsPredicate([mouseAndKeyHandlers](const EventTarget& target,
+                                                                          std::string_view handler) {
+            return target.kind == EventTargetKind::ScriptInstance &&
+                   mouseAndKeyHandlers.contains(std::string(handler));
+        });
+        std::vector<std::string> propagationCalls;
+        propagationDispatcher.setHandlerInvoker([&propagationCalls](const EventTarget& target,
+                                                                    std::string_view handler,
+                                                                    const std::vector<Datum>& args) {
+            assert(args.empty());
+            propagationCalls.push_back(std::to_string(target.channel) + ":" + std::string(handler));
+            return HandlerResult{true, true};
+        });
+        propagationRenderer.spriteRegistry()
+            .getOrCreateDynamic(4)
+            ->setScriptInstanceList({Datum::scriptInstance("transparent-lower")});
+        propagationRenderer.spriteRegistry()
+            .getOrCreateDynamic(5)
+            ->setScriptInstanceList({Datum::scriptInstance("top-interactive")});
+        propagationRenderer.setLastBakedSprites({
+            RenderSprite(4,
+                         0,
+                         0,
+                         20,
+                         20,
+                         4,
+                         true,
+                         SpriteType::Bitmap,
+                         nullptr,
+                         transparentMember,
+                         0,
+                         0,
+                         false,
+                         false,
+                         libreshockwave::id::code(InkMode::MATTE),
+                         100,
+                         false,
+                         false,
+                         transparentBitmap,
+                         false),
+            RenderSprite(5, 0, 0, 20, 20, 5, true, SpriteType::Shape, nullptr, nullptr, 0, 0, false, false, 0, 100, false, false, nullptr, true),
+        });
+        InputHandler propagationHandler(&propagationState, &propagationRenderer, &propagationDispatcher);
+        propagationHandler.onMouseDown(5, 5);
+        assert(propagationHandler.processInputEvents());
+        assert((propagationCalls == std::vector<std::string>{"5:mouseDown", "4:mouseDown"}));
+        propagationCalls.clear();
+        propagationHandler.onMouseUp(5, 5);
+        assert(propagationHandler.processInputEvents());
+        assert((propagationCalls == std::vector<std::string>{"5:mouseUp", "4:mouseUp"}));
+    }
 
     auto makeNativeAlphaSpecificData = [](int alphaThreshold) {
         return std::vector<std::uint8_t>{
@@ -5439,6 +5495,8 @@ void testBuiltinRegistryFoundation() {
     assert(registry.contains("stringReplace"));
     assert(registry.contains("getPref"));
     assert(registry.contains("setPref"));
+    assert(registry.invoke("value", context, {Datum::of(std::string())}).stringValue().empty());
+    assert(!registry.invoke("voidp", context, {registry.invoke("value", context, {Datum::of(std::string())})}).boolValue());
     assert(registry.invoke("string", context).stringValue().empty());
     assert(registry.invoke("string", context, {Datum::of(42)}).stringValue() == "42");
     assert(registry.invoke("string", context, {Datum::symbol("door")}).stringValue() == "door");
@@ -9886,13 +9944,13 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         assert(opcodeRegistry.execute(Opcode::GET, legacyGetContext));
         return legacyGetContext.pop();
     };
-    assert(runLegacyGet(0x00, Datum::of(std::string("red,green,blue")), 0x0C).stringValue() == "blue");
+    assert(runLegacyGet(0x00, Datum::of(std::string("red,green,blue")), 0x0C).stringValue() == "e");
     assert(runLegacyGet(0x00, Datum::of(std::string("one two three")), 0x0D).stringValue() == "three");
-    assert(runLegacyGet(0x00, Datum::of(std::string("abcd")), 0x0E).stringValue() == "d");
+    assert(runLegacyGet(0x00, Datum::of(std::string("red,green,blue")), 0x0E).stringValue() == "blue");
     assert(runLegacyGet(0x00, Datum::of(std::string("top\nbottom")), 0x0F).stringValue() == "bottom");
-    assert(runLegacyGet(0x01, Datum::of(std::string("red,green,blue")), 0x01).intValue() == 3);
+    assert(runLegacyGet(0x01, Datum::of(std::string("abcd")), 0x01).intValue() == 4);
     assert(runLegacyGet(0x01, Datum::of(std::string("one two three")), 0x02).intValue() == 3);
-    assert(runLegacyGet(0x01, Datum::of(std::string("abcd")), 0x03).intValue() == 4);
+    assert(runLegacyGet(0x01, Datum::of(std::string("red,green,blue")), 0x03).intValue() == 3);
     assert(runLegacyGet(0x01, Datum::of(std::string("top\nbottom")), 0x04).intValue() == 2);
     assert(runLegacyGet(0x00, Datum::voidValue(), 0x01).isVoid());
 
@@ -11402,15 +11460,15 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     auto aliasRegistryInstance = Datum::scriptInstance("aliasRegistry");
     aliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    builtinContext.fieldResolver = [](const Datum& identifier, int castLib) {
+    std::string aliasFieldText =
+        "chair_alias=chair_target\r\n"
+        "chair_mirror=chair_target*\r\n"
+        "broken_alias=missing_target\r\n"
+        "pipe_alias=pipe_target|pipe_mirror=pipe_target*|broken_pipe=missing_target|";
+    builtinContext.fieldResolver = [&aliasFieldText](const Datum& identifier, int castLib) {
         assert(identifier.stringValue() == "memberalias.index");
         assert(castLib == 11);
-        return Datum::fieldText(
-            "chair_alias=chair_target\r\n"
-            "chair_mirror=chair_target*\r\n"
-            "broken_alias=missing_target\r\n",
-            11,
-            2);
+        return Datum::fieldText(aliasFieldText, 11, 2);
     };
     builtinContext.castLibCountSupplier = []() {
         return 11;
@@ -11422,16 +11480,19 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         if (castLib == 11 && memberName == "chair_target") {
             return Datum::castMemberRef(CastLibId(11), MemberId(7));
         }
+        if (castLib == 11 && memberName == "pipe_target") {
+            return Datum::castMemberRef(CastLibId(11), MemberId(8));
+        }
         return Datum::voidValue();
     };
     builtinContext.castMemberExistsResolver = [](int castLib, int memberNum) {
-        return castLib == 11 && memberNum == 7;
+        return castLib == 11 && (memberNum == 7 || memberNum == 8);
     };
     builtinContext.registryVisibleMemberResolver = [](int, int) {
         return false;
     };
     assert(runObjCall(121, {aliasRegistryInstance, Datum::of(std::string("memberalias.index")), Datum::of(11)}).intValue() ==
-           2);
+           4);
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
@@ -11442,34 +11503,33 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .propListValue()
                .get(Datum::of(std::string("chair_mirror")))
                .intValue() == -SlotId::of(11, 7).value());
+    assert(aliasRegistryInstance.scriptInstanceValue()
+               .getProperty("pAllMemNumList")
+               .propListValue()
+               .get(Datum::of(std::string("pipe_alias")))
+               .intValue() == SlotId::of(11, 8).value());
+    assert(aliasRegistryInstance.scriptInstanceValue()
+               .getProperty("pAllMemNumList")
+               .propListValue()
+               .get(Datum::of(std::string("pipe_mirror")))
+               .intValue() == -SlotId::of(11, 8).value());
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
                .get(Datum::of(std::string("chair_target")))
                .isVoid());
     aliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    assert(runObjCall(118, {aliasRegistryInstance, Datum::of(std::string("chair_mirror"))}).intValue() ==
-           -SlotId::of(11, 7).value());
+    assert(runObjCall(118, {aliasRegistryInstance, Datum::of(std::string("pipe_mirror"))}).intValue() == 0);
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
-               .get(Datum::of(std::string("chair_mirror")))
-               .intValue() == -SlotId::of(11, 7).value());
+               .get(Datum::of(std::string("pipe_mirror")))
+               .isVoid());
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
                .get(Datum::of(std::string("chair_target")))
                .isVoid());
-
-    auto refreshedAliasRegistryInstance = Datum::scriptInstance("refreshedAliasRegistry");
-    refreshedAliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    assert(runObjCall(118, {refreshedAliasRegistryInstance, Datum::of(std::string("chair_alias"))}).intValue() ==
-           SlotId::of(11, 7).value());
-    assert(refreshedAliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("chair_alias")))
-               .intValue() == SlotId::of(11, 7).value());
 
     builtinContext.scriptHandlerFinder = [&script, otherHandler](
                                              int castLib,
@@ -11491,7 +11551,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .getProperty("pAllMemNumList")
                .propListValue()
                .get(Datum::of(std::string("chair_alias")))
-               .intValue() == SlotId::of(11, 7).value());
+               .isVoid());
     builtinContext.scriptHandlerFinder = {};
     builtinContext.fieldResolver = {};
     builtinContext.castLibCountSupplier = {};
@@ -11634,7 +11694,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .getProperty("pAllMemNumList")
                .propListValue()
                .get(Datum::of(std::string("Bootstrap Script")))
-               .intValue() == SlotId::of(2, 74).value());
+               .isVoid());
     builtinContext.scriptHandlerFinder = {};
     builtinContext.castMemberNameResolver = {};
     builtinContext.registryVisibleMemberResolver = {};
@@ -14086,6 +14146,139 @@ void testLingoVmRuntimeFoundation() {
     assert(updatedScriptInstanceData[1].intValue() == 99);
     assert(updatedScriptInstanceData[2].intValue() == 3);
 
+    auto nestedObjectCallHandler = makeHandler(34, {
+        {Opcode::GET_GLOBAL, 1},
+        {Opcode::GET_GLOBAL, 2},
+        {Opcode::PUSH_INT8, 1},
+        {Opcode::PUSH_ARG_LIST, 2},
+        {Opcode::OBJ_CALL, 3},
+        {Opcode::PUSH_ARG_LIST, 1},
+        {Opcode::OBJ_CALL, 4},
+        {Opcode::PUSH_ARG_LIST, 2},
+        {Opcode::OBJ_CALL, 5},
+        {Opcode::RET, 0}
+    });
+    auto outerGetPropsHandler = makeHandler(35, {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}}, 0, {6});
+    auto groupGetOfferHandler = makeHandler(36, {{Opcode::GET_GLOBAL, 7}, {Opcode::RET, 0}});
+    auto offerGetNameHandler = makeHandler(37, {{Opcode::PUSH_CONS, 0}, {Opcode::RET, 0}});
+    ScriptChunk nestedObjectCallScript(nullptr,
+                                       ChunkId(982),
+                                       ScriptChunkType::Parent,
+                                       0,
+                                       {nestedObjectCallHandler,
+                                        outerGetPropsHandler,
+                                        groupGetOfferHandler,
+                                        offerGetNameHandler},
+                                       {ScriptChunk::LiteralEntry{1, 0, std::string("item-code"), 0.0}},
+                                       {},
+                                       {ScriptChunk::GlobalEntry{1},
+                                        ScriptChunk::GlobalEntry{2},
+                                        ScriptChunk::GlobalEntry{7}},
+                                       {});
+    auto nestedObjectCallNames = std::make_shared<ScriptNamesChunk>(
+        nullptr,
+        ChunkId(983),
+        std::vector<std::string>{
+            "nestedObjectCall",
+            "outer",
+            "group",
+            "getOffer",
+            "getName",
+            "getProps",
+            "name",
+            "offer"
+        });
+    LingoVM nestedObjectCallVm;
+    Datum outerObject = Datum::scriptInstance("outer", Datum::CastMemberRef{10, 1});
+    Datum groupObject = Datum::scriptInstance("group", Datum::CastMemberRef{10, 2});
+    Datum offerObject = Datum::scriptInstance("offer", Datum::CastMemberRef{10, 3});
+    nestedObjectCallVm.setGlobal("outer", outerObject);
+    nestedObjectCallVm.setGlobal("group", groupObject);
+    nestedObjectCallVm.setGlobal("offer", offerObject);
+    std::vector<std::string> nestedObjectCallTrace;
+    nestedObjectCallVm.builtinContext().scriptHandlerFinder =
+        [&nestedObjectCallScript, nestedObjectCallNames, &nestedObjectCallTrace](
+            int castLib,
+            int memberNum,
+            const std::string& handlerName)
+            -> std::optional<BuiltinContext::ScriptHandlerLocation> {
+        nestedObjectCallTrace.push_back(
+            std::to_string(castLib) + ":" + std::to_string(memberNum) + ":" + handlerName);
+        if (castLib == 10 && memberNum == 1 && handlerName == "getProps") {
+            return BuiltinContext::ScriptHandlerLocation{
+                &nestedObjectCallScript,
+                &nestedObjectCallScript.handlers()[1],
+                nullptr,
+                nullptr,
+                nestedObjectCallNames,
+                ScriptChunkType::Parent};
+        }
+        if (castLib == 10 && memberNum == 2 && handlerName == "getOffer") {
+            return BuiltinContext::ScriptHandlerLocation{
+                &nestedObjectCallScript,
+                &nestedObjectCallScript.handlers()[2],
+                nullptr,
+                nullptr,
+                nestedObjectCallNames,
+                ScriptChunkType::Parent};
+        }
+        if (castLib == 10 && memberNum == 3 && handlerName == "getName") {
+            return BuiltinContext::ScriptHandlerLocation{
+                &nestedObjectCallScript,
+                &nestedObjectCallScript.handlers()[3],
+                nullptr,
+                nullptr,
+                nestedObjectCallNames,
+                ScriptChunkType::Parent};
+        }
+        return std::nullopt;
+    };
+    const Datum nestedObjectCallResult = nestedObjectCallVm.executeHandler(
+        HandlerRef{&nestedObjectCallScript,
+                   &nestedObjectCallScript.handlers().front(),
+                   nullptr,
+                   nullptr,
+                   nestedObjectCallNames});
+    assert(nestedObjectCallResult.stringValue() == "item-code");
+    assert((nestedObjectCallTrace == std::vector<std::string>{
+        "10:2:getOffer",
+        "10:3:getName",
+        "10:1:getProps"
+    }));
+
+    auto legacyLastCharHandler = makeHandler(38, {
+        {Opcode::PUSH_CONS, 0},
+        {Opcode::PUSH_INT8, 12},
+        {Opcode::GET, 0},
+        {Opcode::RET, 0}
+    });
+    ScriptChunk legacyChunkPropertyScript(nullptr,
+                                          ChunkId(984),
+                                          ScriptChunkType::MovieScript,
+                                          0,
+                                          {legacyLastCharHandler},
+                                          {ScriptChunk::LiteralEntry{1, 0, std::string("leftwall target*"), 0.0}},
+                                          {},
+                                          {},
+                                          {});
+    auto legacyChunkPropertyNames = std::make_shared<ScriptNamesChunk>(
+        nullptr,
+        ChunkId(985),
+        std::vector<std::string>{
+            "legacyLastChar",
+        });
+    LingoVM legacyChunkPropertyVm;
+    MovieProperties legacyChunkMovie;
+    legacyChunkPropertyVm.builtinContext().movieProperties = &legacyChunkMovie;
+    assert(legacyChunkMovie.setMovieProp("itemDelimiter", Datum::of(std::string("="))));
+    assert(legacyChunkPropertyVm.executeHandler(
+               HandlerRef{&legacyChunkPropertyScript,
+                          &legacyChunkPropertyScript.handlers()[0],
+                          nullptr,
+                          nullptr,
+                          legacyChunkPropertyNames})
+               .stringValue() == "*");
+
     auto childAncestorHandler = makeHandler(6, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}});
     auto parentAncestorHandler = makeHandler(7, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}});
     auto grandAncestorHandler = makeHandler(8, {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}}, 0, {9});
@@ -15261,6 +15454,33 @@ void testScoreNavigationFoundation() {
     assert(assetClasses.isList());
     assert(assetClasses.listValue().items()[1].stringValue() == "Item Object Extension Class");
 
+    const Datum productDataLine = LingoValueParser::parseWithPartial(
+        "[[\"window_70s_wide\",\"Large 70s Window\",\"A view of the past\",\"\"],"
+        "[\"window_70s_narrow\",\"Small 70s Window\",\"Takes you back\",\"\"]]");
+    assert(productDataLine.isList());
+    assert(productDataLine.listValue().count() == 2);
+    const Datum wideProduct = productDataLine.listValue().items()[0];
+    assert(wideProduct.isList());
+    assert(wideProduct.listValue().items()[0].stringValue() == "window_70s_wide");
+    assert(wideProduct.listValue().items()[1].stringValue() == "Large 70s Window");
+    assert(wideProduct.listValue().items()[3].stringValue().empty());
+    const Datum narrowProduct = productDataLine.listValue().items()[1];
+    assert(narrowProduct.isList());
+    assert(narrowProduct.listValue().items()[0].stringValue() == "window_70s_narrow");
+    assert(narrowProduct.listValue().items()[2].stringValue() == "Takes you back");
+
+    const Datum wallItemDataLine = LingoValueParser::parseWithPartial(
+        "[[\"i\",\"1197\",\"window_70s_narrow\",\"45508\",\"\",\"\",\"\",\"\","
+        "\"Small 70s Window\",\"Takes you back\"]]");
+    assert(wallItemDataLine.isList());
+    assert(wallItemDataLine.listValue().count() == 1);
+    const Datum wallItem = wallItemDataLine.listValue().items()[0];
+    assert(wallItem.isList());
+    assert(wallItem.listValue().items()[0].stringValue() == "i");
+    assert(wallItem.listValue().items()[1].stringValue() == "1197");
+    assert(wallItem.listValue().items()[4].stringValue().empty());
+    assert(wallItem.listValue().items()[8].stringValue() == "Small 70s Window");
+
     const Datum flatQuotedList = LingoValueParser::parseWithPartial(
         "[\"Manager Template Class\",\"Variable Container Class\"]");
     assert(flatQuotedList.isList());
@@ -15844,14 +16064,17 @@ void testSpritePropertiesFoundation() {
                                    Datum::symbol("mouseDown")})
                .isVoid());
     assert(!props.getScriptInstanceList(42).has_value());
+    assert(!props.callSpriteMethod(42, "setID", {Datum::of(std::string("sprite-id"))}).boolValue());
+    assert(props.callSpriteMethod(42, "getID", {}).boolValue() == false);
+
+    auto authoredBroker = Datum::scriptInstance("authoredBroker");
+    assert(props.setSpriteProp(42, "scriptInstanceList", Datum::list({authoredBroker})));
     assert(props.callSpriteMethod(42, "setID", {Datum::of(std::string("sprite-id"))}).boolValue());
     auto brokerScripts = props.getScriptInstanceList(42);
     assert(brokerScripts.has_value());
     assert(brokerScripts->size() == 1);
     assert((*brokerScripts)[0].type() == DatumType::ScriptInstanceRef);
-    const auto syntheticBroker = (*brokerScripts)[0];
-    assert(syntheticBroker.scriptInstanceValue().getProperty("spritenum").intValue() == 42);
-    assert(syntheticBroker.scriptInstanceValue().getProperty("__spriteEventBroker__").boolValue());
+    assert((*brokerScripts)[0].scriptInstanceValue().getProperty("spritenum").intValue() == 42);
     assert(props.callSpriteMethod(42, "getID", {}).stringValue() == "sprite-id");
     assert(props.callSpriteMethod(42, "setLink", {Datum::of(std::string("link-id"))}).boolValue());
     assert(props.callSpriteMethod(42, "getLink", {}).stringValue() == "link-id");
@@ -16013,10 +16236,8 @@ void testSpritePropertiesFoundation() {
     releaseSprite->setCursor(4);
     releaseSprite->setRotation(45.0);
     releaseSprite->setSkew(45.0);
-    auto broker = Datum::scriptInstance("broker");
-    broker.scriptInstanceValue().setProperty("__spriteEventBroker__", Datum::TRUE);
     auto regular = Datum::scriptInstance("regular");
-    assert(props.setSpriteProp(8, "scriptInstanceList", Datum::list({broker, regular})));
+    assert(props.setSpriteProp(8, "scriptInstanceList", Datum::list({regular})));
     assert(props.setSpriteProp(8, "member", Datum::of(0)));
     assert(releaseSprite->effectiveCastMember() == 0);
     assert(releaseSprite->rotation() == 0.0);
@@ -16028,8 +16249,7 @@ void testSpritePropertiesFoundation() {
     assert(releaseSprite->stretch() == 0);
     assert(releaseSprite->width() == 1);
     assert(releaseSprite->height() == 1);
-    assert(releaseSprite->scriptInstanceList().size() == 1);
-    assert(releaseSprite->scriptInstanceList()[0].scriptInstanceValue().scriptName() == "broker");
+    assert(releaseSprite->scriptInstanceList().empty());
 
     Datum imageValue = Datum::of(std::string("new-image"));
     bool imageSetterCalled = false;

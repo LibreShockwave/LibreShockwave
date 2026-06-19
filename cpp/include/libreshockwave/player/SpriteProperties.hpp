@@ -82,11 +82,8 @@ private:
 
     static void applyEmptyMemberOverride(sprite::SpriteState& sprite);
     static void resetReleasedEmptyChannel(sprite::SpriteState& sprite);
-    [[nodiscard]] static lingo::Datum createSyntheticBroker(int spriteNum);
-    [[nodiscard]] static std::vector<lingo::Datum> retainSyntheticBrokerInstances(
-        const std::vector<lingo::Datum>& scriptInstances);
 
-    [[nodiscard]] std::vector<lingo::Datum>* getOrCreateBrokerScriptList(int spriteNum);
+    [[nodiscard]] std::vector<lingo::Datum>* brokerScriptList(int spriteNum);
     [[nodiscard]] lingo::Datum* primaryBroker(int spriteNum);
 
     render::SpriteRegistry* registry_{nullptr};

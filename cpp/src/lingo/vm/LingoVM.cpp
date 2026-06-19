@@ -830,7 +830,6 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     }
 
     if (callStack_.empty()) {
-        builtinContext_.aliasRefreshRegistryIds.clear();
         builtinContext_.scriptInstanceHandlerCache.clear();
         builtinContext_.directScriptInstanceHandlerCache.clear();
     }

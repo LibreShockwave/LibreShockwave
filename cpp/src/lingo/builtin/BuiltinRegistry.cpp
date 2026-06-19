@@ -2701,6 +2701,9 @@ Datum TypeBuiltins::value(BuiltinContext& context, const std::vector<Datum>& arg
 
     std::string rawStorage;
     const std::string_view raw = stringViewLikeJava(args[0], rawStorage);
+    if (raw.empty()) {
+        return Datum::of(std::string());
+    }
     if (const auto parsedLiteral = LingoValueParser::parseComplete(raw, identifierResolver);
         parsedLiteral.has_value() && !parsedLiteral->isVoid()) {
         return *parsedLiteral;

@@ -51,6 +51,11 @@ Historical and completed goal notes live in `docs/goals/`:
 - Treat app-authored Lingo as app-authored Lingo. The runtime must not grow
   C++ branches keyed to v31 parent-script names, movie-script names, handler
   names, Resource API helper names, or room/login script names.
+- Before treating a helper as a missing builtin, search the exported Lingo and
+  asset text first. Some helpers that look builtin are authored movie-script
+  APIs; for example, v31 `memberExists` is defined in
+  `/opt/git/v31_assets/projectorrays_lingo/fuse_client/casts/External/MovieScript 9 - Resource API.ls`
+  and delegates to the Resource Manager.
 - BigInt/HugeInt/HugeInt15 is the canonical example: do not implement native
   C++ branches for `BigInt`, `HugeInt`, `HugeInt15`, `powMod`, `Modulo`, `div`,
   `getString`, or `getByteArray`.
