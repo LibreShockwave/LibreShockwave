@@ -52,12 +52,12 @@ jobs:
       - name: Delete existing nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete latest --yes --cleanup-tag || true
+        run: gh release delete nightly --yes --cleanup-tag || true
 
       - name: Create nightly release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
+          tag_name: nightly
           name: Nightly WASM Build ${{ steps.date.outputs.VERSION }}
           prerelease: true
           files: libreshockwave-cpp-wasm-${{ steps.date.outputs.VERSION }}.zip
