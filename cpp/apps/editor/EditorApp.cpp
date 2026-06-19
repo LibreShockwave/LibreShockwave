@@ -63,6 +63,26 @@ struct CastLocation {
     int member = 0;
 };
 
+struct CastInventorySnapshot {
+    std::vector<std::shared_ptr<libreshockwave::chunks::CastMemberChunk>> members;
+    std::unordered_map<int, CastLocation> locationsByChunkId;
+    std::unordered_map<const libreshockwave::chunks::CastMemberChunk*, CastLocation> locationsByMember;
+    std::unordered_map<const libreshockwave::chunks::CastMemberChunk*, std::shared_ptr<libreshockwave::DirectorFile>> sourceFilesByMember;
+    std::string signature;
+};
+
+struct MemberIdentity {
+    int castLib = 1;
+    int member = 0;
+    int chunkId = 0;
+};
+
+struct CastSelectionSnapshot {
+    std::optional<MemberIdentity> active;
+    std::optional<MemberIdentity> generic;
+    std::unordered_map<int, MemberIdentity> byFilter;
+};
+
 struct CastPreviewData {
     std::vector<std::uint32_t> pixels;
     int width = 0;
@@ -137,6 +157,7 @@ struct EditorUi {
     GtkWidget* revealBottomCheck = nullptr;
     std::vector<GtkWidget*> panelToggleChecks;
     GtkWidget* castViewDropDown = nullptr;
+    GtkWidget* castLibDropDown = nullptr;
     std::vector<GtkWidget*> castLists;
     GtkWidget* frameLabel = nullptr;
     GtkWidget* stageArea = nullptr;
@@ -186,12 +207,18 @@ struct EditorUi {
     std::string currentProjectPath;
     std::vector<std::shared_ptr<libreshockwave::chunks::CastMemberChunk>> castMembers;
     std::unordered_map<int, CastLocation> castLocationsByChunkId;
+    std::unordered_map<const libreshockwave::chunks::CastMemberChunk*, CastLocation> castLocationsByMember;
+    std::unordered_map<const libreshockwave::chunks::CastMemberChunk*, std::shared_ptr<libreshockwave::DirectorFile>> castSourceFilesByMember;
+    std::string castInventorySignature;
     AssetFilter filter = AssetFilter::All;
     CastBrowserMode castBrowserMode = CastBrowserMode::List;
+    int castLibFilter = 0;
+    std::vector<int> castLibFilterValues;
     int selectedMemberIndex = -1;
     int selectedGenericMemberIndex = -1;
     std::unordered_map<int, int> selectedMemberByFilter;
     bool refreshingCastLists = false;
+    bool refreshingCastLibDropDown = false;
     bool syncingPanelToggleChecks = false;
     bool restoringPanelSelection = false;
 
@@ -853,6 +880,10 @@ CastLocation locationForMember(const EditorUi& ui,
     if (member == nullptr) {
         return {};
     }
+    if (const auto found = ui.castLocationsByMember.find(member.get());
+        found != ui.castLocationsByMember.end()) {
+        return found->second;
+    }
     if (const auto found = ui.castLocationsByChunkId.find(member->id().value());
         found != ui.castLocationsByChunkId.end()) {
         return found->second;
@@ -866,15 +897,28 @@ std::string memberSlotText(const EditorUi& ui,
     return "cast " + std::to_string(location.castLib) + ", member " + std::to_string(location.member);
 }
 
-void buildCastLocationMap(EditorUi& ui) {
-    ui.castLocationsByChunkId.clear();
-    if (ui.file == nullptr) {
-        return;
+std::shared_ptr<libreshockwave::DirectorFile> sourceFileForMember(
+    const EditorUi& ui,
+    const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member) {
+    if (member != nullptr) {
+        if (const auto found = ui.castSourceFilesByMember.find(member.get());
+            found != ui.castSourceFilesByMember.end() && found->second != nullptr) {
+            return found->second;
+        }
+    }
+    return ui.file;
+}
+
+std::unordered_map<int, CastLocation> authoredCastLocations(
+    const std::shared_ptr<libreshockwave::DirectorFile>& file) {
+    std::unordered_map<int, CastLocation> locations;
+    if (file == nullptr) {
+        return locations;
     }
 
-    const auto casts = ui.file->casts();
-    const auto castList = ui.file->castList();
-    const auto config = ui.file->config();
+    const auto casts = file->casts();
+    const auto castList = file->castList();
+    const auto config = file->config();
     const int fallbackMinMember = config ? std::max(1, config->minMember()) : 1;
 
     for (std::size_t castIndex = 0; castIndex < casts.size(); ++castIndex) {
@@ -893,9 +937,137 @@ void buildCastLocationMap(EditorUi& ui) {
             if (ids[index] <= 0) {
                 continue;
             }
-            ui.castLocationsByChunkId.emplace(ids[index], CastLocation{castLib, minMember + static_cast<int>(index)});
+            locations.emplace(ids[index], CastLocation{castLib, minMember + static_cast<int>(index)});
         }
     }
+    return locations;
+}
+
+void addCastInventoryMember(CastInventorySnapshot& snapshot,
+                            const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
+                            CastLocation location,
+                            const std::shared_ptr<libreshockwave::DirectorFile>& sourceFile) {
+    if (member == nullptr) {
+        return;
+    }
+
+    snapshot.members.push_back(member);
+    snapshot.locationsByMember[member.get()] = location;
+    snapshot.locationsByChunkId.emplace(member->id().value(), location);
+    if (sourceFile != nullptr) {
+        snapshot.sourceFilesByMember[member.get()] = sourceFile;
+    }
+
+    snapshot.signature += std::to_string(location.castLib);
+    snapshot.signature.push_back(':');
+    snapshot.signature += std::to_string(location.member);
+    snapshot.signature.push_back(':');
+    snapshot.signature += std::to_string(member->id().value());
+    snapshot.signature.push_back(':');
+    snapshot.signature += std::to_string(static_cast<int>(member->memberType()));
+    snapshot.signature.push_back(':');
+    snapshot.signature += std::to_string(reinterpret_cast<std::uintptr_t>(sourceFile.get()));
+    snapshot.signature.push_back(';');
+}
+
+CastInventorySnapshot buildCastInventorySnapshot(EditorUi& ui) {
+    CastInventorySnapshot snapshot;
+
+    if (ui.player != nullptr) {
+        auto& manager = ui.player->castLibManager();
+        for (auto& [castLibNumber, castLib] : manager.castLibs()) {
+            if (castLib == nullptr) {
+                continue;
+            }
+            const auto& memberChunks = castLib->memberChunks();
+            const auto sourceFile = castLib->sourceFile() != nullptr ? castLib->sourceFile() : ui.file;
+            for (const auto& [memberNumber, member] : memberChunks) {
+                addCastInventoryMember(snapshot,
+                                       member,
+                                       CastLocation{castLibNumber, memberNumber},
+                                       sourceFile);
+            }
+        }
+    }
+
+    if (snapshot.members.empty() && ui.file != nullptr) {
+        snapshot.locationsByChunkId = authoredCastLocations(ui.file);
+        for (const auto& member : ui.file->castMembers()) {
+            if (member == nullptr) {
+                continue;
+            }
+            auto location = CastLocation{1, member->id().value()};
+            if (const auto found = snapshot.locationsByChunkId.find(member->id().value());
+                found != snapshot.locationsByChunkId.end()) {
+                location = found->second;
+            }
+            addCastInventoryMember(snapshot, member, location, ui.file);
+        }
+    }
+
+    return snapshot;
+}
+
+std::optional<MemberIdentity> memberIdentityForIndex(const EditorUi& ui, int memberIndex) {
+    if (memberIndex < 0 || memberIndex >= static_cast<int>(ui.castMembers.size())) {
+        return std::nullopt;
+    }
+    const auto& member = ui.castMembers[static_cast<std::size_t>(memberIndex)];
+    if (member == nullptr) {
+        return std::nullopt;
+    }
+    const auto location = locationForMember(ui, member);
+    return MemberIdentity{location.castLib, location.member, member->id().value()};
+}
+
+CastSelectionSnapshot captureCastSelection(const EditorUi& ui) {
+    CastSelectionSnapshot selection;
+    selection.active = memberIdentityForIndex(ui, ui.selectedMemberIndex);
+    selection.generic = memberIdentityForIndex(ui, ui.selectedGenericMemberIndex);
+    for (const auto& [filter, memberIndex] : ui.selectedMemberByFilter) {
+        if (auto identity = memberIdentityForIndex(ui, memberIndex)) {
+            selection.byFilter[filter] = *identity;
+        }
+    }
+    return selection;
+}
+
+int findMemberIndexByIdentity(const EditorUi& ui, const std::optional<MemberIdentity>& identity) {
+    if (!identity.has_value()) {
+        return -1;
+    }
+
+    for (int index = 0; index < static_cast<int>(ui.castMembers.size()); ++index) {
+        const auto& member = ui.castMembers[static_cast<std::size_t>(index)];
+        if (member == nullptr || member->id().value() != identity->chunkId) {
+            continue;
+        }
+        const auto location = locationForMember(ui, member);
+        if (location.castLib == identity->castLib && location.member == identity->member) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+void restoreCastSelection(EditorUi& ui, const CastSelectionSnapshot& selection) {
+    ui.selectedMemberIndex = findMemberIndexByIdentity(ui, selection.active);
+    ui.selectedGenericMemberIndex = findMemberIndexByIdentity(ui, selection.generic);
+
+    std::unordered_map<int, int> remappedSelections;
+    for (const auto& [filterValue, identity] : selection.byFilter) {
+        const int memberIndex = findMemberIndexByIdentity(ui, identity);
+        if (filterValue < 0 ||
+            filterValue > static_cast<int>(AssetFilter::Other) ||
+            memberIndex < 0) {
+            continue;
+        }
+        const auto filter = static_cast<AssetFilter>(filterValue);
+        if (validMemberSelectionForFilter(ui, filter, memberIndex)) {
+            remappedSelections[filterValue] = memberIndex;
+        }
+    }
+    ui.selectedMemberByFilter = std::move(remappedSelections);
 }
 
 std::uint8_t blendChannel(std::uint8_t foreground, std::uint8_t background, std::uint8_t alpha) {
@@ -1145,6 +1317,7 @@ void cancelPlaybackTimer(EditorUi& ui) {
     }
 }
 
+bool syncCastInventory(EditorUi& ui, bool refreshDetails, bool force = false);
 gboolean playbackTick(gpointer userData);
 
 void schedulePlaybackTick(EditorUi& ui) {
@@ -1166,6 +1339,7 @@ gboolean playbackTick(gpointer userData) {
     try {
         ui.player->resume();
         const bool keepGoing = ui.player->tick();
+        syncCastInventory(ui, true);
         renderCurrentFrame(ui);
         if (!keepGoing) {
             ui.playing = false;
@@ -1191,6 +1365,7 @@ void setPlaying(EditorUi& ui, bool playing) {
     ui.playing = playing;
     if (playing) {
         ui.player->resume();
+        syncCastInventory(ui, true);
         schedulePlaybackTick(ui);
     } else {
         cancelPlaybackTimer(ui);
@@ -1214,6 +1389,7 @@ void stopClicked(GtkButton*, gpointer userData) {
         cancelPlaybackTimer(ui);
         ui.playing = false;
         ui.player->stop();
+        syncCastInventory(ui, true);
         renderCurrentFrame(ui);
         setStatus(ui, "Playback stopped");
     } catch (const std::exception& error) {
@@ -1425,6 +1601,7 @@ GtkWidget* makeInfoTile(std::string_view title, std::string_view subtitle, const
 GtkWidget* makeCastPreviewWidget(EditorUi& ui,
                                  const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member) {
     using libreshockwave::cast::MemberType;
+    const auto sourceFile = sourceFileForMember(ui, member);
 
     const auto makeArea = [](CastPreviewData* data) {
         GtkWidget* area = gtk_drawing_area_new();
@@ -1436,12 +1613,12 @@ GtkWidget* makeCastPreviewWidget(EditorUi& ui,
         return area;
     };
 
-    if (ui.file != nullptr &&
+    if (sourceFile != nullptr &&
         (member->memberType() == MemberType::Bitmap || member->memberType() == MemberType::Picture)) {
         auto* data = new CastPreviewData;
         data->emptyMessage = "Bitmap";
         try {
-            if (auto bitmap = ui.file->decodeBitmap(member)) {
+            if (auto bitmap = sourceFile->decodeBitmap(member)) {
                 setPixelsFromBitmap(data->pixels, data->width, data->height, *bitmap);
             }
         } catch (const std::exception&) {
@@ -1450,12 +1627,15 @@ GtkWidget* makeCastPreviewWidget(EditorUi& ui,
         return makeArea(data);
     }
 
-    if (ui.file != nullptr && member->memberType() == MemberType::Palette) {
+    if (sourceFile != nullptr && member->memberType() == MemberType::Palette) {
         auto* data = new CastPreviewData;
         data->emptyMessage = "Palette";
         try {
             const auto location = locationForMember(ui, member);
-            if (auto palette = ui.file->resolvePaletteByMemberNumber(location.member)) {
+            auto palette = ui.player != nullptr
+                               ? ui.player->castLibManager().resolvePaletteByMember(location.castLib, location.member)
+                               : sourceFile->resolvePaletteByMemberNumber(location.member);
+            if (palette != nullptr) {
                 setPixelsFromColors(data->pixels, data->width, data->height, palette->colors());
             }
         } catch (const std::exception&) {
@@ -1497,6 +1677,7 @@ void setPreviewEmpty(EditorUi& ui);
 void setPalettePreviewEmpty(EditorUi& ui);
 void resetMemberDetailPanels(EditorUi& ui);
 AssetFilter castFilterForList(GtkWidget* list);
+void populateCastBrowser(EditorUi& ui);
 
 std::vector<std::pair<std::string, std::string>> baseMemberRows(
     const EditorUi& ui,
@@ -1517,12 +1698,13 @@ std::vector<std::pair<std::string, std::string>> baseMemberRows(
 void appendLinkedChunkRows(EditorUi& ui,
                            const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                            std::vector<std::pair<std::string, std::string>>& rows) {
-    if (ui.file == nullptr || member == nullptr) {
+    auto sourceFile = sourceFileForMember(ui, member);
+    if (sourceFile == nullptr || member == nullptr) {
         return;
     }
 
     try {
-        const auto linked = ui.file->getLinkedChunkInfoForMember(member);
+        const auto linked = sourceFile->getLinkedChunkInfoForMember(member);
         rows.emplace_back("Linked chunks", std::to_string(linked.size()));
         for (std::size_t index = 0; index < linked.size() && index < 12; ++index) {
             const auto& info = linked[index];
@@ -1717,6 +1899,44 @@ std::string formatScriptBytecodePreview(libreshockwave::DirectorFile& file,
     return out.str();
 }
 
+std::shared_ptr<libreshockwave::chunks::ScriptChunk> scriptForMember(
+    EditorUi& ui,
+    const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member) {
+    if (member == nullptr) {
+        return nullptr;
+    }
+
+    if (ui.player != nullptr) {
+        const auto location = locationForMember(ui, member);
+        if (auto castLib = ui.player->castLibManager().getCastLib(location.castLib)) {
+            if (auto script = castLib->getScript(location.member)) {
+                return script;
+            }
+        }
+    }
+
+    auto sourceFile = sourceFileForMember(ui, member);
+    return sourceFile != nullptr ? sourceFile->getScriptForCastMember(member) : nullptr;
+}
+
+std::shared_ptr<const libreshockwave::bitmap::Palette> paletteForMember(
+    EditorUi& ui,
+    const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member) {
+    if (member == nullptr) {
+        return nullptr;
+    }
+
+    const auto location = locationForMember(ui, member);
+    if (ui.player != nullptr) {
+        if (auto palette = ui.player->castLibManager().resolvePaletteByMember(location.castLib, location.member)) {
+            return palette;
+        }
+    }
+
+    auto sourceFile = sourceFileForMember(ui, member);
+    return sourceFile != nullptr ? sourceFile->resolvePaletteByMemberNumber(location.member) : nullptr;
+}
+
 void exportCastMember(EditorUi& ui,
                       const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                       int memberIndex,
@@ -1745,34 +1965,35 @@ void exportCastMember(EditorUi& ui,
         writeBytesFile(base.string() + ".data.bin", member->specificData());
     }
 
-    if (ui.file == nullptr) {
+    auto sourceFile = sourceFileForMember(ui, member);
+    if (sourceFile == nullptr) {
         return;
     }
 
     switch (member->memberType()) {
         case MemberType::Bitmap:
         case MemberType::Picture:
-            if (auto bitmap = ui.file->decodeBitmap(member)) {
+            if (auto bitmap = sourceFile->decodeBitmap(member)) {
                 writeBitmapExport(base, *bitmap);
             }
             break;
         case MemberType::Text:
         case MemberType::RichText:
-            if (auto text = ui.file->getTextForMember(member)) {
+            if (auto text = sourceFile->getTextForMember(member)) {
                 writeTextFile(base.string() + ".txt", text->text());
             }
             break;
         case MemberType::Script:
-            if (auto script = ui.file->getScriptForCastMember(member)) {
-                writeTextFile(base.string() + ".lingo", decompileScriptPreview(*ui.file, script));
-                writeTextFile(base.string() + ".bytecode.txt", formatScriptBytecodePreview(*ui.file, script));
+            if (auto script = scriptForMember(ui, member)) {
+                writeTextFile(base.string() + ".lingo", decompileScriptPreview(*sourceFile, script));
+                writeTextFile(base.string() + ".bytecode.txt", formatScriptBytecodePreview(*sourceFile, script));
                 if (!script->rawBytecode().empty()) {
                     writeBytesFile(base.string() + ".bytecode.bin", script->rawBytecode());
                 }
             }
             break;
         case MemberType::Palette:
-            if (auto palette = ui.file->resolvePaletteByMemberNumber(location.member)) {
+            if (auto palette = paletteForMember(ui, member)) {
                 writeTextFile(base.string() + ".palette.txt", paletteText(palette->colors()));
                 const auto swatch = libreshockwave::bitmap::Bitmap::createPaletteSwatch(*palette, 18);
                 writeBitmapExport(base.string() + ".palette", swatch);
@@ -1821,17 +2042,24 @@ void updateBitmapPanel(EditorUi& ui,
                        const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                        std::vector<std::pair<std::string, std::string>>& inspectorRows) {
     auto rows = baseMemberRows(ui, member);
+    auto sourceFile = sourceFileForMember(ui, member);
     try {
-        if (auto bitmap = ui.file->decodeBitmap(member)) {
-            rows.emplace_back("Bitmap", dimensionsText(bitmap->width(), bitmap->height()) +
-                                            ", " + std::to_string(bitmap->bitDepth()) + "-bit");
-            rows.emplace_back("Transparent pixels", boolText(bitmap->hasTransparentPixels()));
-            rows.emplace_back("Translucent pixels", boolText(bitmap->hasTranslucentPixels()));
-            setPixelsFromBitmap(ui.previewPixels, ui.previewWidth, ui.previewHeight, *bitmap);
-            inspectorRows.insert(inspectorRows.end(), rows.end() - 3, rows.end());
+        if (sourceFile != nullptr) {
+            if (auto bitmap = sourceFile->decodeBitmap(member)) {
+                rows.emplace_back("Bitmap", dimensionsText(bitmap->width(), bitmap->height()) +
+                                                ", " + std::to_string(bitmap->bitDepth()) + "-bit");
+                rows.emplace_back("Transparent pixels", boolText(bitmap->hasTransparentPixels()));
+                rows.emplace_back("Translucent pixels", boolText(bitmap->hasTranslucentPixels()));
+                setPixelsFromBitmap(ui.previewPixels, ui.previewWidth, ui.previewHeight, *bitmap);
+                inspectorRows.insert(inspectorRows.end(), rows.end() - 3, rows.end());
+            } else {
+                rows.emplace_back("Bitmap", "decode unavailable");
+                inspectorRows.emplace_back("Bitmap", "decode unavailable");
+                setPreviewEmpty(ui);
+            }
         } else {
-            rows.emplace_back("Bitmap", "decode unavailable");
-            inspectorRows.emplace_back("Bitmap", "decode unavailable");
+            rows.emplace_back("Bitmap", "source file unavailable");
+            inspectorRows.emplace_back("Bitmap", "source file unavailable");
             setPreviewEmpty(ui);
         }
     } catch (const std::exception& error) {
@@ -1852,8 +2080,10 @@ void updateTextPanel(EditorUi& ui,
                      const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                      std::vector<std::pair<std::string, std::string>>& inspectorRows) {
     auto rows = baseMemberRows(ui, member);
+    auto sourceFile = sourceFileForMember(ui, member);
     try {
-        if (auto text = ui.file->getTextForMember(member)) {
+        auto text = sourceFile != nullptr ? sourceFile->getTextForMember(member) : nullptr;
+        if (text != nullptr) {
             rows.emplace_back("Characters", std::to_string(text->text().size()));
             rows.emplace_back("Text runs", std::to_string(text->runs().size()));
             rows.emplace_back("Content", text->text());
@@ -1877,13 +2107,15 @@ void updateScriptPanel(EditorUi& ui,
                        const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                        std::vector<std::pair<std::string, std::string>>& inspectorRows) {
     auto rows = baseMemberRows(ui, member);
+    auto sourceFile = sourceFileForMember(ui, member);
     if (const auto scriptType = member->getScriptType()) {
         rows.emplace_back("Script type", castMemberScriptTypeName(*scriptType));
         inspectorRows.emplace_back("Script type", castMemberScriptTypeName(*scriptType));
     }
 
     try {
-        if (auto script = ui.file->getScriptForCastMember(member)) {
+        auto script = sourceFile != nullptr ? scriptForMember(ui, member) : nullptr;
+        if (script != nullptr) {
             rows.emplace_back("Resolved script", script->displayName());
             rows.emplace_back("Chunk id", std::to_string(script->id().value()));
             rows.emplace_back("Resolved type", scriptTypeName(script->resolvedScriptType()));
@@ -1897,7 +2129,7 @@ void updateScriptPanel(EditorUi& ui,
             }
 
             try {
-                setTextViewText(ui.scriptSourceView, decompileScriptPreview(*ui.file, script));
+                setTextViewText(ui.scriptSourceView, decompileScriptPreview(*sourceFile, script));
                 rows.emplace_back("Lingo preview", "decompiled");
                 inspectorRows.emplace_back("Lingo preview", "decompiled");
             } catch (const std::exception& error) {
@@ -1907,7 +2139,7 @@ void updateScriptPanel(EditorUi& ui,
             }
 
             try {
-                setTextViewText(ui.scriptBytecodeView, formatScriptBytecodePreview(*ui.file, script));
+                setTextViewText(ui.scriptBytecodeView, formatScriptBytecodePreview(*sourceFile, script));
                 rows.emplace_back("Bytecode preview", "disassembly and raw bytes");
                 inspectorRows.emplace_back("Bytecode preview", "available");
             } catch (const std::exception& error) {
@@ -1951,9 +2183,8 @@ void updatePalettePanel(EditorUi& ui,
                         const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member,
                         std::vector<std::pair<std::string, std::string>>& inspectorRows) {
     auto rows = baseMemberRows(ui, member);
-    const auto location = locationForMember(ui, member);
     try {
-        if (auto palette = ui.file->resolvePaletteByMemberNumber(location.member)) {
+        if (auto palette = paletteForMember(ui, member)) {
             rows.emplace_back("Palette", palette->name());
             rows.emplace_back("Colors", std::to_string(palette->size()));
             setPixelsFromColors(ui.palettePixels, ui.paletteWidth, ui.paletteHeight, palette->colors());
@@ -2078,8 +2309,11 @@ void populateInspectorForMovie(EditorUi& ui) {
         {"Afterburner", boolText(ui.file->isAfterburner())},
         {"Stage", dimensionsText(ui.file->stageWidth(), ui.file->stageHeight())},
         {"Tempo", std::to_string(ui.file->tempo()) + " fps"},
-        {"Cast members", std::to_string(ui.file->castMembers().size())},
-        {"Cast libraries", std::to_string(ui.file->casts().size())},
+        {"Authored cast members", std::to_string(ui.file->castMembers().size())},
+        {"Loaded cast members", std::to_string(ui.castMembers.size())},
+        {"Cast libraries", ui.player != nullptr
+                               ? std::to_string(ui.player->castLibManager().getCastLibCount())
+                               : std::to_string(ui.file->casts().size())},
         {"Scripts", std::to_string(ui.file->scripts().size())},
         {"Palettes", std::to_string(ui.file->palettes().size())},
         {"Chunks", std::to_string(ui.file->chunkInfo().size())},
@@ -2359,6 +2593,78 @@ bool castListForcesPreview(GtkWidget* list) {
     return GPOINTER_TO_INT(g_object_get_data(G_OBJECT(list), "force-preview")) != 0;
 }
 
+bool memberMatchesCastLibFilter(const EditorUi& ui,
+                                const std::shared_ptr<libreshockwave::chunks::CastMemberChunk>& member) {
+    return ui.castLibFilter <= 0 || locationForMember(ui, member).castLib == ui.castLibFilter;
+}
+
+void updateCastLibDropDown(EditorUi& ui) {
+    if (ui.castLibDropDown == nullptr) {
+        return;
+    }
+
+    std::map<int, std::string> castLibLabels;
+    if (ui.player != nullptr) {
+        for (const auto& [castLibNumber, castLib] : ui.player->castLibManager().castLibs()) {
+            if (castLib == nullptr) {
+                continue;
+            }
+            std::string label = "Cast " + std::to_string(castLibNumber);
+            if (!castLib->name().empty()) {
+                label += ": " + castLib->name();
+            } else if (!castLib->fileName().empty()) {
+                label += ": " + sourceFileName(castLib->fileName());
+            }
+            castLibLabels[castLibNumber] = std::move(label);
+        }
+    }
+    for (const auto& member : ui.castMembers) {
+        if (member == nullptr) {
+            continue;
+        }
+        const auto location = locationForMember(ui, member);
+        castLibLabels.try_emplace(location.castLib, "Cast " + std::to_string(location.castLib));
+    }
+
+    auto* model = gtk_string_list_new(nullptr);
+    gtk_string_list_append(model, "All Cast Libraries");
+    std::vector<int> values{0};
+    guint selected = 0;
+    for (const auto& [castLibNumber, label] : castLibLabels) {
+        values.push_back(castLibNumber);
+        gtk_string_list_append(model, label.c_str());
+        if (castLibNumber == ui.castLibFilter) {
+            selected = static_cast<guint>(values.size() - 1);
+        }
+    }
+
+    if (selected == 0 && ui.castLibFilter != 0) {
+        ui.castLibFilter = 0;
+    }
+
+    ui.refreshingCastLibDropDown = true;
+    ui.castLibFilterValues = std::move(values);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(ui.castLibDropDown), G_LIST_MODEL(model));
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(ui.castLibDropDown), selected);
+    ui.refreshingCastLibDropDown = false;
+    g_object_unref(model);
+}
+
+void castLibFilterChanged(GObject*, GParamSpec*, gpointer userData) {
+    auto& ui = *static_cast<EditorUi*>(userData);
+    if (ui.refreshingCastLibDropDown || ui.castLibDropDown == nullptr) {
+        return;
+    }
+
+    const guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(ui.castLibDropDown));
+    if (selected < ui.castLibFilterValues.size()) {
+        ui.castLibFilter = ui.castLibFilterValues[static_cast<std::size_t>(selected)];
+    } else {
+        ui.castLibFilter = 0;
+    }
+    populateCastBrowser(ui);
+}
+
 void populateCastList(EditorUi& ui, GtkWidget* list) {
     clearListBox(list);
     if (ui.file == nullptr) {
@@ -2371,7 +2677,7 @@ void populateCastList(EditorUi& ui, GtkWidget* list) {
 
     for (int index = 0; index < static_cast<int>(ui.castMembers.size()); ++index) {
         const auto& member = ui.castMembers[static_cast<std::size_t>(index)];
-        if (!memberMatchesFilter(member, filter)) {
+        if (!memberMatchesFilter(member, filter) || !memberMatchesCastLibFilter(ui, member)) {
             continue;
         }
 
@@ -2420,6 +2726,7 @@ void populateCastBrowser(EditorUi& ui) {
         }
     }
     ui.refreshingCastLists = true;
+    updateCastLibDropDown(ui);
     for (GtkWidget* list : ui.castLists) {
         if (list != nullptr) {
             populateCastList(ui, list);
@@ -2461,6 +2768,15 @@ GtkWidget* makeCastPanelContent(EditorUi& ui) {
     updateCastViewDropDown(ui);
     g_signal_connect(ui.castViewDropDown, "notify::selected", G_CALLBACK(castViewChanged), &ui);
     gtk_box_append(GTK_BOX(controls), ui.castViewDropDown);
+
+    GtkWidget* castLibLabel = makeLabel("Cast Lib", "asset-subtitle");
+    gtk_box_append(GTK_BOX(controls), castLibLabel);
+    ui.castLibDropDown = gtk_drop_down_new(nullptr, nullptr);
+    gtk_widget_set_hexpand(ui.castLibDropDown, TRUE);
+    updateCastLibDropDown(ui);
+    g_signal_connect(ui.castLibDropDown, "notify::selected", G_CALLBACK(castLibFilterChanged), &ui);
+    gtk_box_append(GTK_BOX(controls), ui.castLibDropDown);
+
     gtk_box_append(GTK_BOX(box), controls);
 
     ui.castList = gtk_list_box_new();
@@ -2471,16 +2787,6 @@ GtkWidget* makeCastPanelContent(EditorUi& ui) {
     ui.castLists.push_back(ui.castList);
     gtk_box_append(GTK_BOX(box), makeScrolled(ui.castList));
     return box;
-}
-
-GtkWidget* makeCastTypePanelContent(EditorUi& ui, AssetFilter filter) {
-    GtkWidget* list = gtk_list_box_new();
-    gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
-    g_object_set_data(G_OBJECT(list), "cast-filter", GINT_TO_POINTER(static_cast<int>(filter) + 1));
-    g_object_set_data(G_OBJECT(list), "force-preview", GINT_TO_POINTER(TRUE));
-    g_signal_connect(list, "row-selected", G_CALLBACK(castRowSelected), &ui);
-    ui.castLists.push_back(list);
-    return makeScrolled(list);
 }
 
 void populateChunkList(EditorUi& ui) {
@@ -2626,6 +2932,31 @@ void wireMemberDetailPanel(EditorUi& ui, PanelWidget* panel, AssetFilter filter)
     g_signal_connect(panel, "presented", G_CALLBACK(memberDetailPanelPresented), &ui);
 }
 
+bool syncCastInventory(EditorUi& ui, bool refreshDetails, bool force) {
+    const auto selection = captureCastSelection(ui);
+    auto snapshot = buildCastInventorySnapshot(ui);
+    const bool changed = force ||
+                         snapshot.signature != ui.castInventorySignature ||
+                         snapshot.members.size() != ui.castMembers.size();
+    if (!changed) {
+        return false;
+    }
+
+    ui.castMembers = std::move(snapshot.members);
+    ui.castLocationsByChunkId = std::move(snapshot.locationsByChunkId);
+    ui.castLocationsByMember = std::move(snapshot.locationsByMember);
+    ui.castSourceFilesByMember = std::move(snapshot.sourceFilesByMember);
+    ui.castInventorySignature = std::move(snapshot.signature);
+
+    restoreCastSelection(ui, selection);
+    populateLibrary(ui);
+    populateCastBrowser(ui);
+    if (refreshDetails) {
+        restoreRememberedMemberPanels(ui);
+    }
+    return true;
+}
+
 void shutdownProject(EditorUi& ui) {
     cancelPlaybackTimer(ui);
     ui.playing = false;
@@ -2637,6 +2968,9 @@ void shutdownProject(EditorUi& ui) {
     ui.currentProjectPath.clear();
     ui.castMembers.clear();
     ui.castLocationsByChunkId.clear();
+    ui.castLocationsByMember.clear();
+    ui.castSourceFilesByMember.clear();
+    ui.castInventorySignature.clear();
     ui.selectedMemberIndex = -1;
     ui.selectedGenericMemberIndex = -1;
     ui.selectedMemberByFilter.clear();
@@ -2648,10 +2982,7 @@ void shutdownProject(EditorUi& ui) {
 }
 
 void refreshWorkspace(EditorUi& ui) {
-    buildCastLocationMap(ui);
-    ui.castMembers = ui.file ? ui.file->castMembers() : std::vector<std::shared_ptr<libreshockwave::chunks::CastMemberChunk>>{};
-    populateLibrary(ui);
-    populateCastBrowser(ui);
+    syncCastInventory(ui, false, true);
     populateChunkList(ui);
     populateScoreList(ui);
     populateInspectorForMovie(ui);
@@ -2669,6 +3000,14 @@ bool openProject(EditorUi& ui, const std::string& projectPath) {
         auto player = std::make_unique<libreshockwave::player::Player>(file);
         player->setExternalParams(ui.externalParams);
         player->vm().setTickDeadlineMs(1000);
+        player->setExternalCastLoadListener([&ui](const libreshockwave::player::ExternalCastLoadEvent& event) {
+            setStatus(ui,
+                      "Loaded external cast " + std::to_string(event.castLibNumber) +
+                          (event.fileName.empty() ? std::string() : " from " + event.fileName));
+        });
+        player->setCastLoadedListener([&ui]() {
+            syncCastInventory(ui, true);
+        });
         player->setErrorListener([&ui](std::string_view message, std::string_view detail) {
             std::string status = "[script] " + std::string(message);
             if (!detail.empty()) {
@@ -2694,7 +3033,7 @@ bool openProject(EditorUi& ui, const std::string& projectPath) {
         std::ostringstream status;
         status << "Loaded " << normalizedPath
                << "    Stage " << ui.file->stageWidth() << "x" << ui.file->stageHeight()
-               << "    Cast members " << ui.file->castMembers().size()
+               << "    Cast members " << ui.castMembers.size()
                << "    Read-only";
         setStatus(ui, status.str());
         return true;
@@ -2727,7 +3066,7 @@ void populateRecentList(EditorUi& ui) {
         GtkWidget* row = gtk_list_box_row_new();
         gtk_widget_set_sensitive(row, FALSE);
         gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row),
-                                   makeInfoTile("No recent projects", "Open a .dcr, .dir, .dxr, .cct, or .cst file", "document-open-symbolic"));
+                                   makeInfoTile("No recent projects", "Open a movie (.dir/.dcr/.dxr) or cast library (.cct/.cst)", "document-open-symbolic"));
         gtk_list_box_append(GTK_LIST_BOX(ui.recentList), row);
         return;
     }
@@ -2772,6 +3111,7 @@ void saveWorkspaceFile(EditorUi& ui, const std::string& workspacePath) {
 
     g_key_file_set_string(keyFile, "Workspace", "project_path", ui.currentProjectPath.c_str());
     g_key_file_set_string(keyFile, "Workspace", "cast_view", castBrowserModeText(ui.castBrowserMode).c_str());
+    g_key_file_set_integer(keyFile, "Workspace", "cast_lib_filter", ui.castLibFilter);
 
     g_key_file_set_integer(keyFile, "CastSelection", "active_member_index", ui.selectedMemberIndex);
     g_key_file_set_integer(keyFile, "CastSelection", "generic_member_index", ui.selectedGenericMemberIndex);
@@ -2848,6 +3188,7 @@ void loadWorkspaceFile(EditorUi& ui, const std::string& workspacePath) {
 
     ui.castBrowserMode = castBrowserModeFromText(
         keyFileString(keyFile, "Workspace", "cast_view").value_or("list"));
+    ui.castLibFilter = keyFileInt(keyFile, "Workspace", "cast_lib_filter", 0);
 
     const int loadedActiveSelection = keyFileInt(keyFile, "CastSelection", "active_member_index", -1);
     const int loadedGenericSelection = keyFileInt(keyFile, "CastSelection", "generic_member_index", -1);
@@ -3081,19 +3422,49 @@ void openProjectResponse(GtkNativeDialog* dialog, int response, gpointer userDat
 }
 
 void showOpenProjectDialog(EditorUi& ui) {
-    GtkFileChooserNative* dialog = gtk_file_chooser_native_new("Open Project",
+    GtkFileChooserNative* dialog = gtk_file_chooser_native_new("Open Project: .dir, .dcr, .dxr, .cct, or .cst",
                                                                GTK_WINDOW(ui.window),
                                                                GTK_FILE_CHOOSER_ACTION_OPEN,
-                                                               "_Open",
+                                                               "_Open Project",
                                                                "_Cancel");
-    GtkFileFilter* directorFilter = gtk_file_filter_new();
-    gtk_file_filter_set_name(directorFilter, "Director and Shockwave files");
-    gtk_file_filter_add_pattern(directorFilter, "*.dcr");
-    gtk_file_filter_add_pattern(directorFilter, "*.dir");
-    gtk_file_filter_add_pattern(directorFilter, "*.dxr");
-    gtk_file_filter_add_pattern(directorFilter, "*.cct");
-    gtk_file_filter_add_pattern(directorFilter, "*.cst");
-    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), directorFilter);
+
+    auto addPatternPair = [](GtkFileFilter* filter, const char* extension) {
+        std::string lower = "*.";
+        lower += extension;
+        std::string upper = lower;
+        std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::toupper(ch));
+        });
+        gtk_file_filter_add_pattern(filter, lower.c_str());
+        gtk_file_filter_add_pattern(filter, upper.c_str());
+    };
+
+    GtkFileFilter* allSupportedFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(allSupportedFilter,
+                             "All supported project files (*.dir, *.dcr, *.dxr, *.cct, *.cst)");
+    for (const char* extension : {"dir", "dcr", "dxr", "cct", "cst"}) {
+        addPatternPair(allSupportedFilter, extension);
+    }
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), allSupportedFilter);
+
+    GtkFileFilter* movieFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(movieFilter, "Director/Shockwave movies (*.dir, *.dcr, *.dxr)");
+    for (const char* extension : {"dir", "dcr", "dxr"}) {
+        addPatternPair(movieFilter, extension);
+    }
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), movieFilter);
+
+    GtkFileFilter* castFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(castFilter, "Director cast libraries (*.cct, *.cst)");
+    for (const char* extension : {"cct", "cst"}) {
+        addPatternPair(castFilter, extension);
+    }
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), castFilter);
+
+    GtkFileFilter* anyFileFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(anyFileFilter, "All files");
+    gtk_file_filter_add_pattern(anyFileFilter, "*");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), anyFileFilter);
 
     g_signal_connect(dialog, "response", G_CALLBACK(openProjectResponse), &ui);
     gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
@@ -3458,7 +3829,7 @@ GtkWidget* buildWindowMenuButton(EditorUi& ui) {
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     appendWindowPanelSection(box, ui, "Core Panels", corePanelEntries(ui));
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-    appendWindowPanelSection(box, ui, "Cast Member Panels", castPanelEntries(ui));
+    appendWindowPanelSection(box, ui, "Cast Browser", castPanelEntries(ui));
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     appendWindowPanelSection(box, ui, "Preview/Detail Panels", detailPanelEntries(ui));
 
@@ -3745,18 +4116,28 @@ GtkWidget* buildDock(EditorUi& ui) {
     g_signal_connect(ui.dock, "adopt-widget", G_CALLBACK(adoptDockWidget), &ui);
     g_signal_connect(ui.centerGrid, "create-frame", G_CALLBACK(createGridFrame), &ui);
 
-    GtkWidget* toolsFrame = panel_frame_new();
-    GtkWidget* scoreFrame = panel_frame_new();
-    GtkWidget* endFrame = panel_frame_new();
-    GtkWidget* bottomFrame = panel_frame_new();
-    setFrameHeader(toolsFrame);
-    setFrameHeader(scoreFrame);
-    setFrameHeader(endFrame);
-    setFrameHeader(bottomFrame);
-    allowFrameDocking(PANEL_FRAME(toolsFrame), ui);
-    allowFrameDocking(PANEL_FRAME(scoreFrame), ui);
-    allowFrameDocking(PANEL_FRAME(endFrame), ui);
-    allowFrameDocking(PANEL_FRAME(bottomFrame), ui);
+    auto makeDockFrame = [&ui]() {
+        GtkWidget* frame = panel_frame_new();
+        setFrameHeader(frame);
+        allowFrameDocking(PANEL_FRAME(frame), ui);
+        return frame;
+    };
+
+    GtkWidget* toolsFrame = makeDockFrame();
+    GtkWidget* scoreFrame = makeDockFrame();
+    GtkWidget* libraryFrame = makeDockFrame();
+    GtkWidget* inspectorFrame = makeDockFrame();
+    GtkWidget* bitmapFrame = makeDockFrame();
+    GtkWidget* textFrame = makeDockFrame();
+    GtkWidget* scriptFrame = makeDockFrame();
+    GtkWidget* soundFrame = makeDockFrame();
+    GtkWidget* paletteFrame = makeDockFrame();
+    GtkWidget* shapeFrame = makeDockFrame();
+    GtkWidget* filmLoopFrame = makeDockFrame();
+    GtkWidget* movieFrame = makeDockFrame();
+    GtkWidget* threeDFrame = makeDockFrame();
+    GtkWidget* genericFrame = makeDockFrame();
+    GtkWidget* bottomFrame = makeDockFrame();
 
     ui.stageArea = gtk_drawing_area_new();
     gtk_widget_add_css_class(ui.stageArea, "stage-view");
@@ -3787,43 +4168,43 @@ GtkWidget* buildDock(EditorUi& ui) {
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(ui.libraryList), GTK_SELECTION_SINGLE);
     g_signal_connect(ui.libraryList, "row-selected", G_CALLBACK(libraryRowSelected), &ui);
     ui.libraryPanel = makePanelWidget("library", "Library", "folder-symbolic", makeScrolled(ui.libraryList));
-    panel_frame_add(PANEL_FRAME(endFrame), ui.libraryPanel);
+    panel_frame_add(PANEL_FRAME(libraryFrame), ui.libraryPanel);
 
     ui.inspectorList = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(ui.inspectorList), GTK_SELECTION_NONE);
     ui.inspectorPanel = makePanelWidget("inspector", "Property Inspector", "document-properties-symbolic", makeScrolled(ui.inspectorList));
-    panel_frame_add(PANEL_FRAME(endFrame), ui.inspectorPanel);
+    panel_frame_add(PANEL_FRAME(inspectorFrame), ui.inspectorPanel);
 
     ui.bitmapPanel = makePanelWidget("bitmap", "Bitmap", "image-x-generic-symbolic", makeBitmapDetailContent(ui));
     wireMemberDetailPanel(ui, ui.bitmapPanel, AssetFilter::Bitmap);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.bitmapPanel);
+    panel_frame_add(PANEL_FRAME(bitmapFrame), ui.bitmapPanel);
     ui.textPanel = makePanelWidget("text", "Text", "text-x-generic-symbolic", makeDetailList(ui.textDetailList));
     wireMemberDetailPanel(ui, ui.textPanel, AssetFilter::Text);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.textPanel);
+    panel_frame_add(PANEL_FRAME(textFrame), ui.textPanel);
     ui.scriptPanel = makePanelWidget("script", "Script", "application-x-executable-symbolic", makeScriptDetailContent(ui));
     wireMemberDetailPanel(ui, ui.scriptPanel, AssetFilter::Script);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.scriptPanel);
+    panel_frame_add(PANEL_FRAME(scriptFrame), ui.scriptPanel);
     ui.soundPanel = makePanelWidget("sound", "Sound", "audio-x-generic-symbolic", makeDetailList(ui.soundDetailList));
     wireMemberDetailPanel(ui, ui.soundPanel, AssetFilter::Sound);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.soundPanel);
+    panel_frame_add(PANEL_FRAME(soundFrame), ui.soundPanel);
     ui.palettePanel = makePanelWidget("palette", "Palette", "color-select-symbolic", makePaletteDetailContent(ui));
     wireMemberDetailPanel(ui, ui.palettePanel, AssetFilter::Palette);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.palettePanel);
+    panel_frame_add(PANEL_FRAME(paletteFrame), ui.palettePanel);
     ui.shapePanel = makePanelWidget("shape", "Shape", "insert-object-symbolic", makeDetailList(ui.shapeDetailList));
     wireMemberDetailPanel(ui, ui.shapePanel, AssetFilter::Shape);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.shapePanel);
+    panel_frame_add(PANEL_FRAME(shapeFrame), ui.shapePanel);
     ui.filmLoopPanel = makePanelWidget("film-loop", "Film Loop", "media-playlist-repeat-symbolic", makeDetailList(ui.filmLoopDetailList));
     wireMemberDetailPanel(ui, ui.filmLoopPanel, AssetFilter::FilmLoop);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.filmLoopPanel);
+    panel_frame_add(PANEL_FRAME(filmLoopFrame), ui.filmLoopPanel);
     ui.moviePanel = makePanelWidget("movie", "Movie/Video", "video-x-generic-symbolic", makeDetailList(ui.movieDetailList));
     wireMemberDetailPanel(ui, ui.moviePanel, AssetFilter::Movie);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.moviePanel);
+    panel_frame_add(PANEL_FRAME(movieFrame), ui.moviePanel);
     ui.threeDPanel = makePanelWidget("shockwave-3d", "Shockwave 3D", "applications-graphics-symbolic", makeDetailList(ui.threeDDetailList));
     wireMemberDetailPanel(ui, ui.threeDPanel, AssetFilter::ThreeD);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.threeDPanel);
+    panel_frame_add(PANEL_FRAME(threeDFrame), ui.threeDPanel);
     ui.genericPanel = makePanelWidget("member", "Member", "text-x-generic-symbolic", makeDetailList(ui.genericDetailList));
     wireMemberDetailPanel(ui, ui.genericPanel, AssetFilter::Other);
-    panel_frame_add(PANEL_FRAME(endFrame), ui.genericPanel);
+    panel_frame_add(PANEL_FRAME(genericFrame), ui.genericPanel);
 
     ui.castLists.clear();
     ui.castBrowserPanels.clear();
@@ -3831,19 +4212,6 @@ GtkWidget* buildDock(EditorUi& ui) {
     wireCastBrowserPanel(ui, allCastPanel, AssetFilter::All);
     ui.castBrowserPanels.emplace(static_cast<int>(AssetFilter::All), allCastPanel);
     panel_frame_add(PANEL_FRAME(bottomFrame), allCastPanel);
-
-    for (const auto& spec : castPanelSpecs()) {
-        if (spec.filter == AssetFilter::All) {
-            continue;
-        }
-        PanelWidget* castPanel = makePanelWidget(spec.id,
-                                                 spec.title,
-                                                 iconForFilter(spec.filter),
-                                                 makeCastTypePanelContent(ui, spec.filter));
-        wireCastBrowserPanel(ui, castPanel, spec.filter);
-        ui.castBrowserPanels.emplace(static_cast<int>(spec.filter), castPanel);
-        panel_frame_add(PANEL_FRAME(bottomFrame), castPanel);
-    }
 
     ui.chunkList = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(ui.chunkList), GTK_SELECTION_SINGLE);
@@ -3853,7 +4221,18 @@ GtkWidget* buildDock(EditorUi& ui) {
 
     panel_paned_append(startPaned, toolsFrame);
     panel_paned_append(startPaned, scoreFrame);
-    panel_paned_append(endPaned, endFrame);
+    panel_paned_append(endPaned, libraryFrame);
+    panel_paned_append(endPaned, inspectorFrame);
+    panel_paned_append(endPaned, bitmapFrame);
+    panel_paned_append(endPaned, textFrame);
+    panel_paned_append(endPaned, scriptFrame);
+    panel_paned_append(endPaned, soundFrame);
+    panel_paned_append(endPaned, paletteFrame);
+    panel_paned_append(endPaned, shapeFrame);
+    panel_paned_append(endPaned, filmLoopFrame);
+    panel_paned_append(endPaned, movieFrame);
+    panel_paned_append(endPaned, threeDFrame);
+    panel_paned_append(endPaned, genericFrame);
     panel_paned_append(bottomPaned, bottomFrame);
 
     GtkWidget* dock = GTK_WIDGET(ui.dock);
