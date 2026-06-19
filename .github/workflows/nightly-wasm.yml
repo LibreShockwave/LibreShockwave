@@ -1,0 +1,81 @@
+name: Nightly WASM Build
+
+on:
+  schedule:
+    # Run every day at 04:00 UTC.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-wasm
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build zip
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: latest
+
+      - name: Build WASM dist
+        run: ./build.sh --wasm --release --generator Ninja
+
+      - name: Get build date
+        id: date
+        run: |
+          echo "VERSION=$(date -u +'%Y%m%d')" >> "$GITHUB_OUTPUT"
+          echo "DISPLAY=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp build number
+        run: |
+          sed -i "s|<title>LibreShockwave C++ Player</title>|<title>LibreShockwave C++ Player - Nightly ${{ steps.date.outputs.VERSION }}</title>|" cmake-build-wasm/cpp/wasm-dist/index.html
+
+      - name: Create ZIP of dist
+        run: |
+          cd cmake-build-wasm/cpp/wasm-dist
+          zip -r "$GITHUB_WORKSPACE/libreshockwave-cpp-wasm-${{ steps.date.outputs.VERSION }}.zip" .
+
+      - name: Delete existing nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete nightly --yes --cleanup-tag || true
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly WASM Build ${{ steps.date.outputs.VERSION }}
+          prerelease: true
+          files: libreshockwave-cpp-wasm-${{ steps.date.outputs.VERSION }}.zip
+          body: |
+            ## Nightly WASM Build
+
+            Automated nightly build of the LibreShockwave C++ browser player.
+
+            **Built from:** ${{ github.sha }}
+            **Date:** ${{ steps.date.outputs.DISPLAY }}
+            **Version:** ${{ steps.date.outputs.VERSION }}
+
+            ### Contents
+
+            - `libreshockwave-cpp-wasm-${{ steps.date.outputs.VERSION }}.zip` - browser player dist containing `index.html`, `libreshockwave-cpp-player.js`, `libreshockwave-cpp-worker.js`, `libreshockwave-cpp-wasm.js`, and `libreshockwave-cpp-wasm.wasm`
+
+            ### Usage
+
+            Extract the ZIP and serve the files over HTTP from the same directory.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
