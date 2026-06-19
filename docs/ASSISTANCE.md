@@ -274,6 +274,12 @@ later top-level callbacks, or script-instance mutation.
 - When an issue reproduces only in v31, inspect the extracted `.ls`,
   `.lasm`, `.window`, `.props`, `manifest.tsv`, and bitmap/text exports before
   editing C++.
+- Before adding or changing a builtin for a hot function name, verify whether
+  the name is an authored Lingo handler in the relevant assets. For v31
+  resource helpers, check
+  `/opt/git/v31_assets/projectorrays_lingo/fuse_client/casts/External/MovieScript 9 - Resource API.ls`
+  first; functions such as `memberExists` and `getmemnum` dispatch through that
+  movie script to the Resource Manager.
 - Use app-authored Lingo paths to locate the failing generic runtime behavior.
 - After reading the relevant assets, make a separate focused regression test
   that asserts the generic runtime behavior the assets depend on. Do not encode
