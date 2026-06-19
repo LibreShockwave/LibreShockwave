@@ -24589,7 +24589,7 @@ void testCastLibManagerFoundation() {
     appendI32(keyData, BinaryReader::fourCC("snd "));
     std::vector<std::uint8_t> bitdData(24 * 16, 0);
     bitdData[1] = 1;
-    std::vector<std::uint8_t> soundChunkData(66, 0);
+    std::vector<std::uint8_t> soundChunkData(64 + 22050 * 2, 0);
     soundChunkData[0x16] = 0x56;
     soundChunkData[0x17] = 0x22;
     soundChunkData[64] = 0x12;
@@ -24919,15 +24919,16 @@ void testCastLibManagerFoundation() {
     const auto* createdRuntimeRef = createdRuntime.asCastMemberRef();
     assert(createdRuntimeRef != nullptr);
     assert(createdRuntimeRef->castLib == 1);
-    assert(createdRuntimeRef->memberNum() == 10000);
-    assert(manager.memberExists(1, 10000));
+    const int createdRuntimeNum = createdRuntimeRef->memberNum();
+    assert(createdRuntimeNum == 10001);
+    assert(manager.memberExists(1, createdRuntimeNum));
     assert(manager.getMemberCount(1) == 4);
     assert(context.castMemberCountSupplier(1) == 4);
     assert(context.castMemberCountSupplier(99) == 0);
-    assert(manager.getMemberProp(1, 10000, "type").asSymbol()->name == "bitmap");
-    assert(manager.getMemberProp(1, 10000, "name").stringValue().empty());
-    assert(manager.getMemberProp(1, 10000, "width").intValue() == 0);
-    const auto createdRuntimeImageDatum = manager.getMemberProp(1, 10000, "image");
+    assert(manager.getMemberProp(1, createdRuntimeNum, "type").asSymbol()->name == "bitmap");
+    assert(manager.getMemberProp(1, createdRuntimeNum, "name").stringValue().empty());
+    assert(manager.getMemberProp(1, createdRuntimeNum, "width").intValue() == 0);
+    const auto createdRuntimeImageDatum = manager.getMemberProp(1, createdRuntimeNum, "image");
     const auto* createdRuntimeImage = createdRuntimeImageDatum.asImageRef();
     assert(createdRuntimeImage != nullptr);
     assert(createdRuntimeImage->bitmap != nullptr);
@@ -24936,26 +24937,28 @@ void testCastLibManagerFoundation() {
     assert(createdRuntimeImage->bitmap->height() == 1);
     assert(createdRuntimeImage->bitmap->bitDepth() == 32);
     assert(createdRuntimeImage->bitmap->getPixel(0, 0) == 0xFFFFFFFFU);
-    assert(manager.getMemberProp(1, 10000, "width").intValue() == 1);
-    assert(manager.getMemberProp(1, 10000, "depth").intValue() == 32);
+    assert(manager.getMemberProp(1, createdRuntimeNum, "width").intValue() == 1);
+    assert(manager.getMemberProp(1, createdRuntimeNum, "depth").intValue() == 32);
     auto runtimeDefaultReplacement = std::make_shared<Bitmap>(2, 1, 32);
     runtimeDefaultReplacement->setPixel(1, 0, 0xFF123456U);
-    assert(manager.setMemberProp(1, 10000, "image", Datum::imageRef(runtimeDefaultReplacement)));
-    assert(manager.resolveMember(1, 10000)->runtimeBitmap() == createdRuntimeImage->bitmap);
+    assert(manager.setMemberProp(1, createdRuntimeNum, "image", Datum::imageRef(runtimeDefaultReplacement)));
+    assert(manager.resolveMember(1, createdRuntimeNum)->runtimeBitmap() == createdRuntimeImage->bitmap);
     assert(createdRuntimeImage->bitmap->isScriptModified());
     assert(createdRuntimeImage->bitmap->width() == 2);
     assert(createdRuntimeImage->bitmap->getPixel(1, 0) == 0xFF123456U);
 
     const auto namedRuntime = manager.createMember("Runtime Field", "field");
-    assert(namedRuntime.intValue() == ((1 << 16) | 10001));
-    assert(manager.getMemberProp(1, 10001, "type").asSymbol()->name == "field");
-    assert(manager.getMemberProp(1, 10001, "name").stringValue() == "Runtime Field");
-    assert(manager.getMemberByName(0, "Runtime Field").asCastMemberRef()->memberNum() == 10001);
-    assert(manager.findCastMemberByName("Runtime Field")->memberNum() == 10001);
-    assert(manager.getMemberProp(1, 10001, "text").stringValue().empty());
-    assert(manager.setMemberProp(1, 10001, "text", Datum::of(std::string("Hello\nField"))));
-    assert(manager.getMemberProp(1, 10001, "text").stringValue() == "Hello\nField");
-    assert(manager.getMemberProp(1, 10001, "media").asCastMemberRef()->memberNum() == 10001);
+    const int namedRuntimeNum = namedRuntime.intValue() & 0xFFFF;
+    assert(namedRuntime.intValue() == ((1 << 16) | namedRuntimeNum));
+    assert(namedRuntimeNum == createdRuntimeNum + 1);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "type").asSymbol()->name == "field");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "name").stringValue() == "Runtime Field");
+    assert(manager.getMemberByName(0, "Runtime Field").asCastMemberRef()->memberNum() == namedRuntimeNum);
+    assert(manager.findCastMemberByName("Runtime Field")->memberNum() == namedRuntimeNum);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "text").stringValue().empty());
+    assert(manager.setMemberProp(1, namedRuntimeNum, "text", Datum::of(std::string("Hello\nField"))));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "text").stringValue() == "Hello\nField");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "media").asCastMemberRef()->memberNum() == namedRuntimeNum);
     assert(manager.getFieldValue(Datum::of(std::string("Runtime Field")), 0).stringValue() == "Hello\nField");
     assert(context.fieldResolver(Datum::of(std::string("Runtime Field")), 0).stringValue() == "Hello\nField");
 
@@ -24972,22 +24975,22 @@ void testCastLibManagerFoundation() {
     assert(manager.getMemberByName(0, "Shared Class").asCastMemberRef()->castLib == 1);
     assert(registry.invoke("field", context, {Datum::of(std::string("Runtime Field"))}).stringValue() == "Hello\nField");
     context.fieldSetter(Datum::of(std::string("Runtime Field")), 0, "Updated Field");
-    assert(manager.getMemberProp(1, 10001, "text").stringValue() == "Updated Field");
-    assert(manager.getFieldValue(Datum::of(10001), 1).stringValue() == "Updated Field");
-    context.fieldSetter(Datum::of((1 << 16) | 10001), 0, "Encoded Field");
-    assert(registry.invoke("field", context, {Datum::of(10001), Datum::castLibRef(CastLibId(1))}).stringValue() == "Encoded Field");
-    const auto encodedFieldDatum = registry.invoke("field", context, {Datum::of(10001), Datum::castLibRef(CastLibId(1))});
+    assert(manager.getMemberProp(1, namedRuntimeNum, "text").stringValue() == "Updated Field");
+    assert(manager.getFieldValue(Datum::of(namedRuntimeNum), 1).stringValue() == "Updated Field");
+    context.fieldSetter(Datum::of((1 << 16) | namedRuntimeNum), 0, "Encoded Field");
+    assert(registry.invoke("field", context, {Datum::of(namedRuntimeNum), Datum::castLibRef(CastLibId(1))}).stringValue() == "Encoded Field");
+    const auto encodedFieldDatum = registry.invoke("field", context, {Datum::of(namedRuntimeNum), Datum::castLibRef(CastLibId(1))});
     assert(encodedFieldDatum.asFieldText() != nullptr);
     assert(encodedFieldDatum.asFieldText()->castLib == 1);
-    assert(encodedFieldDatum.asFieldText()->memberNum == 10001);
+    assert(encodedFieldDatum.asFieldText()->memberNum == namedRuntimeNum);
     assert(encodedFieldDatum.stringValue() == "Encoded Field");
-    context.fieldSetter(Datum::of(10001), 1, "[#answer: 42]");
+    context.fieldSetter(Datum::of(namedRuntimeNum), 1, "[#answer: 42]");
     const auto parsedField = registry.invoke("value",
                                              context,
-                                             {registry.invoke("field", context, {Datum::of(10001),
+                                             {registry.invoke("field", context, {Datum::of(namedRuntimeNum),
                                                                                  Datum::castLibRef(CastLibId(1))})});
     assert(parsedField.propListValue().get(Datum::symbol("answer")).intValue() == 42);
-    assert(manager.getParsedFieldValue(1, 10001).propListValue().get(Datum::symbol("answer")).intValue() == 42);
+    assert(manager.getParsedFieldValue(1, namedRuntimeNum).propListValue().get(Datum::symbol("answer")).intValue() == 42);
     const std::string directorProps =
         "#system\r#props\r#index\r\r"
         "thread.manager.class       = Thread Manager Class\r"
@@ -25007,79 +25010,79 @@ void testCastLibManagerFoundation() {
                                               {Datum::of(std::string("first = one\n#section\nsecond=two"))});
     assert(newlineProps.propListValue().get(Datum::of(std::string("first"))).stringValue() == "one");
     assert(newlineProps.propListValue().get(Datum::of(std::string("second"))).stringValue() == "two");
-    assert(manager.setMemberProp(1, 10001, "html", Datum::of(std::string("<b>Plain</b> <i>Text</i>"))));
-    assert(manager.getMemberProp(1, 10001, "text").stringValue() == "Plain Text");
-    assert(manager.setMemberProp(1, 10001, "media", Datum::symbol("Symbolic")));
-    assert(manager.getMemberProp(1, 10001, "text").stringValue() == "Symbolic");
-    assert(manager.getMemberProp(1, 10001, "font").stringValue() == "Arial");
-    assert(manager.getMemberProp(1, 10001, "fontSize").intValue() == 12);
-    assert(manager.getMemberProp(1, 10001, "width").intValue() == 480);
-    assert(manager.getMemberProp(1, 10001, "height").intValue() == 480);
-    assert(manager.setMemberProp(1, 10001, "font", Datum::of(std::string("Courier"))));
-    assert(manager.setMemberProp(1, 10001, "fontSize", Datum::of(18)));
-    assert(manager.setMemberProp(1, 10001, "fontStyle", Datum::list({Datum::symbol("bold"), Datum::symbol("italic")})));
-    assert(manager.setMemberProp(1, 10001, "alignment", Datum::symbol("right")));
-    assert(manager.setMemberProp(1, 10001, "color", Datum::colorRef(0x12, 0x34, 0x56)));
-    assert(manager.setMemberProp(1, 10001, "bgColor", Datum::of(std::string("#ABCDEF"))));
-    assert(manager.setMemberProp(1, 10001, "wordWrap", Datum::of(1)));
-    assert(manager.setMemberProp(1, 10001, "antialias", Datum::of(1)));
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::of(1)));
-    assert(manager.setMemberProp(1, 10001, "rect", Datum::intRect(2, 3, 42, 18)));
-    assert(manager.setMemberProp(1, 10001, "width", Datum::of(50)));
-    assert(manager.setMemberProp(1, 10001, "height", Datum::of(30)));
-    assert(manager.setMemberProp(1, 10001, "fixedLineSpace", Datum::of(14)));
-    assert(manager.setMemberProp(1, 10001, "topSpacing", Datum::of(2)));
-    assert(manager.setMemberProp(1, 10001, "editable", Datum::of(1)));
-    assert(manager.getMemberProp(1, 10001, "font").stringValue() == "Courier");
-    assert(manager.getMemberProp(1, 10001, "fontSize").intValue() == 18);
-    assert(manager.getMemberProp(1, 10001, "fontStyle").stringValue() == "bold,italic");
-    assert(manager.getMemberProp(1, 10001, "alignment").asSymbol()->name == "right");
-    assert(manager.getMemberProp(1, 10001, "color").asColorRef()->r == 0x12);
-    assert(manager.getMemberProp(1, 10001, "color").asColorRef()->g == 0x34);
-    assert(manager.getMemberProp(1, 10001, "color").asColorRef()->b == 0x56);
-    assert(manager.getMemberProp(1, 10001, "bgColor").asColorRef()->r == 0xAB);
-    assert(manager.getMemberProp(1, 10001, "bgColor").asColorRef()->g == 0xCD);
-    assert(manager.getMemberProp(1, 10001, "bgColor").asColorRef()->b == 0xEF);
-    assert(manager.getMemberProp(1, 10001, "wordWrap").intValue() == 1);
-    assert(manager.getMemberProp(1, 10001, "antialias").intValue() == 1);
-    assert(manager.getMemberProp(1, 10001, "boxType").intValue() == 1);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::symbol("adjust")));
-    assert(manager.getMemberProp(1, 10001, "boxType").intValue() == 0);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::symbol("fixed")));
-    assert(manager.getMemberProp(1, 10001, "boxType").intValue() == 1);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::of(std::string("#scroll"))));
-    assert(manager.getMemberProp(1, 10001, "boxType").intValue() == 2);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::symbol("limit")));
-    assert(manager.getMemberProp(1, 10001, "boxType").intValue() == 3);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::of(1)));
-    assert(manager.getMemberProp(1, 10001, "width").intValue() == 50);
-    assert(manager.getMemberProp(1, 10001, "height").intValue() == 30);
-    assert(manager.getMemberProp(1, 10001, "rect").asIntRect()->left == 2);
-    assert(manager.getMemberProp(1, 10001, "rect").asIntRect()->right == 52);
-    assert(manager.getMemberProp(1, 10001, "fixedLineSpace").intValue() == 14);
-    assert(manager.getMemberProp(1, 10001, "topSpacing").intValue() == 2);
-    assert(manager.getMemberProp(1, 10001, "editable").intValue() == 1);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "html", Datum::of(std::string("<b>Plain</b> <i>Text</i>"))));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "text").stringValue() == "Plain Text");
+    assert(manager.setMemberProp(1, namedRuntimeNum, "media", Datum::symbol("Symbolic")));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "text").stringValue() == "Symbolic");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "font").stringValue() == "Arial");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "fontSize").intValue() == 12);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "width").intValue() == 480);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "height").intValue() == 480);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "font", Datum::of(std::string("Courier"))));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "fontSize", Datum::of(18)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "fontStyle", Datum::list({Datum::symbol("bold"), Datum::symbol("italic")})));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "alignment", Datum::symbol("right")));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "color", Datum::colorRef(0x12, 0x34, 0x56)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "bgColor", Datum::of(std::string("#ABCDEF"))));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "wordWrap", Datum::of(1)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "antialias", Datum::of(1)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::of(1)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "rect", Datum::intRect(2, 3, 42, 18)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "width", Datum::of(50)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "height", Datum::of(30)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "fixedLineSpace", Datum::of(14)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "topSpacing", Datum::of(2)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "editable", Datum::of(1)));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "font").stringValue() == "Courier");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "fontSize").intValue() == 18);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "fontStyle").stringValue() == "bold,italic");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "alignment").asSymbol()->name == "right");
+    assert(manager.getMemberProp(1, namedRuntimeNum, "color").asColorRef()->r == 0x12);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "color").asColorRef()->g == 0x34);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "color").asColorRef()->b == 0x56);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "bgColor").asColorRef()->r == 0xAB);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "bgColor").asColorRef()->g == 0xCD);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "bgColor").asColorRef()->b == 0xEF);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "wordWrap").intValue() == 1);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "antialias").intValue() == 1);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "boxType").intValue() == 1);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::symbol("adjust")));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "boxType").intValue() == 0);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::symbol("fixed")));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "boxType").intValue() == 1);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::of(std::string("#scroll"))));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "boxType").intValue() == 2);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::symbol("limit")));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "boxType").intValue() == 3);
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::of(1)));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "width").intValue() == 50);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "height").intValue() == 30);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "rect").asIntRect()->left == 2);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "rect").asIntRect()->right == 52);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "fixedLineSpace").intValue() == 14);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "topSpacing").intValue() == 2);
+    assert(manager.getMemberProp(1, namedRuntimeNum, "editable").intValue() == 1);
 
     const std::string countedText = "Alpha beta\rGamma,Delta,";
-    assert(manager.setMemberProp(1, 10001, "text", Datum::of(countedText)));
-    assert(manager.getMemberProp(1, 10001, "lineCount").intValue() == 2);
-    const auto lineList = manager.getMemberProp(1, 10001, "line");
+    assert(manager.setMemberProp(1, namedRuntimeNum, "text", Datum::of(countedText)));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "lineCount").intValue() == 2);
+    const auto lineList = manager.getMemberProp(1, namedRuntimeNum, "line");
     const auto& textLines = lineList.listValue().items();
     assert(textLines.size() == 2);
     assert(textLines[0].stringValue() == "Alpha beta");
     assert(textLines[1].stringValue() == "Gamma,Delta,");
-    assert(manager.callMemberMethod(1, 10001, "count", {Datum::symbol("char")}).intValue() ==
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "count", {Datum::symbol("char")}).intValue() ==
            static_cast<int>(countedText.size()));
-    assert(manager.callMemberMethod(1, 10001, "count", {Datum::symbol("word")}).intValue() == 3);
-    assert(manager.callMemberMethod(1, 10001, "count", {Datum::symbol("line")}).intValue() == 2);
-    assert(manager.callMemberMethod(1, 10001, "count", {Datum::symbol("item")}).intValue() == 3);
-    assert(manager.callMemberMethod(1, 10001, "count", {Datum::symbol("unknown")}).intValue() == 0);
-    assert(context.castMemberMethodHandler(1, 10001, "getProp", {Datum::symbol("rect"), Datum::of(3)}).intValue() == 52);
-    assert(context.castMemberMethodHandler(1, 10001, "getProp", {Datum::symbol("line"), Datum::of(2)}).stringValue() ==
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "count", {Datum::symbol("word")}).intValue() == 3);
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "count", {Datum::symbol("line")}).intValue() == 2);
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "count", {Datum::symbol("item")}).intValue() == 3);
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "count", {Datum::symbol("unknown")}).intValue() == 0);
+    assert(context.castMemberMethodHandler(1, namedRuntimeNum, "getProp", {Datum::symbol("rect"), Datum::of(3)}).intValue() == 52);
+    assert(context.castMemberMethodHandler(1, namedRuntimeNum, "getProp", {Datum::symbol("line"), Datum::of(2)}).stringValue() ==
            "Gamma,Delta,");
     assert(context.castMemberMethodHandler(1, 2, "getProp", {Datum::symbol("regPoint"), Datum::of(2)}).intValue() == 11);
-    assert(context.castMemberMethodHandler(1, 10001, "getProp", {Datum::symbol("line"), Datum::of(3)}).isVoid());
-    assert(manager.setMemberProp(1, 10001, "text", Datum::of(std::string("Symbolic"))));
+    assert(context.castMemberMethodHandler(1, namedRuntimeNum, "getProp", {Datum::symbol("line"), Datum::of(3)}).isVoid());
+    assert(manager.setMemberProp(1, namedRuntimeNum, "text", Datum::of(std::string("Symbolic"))));
 
     class ManagerMethodTextRenderer final : public TextRenderer {
     public:
@@ -25168,15 +25171,15 @@ void testCastLibManagerFoundation() {
         }
     };
 
-    auto missingRendererLoc = manager.callMemberMethod(1, 10001, "charPosToLoc", {Datum::of(3)}).asIntPoint();
+    auto missingRendererLoc = manager.callMemberMethod(1, namedRuntimeNum, "charPosToLoc", {Datum::of(3)}).asIntPoint();
     assert(missingRendererLoc != nullptr);
     assert(missingRendererLoc->x == 0);
     assert(missingRendererLoc->y == 0);
-    assert(manager.callMemberMethod(1, 10001, "locToCharPos", {Datum::intPoint(11, 22)}).intValue() == 0);
+    assert(manager.callMemberMethod(1, namedRuntimeNum, "locToCharPos", {Datum::intPoint(11, 22)}).intValue() == 0);
 
     ManagerMethodTextRenderer methodRenderer;
     manager.setTextRenderer(&methodRenderer);
-    auto methodLoc = manager.callMemberMethod(1, 10001, "charPosToLoc", {Datum::of(4)}).asIntPoint();
+    auto methodLoc = manager.callMemberMethod(1, namedRuntimeNum, "charPosToLoc", {Datum::of(4)}).asIntPoint();
     assert(methodLoc != nullptr);
     assert(methodLoc->x == 123);
     assert(methodLoc->y == 45);
@@ -25189,21 +25192,21 @@ void testCastLibManagerFoundation() {
     assert(methodRenderer.lastFixedLineSpace == 14);
     assert(methodRenderer.lastAlignment == "right");
     assert(methodRenderer.lastFieldWidth == 50);
-    assert(context.castMemberMethodHandler(1, 10001, "locToCharPos", {Datum::intPoint(11, 22)}).intValue() == 77);
+    assert(context.castMemberMethodHandler(1, namedRuntimeNum, "locToCharPos", {Datum::intPoint(11, 22)}).intValue() == 77);
     assert(methodRenderer.locCalls == 1);
     assert(methodRenderer.lastX == 11);
     assert(methodRenderer.lastY == 22);
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::of(0)));
-    assert(manager.setMemberProp(1, 10001, "wordWrap", Datum::of(0)));
-    assert(manager.setMemberProp(1, 10001, "rect", Datum::intRect(2, 3, 32, 13)));
-    assert(manager.setMemberProp(1, 10001, "text", Datum::of(std::string("Auto height"))));
-    assert(manager.getMemberProp(1, 10001, "height").intValue() == 44);
-    const auto autoTextRect = manager.getMemberProp(1, 10001, "rect").asIntRect();
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::of(0)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "wordWrap", Datum::of(0)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "rect", Datum::intRect(2, 3, 32, 13)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "text", Datum::of(std::string("Auto height"))));
+    assert(manager.getMemberProp(1, namedRuntimeNum, "height").intValue() == 44);
+    const auto autoTextRect = manager.getMemberProp(1, namedRuntimeNum, "rect").asIntRect();
     assert(autoTextRect != nullptr);
     assert(autoTextRect->left == 2);
     assert(autoTextRect->right == 32);
     assert(autoTextRect->bottom == 47);
-    const auto autoTextImageDatum = manager.getMemberProp(1, 10001, "image");
+    const auto autoTextImageDatum = manager.getMemberProp(1, namedRuntimeNum, "image");
     const auto* autoTextImage = autoTextImageDatum.asImageRef();
     assert(autoTextImage != nullptr);
     assert(autoTextImage->bitmap != nullptr);
@@ -25216,8 +25219,8 @@ void testCastLibManagerFoundation() {
     auto assignedTextImage = std::make_shared<Bitmap>(4, 2, 32);
     assignedTextImage->fill(0xFF112233U);
     assignedTextImage->setPixel(3, 1, 0xFF445566U);
-    assert(manager.setMemberProp(1, 10001, "image", Datum::imageRef(assignedTextImage)));
-    auto assignedTextRuntime = manager.resolveMember(1, 10001)->runtimeBitmap();
+    assert(manager.setMemberProp(1, namedRuntimeNum, "image", Datum::imageRef(assignedTextImage)));
+    auto assignedTextRuntime = manager.resolveMember(1, namedRuntimeNum)->runtimeBitmap();
     assert(assignedTextRuntime != nullptr);
     assert(assignedTextRuntime != assignedTextImage);
     assert(assignedTextRuntime->isScriptModified());
@@ -25227,55 +25230,59 @@ void testCastLibManagerFoundation() {
     assignedTextImage->setPixel(3, 1, 0xFFFFFFFFU);
     assert(assignedTextRuntime->getPixel(3, 1) == 0xFF445566U);
 
-    assert(manager.setMemberProp(1, 10001, "boxType", Datum::of(1)));
-    assert(manager.setMemberProp(1, 10001, "wordWrap", Datum::of(1)));
-    assert(manager.setMemberProp(1, 10001, "rect", Datum::intRect(2, 3, 52, 33)));
-    assert(manager.setMemberProp(1, 10001, "text", Datum::of(std::string("Symbolic"))));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "boxType", Datum::of(1)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "wordWrap", Datum::of(1)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "rect", Datum::intRect(2, 3, 52, 33)));
+    assert(manager.setMemberProp(1, namedRuntimeNum, "text", Datum::of(std::string("Symbolic"))));
 
     const auto builtinRuntime = registry.invoke("createMember",
                                                 context,
                                                 {Datum::of(std::string("Runtime Bitmap")), Datum::symbol("bitmap")});
-    assert(builtinRuntime.intValue() == ((1 << 16) | 10002));
-    assert(manager.getMemberProp(1, 10002, "name").stringValue() == "Runtime Bitmap");
+    const int builtinRuntimeNum = builtinRuntime.intValue() & 0xFFFF;
+    assert(builtinRuntime.intValue() == ((1 << 16) | builtinRuntimeNum));
+    assert(builtinRuntimeNum == earlierDuplicateRef->memberNum() + 1);
+    assert(manager.getMemberProp(1, builtinRuntimeNum, "name").stringValue() == "Runtime Bitmap");
     const auto newRuntime = registry.invoke("new",
                                             context,
                                             {Datum::symbol("shape"), Datum::castLibRef(CastLibId(1))});
-    assert(newRuntime.asCastMemberRef() != nullptr);
-    assert(newRuntime.asCastMemberRef()->memberNum() == 10003);
-    assert(manager.getMemberProp(1, 10003, "type").asSymbol()->name == "shape");
-    assert(manager.getMemberProp(1, 10003, "filled").intValue() == 1);
-    assert(manager.getMemberProp(1, 10003, "shapeType").asSymbol()->name == "rect");
-    assert(manager.getMemberProp(1, 10003, "lineSize").intValue() == 1);
-    assert(manager.getMemberProp(1, 10003, "pattern").intValue() == 1);
-    assert(manager.setMemberProp(1, 10003, "filled", Datum::FALSE));
-    assert(manager.setMemberProp(1, 10003, "shapeType", Datum::symbol("oval")));
-    assert(manager.setMemberProp(1, 10003, "lineSize", Datum::of(4)));
-    assert(manager.setMemberProp(1, 10003, "pattern", Datum::of(2)));
-    assert(manager.getMemberProp(1, 10003, "filled").intValue() == 0);
-    assert(manager.getMemberProp(1, 10003, "shapeType").asSymbol()->name == "oval");
-    assert(manager.getMemberProp(1, 10003, "lineSize").intValue() == 4);
-    assert(manager.getMemberProp(1, 10003, "pattern").intValue() == 2);
-    assert(manager.setMemberProp(1, 10003, "shapeType", Datum::of(std::string("round rect"))));
-    assert(manager.getMemberProp(1, 10003, "shapeType").asSymbol()->name == "roundRect");
-    assert(manager.setMemberProp(1, 10003, "shapeType", Datum::of(8)));
-    assert(manager.getMemberProp(1, 10003, "shapeType").asSymbol()->name == "line");
-    assert(!manager.setMemberProp(1, 10003, "shapeType", Datum::symbol("bogusShapeType")));
-    auto runtimeShape = manager.resolveMember(1, 10003);
+    const auto* newRuntimeRef = newRuntime.asCastMemberRef();
+    assert(newRuntimeRef != nullptr);
+    const int newRuntimeNum = newRuntimeRef->memberNum();
+    assert(newRuntimeNum == builtinRuntimeNum + 1);
+    assert(manager.getMemberProp(1, newRuntimeNum, "type").asSymbol()->name == "shape");
+    assert(manager.getMemberProp(1, newRuntimeNum, "filled").intValue() == 1);
+    assert(manager.getMemberProp(1, newRuntimeNum, "shapeType").asSymbol()->name == "rect");
+    assert(manager.getMemberProp(1, newRuntimeNum, "lineSize").intValue() == 1);
+    assert(manager.getMemberProp(1, newRuntimeNum, "pattern").intValue() == 1);
+    assert(manager.setMemberProp(1, newRuntimeNum, "filled", Datum::FALSE));
+    assert(manager.setMemberProp(1, newRuntimeNum, "shapeType", Datum::symbol("oval")));
+    assert(manager.setMemberProp(1, newRuntimeNum, "lineSize", Datum::of(4)));
+    assert(manager.setMemberProp(1, newRuntimeNum, "pattern", Datum::of(2)));
+    assert(manager.getMemberProp(1, newRuntimeNum, "filled").intValue() == 0);
+    assert(manager.getMemberProp(1, newRuntimeNum, "shapeType").asSymbol()->name == "oval");
+    assert(manager.getMemberProp(1, newRuntimeNum, "lineSize").intValue() == 4);
+    assert(manager.getMemberProp(1, newRuntimeNum, "pattern").intValue() == 2);
+    assert(manager.setMemberProp(1, newRuntimeNum, "shapeType", Datum::of(std::string("round rect"))));
+    assert(manager.getMemberProp(1, newRuntimeNum, "shapeType").asSymbol()->name == "roundRect");
+    assert(manager.setMemberProp(1, newRuntimeNum, "shapeType", Datum::of(8)));
+    assert(manager.getMemberProp(1, newRuntimeNum, "shapeType").asSymbol()->name == "line");
+    assert(!manager.setMemberProp(1, newRuntimeNum, "shapeType", Datum::symbol("bogusShapeType")));
+    auto runtimeShape = manager.resolveMember(1, newRuntimeNum);
     assert(runtimeShape != nullptr);
     assert(!runtimeShape->shapeFilled());
     assert(runtimeShape->shapeType() == ShapeType::Line);
     assert(runtimeShape->shapeLineSize() == 4);
     assert(runtimeShape->shapePattern() == 2);
-    assert(manager.getMemberProp(1, 10003, "width").intValue() == 0);
-    assert(manager.getMemberProp(1, 10003, "height").intValue() == 0);
-    assert(manager.setMemberProp(1, 10003, "width", Datum::of(12)));
-    assert(manager.setMemberProp(1, 10003, "height", Datum::of(9)));
-    assert(manager.getMemberProp(1, 10003, "width").intValue() == 12);
-    assert(manager.getMemberProp(1, 10003, "height").intValue() == 9);
-    assert(manager.setMemberProp(1, 10003, "rect", Datum::intRect(3, 4, 33, 24)));
-    assert(manager.getMemberProp(1, 10003, "width").intValue() == 30);
-    assert(manager.getMemberProp(1, 10003, "height").intValue() == 20);
-    const auto runtimeShapeRect = manager.getMemberProp(1, 10003, "rect").asIntRect();
+    assert(manager.getMemberProp(1, newRuntimeNum, "width").intValue() == 0);
+    assert(manager.getMemberProp(1, newRuntimeNum, "height").intValue() == 0);
+    assert(manager.setMemberProp(1, newRuntimeNum, "width", Datum::of(12)));
+    assert(manager.setMemberProp(1, newRuntimeNum, "height", Datum::of(9)));
+    assert(manager.getMemberProp(1, newRuntimeNum, "width").intValue() == 12);
+    assert(manager.getMemberProp(1, newRuntimeNum, "height").intValue() == 9);
+    assert(manager.setMemberProp(1, newRuntimeNum, "rect", Datum::intRect(3, 4, 33, 24)));
+    assert(manager.getMemberProp(1, newRuntimeNum, "width").intValue() == 30);
+    assert(manager.getMemberProp(1, newRuntimeNum, "height").intValue() == 20);
+    const auto runtimeShapeRect = manager.getMemberProp(1, newRuntimeNum, "rect").asIntRect();
     assert(runtimeShapeRect != nullptr);
     assert(runtimeShapeRect->left == 0);
     assert(runtimeShapeRect->top == 0);
@@ -25283,9 +25290,9 @@ void testCastLibManagerFoundation() {
     assert(runtimeShapeRect->bottom == 20);
     SpriteRegistry shapeSpriteRegistry;
     SpriteProperties shapeSpriteProps(&shapeSpriteRegistry);
-    shapeSpriteProps.setMemberInfoResolver([runtimeShape](int castLib, int memberNum)
+    shapeSpriteProps.setMemberInfoResolver([runtimeShape, newRuntimeNum](int castLib, int memberNum)
         -> std::optional<SpriteProperties::MemberInfo> {
-        if (castLib != 1 || memberNum != 10003) {
+        if (castLib != 1 || memberNum != newRuntimeNum) {
             return std::nullopt;
         }
         SpriteProperties::MemberInfo info;
@@ -25296,7 +25303,7 @@ void testCastLibManagerFoundation() {
         info.runtimeDynamic = runtimeShape->isRuntimeDynamic();
         return info;
     });
-    assert(shapeSpriteProps.setSpriteProp(44, "member", Datum::castMemberRef(CastLibId(1), MemberId(10003))));
+    assert(shapeSpriteProps.setSpriteProp(44, "member", Datum::castMemberRef(CastLibId(1), MemberId(newRuntimeNum))));
     auto runtimeShapeSprite = shapeSpriteRegistry.get(44);
     assert(runtimeShapeSprite != nullptr);
     assert(runtimeShapeSprite->width() == 30);
@@ -25305,19 +25312,20 @@ void testCastLibManagerFoundation() {
     const auto copiedRuntimeField = manager.createMember(1, "text");
     const auto* copiedRuntimeFieldRef = copiedRuntimeField.asCastMemberRef();
     assert(copiedRuntimeFieldRef != nullptr);
-    assert(copiedRuntimeFieldRef->memberNum() == 10004);
+    const int copiedRuntimeFieldNum = copiedRuntimeFieldRef->memberNum();
+    assert(copiedRuntimeFieldNum == newRuntimeNum + 1);
     assert(context.castMemberPropertySetter(1,
-                                            10004,
+                                            copiedRuntimeFieldNum,
                                             "media",
-                                            Datum::castMemberRef(CastLibId(1), MemberId(10001))));
-    assert(manager.getMemberProp(1, 10004, "text").stringValue() == "Symbolic");
-    assert(manager.getMemberProp(1, 10004, "font").stringValue() == "Courier");
-    assert(manager.getMemberProp(1, 10004, "fontSize").intValue() == 18);
-    assert(manager.getMemberProp(1, 10004, "fontStyle").stringValue() == "bold,italic");
-    assert(manager.getMemberProp(1, 10004, "alignment").asSymbol()->name == "right");
-    assert(manager.getMemberProp(1, 10004, "bgColor").asColorRef()->b == 0xEF);
-    assert(manager.getMemberProp(1, 10004, "rect").asIntRect()->right == 52);
-    assert(manager.getMemberProp(1, 10004, "editable").intValue() == 1);
+                                            Datum::castMemberRef(CastLibId(1), MemberId(namedRuntimeNum))));
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "text").stringValue() == "Symbolic");
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "font").stringValue() == "Courier");
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "fontSize").intValue() == 18);
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "fontStyle").stringValue() == "bold,italic");
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "alignment").asSymbol()->name == "right");
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "bgColor").asColorRef()->b == 0xEF);
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "rect").asIntRect()->right == 52);
+    assert(manager.getMemberProp(1, copiedRuntimeFieldNum, "editable").intValue() == 1);
 
     auto reusableRuntime = manager.resolveMember(1, 10000);
     assert(reusableRuntime != nullptr);
@@ -25636,7 +25644,7 @@ void testCastLibManagerFoundation() {
                                   directMediaRef->memberNum(),
                                   "media",
                                   Datum::media(std::vector<std::uint8_t>{1, 2, 3})));
-    assert(!manager.setMemberProp(1, 10001, "media", Datum::media(importedImage)));
+    assert(!manager.setMemberProp(1, namedRuntimeNum, "media", Datum::media(importedImage)));
     manager.cacheExternalData("media/director-bitd.bin", directorMedia);
     assert(registry.invoke("importFileInto",
                            context,
