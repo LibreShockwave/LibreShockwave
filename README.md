@@ -6,8 +6,6 @@ LibreShockwave is a C++20 project for parsing Macromedia/Adobe Director and Shoc
 
 It **won't** *just* be an emulator: the goal is to eventually become a full software suite and ecosystem, with a Director player, alongside a replacement for Director MX (2004, 11.5, etc.) as an open source replacement for Macromedia/Adobe Shockwave.
 
-<img width="1280" height="900" alt="beta-current-1781405065297-90s" src="https://github.com/user-attachments/assets/4708d880-3b5a-4d51-822b-2dabdf409ae7" />
-
 ## Requirements
 
 - CMake 3.20 or newer
@@ -18,6 +16,39 @@ It **won't** *just* be an emulator: the goal is to eventually become a full soft
 - Optional: libpanel-1 and libadwaita-1 development packages for the editor
 - Optional: Emscripten for the browser/WASM target
 - Optional: Node.js and npm for browser/WASM verification
+
+## Player
+
+The Lingo VM, native player runtime, and browser/WASM player are under active development and are not production-ready. Expect missing features, incomplete Lingo coverage, and breaking changes.
+
+LibreShockwave includes a Lingo bytecode VM and player that can load and run Director movies. The runtime handles score playback, sprite rendering, input state, external cast loading, networking queues, audio queues, debugging hooks, and software frame rendering.
+
+The player can be used in two ways:
+
+- Native C++: link against `LibreShockwave::libreshockwave` and drive `libreshockwave::player::Player` directly.
+- Browser/WASM: build the Emscripten target and use the assets in `web/`.
+
+<img width="1420" height="962" alt="image" src="https://github.com/user-attachments/assets/6c9e68a9-753a-4491-9757-4704098de06e" />
+
+## Editor
+
+`libreshockwave_editor` is a GTK/libadwaita Director Studio prototype for inspecting Director and Shockwave projects.
+It opens `.dcr`, `.dir`, `.dxr`, `.cct`, `.cst`, and `.libresw` workspace files, previews the stage, browses cast
+members, inspects score/chunk/property data, previews bitmap and palette images, decompiles script previews, applies
+external parameters, saves workspace layout, and exports selected or all cast members. Project editing is currently
+read-only.
+
+The target is enabled when libpanel-1 and libadwaita-1 development packages are available.
+
+```bash
+./build.sh --target libreshockwave_editor --no-tests
+./cmake-build-debug/cpp/libreshockwave_editor movie.dir
+./cmake-build-debug/cpp/libreshockwave_editor workspace.libresw
+```
+
+### Image
+
+<img width="1508" height="975" alt="Screenshot_20260618_223426" src="https://github.com/user-attachments/assets/993c093e-d438-42e9-b498-81a35f30ab88" />
 
 ## Linux Setup
 
@@ -80,57 +111,6 @@ The main library target is `LibreShockwave::libreshockwave`.
 - Sound: MP3 extraction, PCM WAV conversion, and IMA ADPCM decoding
 - Palettes: built-in Director palettes and custom CLUT chunks
 - Fonts: PFR1 font parsing and conversion to TrueType (`.ttf`) bytes
-
-## Player
-
-The Lingo VM, native player runtime, and browser/WASM player are under active development and are not production-ready. Expect missing features, incomplete Lingo coverage, and breaking changes.
-
-LibreShockwave includes a Lingo bytecode VM and player that can load and run Director movies. The runtime handles score playback, sprite rendering, input state, external cast loading, networking queues, audio queues, debugging hooks, and software frame rendering.
-
-The player can be used in two ways:
-
-- Native C++: link against `LibreShockwave::libreshockwave` and drive `libreshockwave::player::Player` directly.
-- Browser/WASM: build the Emscripten target and use the assets in `web/`.
-
-### Native Player
-
-The native build includes a GTK4 movie-player executable named `libreshockwave_player`.
-It loads local or HTTP(S) `.dcr`, `.dir`, `.dxr`, `.cct`, and `.cst` movies, remembers the last movie/settings in a
-small config file, applies external parameters, autoplays loaded movies, renders the stage with the software renderer, and provides
-open, reload, play/pause, stop, step-frame, parameter, and tempo override controls. Playback uses the
-movie/score tempo by default; use the UI override or `--tempo` to force a cadence.
-The target requires GTK4 and libcurl development packages.
-
-```bash
-./build.sh --target libreshockwave_player --no-tests
-./cmake-build-debug/cpp/libreshockwave_player movie.dcr --param sw1=alpha
-./cmake-build-debug/cpp/libreshockwave_player https://example.test/movie.dcr
-./cmake-build-debug/cpp/libreshockwave_player --tempo 24
-./cmake-build-debug/cpp/libreshockwave_player --use-movie-tempo
-```
-
-By default settings are stored at `~/.config/libreshockwave/player.conf`. Run `libreshockwave_player --help`
-for all options, including `--settings`, `--clear-params`, `--script-timeout-ms`, and external-cast preload controls.
-
-## Editor
-
-`libreshockwave_editor` is a GTK/libadwaita Director Studio prototype for inspecting Director and Shockwave projects.
-It opens `.dcr`, `.dir`, `.dxr`, `.cct`, `.cst`, and `.libresw` workspace files, previews the stage, browses cast
-members, inspects score/chunk/property data, previews bitmap and palette images, decompiles script previews, applies
-external parameters, saves workspace layout, and exports selected or all cast members. Project editing is currently
-read-only.
-
-The target is enabled when libpanel-1 and libadwaita-1 development packages are available.
-
-```bash
-./build.sh --target libreshockwave_editor --no-tests
-./cmake-build-debug/cpp/libreshockwave_editor movie.dir
-./cmake-build-debug/cpp/libreshockwave_editor workspace.libresw
-```
-
-### Image
-
-<img width="1508" height="975" alt="Screenshot_20260618_223426" src="https://github.com/user-attachments/assets/284ea8f5-979e-4cd7-a7af-b0581cafb287" />
 
 ## C++ API Examples
 
