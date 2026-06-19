@@ -85,6 +85,9 @@
     let destroyed = false;
     let frameCssWidth = 1;
     let frameCssHeight = 1;
+    let audioContext = null;
+    let audioWarningShown = false;
+    const audioChannels = new Map();
 
     canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
 
@@ -96,6 +99,159 @@
       const requestId = nextRequestId++;
       send(type, { ...payload, requestId });
       return new Promise((resolve) => callbacks.set(requestId, resolve));
+    }
+
+    function reportAudioWarning(message) {
+      if (!message) return;
+      if (typeof options.onWarning === "function") options.onWarning(message);
+      if (typeof options.onDebug === "function") options.onDebug({ level: "warning", message });
+    }
+
+    function getAudioContext() {
+      if (audioContext) return audioContext;
+      const AudioContextCtor = global.AudioContext || global.webkitAudioContext;
+      if (!AudioContextCtor) {
+        if (!audioWarningShown) {
+          audioWarningShown = true;
+          reportAudioWarning("Web Audio is not available in this browser");
+        }
+        return null;
+      }
+      audioContext = new AudioContextCtor();
+      return audioContext;
+    }
+
+    async function unlockAudio() {
+      const context = getAudioContext();
+      if (!context || context.state !== "suspended") return;
+      try {
+        await context.resume();
+      } catch (error) {
+        if (!audioWarningShown) {
+          audioWarningShown = true;
+          reportAudioWarning(`Audio playback is blocked: ${error.message || String(error)}`);
+        }
+      }
+    }
+
+    async function suspendAudio() {
+      if (!audioContext || audioContext.state !== "running") return;
+      try {
+        await audioContext.suspend();
+      } catch {
+        // Ignore suspend failures; playback commands remain channel-scoped.
+      }
+    }
+
+    function decodeAudioBuffer(context, bytes) {
+      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      return new Promise((resolve, reject) => {
+        const result = context.decodeAudioData(buffer, resolve, reject);
+        if (result && typeof result.then === "function") result.then(resolve, reject);
+      });
+    }
+
+    function channelVolume(command) {
+      const volume = Number(command && command.volume);
+      return Math.max(0, Math.min(255, Number.isFinite(volume) ? volume : 255)) / 255;
+    }
+
+    function stopAudioChannel(channel) {
+      const entry = audioChannels.get(channel);
+      if (!entry) return;
+      entry.stopped = true;
+      if (entry.source) {
+        entry.source.onended = null;
+        try {
+          entry.source.stop();
+        } catch {
+          // Already stopped.
+        }
+      }
+      if (entry.gain) {
+        try {
+          entry.gain.disconnect();
+        } catch {
+          // Already disconnected.
+        }
+      }
+      audioChannels.delete(channel);
+    }
+
+    function stopAllAudio() {
+      for (const channel of [...audioChannels.keys()]) stopAudioChannel(channel);
+    }
+
+    function setAudioVolume(command) {
+      const channel = Number(command && command.channel) | 0;
+      const entry = audioChannels.get(channel);
+      if (entry && entry.gain) {
+        entry.gain.gain.value = channelVolume(command);
+      }
+    }
+
+    async function playAudioCommand(command, bytes) {
+      const channel = Number(command && command.channel) | 0;
+      if (!channel || !bytes || !bytes.byteLength) return;
+      const context = getAudioContext();
+      if (!context) return;
+      await unlockAudio();
+      const decoded = await decodeAudioBuffer(context, bytes);
+      stopAudioChannel(channel);
+
+      const gain = context.createGain();
+      gain.gain.value = channelVolume(command);
+      gain.connect(context.destination);
+
+      const loopCount = Math.max(0, Number(command.loopCount || 0) | 0);
+      const entry = {
+        buffer: decoded,
+        channel,
+        gain,
+        loopCount,
+        remaining: loopCount > 0 ? loopCount : 1,
+        source: null,
+        stopped: false
+      };
+      audioChannels.set(channel, entry);
+
+      const startSource = () => {
+        if (destroyed || entry.stopped || audioChannels.get(channel) !== entry) return;
+        const source = context.createBufferSource();
+        source.buffer = entry.buffer;
+        source.loop = entry.loopCount === 0;
+        source.connect(entry.gain);
+        entry.source = source;
+        source.onended = () => {
+          if (entry.stopped || audioChannels.get(channel) !== entry || entry.loopCount === 0) return;
+          if (entry.remaining > 1) {
+            entry.remaining -= 1;
+            startSource();
+            return;
+          }
+          audioChannels.delete(channel);
+          send("audioStopped", { channel });
+        };
+        source.start(0);
+      };
+      startSource();
+      if (typeof options.onAudio === "function") {
+        options.onAudio({ action: "play", channel, format: command.format || "", byteLength: bytes.byteLength });
+      }
+    }
+
+    async function handleAudioCommand(command, bytes) {
+      const action = command && command.action;
+      const channel = Number(command && command.channel) | 0;
+      if (action === "play") {
+        await playAudioCommand(command, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []));
+      } else if (action === "stop") {
+        stopAudioChannel(channel);
+      } else if (action === "stopAll") {
+        stopAllAudio();
+      } else if (action === "volume") {
+        setAudioVolume(command);
+      }
     }
 
     function stagePoint(event) {
@@ -177,6 +333,10 @@
         }
       } else if (message.type === "socket" && typeof options.onSocket === "function") {
         options.onSocket(message);
+      } else if (message.type === "audio") {
+        void handleAudioCommand(message.command || {}, message.bytes).catch((error) => {
+          reportAudioWarning(`Audio playback failed: ${error.message || String(error)}`);
+        });
       } else if (message.type === "tempo" && typeof options.onTempo === "function") {
         options.onTempo(message);
       } else if (message.type === "navigation") {
@@ -202,6 +362,7 @@
     canvas.addEventListener("mousedown", (event) => {
       canvas.focus();
       event.preventDefault();
+      void unlockAudio();
       const point = stagePoint(event);
       send("mouseDown", { ...point, right: event.button === 2 });
     });
@@ -213,6 +374,7 @@
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     canvas.addEventListener("blur", () => send("blur"));
     canvas.addEventListener("keydown", async (event) => {
+      void unlockAudio();
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && key === "a") {
         event.preventDefault();
@@ -276,6 +438,8 @@
 
     return {
       load(url, loadOptions = {}) {
+        stopAllAudio();
+        void unlockAudio();
         return request("load", {
           url,
           params: loadOptions.params || options.params || {},
@@ -288,9 +452,18 @@
             : (Number.isFinite(Number(options.slowHandlerWarningMs)) ? Math.max(0, Number(options.slowHandlerWarningMs)) : 1000)
         });
       },
-      play() { send("play"); },
-      pause() { send("pause"); },
-      stop() { send("stop"); },
+      play() {
+        void unlockAudio();
+        send("play");
+      },
+      pause() {
+        void suspendAudio();
+        send("pause");
+      },
+      stop() {
+        stopAllAudio();
+        send("stop");
+      },
       setTempoOverride(tempo) { send("tempo", { tempo: Number(tempo || 0) }); },
       setDebugPlaybackEnabled(enabled) { send("debugPlayback", { enabled: Boolean(enabled) }); },
       setSlowHandlerWarningMs(milliseconds) { send("slowHandlerWarningMs", { milliseconds: Math.max(0, Number(milliseconds || 0)) }); },
@@ -300,9 +473,13 @@
       debugSprites() { return request("debugSprites"); },
       debugImageTrace(options = {}) { return request("debugImageTrace", { clear: !!options.clear }); },
       destroy() {
+        stopAllAudio();
         destroyed = true;
         worker.postMessage({ type: "destroy" });
         worker.terminate();
+        if (audioContext && audioContext.state !== "closed") {
+          void audioContext.close().catch(() => {});
+        }
       },
       get lastInfo() { return lastInfo; },
       worker
