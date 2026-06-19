@@ -13,7 +13,6 @@ let paramsText = "";
 let tempoOverride = 0;
 let debugPlaybackEnabled = false;
 let slowHandlerWarningMs = 1000;
-let socketProxy = [];
 let websocketPath = "";
 let websocketSsl = null;
 let fetchCache = new Map();
@@ -302,14 +301,6 @@ function bytesFromWebSocketText(value) {
 }
 
 function socketUrlFor(host, port) {
-  for (const entry of socketProxy || []) {
-    if (entry &&
-        String(entry.host || "").toLowerCase() === String(host || "").toLowerCase() &&
-        Number(entry.port) === Number(port) &&
-        entry.proxyUrl) {
-      return entry.proxyUrl;
-    }
-  }
   const secure = websocketSsl === null ? self.location.protocol === "https:" : Boolean(websocketSsl);
   const scheme = secure ? "wss" : "ws";
   return `${scheme}://${host}:${port}${websocketPath || ""}`;
@@ -582,7 +573,6 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
 
 async function init(message) {
   await ensureModule();
-  socketProxy = Array.isArray(message.socketProxy) ? message.socketProxy : [];
   websocketPath = message.websocketPath || "";
   websocketSsl = typeof message.websocketSsl === "boolean" ? message.websocketSsl : null;
   paramsText = paramsObjectToText(message.params);
@@ -610,9 +600,6 @@ self.addEventListener("message", (event) => {
         await init(message);
         break;
       case "load":
-        if (Array.isArray(message.socketProxy)) {
-          socketProxy = message.socketProxy;
-        }
         if (typeof message.debugPlaybackEnabled === "boolean") {
           debugPlaybackEnabled = message.debugPlaybackEnabled;
         }
@@ -665,11 +652,6 @@ self.addEventListener("message", (event) => {
       case "params":
         paramsText = paramsObjectToText(message.params);
         bridgeCall("set params", () => api.setParams(handle, paramsText));
-        break;
-      case "socketProxy":
-        socketProxy = Array.isArray(message.socketProxy) ? message.socketProxy : [];
-        websocketPath = message.websocketPath || websocketPath;
-        websocketSsl = typeof message.websocketSsl === "boolean" ? message.websocketSsl : websocketSsl;
         break;
       case "mouseMove":
         bridgeCall("mouse move", () => api.mouseMove(handle, message.x | 0, message.y | 0));

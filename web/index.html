@@ -222,7 +222,6 @@
         <button id="preset-habbo">14.1_b8</button>
         <button id="preset-loader">loader.dcr</button>
         <button id="preset-beta-client">beta client</button>
-        <button id="preset-proxy">proxy</button>
       </div>
       <label class="tempo">
         <span>Tempo override</span>
@@ -231,10 +230,6 @@
       <label>
         External parameters
         <textarea id="params" spellcheck="false"></textarea>
-      </label>
-      <label>
-        Socket proxies
-        <textarea id="socket-proxy" class="compact" spellcheck="false"></textarea>
       </label>
       <label class="toggle-row">
         <span>Debug playback</span>
@@ -275,7 +270,6 @@
       "sw8": `use.sso.ticket=1;sso.ticket=${betaClientSsoPlaceholder}`
     };
     const paramsBox = document.getElementById("params");
-    const socketProxyBox = document.getElementById("socket-proxy");
     const movieUrl = document.getElementById("movie-url");
     const status = document.getElementById("status");
     const frameInfo = document.getElementById("frame-info");
@@ -371,43 +365,6 @@
       return params;
     }
 
-    function socketProxyToText(proxies) {
-      return (proxies || []).map((entry) => `${entry.host}:${entry.port}=${entry.proxyUrl}`).join("\n");
-    }
-
-    function textToSocketProxy(text) {
-      const proxies = [];
-      for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const equals = trimmed.indexOf("=");
-        const target = equals >= 0 ? trimmed.slice(0, equals).trim() : "";
-        const proxyUrl = equals >= 0 ? trimmed.slice(equals + 1).trim() : "";
-        const colon = target.lastIndexOf(":");
-        if (colon <= 0 || !proxyUrl) continue;
-        const port = Number(target.slice(colon + 1));
-        if (!Number.isFinite(port) || port <= 0) continue;
-        proxies.push({ host: target.slice(0, colon), port, proxyUrl });
-      }
-      return proxies;
-    }
-
-    function initialSocketProxyText(searchParams) {
-      const queryValue = searchParams.get("socketProxy");
-      if (queryValue) {
-        try {
-          const parsed = JSON.parse(queryValue);
-          if (Array.isArray(parsed)) return socketProxyToText(parsed);
-        } catch {
-          return queryValue;
-        }
-      }
-      if (searchParams.get("proxy") === "habbo") {
-        return socketProxyToText(LibreShockwavePlayer.defaultHabboSocketProxy);
-      }
-      return "";
-    }
-
     const searchParams = new URLSearchParams(location.search);
     let debugPlaybackEnabled = searchParams.get("debugPlayback") === "1";
     const slowHandlerWarningMs = Number.isFinite(Number(searchParams.get("slowHandlerWarningMs")))
@@ -415,7 +372,6 @@
       : 1000;
     movieUrl.value = searchParams.get("movie") || habboUrl;
     paramsBox.value = paramsToText(LibreShockwavePlayer.defaultHabboParams);
-    socketProxyBox.value = initialSocketProxyText(searchParams);
     debugPlayback.checked = debugPlaybackEnabled;
     setPlaybackButtonsEnabled(false);
     window.__libreShockwaveSocketEvents = [];
@@ -429,14 +385,13 @@
       appendDebugLog("error", event.reason || "Unhandled promise rejection");
     });
 
-  const player = LibreShockwavePlayer.create("stage", {
+    const player = LibreShockwavePlayer.create("stage", {
       url: movieUrl.value,
       params: textToParams(paramsBox.value),
       autoload: searchParams.get("autoload") === "1",
       autoplay: true,
       debugPlaybackEnabled,
       slowHandlerWarningMs,
-      socketProxy: textToSocketProxy(socketProxyBox.value),
       onReady() {
         status.textContent = "Ready";
         appendDebugLog("debug", "Player ready");
@@ -489,9 +444,7 @@
       if (!ensureBetaClientSsoTicket()) {
         return;
       }
-      const socketProxy = textToSocketProxy(socketProxyBox.value);
-      player.setSocketProxy(socketProxy);
-      player.load(movieUrl.value, { params: textToParams(paramsBox.value), socketProxy, autoplay: false, debugPlaybackEnabled, slowHandlerWarningMs })
+      player.load(movieUrl.value, { params: textToParams(paramsBox.value), autoplay: false, debugPlaybackEnabled, slowHandlerWarningMs })
         .then(() => player.play())
         .catch(() => {
           loadButton.disabled = false;
@@ -512,7 +465,6 @@
       debugLog.value = "";
     });
     paramsBox.addEventListener("change", () => player.setParams(textToParams(paramsBox.value)));
-    socketProxyBox.addEventListener("change", () => player.setSocketProxy(textToSocketProxy(socketProxyBox.value)));
     document.getElementById("preset-habbo").addEventListener("click", () => {
       movieUrl.value = habboUrl;
       paramsBox.value = paramsToText(LibreShockwavePlayer.defaultHabboParams);
@@ -523,10 +475,6 @@
     });
     document.getElementById("preset-beta-client").addEventListener("click", () => {
       setBetaClientPreset();
-    });
-    document.getElementById("preset-proxy").addEventListener("click", () => {
-      socketProxyBox.value = socketProxyToText(LibreShockwavePlayer.defaultHabboSocketProxy);
-      player.setSocketProxy(textToSocketProxy(socketProxyBox.value));
     });
   </script>
 </body>

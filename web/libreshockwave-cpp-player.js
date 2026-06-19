@@ -8,11 +8,6 @@
     sw4: "connection.mus.host=au.h4bbo.net;connection.mus.port=38101",
     sw5: "external.variables.txt=http://127.0.0.1/gamedata/external_variables.txt?;external.texts.txt=http://127.0.0.1/gamedata/external_texts.txt?"
   };
-  const defaultHabboSocketProxy = [
-    { host: "au.h4bbo.net", port: 30001, proxyUrl: "ws://127.0.0.1:30002" },
-    { host: "au.h4bbo.net", port: 38101, proxyUrl: "ws://127.0.0.1:38102" }
-  ];
-
   function $(canvasOrId) {
     if (typeof canvasOrId === "string") return document.getElementById(canvasOrId);
     return canvasOrId;
@@ -275,7 +270,6 @@
       slowHandlerWarningMs: Number.isFinite(Number(options.slowHandlerWarningMs))
         ? Math.max(0, Number(options.slowHandlerWarningMs))
         : 1000,
-      socketProxy: options.socketProxy || [],
       websocketPath: options.websocketPath || "",
       websocketSsl: typeof options.websocketSsl === "boolean" ? options.websocketSsl : null
     });
@@ -291,8 +285,7 @@
             : Boolean(options.debugPlaybackEnabled),
           slowHandlerWarningMs: Number.isFinite(Number(loadOptions.slowHandlerWarningMs))
             ? Math.max(0, Number(loadOptions.slowHandlerWarningMs))
-            : (Number.isFinite(Number(options.slowHandlerWarningMs)) ? Math.max(0, Number(options.slowHandlerWarningMs)) : 1000),
-          socketProxy: loadOptions.socketProxy || options.socketProxy || []
+            : (Number.isFinite(Number(options.slowHandlerWarningMs)) ? Math.max(0, Number(options.slowHandlerWarningMs)) : 1000)
         });
       },
       play() { send("play"); },
@@ -302,15 +295,6 @@
       setDebugPlaybackEnabled(enabled) { send("debugPlayback", { enabled: Boolean(enabled) }); },
       setSlowHandlerWarningMs(milliseconds) { send("slowHandlerWarningMs", { milliseconds: Math.max(0, Number(milliseconds || 0)) }); },
       setParams(params) { send("params", { params }); },
-      setSocketProxy(socketProxy, socketOptions = {}) {
-        send("socketProxy", {
-          socketProxy: Array.isArray(socketProxy) ? socketProxy : [],
-          websocketPath: socketOptions.websocketPath || options.websocketPath || "",
-          websocketSsl: typeof socketOptions.websocketSsl === "boolean"
-            ? socketOptions.websocketSsl
-            : (typeof options.websocketSsl === "boolean" ? options.websocketSsl : null)
-        });
-      },
       pasteText(text) { send("paste", { text: text || "" }); },
       selectedText() { return request("selectedText"); },
       debugSprites() { return request("debugSprites"); },
@@ -327,7 +311,6 @@
 
   global.LibreShockwavePlayer = {
     create,
-    defaultHabboParams,
-    defaultHabboSocketProxy
+    defaultHabboParams
   };
 })(typeof window !== "undefined" ? window : globalThis);
