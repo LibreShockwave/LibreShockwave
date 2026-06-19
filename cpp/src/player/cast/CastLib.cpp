@@ -1477,12 +1477,12 @@ void CastLib::rebuildMemberNameIndex() const {
     runtimeMemberNameIndex_.reserve(members_.size());
     for (const auto& [number, member] : memberChunks_) {
         if (member && !member->name().empty()) {
-            memberChunkNameIndex_.try_emplace(lower(member->name()), number);
+            memberChunkNameIndex_[lower(member->name())] = number;
         }
     }
     for (const auto& [number, member] : members_) {
         if (member && !member->name().empty()) {
-            runtimeMemberNameIndex_.try_emplace(lower(member->name()), number);
+            runtimeMemberNameIndex_[lower(member->name())] = number;
         }
     }
     memberNameIndexDirty_ = false;

@@ -1540,6 +1540,21 @@ std::optional<StringChunkType> stringChunkTypeByCode(int value) {
     }
 }
 
+std::optional<StringChunkType> legacyChunkPropertyTypeByCode(int value) {
+    switch (value) {
+        case 0x01:
+            return StringChunkType::Char;
+        case 0x02:
+            return StringChunkType::Word;
+        case 0x03:
+            return StringChunkType::Item;
+        case 0x04:
+            return StringChunkType::Line;
+        default:
+            return std::nullopt;
+    }
+}
+
 std::optional<StringChunkType> stringChunkTypeByNameNoThrow(std::string_view value) {
     if (equalsIgnoreCase(value, "item")) {
         return StringChunkType::Item;
@@ -2023,17 +2038,6 @@ bool isScriptInstanceMemberRegistryMethod(std::string_view methodName) {
            equalsIgnoreCase(methodName, "readaliasindexesfromfield");
 }
 
-constexpr std::string_view memberAliasIndexName() {
-    return "memberalias.index";
-}
-
-using AliasTextList = std::vector<std::pair<int, std::string>>;
-
-std::unordered_map<std::uint64_t, AliasTextList>& persistentAliasTextByRegistry() {
-    static std::unordered_map<std::uint64_t, AliasTextList> aliases;
-    return aliases;
-}
-
 std::optional<int> slotValueFromCastMemberRef(const Datum& datum) {
     const auto* ref = datum.asCastMemberRef();
     if (ref == nullptr || ref->castLib < 1 || ref->memberNum() < 1) {
@@ -2229,6 +2233,10 @@ std::optional<AliasLine> parseAliasLine(std::string_view rawLine) {
     return line;
 }
 
+bool isAliasLineSeparator(char ch) {
+    return ch == '\r' || ch == '\n' || ch == '|';
+}
+
 int applyAliasMappings(Datum::PropList& registry,
                        std::string_view aliasText,
                        const std::function<int(const std::string&)>& resolver) {
@@ -2240,8 +2248,8 @@ int applyAliasMappings(Datum::PropList& registry,
     std::size_t lineStart = 0;
     for (std::size_t index = 0; index <= aliasText.size(); ++index) {
         const bool atEnd = index == aliasText.size();
-        const bool atLineBreak = !atEnd && (aliasText[index] == '\r' || aliasText[index] == '\n');
-        if (!atEnd && !atLineBreak) {
+        const bool atSeparator = !atEnd && isAliasLineSeparator(aliasText[index]);
+        if (!atEnd && !atSeparator) {
             continue;
         }
 
@@ -2262,137 +2270,6 @@ int applyAliasMappings(Datum::PropList& registry,
         lineStart = index + 1;
     }
     return imported;
-}
-
-int resolveAliasSlot(std::string_view aliasText,
-                     std::string_view requestedAlias,
-                     const std::function<int(const std::string&)>& resolver) {
-    if (aliasText.empty() || requestedAlias.empty() || !resolver) {
-        return 0;
-    }
-
-    std::size_t lineStart = 0;
-    for (std::size_t index = 0; index <= aliasText.size(); ++index) {
-        const bool atEnd = index == aliasText.size();
-        const bool atLineBreak = !atEnd && (aliasText[index] == '\r' || aliasText[index] == '\n');
-        if (!atEnd && !atLineBreak) {
-            continue;
-        }
-
-        const auto parsed = parseAliasLine(aliasText.substr(lineStart, index - lineStart));
-        if (parsed.has_value() && equalsIgnoreCase(parsed->aliasName, requestedAlias)) {
-            const int resolvedNumber = resolver(parsed->targetName);
-            if (resolvedNumber <= 0) {
-                return 0;
-            }
-            return parsed->mirrored ? -resolvedNumber : resolvedNumber;
-        }
-
-        if (!atEnd && aliasText[index] == '\r' && index + 1 < aliasText.size() && aliasText[index + 1] == '\n') {
-            ++index;
-        }
-        lineStart = index + 1;
-    }
-    return 0;
-}
-
-void rememberAliasText(Datum::ScriptInstanceRef& instance, int castLibNumber, std::string_view aliasText) {
-    if (castLibNumber <= 0 || aliasText.empty()) {
-        return;
-    }
-
-    auto& aliasTexts = persistentAliasTextByRegistry()[instance.identityId()];
-    for (auto& entry : aliasTexts) {
-        if (entry.first == castLibNumber) {
-            entry.second = std::string(aliasText);
-            return;
-        }
-    }
-    aliasTexts.emplace_back(castLibNumber, std::string(aliasText));
-}
-
-void forgetAliasText(Datum::ScriptInstanceRef& instance, int castLibNumber) {
-    auto& aliases = persistentAliasTextByRegistry();
-    const auto found = aliases.find(instance.identityId());
-    if (found == aliases.end()) {
-        return;
-    }
-
-    auto& aliasTexts = found->second;
-    aliasTexts.erase(
-        std::remove_if(aliasTexts.begin(), aliasTexts.end(), [castLibNumber](const auto& entry) {
-            return entry.first == castLibNumber;
-        }),
-        aliasTexts.end());
-    if (aliasTexts.empty()) {
-        aliases.erase(found);
-    }
-}
-
-void refreshAvailableAliasTexts(Datum::ScriptInstanceRef& instance, const builtin::BuiltinContext* builtinContext) {
-    if (builtinContext == nullptr || !builtinContext->castLibCountSupplier || !builtinContext->castMemberNameResolver) {
-        return;
-    }
-
-    if (!builtinContext->aliasRefreshRegistryIds.insert(instance.identityId()).second) {
-        return;
-    }
-
-    const int castLibCount = builtinContext->castLibCountSupplier();
-    for (int castLibNumber = 1; castLibNumber <= castLibCount; ++castLibNumber) {
-        const Datum aliasMember = builtinContext->castMemberNameResolver(castLibNumber, std::string(memberAliasIndexName()));
-        if (aliasMember.asCastMemberRef() == nullptr) {
-            forgetAliasText(instance, castLibNumber);
-            continue;
-        }
-
-        if (!builtinContext->fieldResolver) {
-            forgetAliasText(instance, castLibNumber);
-            continue;
-        }
-
-        const Datum aliasField = builtinContext->fieldResolver(Datum::of(std::string(memberAliasIndexName())), castLibNumber);
-        if (aliasField.isVoid()) {
-            forgetAliasText(instance, castLibNumber);
-            continue;
-        }
-
-        const std::string aliasText = aliasField.stringValue();
-        if (aliasText.empty()) {
-            forgetAliasText(instance, castLibNumber);
-            continue;
-        }
-        rememberAliasText(instance, castLibNumber, aliasText);
-    }
-}
-
-int resolveRememberedAliasSlot(Datum::ScriptInstanceRef& instance,
-                               Datum::PropList& registry,
-                               std::string_view memberName,
-                               const builtin::BuiltinContext* builtinContext) {
-    if (memberName.empty()) {
-        return 0;
-    }
-
-    const auto found = persistentAliasTextByRegistry().find(instance.identityId());
-    if (found == persistentAliasTextByRegistry().end()) {
-        return 0;
-    }
-
-    for (const auto& entry : found->second) {
-        const int castLibNumber = entry.first;
-        const std::string& aliasText = entry.second;
-        const int resolved = resolveAliasSlot(
-            aliasText,
-            memberName,
-            [&](const std::string& targetName) {
-                return resolveAliasTargetMemberNumber(registry, builtinContext, castLibNumber, targetName);
-            });
-        if (resolved != 0) {
-            return resolved;
-        }
-    }
-    return 0;
 }
 
 std::optional<Datum> dispatchReadAliasIndexesFromField(Datum::ScriptInstanceRef& instance,
@@ -2419,7 +2296,6 @@ std::optional<Datum> dispatchReadAliasIndexesFromField(Datum::ScriptInstanceRef&
     if (builtinContext != nullptr) {
         builtinContext->registryMemberSlotCache.clear();
     }
-    rememberAliasText(instance, castLibNumber, aliasText);
     const int imported = applyAliasMappings(
         registry.propListValue(),
         aliasText,
@@ -2457,7 +2333,6 @@ std::optional<int> scriptInstanceRegisteredMemberSlot(Datum::ScriptInstanceRef& 
         removePropListKey(registry.propListValue(), memberName);
     }
 
-    refreshAvailableAliasTexts(instance, builtinContext);
     std::string memberSlotCacheKey;
     if (builtinContext != nullptr) {
         appendInt(memberSlotCacheKey, instance.identityId());
@@ -2471,16 +2346,6 @@ std::optional<int> scriptInstanceRegisteredMemberSlot(Datum::ScriptInstanceRef& 
             }
             return cachedSlot;
         }
-    }
-
-    const int rememberedAliasSlot =
-        resolveRememberedAliasSlot(instance, registry.propListValue(), memberName, builtinContext);
-    if (rememberedAliasSlot != 0) {
-        registry.propListValue().put(Datum::of(memberName), Datum::of(rememberedAliasSlot));
-        if (builtinContext != nullptr) {
-            builtinContext->registryMemberSlotCache[memberSlotCacheKey] = rememberedAliasSlot;
-        }
-        return rememberedAliasSlot;
     }
 
     const int resolvedSlot = resolveScriptInstanceMemberSlotByName(
@@ -2768,16 +2633,9 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
         return findScriptInstanceScriptHandler(context, instance, handlerName).has_value() ? Datum::TRUE : Datum::FALSE;
     }
     auto* builtinContext = context.builtinContext();
-    std::optional<Datum> prefetchedRegistryResult;
-    if (dispatch::MemberRegistryMethodDispatcher::isMethod(methodName)) {
-        prefetchedRegistryResult = scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
-    }
     const auto handler = findScriptInstanceScriptHandler(context, instance, methodName);
     if (handler) {
         return safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
-    }
-    if (prefetchedRegistryResult.has_value()) {
-        return std::move(*prefetchedRegistryResult);
     }
     const auto registryResult = scriptInstanceMemberRegistryMethod(instance, methodName, args, builtinContext);
     if (registryResult.has_value()) {
@@ -6324,7 +6182,7 @@ bool getLegacyProperty(ExecutionContext& context) {
             }
             return true;
         }
-        if (const auto chunkType = stringChunkTypeByCode(propertyId - 0x0B)) {
+        if (const auto chunkType = legacyChunkPropertyTypeByCode(propertyId - 0x0B)) {
             const std::string value = toStringLikeJava(context.pop());
             context.push(Datum::of(getLastChunkValue(value, *chunkType, itemDelimiter)));
             return true;
@@ -6335,7 +6193,7 @@ bool getLegacyProperty(ExecutionContext& context) {
 
     if (propertyType == 0x01) {
         const std::string value = toStringLikeJava(context.pop());
-        if (const auto chunkType = stringChunkTypeByCode(propertyId)) {
+        if (const auto chunkType = legacyChunkPropertyTypeByCode(propertyId)) {
             context.push(Datum::of(countChunks(value, *chunkType, itemDelimiter)));
         } else {
             context.push(Datum::voidValue());

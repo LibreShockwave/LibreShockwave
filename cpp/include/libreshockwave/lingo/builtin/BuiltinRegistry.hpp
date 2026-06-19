@@ -7,7 +7,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -198,7 +197,6 @@ struct BuiltinContext {
     ImagePaletteResolver imagePaletteResolver;
     ImportFileIntoHandler importFileIntoHandler;
     std::unordered_map<std::string, Datum> scriptResolutionCache;
-    mutable std::unordered_set<std::uint64_t> aliasRefreshRegistryIds;
     mutable std::unordered_map<std::string, int> registryMemberSlotCache;
     mutable std::unordered_map<std::uint64_t,
                                std::unordered_map<std::string,

@@ -129,6 +129,7 @@ private:
     [[nodiscard]] int hitTestEditableField(int stageX, int stageY) const;
     [[nodiscard]] int hitTestMoveableSprite(int stageX, int stageY) const;
     [[nodiscard]] std::vector<int> getInteractiveHits(int stageX, int stageY, bool forceBoundingBox) const;
+    [[nodiscard]] std::vector<int> getInteractiveHitPath(int stageX, int stageY) const;
     [[nodiscard]] std::shared_ptr<::libreshockwave::cast::CastMember> resolveSpriteMember(int channel) const;
     [[nodiscard]] std::optional<render::pipeline::RenderSprite> findHitSprite(int channel) const;
     [[nodiscard]] std::optional<FocusedField> focusedEditableField() const;

@@ -72,13 +72,8 @@ int InputHandler::hitTestExact(int stageX, int stageY) const {
         return 0;
     }
 
-    auto exactHits = getInteractiveHits(stageX, stageY, false);
-    if (!exactHits.empty()) {
-        return exactHits.front();
-    }
-
-    auto boundingHits = getInteractiveHits(stageX, stageY, true);
-    return boundingHits.empty() ? 0 : boundingHits.front();
+    const auto hits = getInteractiveHitPath(stageX, stageY);
+    return hits.empty() ? 0 : hits.front();
 }
 
 void InputHandler::onMouseMove(int stageX, int stageY) {
@@ -502,6 +497,17 @@ std::vector<int> InputHandler::getInteractiveHits(int stageX, int stageY, bool f
     return interactive;
 }
 
+std::vector<int> InputHandler::getInteractiveHitPath(int stageX, int stageY) const {
+    auto hits = getInteractiveHits(stageX, stageY, false);
+    auto boundingHits = getInteractiveHits(stageX, stageY, true);
+    for (const int channel : boundingHits) {
+        if (std::ranges::find(hits, channel) == hits.end()) {
+            hits.push_back(channel);
+        }
+    }
+    return hits;
+}
+
 void InputHandler::dispatchRolloverEvents() {
     if (inputState_ == nullptr) {
         return;
@@ -540,11 +546,12 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
 
     switch (inputEvent.type) {
         case input::InputEventType::MouseDown: {
-            const int hitSprite = hitTestExact(inputEvent.stageX, inputEvent.stageY);
+            const auto hitPath = getInteractiveHitPath(inputEvent.stageX, inputEvent.stageY);
+            const int hitSprite = hitPath.empty() ? 0 : hitPath.front();
             const int stageHitSprite = hitTestStage(inputEvent.stageX, inputEvent.stageY);
             const int editableHitSprite = hitTestEditableField(inputEvent.stageX, inputEvent.stageY);
             const int lastClicked = inputState_->clickOnSprite();
-            if (lastClicked > 0 && lastClicked != hitSprite) {
+            if (lastClicked > 0 && std::ranges::find(hitPath, lastClicked) == hitPath.end()) {
                 dispatcher->dispatchSpriteEvent(lastClicked, "mouseUpOutSide");
             }
 
@@ -554,27 +561,43 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
                                    inputEvent.stageY);
             dispatcher->resetEventStopped();
             if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
-                if (hitSprite > 0) {
-                    dispatcher->dispatchSpriteEvent(hitSprite, PlayerEvent::MouseDown);
+                for (const int channel : hitPath) {
+                    dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
+                    if (dispatcher->isEventStopped()) {
+                        break;
+                    }
                 }
+            }
+            if (!dispatcher->isEventStopped()) {
                 dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseDown);
             }
             break;
         }
         case input::InputEventType::MouseUp: {
             const int pressedSprite = inputState_->clickOnSprite();
-            const int releaseSprite = hitTestExact(inputEvent.stageX, inputEvent.stageY);
+            const auto releasePath = getInteractiveHitPath(inputEvent.stageX, inputEvent.stageY);
+            const int releaseSprite = releasePath.empty() ? 0 : releasePath.front();
             dispatcher->resetEventStopped();
             const bool legacyConsumed = dispatchLegacyEventScript(PlayerEvent::MouseUp);
             if (!legacyConsumed && !dispatcher->isEventStopped()) {
-                if (pressedSprite > 0 && releaseSprite == pressedSprite) {
-                    dispatcher->dispatchSpriteEvent(pressedSprite, PlayerEvent::MouseUp);
+                if (pressedSprite > 0 && std::ranges::find(releasePath, pressedSprite) != releasePath.end()) {
+                    for (const int channel : releasePath) {
+                        dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
+                        if (dispatcher->isEventStopped()) {
+                            break;
+                        }
+                    }
                 } else if (pressedSprite > 0 && dispatcher->spriteHasHandler(pressedSprite, "mouseUpOutSide")) {
                     dispatcher->dispatchSpriteEvent(pressedSprite, "mouseUpOutSide");
                 } else if (pressedSprite > 0 && dispatcher->spriteHasHandler(pressedSprite, handlerName(PlayerEvent::MouseUp))) {
                     dispatcher->dispatchSpriteEvent(pressedSprite, PlayerEvent::MouseUp);
                 } else if (releaseSprite > 0) {
-                    dispatcher->dispatchSpriteEvent(releaseSprite, PlayerEvent::MouseUp);
+                    for (const int channel : releasePath) {
+                        dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
+                        if (dispatcher->isEventStopped()) {
+                            break;
+                        }
+                    }
                 }
             }
             inputState_->setClickOnSprite(0);
