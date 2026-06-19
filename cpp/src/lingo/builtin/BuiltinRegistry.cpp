@@ -2186,6 +2186,15 @@ Datum CastLibBuiltins::member(BuiltinContext& context, const std::vector<Datum>&
         }
 
         const int totalCasts = context.castLibCountSupplier ? context.castLibCountSupplier() : 0;
+        if (context.registryVisibleMemberResolver) {
+            for (int castIndex = 1; castIndex <= totalCasts; ++castIndex) {
+                if (context.registryVisibleMemberResolver(castIndex, normalizedMemberNumber)) {
+                    return context.castMemberResolver ? context.castMemberResolver(castIndex, normalizedMemberNumber)
+                                                      : castMemberRefOrVoid(castIndex, normalizedMemberNumber);
+                }
+            }
+        }
+
         if (context.castMemberExistsResolver) {
             for (int castIndex = 1; castIndex <= totalCasts; ++castIndex) {
                 if (context.castMemberExistsResolver(castIndex, normalizedMemberNumber)) {

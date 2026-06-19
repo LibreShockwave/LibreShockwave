@@ -5581,7 +5581,7 @@ void testBuiltinRegistryFoundation() {
         {{0, "door"}, {2, 4}},
         {{2, "palette"}, {2, 5}},
     };
-    const std::set<std::pair<int, int>> existingMembers{{1, 3}, {2, 4}, {2, 5}};
+    const std::set<std::pair<int, int>> existingMembers{{1, 3}, {1, 4}, {2, 4}, {2, 5}};
     context.castLibNumberResolver = [](int castLib) {
         return castLib >= 1 && castLib <= 2 ? castLib : -1;
     };
@@ -5605,6 +5605,9 @@ void testBuiltinRegistryFoundation() {
         }
         return Datum::castMemberRef(CastLibId(found->second.first), MemberId(found->second.second));
     };
+    context.registryVisibleMemberResolver = [](int castLib, int memberNum) {
+        return castLib == 2 && memberNum == 4;
+    };
     context.fieldResolver = [](const Datum& identifier, int castLib) {
         if (const auto* value = identifier.asInt()) {
             return Datum::of("field#" + std::to_string(value->value) + "@" + std::to_string(castLib));
@@ -5625,11 +5628,13 @@ void testBuiltinRegistryFoundation() {
     assert(registry.invoke("castLib", context, {Datum::of(9)}).isVoid());
     assert(registry.invoke("member", context, {Datum::of(5), Datum::castLibRef(CastLibId(2))}).asCastMemberRef()->castLib == 2);
     assert(registry.invoke("member", context, {Datum::of(5), Datum::castLibRef(CastLibId(2))}).asCastMemberRef()->memberNum() == 5);
+    assert(registry.invoke("member", context, {Datum::of(4), Datum::castLibRef(CastLibId(1))}).asCastMemberRef()->castLib == 1);
     assert(registry.invoke("member", context, {Datum::of(0)}).isVoid());
     assert(registry.invoke("member", context, {Datum::of((2 << 16) | 5)}).asCastMemberRef()->castLib == 2);
     assert(registry.invoke("member", context, {Datum::of((9 << 16) | 77)}).asCastMemberRef()->castLib == 9);
     assert(registry.invoke("member", context, {Datum::of((9 << 16) | 77)}).asCastMemberRef()->memberNum() == 77);
     assert(registry.invoke("member", context, {Datum::of(4)}).asCastMemberRef()->castLib == 2);
+    assert(registry.invoke("member", context, {Datum::of(3)}).asCastMemberRef()->castLib == 1);
     assert(registry.invoke("member", context, {Datum::of(99)}).asCastMemberRef()->castLib == 1);
     assert(registry.invoke("member", context, {Datum::of(std::string("door"))}).asCastMemberRef()->memberNum() == 4);
     assert(registry.invoke("member",
@@ -22631,6 +22636,19 @@ void testCastListAndMemberChunks() {
     assert(parsedBitmap.height() == 16);
     assert(parsedBitmap.regX() == 8);
     assert(parsedBitmap.regY() == 7);
+    Bitmap exportedOpaqueBitmap(2, 1, 32, {0x01112233U, 0x01445566U});
+    exportedOpaqueBitmap.setNativeAlpha(true);
+    parsedBitmap.setRuntimeBitmapFromAuthoredSource(exportedOpaqueBitmap);
+    assert(parsedBitmap.runtimeBitmap() != nullptr);
+    assert(!parsedBitmap.runtimeBitmap()->isNativeAlpha());
+    assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0xFF112233U);
+    assert(parsedBitmap.runtimeBitmap()->getPixel(1, 0) == 0xFF445566U);
+    Bitmap authoredNativeAlphaBitmap(2, 1, 32, {0x80112233U, 0x00445566U});
+    authoredNativeAlphaBitmap.setNativeAlpha(true);
+    parsedBitmap.setRuntimeBitmapFromAuthoredSource(authoredNativeAlphaBitmap);
+    assert(parsedBitmap.runtimeBitmap()->isNativeAlpha());
+    assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0x80112233U);
+    assert(parsedBitmap.runtimeBitmap()->getPixel(1, 0) == 0x00445566U);
     assert(parsedBitmap.toString().find("BitmapName") != std::string::npos);
 
     auto scriptMemberPtr = std::make_shared<CastMemberChunk>(
@@ -25543,6 +25561,67 @@ void testCastLibManagerFoundation() {
     assert(importedPngRuntime->getPixel(0, 0) == 0xFF102030U);
     assert(importedPngRuntime->getPixel(1, 0) == 0x80405060U);
 #endif
+
+    const std::vector<std::uint8_t> importedGif{
+        'G', 'I', 'F', '8', '9', 'a',
+        0x01, 0x00, 0x01, 0x00,
+        0x80, 0x00, 0x00,
+        0x10, 0x20, 0x30,
+        0x00, 0x00, 0x00,
+        0x2C,
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x00,
+        0x00,
+        0x02,
+        0x02, 0x44, 0x01,
+        0x00,
+        0x3B
+    };
+    assert(manager.setMemberProp(1, 2, "media", Datum::media(importedGif)));
+    auto directGifRuntime = manager.resolveMember(1, 2)->runtimeBitmap();
+    assert(directGifRuntime != nullptr);
+    assert(directGifRuntime->isScriptModified());
+    assert(!directGifRuntime->isNativeAlpha());
+    assert(directGifRuntime->width() == 1);
+    assert(directGifRuntime->height() == 1);
+    assert(directGifRuntime->getPixel(0, 0) == 0xFF102030U);
+
+    const std::vector<std::uint8_t> transparentGif{
+        'G', 'I', 'F', '8', '9', 'a',
+        0x01, 0x00, 0x01, 0x00,
+        0x80, 0x00, 0x00,
+        0x10, 0x20, 0x30,
+        0x00, 0x00, 0x00,
+        0x21, 0xF9, 0x04,
+        0x01,
+        0x00, 0x00,
+        0x00,
+        0x00,
+        0x2C,
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x00,
+        0x00,
+        0x02,
+        0x02, 0x44, 0x01,
+        0x00,
+        0x3B
+    };
+    assert(manager.setMemberProp(1, 2, "media", Datum::media(transparentGif)));
+    auto transparentGifRuntime = manager.resolveMember(1, 2)->runtimeBitmap();
+    assert(transparentGifRuntime != nullptr);
+    assert(transparentGifRuntime->isScriptModified());
+    assert(transparentGifRuntime->isNativeAlpha());
+    assert(transparentGifRuntime->getPixel(0, 0) == 0x00102030U);
+
+    manager.cacheExternalData("media/hero.gif", importedGif);
+    assert(registry.invoke("importFileInto",
+                           context,
+                           {Datum::castMemberRef(CastLibId(1), MemberId(2)),
+                            Datum::of(std::string("media/hero.gif"))}).boolValue());
+    auto importedGifRuntime = manager.resolveMember(1, 2)->runtimeBitmap();
+    assert(importedGifRuntime != nullptr);
+    assert(importedGifRuntime->isScriptModified());
+    assert(importedGifRuntime->getPixel(0, 0) == 0xFF102030U);
 
     std::vector<std::uint8_t> directorInfo(32, 0);
     putI16At(directorInfo, 0, 0x8008);

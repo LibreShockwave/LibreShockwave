@@ -44,6 +44,7 @@ add_library(libreshockwave
     src/bitmap/BitmapDecoder.cpp
     src/bitmap/ColorRef.cpp
     src/bitmap/Drawing.cpp
+    src/bitmap/GifDecoder.cpp
     src/bitmap/Palette.cpp
     src/bitmap/PngDecoder.cpp
     src/cast/BitmapInfo.cpp
