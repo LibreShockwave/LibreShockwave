@@ -103,7 +103,6 @@
 #include "libreshockwave/lingo/vm/Scope.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ImageMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ListMethodDispatcher.hpp"
-#include "libreshockwave/lingo/vm/dispatch/MemberRegistryMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/PropListMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ScriptInstanceMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/SoundChannelMethodDispatcher.hpp"
@@ -270,7 +269,6 @@ using libreshockwave::lingo::vm::Scope;
 using libreshockwave::lingo::vm::TraceListener;
 using libreshockwave::lingo::vm::dispatch::ImageMethodDispatcher;
 using libreshockwave::lingo::vm::dispatch::ListMethodDispatcher;
-using libreshockwave::lingo::vm::dispatch::MemberRegistryMethodDispatcher;
 using libreshockwave::lingo::vm::dispatch::PropListMethodDispatcher;
 using libreshockwave::lingo::vm::dispatch::ScriptInstanceMethodDispatcher;
 using libreshockwave::lingo::vm::dispatch::SoundChannelMethodDispatcher;
@@ -8360,26 +8358,16 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     callbacks.callStackFormatter = []() {
         return std::string("stack");
     };
-    bool exposeGetMemNumHandler = false;
-    bool exposeReadAliasHandler = false;
     bool exposeSpriteSetCursorHandler = false;
     bool exposeAuthoredCharToNumHandler = false;
     callbacks.handlerFinder = [&script,
                                &otherHandler,
-                               &exposeGetMemNumHandler,
-                               &exposeReadAliasHandler,
                                &exposeSpriteSetCursorHandler,
                                &exposeAuthoredCharToNumHandler](std::string_view name) -> std::optional<HandlerRef> {
         if (name == "known") {
             return HandlerRef{&script, otherHandler};
         }
         if (exposeAuthoredCharToNumHandler && name == "charToNum") {
-            return HandlerRef{&script, otherHandler};
-        }
-        if (exposeGetMemNumHandler && name == "getmemnum") {
-            return HandlerRef{&script, otherHandler};
-        }
-        if (exposeReadAliasHandler && name == "readAliasIndexesFromField") {
             return HandlerRef{&script, otherHandler};
         }
         if (exposeSpriteSetCursorHandler && name == "setcursor") {
@@ -11407,123 +11395,49 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     memberRegistry.propListValue().put(Datum::symbol("mirror"), Datum::of(mirrorSlot));
     auto registryInstance = Datum::scriptInstance("resourceRegistry");
     registryInstance.scriptInstanceValue().setProperty("pAllMemNumList", memberRegistry);
-    assert(MemberRegistryMethodDispatcher::isMethod("getMemNum"));
-    assert(!MemberRegistryMethodDispatcher::isMethod("unknown"));
-    auto directRegistryResult = MemberRegistryMethodDispatcher::dispatch(
-        registryInstance.scriptInstanceValue(),
-        "getMemNum",
-        {Datum::of(std::string("chair"))},
-        &builtinContext);
-    assert(directRegistryResult.handled);
-    assert(directRegistryResult.value.intValue() == chairSlot);
-    auto noRegistryInstance = Datum::scriptInstance("noResourceRegistry");
-    assert(!MemberRegistryMethodDispatcher::dispatch(
-                noRegistryInstance.scriptInstanceValue(),
-                "getMemNum",
-                {Datum::of(std::string("chair"))},
-                &builtinContext)
-                .handled);
-    assert(runObjCall(118, {registryInstance, Datum::of(std::string("chair"))}).intValue() == chairSlot);
-    assert(runObjCall(118, {registryInstance, Datum::of(SlotId::of(5, 6).value())}).intValue() ==
-           SlotId::of(5, 6).value());
-    assert(runObjCall(119, {registryInstance, Datum::of(std::string("mirror"))}).boolValue());
-    const Datum registryMemberDatum = runObjCall(120, {registryInstance, Datum::of(std::string("chair"))});
-    const auto* registryMember = registryMemberDatum.asCastMemberRef();
-    assert(registryMember != nullptr);
-    assert(registryMember->castLib == 2);
-    assert(registryMember->castMember == 7);
-    assert(runObjCall(118, {registryInstance, Datum::of(std::string("missing"))}).intValue() == 0);
-    assert(!runObjCall(119, {registryInstance, Datum::of(std::string("missing"))}).boolValue());
-    assert(runObjCall(120, {registryInstance, Datum::of(std::string("missing"))}).isVoid());
-    assert(runObjCall(121, {registryInstance, Datum::of(std::string("memberalias.index")), Datum::of(11)}).intValue() == 0);
-    auto staleRegistry = Datum::propList();
-    staleRegistry.propListValue().put(Datum::of(std::string("scratch")), Datum::of(SlotId::of(11, 7).value()));
-    staleRegistry.propListValue().put(Datum::of(std::string("scratch_mirror")), Datum::of(-SlotId::of(11, 7).value()));
-    auto staleRegistryInstance = Datum::scriptInstance("staleRegistry");
-    staleRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", staleRegistry);
-    builtinContext.registryVisibleMemberResolver = [](int, int) {
-        return false;
+    bool castNameFallbackCalled = false;
+    builtinContext.castMemberNameResolver = [&castNameFallbackCalled](int castLib, const std::string& memberName) {
+        castNameFallbackCalled = true;
+        if (castLib == 0 && memberName == "chair") {
+            return Datum::castMemberRef(CastLibId(2), MemberId(7));
+        }
+        if (castLib == 11 && memberName == "chair_target") {
+            return Datum::castMemberRef(CastLibId(11), MemberId(7));
+        }
+        return Datum::voidValue();
     };
-    assert(runObjCall(118, {staleRegistryInstance, Datum::of(std::string("scratch"))}).intValue() == 0);
-    assert(staleRegistryInstance.scriptInstanceValue()
+    assert(runObjCall(118, {registryInstance, Datum::of(std::string("chair"))}).isVoid());
+    assert(runObjCall(118, {registryInstance, Datum::of(SlotId::of(5, 6).value())}).isVoid());
+    assert(runObjCall(119, {registryInstance, Datum::of(std::string("mirror"))}).isVoid());
+    assert(runObjCall(120, {registryInstance, Datum::of(std::string("chair"))}).isVoid());
+    assert(!castNameFallbackCalled);
+    assert(registryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
-               .get(Datum::of(std::string("scratch")))
-               .isVoid());
-    assert(!runObjCall(119, {staleRegistryInstance, Datum::of(std::string("scratch_mirror"))}).boolValue());
-    assert(staleRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("scratch_mirror")))
-               .isVoid());
-    builtinContext.registryVisibleMemberResolver = {};
+               .get(Datum::of(std::string("chair")))
+               .intValue() == chairSlot);
 
-    auto aliasRegistryInstance = Datum::scriptInstance("aliasRegistry");
-    aliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
     std::string aliasFieldText =
         "chair_alias=chair_target\r\n"
         "chair_mirror=chair_target*\r\n"
         "broken_alias=missing_target\r\n"
         "pipe_alias=pipe_target|pipe_mirror=pipe_target*|broken_pipe=missing_target|";
-    builtinContext.fieldResolver = [&aliasFieldText](const Datum& identifier, int castLib) {
+    bool fieldFallbackCalled = false;
+    builtinContext.fieldResolver = [&aliasFieldText, &fieldFallbackCalled](const Datum& identifier, int castLib) {
+        fieldFallbackCalled = true;
         assert(identifier.stringValue() == "memberalias.index");
         assert(castLib == 11);
         return Datum::fieldText(aliasFieldText, 11, 2);
     };
-    builtinContext.castLibCountSupplier = []() {
-        return 11;
-    };
-    builtinContext.castMemberNameResolver = [](int castLib, const std::string& memberName) {
-        if (castLib == 11 && memberName == "memberalias.index") {
-            return Datum::castMemberRef(CastLibId(11), MemberId(2));
-        }
-        if (castLib == 11 && memberName == "chair_target") {
-            return Datum::castMemberRef(CastLibId(11), MemberId(7));
-        }
-        if (castLib == 11 && memberName == "pipe_target") {
-            return Datum::castMemberRef(CastLibId(11), MemberId(8));
-        }
-        return Datum::voidValue();
-    };
-    builtinContext.castMemberExistsResolver = [](int castLib, int memberNum) {
-        return castLib == 11 && (memberNum == 7 || memberNum == 8);
-    };
-    builtinContext.registryVisibleMemberResolver = [](int, int) {
-        return false;
-    };
-    assert(runObjCall(121, {aliasRegistryInstance, Datum::of(std::string("memberalias.index")), Datum::of(11)}).intValue() ==
-           4);
+    auto aliasRegistryInstance = Datum::scriptInstance("aliasRegistry");
+    aliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
+    assert(runObjCall(121, {aliasRegistryInstance, Datum::of(std::string("memberalias.index")), Datum::of(11)}).isVoid());
+    assert(!fieldFallbackCalled);
+    assert(!castNameFallbackCalled);
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
                .get(Datum::of(std::string("chair_alias")))
-               .intValue() == SlotId::of(11, 7).value());
-    assert(aliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("chair_mirror")))
-               .intValue() == -SlotId::of(11, 7).value());
-    assert(aliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("pipe_alias")))
-               .intValue() == SlotId::of(11, 8).value());
-    assert(aliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("pipe_mirror")))
-               .intValue() == -SlotId::of(11, 8).value());
-    assert(aliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("chair_target")))
-               .isVoid());
-    aliasRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    assert(runObjCall(118, {aliasRegistryInstance, Datum::of(std::string("pipe_mirror"))}).intValue() == 0);
-    assert(aliasRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("pipe_mirror")))
                .isVoid());
     assert(aliasRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
@@ -11539,6 +11453,9 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         if (castLib == 6 && memberNum == 20 && methodName == "readAliasIndexesFromField") {
             return BuiltinContext::ScriptHandlerLocation{&script, otherHandler};
         }
+        if (castLib == 6 && memberNum == 21 && methodName == "getmemnum") {
+            return BuiltinContext::ScriptHandlerLocation{&script, otherHandler};
+        }
         return std::nullopt;
     };
     auto authoredAliasRegistryInstance = Datum::scriptInstance("authoredAliasRegistry", Datum::CastMemberRef{6, 20});
@@ -11552,153 +11469,19 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .propListValue()
                .get(Datum::of(std::string("chair_alias")))
                .isVoid());
-    builtinContext.scriptHandlerFinder = {};
-    builtinContext.fieldResolver = {};
-    builtinContext.castLibCountSupplier = {};
-    builtinContext.castMemberNameResolver = {};
-    builtinContext.castMemberExistsResolver = {};
-    builtinContext.registryVisibleMemberResolver = {};
 
-    auto lazyRegistryInstance = Datum::scriptInstance("lazyResourceRegistry");
-    lazyRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    builtinContext.registryCastMemberNameResolver = [](int castLib, const std::string& memberName) {
-        assert(castLib == 0);
-        if (memberName == "Object Base Class") {
-            return Datum::castMemberRef(CastLibId(2), MemberId(74));
-        }
-        return Datum::voidValue();
-    };
-    auto directPrefillRegistryInstance = Datum::scriptInstance("directPrefillRegistry");
-    directPrefillRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    auto prefillResult = MemberRegistryMethodDispatcher::prefill(
-        directPrefillRegistryInstance.scriptInstanceValue(),
-        "getMemNum",
-        {Datum::of(std::string("Object Base Class"))},
-        &builtinContext);
-    assert(prefillResult.handled);
-    assert(prefillResult.value.intValue() == SlotId::of(2, 74).value());
-    assert(directPrefillRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("Object Base Class")))
-               .intValue() == SlotId::of(2, 74).value());
-    auto directGetMemberResult = MemberRegistryMethodDispatcher::dispatch(
-        directPrefillRegistryInstance.scriptInstanceValue(),
-        "getMember",
-        {Datum::of(std::string("Object Base Class"))},
-        &builtinContext);
-    assert(directGetMemberResult.handled);
-    assert(directGetMemberResult.value.asCastMemberRef()->castLib == 2);
-    assert(directGetMemberResult.value.asCastMemberRef()->memberNum() == 74);
-    assert(runObjCall(118, {lazyRegistryInstance, Datum::of(std::string("Object Base Class"))}).intValue() ==
-           SlotId::of(2, 74).value());
-    assert(lazyRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("Object Base Class")))
-               .intValue() == SlotId::of(2, 74).value());
-
-    const std::string externalVariablesUrl =
-        "https://images.classichabbo.com/gamedata/external_variables.txt?hash=x";
-    bool externalDownloadFallbackCalled = false;
-    builtinContext.registryCastMemberNameResolver = [&](int castLib, const std::string& memberName) {
-        assert(castLib == 0);
-        externalDownloadFallbackCalled = true;
-        if (memberName == externalVariablesUrl) {
-            return Datum::castMemberRef(CastLibId(2), MemberId(74));
-        }
-        return Datum::voidValue();
-    };
-    auto externalDownloadRegistryInstance = Datum::scriptInstance("externalDownloadRegistry");
-    externalDownloadRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    auto externalDownloadPrefillResult = MemberRegistryMethodDispatcher::prefill(
-        externalDownloadRegistryInstance.scriptInstanceValue(),
-        "getMemNum",
-        {Datum::of(externalVariablesUrl)},
-        &builtinContext);
-    assert(externalDownloadPrefillResult.handled);
-    assert(externalDownloadPrefillResult.value.intValue() == 0);
-    assert(!externalDownloadFallbackCalled);
-    assert(externalDownloadRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(externalVariablesUrl))
-               .isVoid());
-
-    auto registeredExternalDownloadList = Datum::propList();
-    registeredExternalDownloadList.propListValue().put(
-        Datum::of(externalVariablesUrl),
-        Datum::of(SlotId::of(1, 10001).value()));
-    externalDownloadRegistryInstance.scriptInstanceValue().setProperty(
-        "pAllMemNumList",
-        registeredExternalDownloadList);
-    externalDownloadFallbackCalled = false;
-    auto registeredExternalDownloadPrefillResult = MemberRegistryMethodDispatcher::prefill(
-        externalDownloadRegistryInstance.scriptInstanceValue(),
-        "getMemNum",
-        {Datum::of(externalVariablesUrl)},
-        &builtinContext);
-    assert(registeredExternalDownloadPrefillResult.handled);
-    assert(registeredExternalDownloadPrefillResult.value.intValue() == SlotId::of(1, 10001).value());
-    assert(!externalDownloadFallbackCalled);
-    builtinContext.registryCastMemberNameResolver = {};
-
-    builtinContext.castMemberNameResolver = [](int castLib, const std::string& memberName) {
-        assert(castLib == 0);
-        if (memberName == "Hidden Bitmap") {
-            return Datum::castMemberRef(CastLibId(11), MemberId(7));
-        }
-        if (memberName == "Bootstrap Script") {
-            return Datum::castMemberRef(CastLibId(2), MemberId(74));
-        }
-        return Datum::voidValue();
-    };
-    builtinContext.registryVisibleMemberResolver = [](int castLib, int memberNum) {
-        return castLib == 11 && memberNum == 8;
-    };
-    assert(runObjCall(118, {lazyRegistryInstance, Datum::of(std::string("Hidden Bitmap"))}).intValue() == 0);
-    assert(lazyRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("Hidden Bitmap")))
-               .isVoid());
-    builtinContext.castMemberPropertyGetter = [](int castLib, int memberNum, const std::string& propertyName) {
-        if (castLib == 2 && memberNum == 74 && propertyName == "type") {
-            return Datum::symbol("script");
-        }
-        return Datum::voidValue();
-    };
-    assert(runObjCall(118, {lazyRegistryInstance, Datum::of(std::string("Bootstrap Script"))}).intValue() ==
-           SlotId::of(2, 74).value());
-    assert(lazyRegistryInstance.scriptInstanceValue()
-               .getProperty("pAllMemNumList")
-               .propListValue()
-               .get(Datum::of(std::string("Bootstrap Script")))
-               .intValue() == SlotId::of(2, 74).value());
-
-    builtinContext.scriptHandlerFinder = [&script, otherHandler](
-                                             int castLib,
-                                             int memberNum,
-                                             const std::string& methodName)
-        -> std::optional<BuiltinContext::ScriptHandlerLocation> {
-        if (castLib == 6 && memberNum == 21 && methodName == "getmemnum") {
-            return BuiltinContext::ScriptHandlerLocation{&script, otherHandler};
-        }
-        return std::nullopt;
-    };
     auto authoredRegistryInstance = Datum::scriptInstance("authoredResourceRegistry", Datum::CastMemberRef{6, 21});
     authoredRegistryInstance.scriptInstanceValue().setProperty("pAllMemNumList", Datum::propList());
-    assert(runObjCall(118, {authoredRegistryInstance, Datum::of(std::string("Bootstrap Script"))}).stringValue() ==
+    assert(runObjCall(118, {authoredRegistryInstance, Datum::of(std::string("chair"))}).stringValue() ==
            "receiver-exec:99:1");
     assert(authoredRegistryInstance.scriptInstanceValue()
                .getProperty("pAllMemNumList")
                .propListValue()
-               .get(Datum::of(std::string("Bootstrap Script")))
+               .get(Datum::of(std::string("chair")))
                .isVoid());
     builtinContext.scriptHandlerFinder = {};
+    builtinContext.fieldResolver = {};
     builtinContext.castMemberNameResolver = {};
-    builtinContext.registryVisibleMemberResolver = {};
-    builtinContext.castMemberPropertyGetter = {};
     assert(runObjCall(61, {scriptInstance, Datum::of(123)}).isVoid());
     int closeThreadDeferrals = 0;
     builtinContext.scriptInstanceMethodDeferrer = [&closeThreadDeferrals](
@@ -13777,10 +13560,7 @@ void testLingoVmRuntimeFoundation() {
     assert(vm.findHandler(script, "handler#1").has_value());
     assert(vm.findHandler(script, "#1").has_value());
     assert(!vm.findHandler(script, "missing").has_value());
-    vm.builtinContext().registryMemberSlotCache["registry/member"] = 1234;
     assert(vm.executeHandler(script, returnHandler).intValue() == 42);
-    assert(vm.builtinContext().registryMemberSlotCache.at("registry/member") == 1234);
-    vm.builtinContext().registryMemberSlotCache.clear();
     assert(vm.callStackDepth() == 0);
 
     auto externalReturnHandler = makeHandler(5, {
@@ -24990,7 +24770,6 @@ void testCastLibManagerFoundation() {
     assert(doorRef != nullptr);
     assert(doorRef->castLib == 1);
     assert(doorRef->memberNum() == 3);
-    assert(manager.getRegistryMemberByName(0, "Hero").asCastMemberRef()->memberNum() == 2);
     assert(manager.getMemberByName(0, "Missing").isVoid());
 
     auto heroChunk = manager.getCastMember(1, 2);
@@ -26299,7 +26078,6 @@ void testCastLibManagerFoundation() {
     assert(!retargetedCast->second->usesStableRegistryBinding());
     assert(retargetedCast->second->isFetched());
     assert(!retargetedCast->second->isLoaded());
-    assert(manager.getRegistryMemberByName(0, "Source Door").isVoid());
     assert(!retargetedCast->second->isLoaded());
 
     Player externalPlayer(file);

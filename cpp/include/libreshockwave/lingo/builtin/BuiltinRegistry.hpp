@@ -86,7 +86,6 @@ struct BuiltinContext {
     using CastMemberCountSupplier = std::function<int(int castLib)>;
     using CastMemberResolver = std::function<Datum(int castLib, int memberNum)>;
     using CastMemberNameResolver = std::function<Datum(int castLib, const std::string& memberName)>;
-    using RegistryCastMemberNameResolver = std::function<Datum(int castLib, const std::string& memberName)>;
     using CastMemberExistsResolver = std::function<bool(int castLib, int memberNum)>;
     using RegistryVisibleMemberResolver = std::function<bool(int castLib, int memberNum)>;
     using CastMemberMethodHandler = std::function<Datum(int castLib,
@@ -164,7 +163,6 @@ struct BuiltinContext {
     CastMemberCountSupplier castMemberCountSupplier;
     CastMemberResolver castMemberResolver;
     CastMemberNameResolver castMemberNameResolver;
-    RegistryCastMemberNameResolver registryCastMemberNameResolver;
     CastMemberExistsResolver castMemberExistsResolver;
     RegistryVisibleMemberResolver registryVisibleMemberResolver;
     CastMemberMethodHandler castMemberMethodHandler;
@@ -197,7 +195,6 @@ struct BuiltinContext {
     ImagePaletteResolver imagePaletteResolver;
     ImportFileIntoHandler importFileIntoHandler;
     std::unordered_map<std::string, Datum> scriptResolutionCache;
-    mutable std::unordered_map<std::string, int> registryMemberSlotCache;
     mutable std::unordered_map<std::uint64_t,
                                std::unordered_map<std::string,
                                                   std::optional<ScriptHandlerLocation>,

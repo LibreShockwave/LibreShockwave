@@ -62,7 +62,6 @@ public:
 
     [[nodiscard]] lingo::Datum getMember(int castLibNumber, int memberNumber);
     [[nodiscard]] lingo::Datum getMemberByName(int castLibNumber, const std::string& memberName);
-    [[nodiscard]] lingo::Datum getRegistryMemberByName(int castLibNumber, const std::string& memberName);
     [[nodiscard]] bool memberExists(int castLibNumber, int memberNumber);
     [[nodiscard]] bool isRegistryVisibleMember(int castLibNumber, int memberNumber);
     [[nodiscard]] int getMemberCount(int castLibNumber);

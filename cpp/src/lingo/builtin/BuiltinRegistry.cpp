@@ -643,7 +643,6 @@ bool hasCastProvider(const BuiltinContext& context) {
            context.castMemberCountSupplier ||
            context.castMemberResolver ||
            context.castMemberNameResolver ||
-           context.registryCastMemberNameResolver ||
            context.castMemberExistsResolver ||
            context.registryVisibleMemberResolver ||
            context.castMemberPropertyGetter ||
@@ -2242,7 +2241,6 @@ Datum CastLibBuiltins::createMember(BuiltinContext& context, const std::vector<D
     const std::string memberName = toStringLikeJava(args[0]);
     const std::string memberType = args[1].asSymbol() != nullptr ? args[1].asSymbol()->name : toStringLikeJava(args[1]);
     context.scriptResolutionCache.clear();
-    context.registryMemberSlotCache.clear();
     return context.namedCastMemberCreator(memberName, memberType);
 }
 
@@ -2606,7 +2604,6 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
         typeSymbol != nullptr && args.size() >= 2 && args[1].asCastLibRef() != nullptr) {
         if (context.castMemberCreator) {
             context.scriptResolutionCache.clear();
-            context.registryMemberSlotCache.clear();
             return context.castMemberCreator(args[1].asCastLibRef()->castLib, typeSymbol->name);
         }
         return Datum::voidValue();
@@ -2615,7 +2612,6 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
         typeSymbol != nullptr && args.size() >= 2 && args[1].isVoid()) {
         if (context.castMemberCreator) {
             context.scriptResolutionCache.clear();
-            context.registryMemberSlotCache.clear();
             return context.castMemberCreator(1, typeSymbol->name);
         }
         return Datum::voidValue();
