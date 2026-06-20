@@ -96,6 +96,7 @@ function ensureModule() {
       frameSpritesJson: Module.cwrap("lsw_frame_sprites_json", "string", ["number"]),
       imageOperationTraceJson: Module.cwrap("lsw_image_operation_trace_json", "string", ["number"]),
       clearImageOperationTrace: Module.cwrap("lsw_clear_image_operation_trace", null, ["number"]),
+      fireTestError: Module.cwrap("lsw_fire_test_error", "number", ["number", "string"]),
       lastError: Module.cwrap("lsw_last_error", "string", ["number"]),
       pollDebugMessages: Module.cwrap("lsw_poll_debug_messages", "string", ["number"]),
       drainDebugMessages: Module.cwrap("lsw_drain_debug_messages", null, ["number"]),
@@ -741,6 +742,15 @@ self.addEventListener("message", (event) => {
         post("debugImageTrace", { requestId: message.requestId, ...trace });
         break;
       }
+      case "fireTestError":
+        post("fireTestError", {
+          requestId: message.requestId,
+          handled: !!bridgeCall("fire test error", () => api.fireTestError(handle, message.message || "LibreShockwave test error"), 0)
+        });
+        emitDebugMessages();
+        await pumpHostQueues();
+        sendFrame();
+        break;
       case "cut":
         post("cut", { requestId: message.requestId, text: bridgeCall("cut", () => api.cutSelectedText(handle), "") || "" });
         await pumpHostQueues();
