@@ -165,7 +165,10 @@ bool xmedDisplayNameImpliesBold(std::string_view fontName) {
 }
 
 bool isPreferredDirectorPixelDisplayName(std::string_view fontName) {
-    return FontRegistry::canonicalFontName(std::string(fontName)).starts_with("volter");
+    const auto preferred = FontRegistry::getPreferredDirectorPixelFont();
+    return preferred.has_value() && !preferred->empty() &&
+           FontRegistry::canonicalFontName(std::string(fontName))
+               .starts_with(FontRegistry::canonicalFontName(*preferred));
 }
 
 bool isPlatformFontRequest(const std::string& fontName) {
@@ -226,13 +229,12 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFont(const std::string&
 
     std::vector<std::string> candidates;
     const auto normalizedName = FontRegistry::canonicalFontName(fontName);
-    if (normalizedName.starts_with("volter")) {
-        candidates.emplace_back("Volter");
-    }
     if (const auto preferred = FontRegistry::getPreferredDirectorPixelFont();
-        preferred.has_value() && !preferred->empty() &&
-        std::find(candidates.begin(), candidates.end(), *preferred) == candidates.end()) {
-        candidates.push_back(*preferred);
+        preferred.has_value() && !preferred->empty()) {
+        const auto preferredName = FontRegistry::canonicalFontName(*preferred);
+        if (normalizedName.starts_with(preferredName)) {
+            candidates.push_back(*preferred);
+        }
     }
 
     const bool resolvedBold = bold || xmedDisplayNameImpliesBold(fontName);

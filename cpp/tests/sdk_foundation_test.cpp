@@ -785,10 +785,11 @@ void testPfr1FontParserAndRegistry() {
     assert(FontRegistry::resolveFont("TinyPFR").value() == "tinypfr");
     assert(FontRegistry::resolveFont("Tiny Member").value() == "tiny member");
     assert(FontRegistry::getFirstRegisteredFont().value() == "tiny member");
-    assert(FontRegistry::getPreferredDirectorPixelFont().value() == "Volter");
+    const auto preferredDirectorFont = FontRegistry::getPreferredDirectorPixelFont().value();
+    assert(!preferredDirectorFont.empty());
     XmedStyledText goldfishText{};
     goldfishText.text = "First time here?";
-    goldfishText.fontName = "Volter-Bold (goldfish)";
+    goldfishText.fontName = preferredDirectorFont + "-Bold (goldfish)";
     goldfishText.fontSize = 9;
     goldfishText.memberBold = true;
     goldfishText.alignment = "center";
@@ -805,7 +806,7 @@ void testPfr1FontParserAndRegistry() {
     }));
     FontRegistry::clear();
     assert(!FontRegistry::getTtfBytes("tiny member").has_value());
-    assert(FontRegistry::hasEmbeddedBoldVariant("Volter"));
+    assert(FontRegistry::hasEmbeddedBoldVariant(preferredDirectorFont));
 }
 
 void testBitmapFontAndFontRegistry() {
@@ -1080,36 +1081,38 @@ void testBitmapFontAndFontRegistry() {
     assert(countInk(pfrBDst) == 2);
 
     FontRegistry::clear();
-    assert(FontRegistry::hasEmbeddedBoldVariant("Volter"));
-    assert(FontRegistry::resolveFont("Volter_400_0").value() == "volter");
-    assert(FontRegistry::getPreferredDirectorPixelFont().value() == "Volter");
-    const auto defaultVolter = FontRegistry::getBitmapFont("Volter", 9);
-    assert(defaultVolter != nullptr);
-    assert(defaultVolter->getFontName() == "Volter");
-    assert(defaultVolter->getFontSize() == 9);
-    assert(defaultVolter->getCharWidth('H') > 0);
-    const auto defaultVolterBold = FontRegistry::getBitmapFont("Volter", 9, true, false);
-    assert(defaultVolterBold != nullptr);
-    assert(defaultVolterBold->getFontName() == "Volter");
-    FontRegistry::registerFontAlias("vb", "Volter", true);
-    SimpleTextRenderer volterRenderer;
-    auto volterRendered = volterRenderer.renderText("Welcome Lounge",
-                                                    120,
-                                                    12,
-                                                    "vb",
-                                                    9,
-                                                    "plain",
-                                                    "left",
-                                                    static_cast<int>(0xFF010203U),
-                                                    0,
-                                                    false,
-                                                    false,
-                                                    0,
-                                                    0);
-    assert(volterRendered != nullptr);
-    assert(countOpaqueOnRow(*volterRendered, 0) == 0);
-    assert(countOpaqueOnRow(*volterRendered, 1) > 0);
-    assert(countOpaqueOnRow(*volterRendered, 9) > 0);
+    const auto preferredDirectorFont = FontRegistry::getPreferredDirectorPixelFont().value();
+    const auto preferredDirectorFontKey = FontRegistry::canonicalFontName(preferredDirectorFont);
+    assert(FontRegistry::hasEmbeddedBoldVariant(preferredDirectorFont));
+    assert(FontRegistry::resolveFont(preferredDirectorFont + "_400_0").value() == preferredDirectorFontKey);
+    const auto defaultDirectorFont = FontRegistry::getBitmapFont(preferredDirectorFont, 9);
+    assert(defaultDirectorFont != nullptr);
+    assert(defaultDirectorFont->getFontName() == preferredDirectorFont);
+    assert(defaultDirectorFont->getFontSize() == 9);
+    assert(defaultDirectorFont->getCharWidth('H') > 0);
+    const auto defaultDirectorFontBold = FontRegistry::getBitmapFont(preferredDirectorFont, 9, true, false);
+    assert(defaultDirectorFontBold != nullptr);
+    assert(defaultDirectorFontBold->getFontName() == preferredDirectorFont);
+    const std::string directorAliasName = "director-bold-alias";
+    FontRegistry::registerFontAlias(directorAliasName, preferredDirectorFont, true);
+    SimpleTextRenderer directorFontRenderer;
+    auto directorFontRendered = directorFontRenderer.renderText("Welcome Lounge",
+                                                               120,
+                                                               12,
+                                                               directorAliasName,
+                                                               9,
+                                                               "plain",
+                                                               "left",
+                                                               static_cast<int>(0xFF010203U),
+                                                               0,
+                                                               false,
+                                                               false,
+                                                               0,
+                                                               0);
+    assert(directorFontRendered != nullptr);
+    assert(countOpaqueOnRow(*directorFontRendered, 0) == 0);
+    assert(countOpaqueOnRow(*directorFontRendered, 1) > 0);
+    assert(countOpaqueOnRow(*directorFontRendered, 9) > 0);
     assert(FontRegistry::getBitmapFont("Tiny", 9) == nullptr);
     FontRegistry::registerBitmapFont("Tiny", 9, font);
     assert(FontRegistry::getBitmapFont("tiny", 9) == font);
@@ -1120,14 +1123,14 @@ void testBitmapFontAndFontRegistry() {
     assert(alias.has_value());
     assert(alias->fontName == "Tiny");
     assert(alias->bold);
-    assert(FontRegistry::canonicalFontName("Volter_400_0") == "volter");
+    assert(FontRegistry::canonicalFontName(preferredDirectorFont + "_400_0") == preferredDirectorFontKey);
     assert(FontRegistry::canonicalFontName("Arial*Bold") == "arial bold");
     assert(FontRegistry::resolveFont("TF").value() == "tf");
     assert(!FontRegistry::hasPfrFont("Tiny"));
     FontRegistry::registerEmbeddedTtfFont("Embedded Verdana", verdanaBytes, verdanaBytes);
     assert(FontRegistry::hasEmbeddedBoldVariant("embedded verdana"));
     assert(FontRegistry::resolveFont("Embedded_Verdana_400_0").value() == "embedded verdana");
-    assert(FontRegistry::getPreferredDirectorPixelFont().value() == "Volter");
+    assert(FontRegistry::getPreferredDirectorPixelFont().value() == preferredDirectorFont);
     const auto embeddedVerdana = FontRegistry::getBitmapFont("Embedded Verdana", 9);
     assert(embeddedVerdana != nullptr);
     assert(embeddedVerdana->getFontName() == "Embedded Verdana");
@@ -1160,8 +1163,8 @@ void testBitmapFontAndFontRegistry() {
     FontRegistry::clear();
     assert(!FontRegistry::hasEmbeddedBoldVariant("embedded verdana"));
     assert(!FontRegistry::hasEmbeddedBoldVariant("sized verdana"));
-    assert(FontRegistry::hasEmbeddedBoldVariant("Volter"));
-    assert(FontRegistry::getPreferredDirectorPixelFont().value() == "Volter");
+    assert(FontRegistry::hasEmbeddedBoldVariant(preferredDirectorFont));
+    assert(FontRegistry::getPreferredDirectorPixelFont().value() == preferredDirectorFont);
     MacFontBundle::clearTtfData();
     WindowsFontBundle::clearFontData();
 }
@@ -18644,7 +18647,7 @@ void testSpriteBakerFoundation() {
                                       false);
         auto bakedLegacyText = legacyTextBaker.bake(legacyTextSprite);
         assert(legacyTextRenderer.lastText == legacyText);
-        assert(legacyTextRenderer.lastFontName == "Volter");
+        assert(legacyTextRenderer.lastFontName == FontRegistry::getPreferredDirectorPixelFont().value());
         assert(legacyTextRenderer.lastFontSize == 9);
         assert(legacyTextRenderer.lastFontStyle == "bold");
         assert(legacyTextRenderer.lastTextColor == static_cast<int>(0xFF445566U));
@@ -20245,14 +20248,17 @@ void testSimpleTextRendererFoundation() {
         assert(renderer.getLineHeight("TinyRenderFont", 9, "plain", 0) == 10);
         assert(renderer.getLineHeight("TinyRenderFont", 9, "plain", 12) == 12);
 
-        FontRegistry::registerFontAlias("vb", "Volter", true);
-        auto directorAliasEnd = renderer.charPosToLoc("Hotel Navigator", 16, "vb", 9, "plain", 10, "left", 200);
+        const auto preferredDirectorFont = FontRegistry::getPreferredDirectorPixelFont().value();
+        const std::string directorAliasName = "director-pixel-bold-alias";
+        FontRegistry::registerFontAlias(directorAliasName, preferredDirectorFont, true);
+        auto directorAliasEnd =
+            renderer.charPosToLoc("Hotel Navigator", 16, directorAliasName, 9, "plain", 10, "left", 200);
         assert(directorAliasEnd.size() == 2);
         assert(directorAliasEnd[0] >= 90);
         auto directorAliasTitle = renderer.renderText("Hotel Navigator",
                                                       200,
                                                       15,
-                                                      "vb",
+                                                      directorAliasName,
                                                       9,
                                                       "plain",
                                                       "left",
@@ -20269,20 +20275,28 @@ void testSimpleTextRendererFoundation() {
             "/opt/git/v31_assets/hh_interface/raw_chunks/01330_vb_3302_XMED.bin";
         if (std::filesystem::exists(v31AliasNamedPfrPath)) {
             const auto v31AliasNamedPfr = readFixtureBytes(v31AliasNamedPfrPath);
+            const auto pfrFileName = v31AliasNamedPfrPath.filename().string();
+            const auto firstSeparator = pfrFileName.find('_');
+            const auto secondSeparator = firstSeparator == std::string::npos
+                ? std::string::npos
+                : pfrFileName.find('_', firstSeparator + 1);
+            const auto pfrMemberName = secondSeparator == std::string::npos
+                ? pfrFileName
+                : pfrFileName.substr(firstSeparator + 1, secondSeparator - firstSeparator - 1);
             FontRegistry::clear();
-            FontRegistry::registerPfr1Font("vb", v31AliasNamedPfr);
-            FontRegistry::registerFontAlias("vb", "Volter", true);
-            const auto directVb = FontRegistry::getBitmapFont("vb", 9);
-            const auto directVbPfr = FontRegistry::getPfrBitmapFont("vb", 9);
-            assert(directVb != nullptr);
-            assert(directVbPfr != nullptr);
-            assert(directVb->cellWidth() == directVbPfr->cellWidth());
-            assert(directVb->cellHeight() == directVbPfr->cellHeight());
-            assert(directVb->getCharWidth('W') == directVbPfr->getCharWidth('W'));
+            FontRegistry::registerPfr1Font(pfrMemberName, v31AliasNamedPfr);
+            FontRegistry::registerFontAlias(pfrMemberName, preferredDirectorFont, true);
+            const auto directAliasFont = FontRegistry::getBitmapFont(pfrMemberName, 9);
+            const auto directAliasPfr = FontRegistry::getPfrBitmapFont(pfrMemberName, 9);
+            assert(directAliasFont != nullptr);
+            assert(directAliasPfr != nullptr);
+            assert(directAliasFont->cellWidth() == directAliasPfr->cellWidth());
+            assert(directAliasFont->cellHeight() == directAliasPfr->cellHeight());
+            assert(directAliasFont->getCharWidth('W') == directAliasPfr->getCharWidth('W'));
             auto aliasWithAliasNamedPfr = renderer.renderText("Hotel Navigator",
                                                               200,
                                                               15,
-                                                              "vb",
+                                                              pfrMemberName,
                                                               9,
                                                               "plain",
                                                               "left",
@@ -20297,7 +20311,7 @@ void testSimpleTextRendererFoundation() {
             auto dialogTitle = renderer.renderText("Whoops, error!",
                                                    318,
                                                    13,
-                                                   "VB",
+                                                   pfrMemberName,
                                                    9,
                                                    "plain",
                                                    "left",
@@ -20422,21 +20436,21 @@ void testSimpleTextRendererFoundation() {
                                                          3);
         assert(dialogVerdanaRendered != nullptr);
         assert(countPartialAlphaPixels(*dialogVerdanaRendered) == 0);
-        auto dialogVolterRendered = renderer.renderText("Whoops, error!",
-                                                        318,
-                                                        13,
-                                                        "Volter",
-                                                        9,
-                                                        "bold",
-                                                        "left",
-                                                        static_cast<int>(0xFF000000U),
-                                                        0,
-                                                        false,
-                                                        false,
-                                                        10,
-                                                        3);
-        assert(dialogVolterRendered != nullptr);
-        assert(dialogVerdanaRendered->pixels() == dialogVolterRendered->pixels());
+        auto dialogPreferredRendered = renderer.renderText("Whoops, error!",
+                                                           318,
+                                                           13,
+                                                           FontRegistry::getPreferredDirectorPixelFont().value(),
+                                                           9,
+                                                           "bold",
+                                                           "left",
+                                                           static_cast<int>(0xFF000000U),
+                                                           0,
+                                                           false,
+                                                           false,
+                                                           10,
+                                                           3);
+        assert(dialogPreferredRendered != nullptr);
+        assert(dialogVerdanaRendered->pixels() == dialogPreferredRendered->pixels());
     } catch (...) {
         FontRegistry::clear();
         throw;
@@ -22718,7 +22732,7 @@ void testTextAndFontMapChunks() {
     putEntry(36, 0x12, 1, 0x8001);
     putEntry(44, 0x22, 1, 0x8002);
     putEntry(52, 0x2E, 2, 0x8003);
-    putName(80, "Volter-Bold");
+    putName(80, "Fixture-Bold");
     putName(96, "Charcoal");
     putName(108, "Arial");
 
@@ -22726,7 +22740,7 @@ void testTextAndFontMapChunks() {
     FontMapChunk fonts = FontMapChunk::read(nullptr, fontMapReader, ChunkId(28));
     assert(fonts.type() == ChunkType::Fmap);
     assert(fonts.entries().size() == 3);
-    assert(fonts.fontNameForId(0x8001).value() == "Volter-Bold");
+    assert(fonts.fontNameForId(0x8001).value() == "Fixture-Bold");
     assert(fonts.fontNameForId(0x8002).value() == "Charcoal");
     assert(fonts.fontNameForId(0x8003).value() == "Arial");
     assert(fonts.entries()[2].platform == 2);
