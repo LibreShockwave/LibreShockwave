@@ -13378,6 +13378,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runBinary(Opcode::ADD,
                      Datum::list({Datum::of(1), Datum::of(2.5F)}),
                      Datum::list({Datum::of(3), Datum::of(4)})).listValue().getAt(2).floatValue() == 6.5F);
+    assert(runBinary(Opcode::ADD,
+                     Datum::list({Datum::of(2), Datum::of(4), Datum::of(6)}),
+                     Datum::of(2)) == Datum::list({Datum::of(4), Datum::of(6), Datum::of(8)}));
+    assert(runBinary(Opcode::ADD,
+                     Datum::of(2),
+                     Datum::list({Datum::of(2), Datum::of(4), Datum::of(6)})) == Datum::list({Datum::of(4), Datum::of(6), Datum::of(8)}));
     assert(runBinary(Opcode::ADD, Datum::colorRef(250, 1, 2), Datum::colorRef(10, 20, 30)) == Datum::colorRef(255, 21, 32));
 
     assert(runBinary(Opcode::SUB, Datum::of(10), Datum::of(3)).intValue() == 7);
@@ -13386,6 +13392,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runBinary(Opcode::SUB,
                      Datum::list({Datum::of(9), Datum::of(7.5F)}),
                      Datum::list({Datum::of(2), Datum::of(1)})).listValue().getAt(1).intValue() == 7);
+    assert(runBinary(Opcode::SUB,
+                     Datum::list({Datum::of(9), Datum::of(7), Datum::of(5)}),
+                     Datum::of(2)) == Datum::list({Datum::of(7), Datum::of(5), Datum::of(3)}));
+    assert(runBinary(Opcode::SUB,
+                     Datum::of(10),
+                     Datum::list({Datum::of(1), Datum::of(2), Datum::of(3)})) == Datum::list({Datum::of(9), Datum::of(8), Datum::of(7)}));
     assert(runBinary(Opcode::SUB, Datum::colorRef(2, 20, 30), Datum::colorRef(10, 5, 40)) == Datum::colorRef(0, 15, 0));
 
     assert(runBinary(Opcode::MUL, Datum::of(6), Datum::of(7)).intValue() == 42);
@@ -13408,6 +13420,9 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(divisionThrew);
 
     assert(runBinary(Opcode::MOD, Datum::of(10), Datum::of(4)).intValue() == 2);
+    assert(runBinary(Opcode::MOD,
+                     Datum::list({Datum::of(7), Datum::of(8), Datum::of(9)}),
+                     Datum::of(8)) == Datum::list({Datum::of(7), Datum::of(0), Datum::of(1)}));
     bool moduloThrew = false;
     try {
         (void)runBinary(Opcode::MOD, Datum::of(1), Datum::of(0));
