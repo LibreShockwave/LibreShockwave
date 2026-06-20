@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -171,6 +172,49 @@ bool isPlatformFontRequest(const std::string& fontName) {
     return WindowsFontBundle::hasWindowsFont(fontName) || MacFontBundle::hasMacFont(fontName);
 }
 
+std::shared_ptr<BitmapFont> preferredDirectorFontAtSize(const std::string& fontName,
+                                                        int fontSize,
+                                                        bool bold,
+                                                        bool* usedRealBold) {
+    if (auto font = FontRegistry::getEmbeddedBitmapFont(fontName, fontSize, bold, false); font != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(fontName);
+        }
+        return font;
+    }
+    if (auto font = FontRegistry::getPfrBitmapFont(fontName, fontSize); font != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = false;
+        }
+        return font;
+    }
+    return nullptr;
+}
+
+int representativeInkHeight(const BitmapFont& font) {
+    constexpr std::string_view sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const int width = std::max(1, font.getStringWidth(sample));
+    const int height = std::max(1, font.cellHeight());
+    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width * height), 0);
+    int x = 0;
+    for (const auto ch : sample) {
+        font.drawChar(static_cast<unsigned char>(ch), pixels, width, height, x, 0, 0xFF000000U);
+        x += font.getCharWidth(static_cast<unsigned char>(ch));
+    }
+
+    int top = height;
+    int bottom = -1;
+    for (int y = 0; y < height; ++y) {
+        for (int px = 0; px < width; ++px) {
+            if (((pixels[static_cast<std::size_t>(y * width + px)] >> 24U) & 0xFFU) != 0) {
+                top = std::min(top, y);
+                bottom = std::max(bottom, y);
+            }
+        }
+    }
+    return bottom >= top ? bottom - top + 1 : 0;
+}
+
 std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFont(const std::string& fontName,
                                                               int fontSize,
                                                               bool bold,
@@ -220,20 +264,40 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFallback(int fontSize,
     if (!preferred.has_value() || preferred->empty()) {
         return nullptr;
     }
-    const int fallbackSize = fontSize > 1 ? fontSize - 1 : fontSize;
-    if (auto font = FontRegistry::getEmbeddedBitmapFont(*preferred, fallbackSize, bold, false); font != nullptr) {
-        if (usedRealBold != nullptr) {
-            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+
+    std::shared_ptr<BitmapFont> bestFit;
+    int bestFitSize = -1;
+    int bestFitInkHeight = -1;
+    std::shared_ptr<BitmapFont> nearest;
+    int nearestDistance = std::numeric_limits<int>::max();
+    int nearestSize = -1;
+    const int maxCandidateSize = std::max(1, fontSize + 2);
+    for (int candidateSize = 1; candidateSize <= maxCandidateSize; ++candidateSize) {
+        auto candidate = preferredDirectorFontAtSize(*preferred, candidateSize, bold, nullptr);
+        if (candidate == nullptr) {
+            continue;
         }
-        return font;
-    }
-    if (auto font = FontRegistry::getPfrBitmapFont(*preferred, fallbackSize); font != nullptr) {
-        if (usedRealBold != nullptr) {
-            *usedRealBold = false;
+        const int inkHeight = representativeInkHeight(*candidate);
+        const int distance = std::abs(inkHeight - fontSize);
+        if (distance < nearestDistance || (distance == nearestDistance && candidateSize > nearestSize)) {
+            nearest = candidate;
+            nearestDistance = distance;
+            nearestSize = candidateSize;
         }
-        return font;
+        if (inkHeight > 0 && inkHeight < fontSize &&
+            (inkHeight > bestFitInkHeight ||
+             (inkHeight == bestFitInkHeight && candidateSize > bestFitSize))) {
+            bestFit = candidate;
+            bestFitInkHeight = inkHeight;
+            bestFitSize = candidateSize;
+        }
     }
-    return nullptr;
+
+    auto selected = bestFit != nullptr ? bestFit : nearest;
+    if (selected != nullptr && usedRealBold != nullptr) {
+        *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+    }
+    return selected;
 }
 
 int widthForChar(const std::vector<ResolvedXmedSpan>& spans, int index, char ch) {
