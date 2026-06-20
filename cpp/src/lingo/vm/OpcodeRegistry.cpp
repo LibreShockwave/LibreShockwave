@@ -648,6 +648,36 @@ Datum scaleList(const Datum::List& list, double scalar, bool scalarIsFloat) {
     return Datum::list(std::move(result));
 }
 
+Datum addScalarToList(const Datum::List& list, const Datum& scalarDatum) {
+    const double scalar = toDoubleLikeJava(scalarDatum);
+    std::vector<Datum> result;
+    result.reserve(list.items().size());
+    for (const auto& item : list.items()) {
+        result.push_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) + scalar));
+    }
+    return Datum::list(std::move(result));
+}
+
+Datum subtractScalarFromList(const Datum::List& list, const Datum& scalarDatum) {
+    const double scalar = toDoubleLikeJava(scalarDatum);
+    std::vector<Datum> result;
+    result.reserve(list.items().size());
+    for (const auto& item : list.items()) {
+        result.push_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) - scalar));
+    }
+    return Datum::list(std::move(result));
+}
+
+Datum subtractListFromScalar(const Datum& scalarDatum, const Datum::List& list) {
+    const double scalar = toDoubleLikeJava(scalarDatum);
+    std::vector<Datum> result;
+    result.reserve(list.items().size());
+    for (const auto& item : list.items()) {
+        result.push_back(numericResult(scalarDatum, item, scalar - toDoubleLikeJava(item)));
+    }
+    return Datum::list(std::move(result));
+}
+
 Datum divideList(const Datum::List& list, const Datum& divisor) {
     const double scalar = toDoubleLikeJava(divisor);
     const bool divisorIsFloat = isFloatLike(divisor);
@@ -660,6 +690,15 @@ Datum divideList(const Datum::List& list, const Datum& divisor) {
         } else {
             result.push_back(Datum::of(toIntLikeJava(item) / intDivisor));
         }
+    }
+    return Datum::list(std::move(result));
+}
+
+Datum modList(const Datum::List& list, int divisor) {
+    std::vector<Datum> result;
+    result.reserve(list.items().size());
+    for (const auto& item : list.items()) {
+        result.push_back(Datum::of(toIntLikeJava(item) % divisor));
     }
     return Datum::list(std::move(result));
 }
@@ -4763,6 +4802,14 @@ bool add(ExecutionContext& context) {
         context.push(Datum::list(std::move(result)));
         return true;
     }
+    if (a.isList()) {
+        context.push(addScalarToList(a.listValue(), b));
+        return true;
+    }
+    if (b.isList()) {
+        context.push(addScalarToList(b.listValue(), a));
+        return true;
+    }
     if (const auto* lhs = a.asColorRef()) {
         if (const auto* rhs = b.asColorRef()) {
             context.push(Datum::colorRef(std::min(255, lhs->r + rhs->r),
@@ -4834,6 +4881,14 @@ bool sub(ExecutionContext& context) {
             result.push_back(numericResult(lhs[index], rhs[index], value));
         }
         context.push(Datum::list(std::move(result)));
+        return true;
+    }
+    if (a.isList()) {
+        context.push(subtractScalarFromList(a.listValue(), b));
+        return true;
+    }
+    if (b.isList()) {
+        context.push(subtractListFromScalar(a, b.listValue()));
         return true;
     }
     if (const auto* lhs = a.asColorRef()) {
@@ -4959,6 +5014,10 @@ bool mod(ExecutionContext& context) {
     const int divisor = toIntLikeJava(b);
     if (divisor == 0) {
         throw context.error("Modulo by zero");
+    }
+    if (a.isList()) {
+        context.push(modList(a.listValue(), divisor));
+        return true;
     }
     context.push(Datum::of(toIntLikeJava(a) % divisor));
     return true;
