@@ -1264,6 +1264,19 @@ EMSCRIPTEN_KEEPALIVE void lsw_clear_image_operation_trace(int handle) {
     }
 }
 
+EMSCRIPTEN_KEEPALIVE int lsw_fire_test_error(int handle, const char* message) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr || ctx->player == nullptr) {
+        return 0;
+    }
+    return guardedResult(*ctx, "fire test error", 0, [&]() {
+        const std::string text = message != nullptr && *message != '\0'
+            ? std::string(message)
+            : std::string("LibreShockwave test error");
+        return ctx->player->fireTestError(text) ? 1 : 0;
+    });
+}
+
 EMSCRIPTEN_KEEPALIVE const char* lsw_last_error(int handle) {
     auto* ctx = getContext(handle);
     return ctx == nullptr ? "" : ctx->lastError.c_str();

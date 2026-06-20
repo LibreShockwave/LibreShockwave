@@ -691,7 +691,7 @@ void Player::tickAsync(std::function<void()> onComplete) {
 
 bool Player::fireTestError(std::string_view errorMessage) {
     try {
-        const bool handled = vm_.fireAlertHook(errorMessage);
+        const bool handled = vm_.fireAlertHook("Script Error", errorMessage);
         vm_.flushDeferredTasks();
         return handled;
     } catch (...) {

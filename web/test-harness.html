@@ -55,7 +55,12 @@
       "sw7": "external.texts.txt=http://127.0.0.1/gamedata/external_texts.txt?",
       "sw8": "use.sso.ticket=1;sso.ticket="
     };
-    const debugPlaybackEnabled = new URLSearchParams(location.search).get("debug") === "1";
+    const searchParams = new URLSearchParams(location.search);
+    const debugPlaybackEnabled = searchParams.get("debug") === "1";
+    const fireErrorOnLoad = searchParams.get("error") === "1";
+    const testErrorMessage = searchParams.get("errorMessage") || "LibreShockwave test error";
+    const redirectOnError = searchParams.get("redirectOnError") === "1";
+    let testErrorFired = false;
 
     const status = document.getElementById("status");
     window.__venusHarness = {
@@ -79,6 +84,28 @@
       console.log(`[${kind}] ${entry.message}`);
     }
 
+    function triggerTestErrorWhenReady() {
+      if (!fireErrorOnLoad || testErrorFired) return;
+      testErrorFired = true;
+      let attempts = 0;
+      const maxAttempts = 30;
+      const tryFire = async () => {
+        attempts += 1;
+        append("debug", `triggering test error (${attempts}/${maxAttempts})`);
+        const handled = await window.__player.fireTestError(testErrorMessage);
+        if (handled) {
+          append("debug", "test error handled");
+          return;
+        }
+        if (attempts < maxAttempts) {
+          setTimeout(tryFire, 1000);
+        } else {
+          append("warning", "test error was not handled");
+        }
+      };
+      setTimeout(tryFire, 0);
+    }
+
     window.__player = LibreShockwavePlayer.create("stage", {
       url: movieUrl,
       params,
@@ -93,6 +120,7 @@
       onLoad(info) {
         window.__venusHarness.lastInfo = info;
         append("load", `loaded ${info.width || 0}x${info.height || 0}`);
+        triggerTestErrorWhenReady();
       },
       onFrame(info) {
         window.__venusHarness.lastInfo = info;
@@ -121,6 +149,10 @@
       onError(message) {
         window.__venusHarness.errors.push(message);
         append("error", message);
+      },
+      onNavigation(event) {
+        append("navigation", event.url);
+        return redirectOnError;
       }
     });
   </script>

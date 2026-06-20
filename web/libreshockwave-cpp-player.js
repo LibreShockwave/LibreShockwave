@@ -506,6 +506,22 @@
       }
     }
 
+    function handleNavigation(url) {
+      if (!url) return;
+      const navigation = {
+        url,
+        redirect() {
+          global.location.href = url;
+        }
+      };
+      if (typeof options.onNavigation === "function") {
+        const result = options.onNavigation(navigation);
+        if (result === true) navigation.redirect();
+        return;
+      }
+      navigation.redirect();
+    }
+
     worker.addEventListener("message", (event) => {
       const message = event.data || {};
       if (message.type === "frame") {
@@ -534,6 +550,12 @@
           callbacks.delete(message.requestId);
           resolve(message.text || "");
         }
+      } else if (message.type === "fireTestError") {
+        const resolve = callbacks.get(message.requestId);
+        if (resolve) {
+          callbacks.delete(message.requestId);
+          resolve(!!message.handled);
+        }
       } else if (message.type === "debugSprites") {
         const resolve = callbacks.get(message.requestId);
         if (resolve) {
@@ -555,11 +577,7 @@
       } else if (message.type === "tempo" && typeof options.onTempo === "function") {
         options.onTempo(message);
       } else if (message.type === "navigation") {
-        if (typeof options.onNavigation === "function") {
-          options.onNavigation({ url: message.url || "" });
-        } else if (message.url) {
-          global.location.href = message.url;
-        }
+        handleNavigation(message.url || "");
       } else if (message.type === "debug" && typeof options.onDebug === "function") {
         options.onDebug({ level: message.level || "debug", message: message.message || "" });
       } else if (message.type === "warning") {
@@ -695,6 +713,7 @@
       selectedText() { return request("selectedText"); },
       debugSprites() { return request("debugSprites"); },
       debugImageTrace(options = {}) { return request("debugImageTrace", { clear: !!options.clear }); },
+      fireTestError(message) { return request("fireTestError", { message: message || "LibreShockwave test error" }); },
       destroy() {
         stopAllAudio();
         destroyed = true;

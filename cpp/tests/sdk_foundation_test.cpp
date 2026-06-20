@@ -4078,7 +4078,7 @@ void testPlayerFacadeFoundation() {
         const std::string& alertType,
         const std::string& text) {
         ++fireTestErrorCalls;
-        assert(alertType == "Alert");
+        assert(alertType == "Script Error");
         assert(text == "handled");
         player.vm().deferTask([&fireTestErrorDeferredTasks] {
             ++fireTestErrorDeferredTasks;
@@ -20137,6 +20137,16 @@ void testSimpleTextRendererFoundation() {
         }
         return -1;
     };
+    auto countPartialAlphaPixels = [](const Bitmap& bitmap) {
+        int count = 0;
+        for (const auto pixel : bitmap.pixels()) {
+            const auto alpha = (pixel >> 24U) & 0xFFU;
+            if (alpha > 0 && alpha < 0xFFU) {
+                ++count;
+            }
+        }
+        return count;
+    };
 
     FontRegistry::clear();
     try {
@@ -20353,6 +20363,24 @@ void testSimpleTextRendererFoundation() {
         assert(explicitVerdanaRendered != nullptr);
         assert(movieCandidateRendered->pixels() == explicitWideRendered->pixels());
         assert(movieCandidateRendered->pixels() != explicitVerdanaRendered->pixels());
+        assert(countPartialAlphaPixels(*explicitWideRendered) == 0);
+        assert(countPartialAlphaPixels(*explicitVerdanaRendered) == 0);
+
+        auto dialogVerdanaRendered = renderer.renderText("Whoops, error!",
+                                                         318,
+                                                         13,
+                                                         "Verdana",
+                                                         10,
+                                                         "bold",
+                                                         "left",
+                                                         static_cast<int>(0xFF000000U),
+                                                         0,
+                                                         false,
+                                                         false,
+                                                         10,
+                                                         3);
+        assert(dialogVerdanaRendered != nullptr);
+        assert(countPartialAlphaPixels(*dialogVerdanaRendered) == 0);
     } catch (...) {
         FontRegistry::clear();
         throw;

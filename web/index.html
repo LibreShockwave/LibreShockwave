@@ -367,6 +367,10 @@
 
     const searchParams = new URLSearchParams(location.search);
     let debugPlaybackEnabled = searchParams.get("debugPlayback") === "1";
+    const fireErrorOnLoad = searchParams.get("error") === "1";
+    const testErrorMessage = searchParams.get("errorMessage") || "LibreShockwave test error";
+    const redirectOnError = searchParams.get("redirectOnError") === "1";
+    let testErrorFired = false;
     const slowHandlerWarningMs = Number.isFinite(Number(searchParams.get("slowHandlerWarningMs")))
       ? Math.max(0, Number(searchParams.get("slowHandlerWarningMs")))
       : 1000;
@@ -384,6 +388,28 @@
     window.addEventListener("unhandledrejection", (event) => {
       appendDebugLog("error", event.reason || "Unhandled promise rejection");
     });
+
+    function triggerTestErrorWhenReady() {
+      if (!fireErrorOnLoad || testErrorFired) return;
+      testErrorFired = true;
+      let attempts = 0;
+      const maxAttempts = 30;
+      const tryFire = async () => {
+        attempts += 1;
+        appendDebugLog("debug", `Triggering test error (${attempts}/${maxAttempts})`);
+        const handled = await player.fireTestError(testErrorMessage);
+        if (handled) {
+          appendDebugLog("debug", "Test error handled");
+          return;
+        }
+        if (attempts < maxAttempts) {
+          setTimeout(tryFire, 1000);
+        } else {
+          appendDebugLog("warning", "Test error was not handled");
+        }
+      };
+      setTimeout(tryFire, 0);
+    }
 
     const player = LibreShockwavePlayer.create("stage", {
       url: movieUrl.value,
@@ -405,6 +431,7 @@
         tempo.value = String(info.tempoOverride || info.baseTempo || info.tempo || 0);
         frameInfo.textContent = `Frame ${info.currentFrame || 0} / ${info.frameCount || 0} · ${info.tempo || 0} fps`;
         sizeInfo.textContent = `${info.width || 0}×${info.height || 0}`;
+        triggerTestErrorWhenReady();
       },
       onFrame(info) {
         window.__lastLibreShockwaveInfo = info;
@@ -427,6 +454,10 @@
         status.classList.add("error");
         loadButton.disabled = false;
         setPlaybackButtonsEnabled(false);
+      },
+      onNavigation(event) {
+        appendDebugLog("navigation", event.url);
+        return redirectOnError;
       },
       onWarning(message) {
         status.textContent = message;
