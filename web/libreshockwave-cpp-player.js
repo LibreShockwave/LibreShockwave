@@ -70,6 +70,98 @@
     return canvas.toDataURL("image/png");
   }
 
+  function installCanvasMenuStyles() {
+    if (!global.document || document.getElementById("libreshockwave-canvas-menu-style")) return;
+    const style = document.createElement("style");
+    style.id = "libreshockwave-canvas-menu-style";
+    style.textContent = `
+      .libreshockwave-canvas-menu {
+        position: absolute;
+        z-index: 10000;
+        min-width: 172px;
+        padding: 4px;
+        border: 1px solid rgba(255,255,255,.18);
+        background: #1d211c;
+        color: #f1f4ee;
+        box-shadow: 0 10px 28px rgba(0,0,0,.45);
+        font: 13px/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .libreshockwave-canvas-menu[hidden],
+      .libreshockwave-about-panel[hidden] {
+        display: none;
+      }
+      .libreshockwave-canvas-menu button {
+        display: block;
+        width: 100%;
+        border: 0;
+        padding: 8px 10px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .libreshockwave-canvas-menu button:hover,
+      .libreshockwave-canvas-menu button:focus {
+        background: rgba(255,255,255,.1);
+        outline: none;
+      }
+      .libreshockwave-about-panel {
+        position: absolute;
+        z-index: 9999;
+        width: min(320px, calc(100% - 24px));
+        border: 1px solid rgba(255,255,255,.2);
+        background: #20251f;
+        color: #eef3ea;
+        box-shadow: 0 14px 36px rgba(0,0,0,.5);
+        font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .libreshockwave-about-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255,255,255,.12);
+        font-weight: 700;
+      }
+      .libreshockwave-about-close {
+        width: 28px;
+        height: 28px;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: 20px/1 system-ui, sans-serif;
+        cursor: pointer;
+      }
+      .libreshockwave-about-body {
+        padding: 12px;
+      }
+      .libreshockwave-about-body p {
+        margin: 0 0 8px;
+      }
+      .libreshockwave-about-body a {
+        color: #9dd4ff;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function formatScreenshotName() {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    return `libreshockwave-canvas-${stamp}.png`;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;"
+    }[character]));
+  }
+
   function create(canvasOrId, options = {}) {
     const canvas = $(canvasOrId);
     if (!canvas) throw new Error("LibreShockwave canvas not found");
@@ -88,8 +180,20 @@
     let audioContext = null;
     let audioWarningShown = false;
     const audioChannels = new Map();
+    const canvasMenuEnabled = options.canvasMenu !== false;
+    const projectAuthor = options.projectAuthor || "Quackster";
+    const projectRepoUrl = options.projectRepoUrl || "https://github.com/Quackster/LibreShockwave";
+    const overlayHost = canvas.parentElement || document.body;
+    let contextMenu = null;
+    let aboutPanel = null;
 
     canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
+    if (canvasMenuEnabled) {
+      installCanvasMenuStyles();
+      if (global.getComputedStyle && getComputedStyle(overlayHost).position === "static") {
+        overlayHost.style.position = "relative";
+      }
+    }
 
     function send(type, payload = {}) {
       if (!destroyed) worker.postMessage({ type, ...payload });
@@ -291,6 +395,117 @@
       if (typeof options.onFrame === "function") options.onFrame(info);
     }
 
+    function downloadCanvasScreenshot() {
+      const saveBlob = (blob) => {
+        const link = document.createElement("a");
+        link.download = formatScreenshotName();
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          link.href = url;
+          link.click();
+          URL.revokeObjectURL(url);
+          return;
+        }
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      };
+
+      if (canvas.toBlob) {
+        canvas.toBlob(saveBlob, "image/png");
+      } else {
+        saveBlob(null);
+      }
+    }
+
+    function hideContextMenu() {
+      if (contextMenu) contextMenu.hidden = true;
+    }
+
+    function positionElementOverCanvas(element) {
+      const canvasRect = canvas.getBoundingClientRect();
+      const hostRect = overlayHost.getBoundingClientRect();
+      const left = canvasRect.left - hostRect.left + overlayHost.scrollLeft + ((canvasRect.width - element.offsetWidth) / 2);
+      const top = canvasRect.top - hostRect.top + overlayHost.scrollTop + ((canvasRect.height - element.offsetHeight) / 2);
+      element.style.left = `${Math.max(8, Math.round(left))}px`;
+      element.style.top = `${Math.max(8, Math.round(top))}px`;
+    }
+
+    function showAboutPanel() {
+      hideContextMenu();
+      if (!aboutPanel) {
+        aboutPanel = document.createElement("div");
+        aboutPanel.className = "libreshockwave-about-panel";
+        aboutPanel.hidden = true;
+        aboutPanel.setAttribute("role", "dialog");
+        aboutPanel.setAttribute("aria-modal", "false");
+        aboutPanel.innerHTML = `
+          <div class="libreshockwave-about-head">
+            <span>About LibreShockwave</span>
+            <button class="libreshockwave-about-close" type="button" aria-label="Close about window">&times;</button>
+          </div>
+          <div class="libreshockwave-about-body">
+            <p>LibreShockwave is a C++20 project for parsing and playing Macromedia and Adobe Director/Shockwave movies.</p>
+            <p>Author: ${escapeHtml(projectAuthor)}</p>
+            <p><a href="${escapeHtml(projectRepoUrl)}" target="_blank" rel="noopener noreferrer">GitHub repository</a></p>
+          </div>
+        `;
+        aboutPanel.querySelector("button").addEventListener("click", () => {
+          aboutPanel.hidden = true;
+          canvas.focus();
+        });
+        overlayHost.appendChild(aboutPanel);
+      }
+      aboutPanel.hidden = false;
+      positionElementOverCanvas(aboutPanel);
+    }
+
+    function showContextMenu(event) {
+      if (!canvasMenuEnabled) return;
+      if (!contextMenu) {
+        contextMenu = document.createElement("div");
+        contextMenu.className = "libreshockwave-canvas-menu";
+        contextMenu.hidden = true;
+        contextMenu.setAttribute("role", "menu");
+        contextMenu.innerHTML = `
+          <button type="button" role="menuitem" data-action="screenshot">Save canvas screenshot</button>
+          <button type="button" role="menuitem" data-action="about">About LibreShockwave</button>
+        `;
+        contextMenu.addEventListener("click", (menuEvent) => {
+          const button = menuEvent.target.closest("button");
+          if (!button) return;
+          if (button.dataset.action === "screenshot") {
+            hideContextMenu();
+            downloadCanvasScreenshot();
+          } else if (button.dataset.action === "about") {
+            showAboutPanel();
+          }
+        });
+        overlayHost.appendChild(contextMenu);
+      }
+
+      const hostRect = overlayHost.getBoundingClientRect();
+      const left = event.clientX - hostRect.left + overlayHost.scrollLeft;
+      const top = event.clientY - hostRect.top + overlayHost.scrollTop;
+      contextMenu.hidden = false;
+      const maxLeft = overlayHost.scrollLeft + overlayHost.clientWidth - contextMenu.offsetWidth - 6;
+      const maxTop = overlayHost.scrollTop + overlayHost.clientHeight - contextMenu.offsetHeight - 6;
+      contextMenu.style.left = `${Math.max(6, Math.min(left, maxLeft))}px`;
+      contextMenu.style.top = `${Math.max(6, Math.min(top, maxTop))}px`;
+      contextMenu.querySelector("button").focus();
+    }
+
+    function handleDocumentPointerDown(event) {
+      if (!contextMenu || contextMenu.hidden || contextMenu.contains(event.target)) return;
+      hideContextMenu();
+    }
+
+    function handleDocumentKeyDown(event) {
+      if (event.key === "Escape") {
+        hideContextMenu();
+        if (aboutPanel) aboutPanel.hidden = true;
+      }
+    }
+
     worker.addEventListener("message", (event) => {
       const message = event.data || {};
       if (message.type === "frame") {
@@ -371,7 +586,15 @@
       const point = stagePoint(event);
       send("mouseUp", { ...point, right: event.button === 2 });
     });
-    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      canvas.focus();
+      showContextMenu(event);
+    });
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    global.addEventListener("resize", hideContextMenu);
     canvas.addEventListener("blur", () => send("blur"));
     canvas.addEventListener("keydown", async (event) => {
       void unlockAudio();
@@ -475,6 +698,11 @@
       destroy() {
         stopAllAudio();
         destroyed = true;
+        if (contextMenu) contextMenu.remove();
+        if (aboutPanel) aboutPanel.remove();
+        document.removeEventListener("pointerdown", handleDocumentPointerDown);
+        document.removeEventListener("keydown", handleDocumentKeyDown);
+        global.removeEventListener("resize", hideContextMenu);
         worker.postMessage({ type: "destroy" });
         worker.terminate();
         if (audioContext && audioContext.state !== "closed") {
