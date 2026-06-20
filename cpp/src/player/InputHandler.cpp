@@ -563,12 +563,12 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
             if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
                 for (const int channel : hitPath) {
                     dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
-                    if (dispatcher->isEventStopped()) {
+                    if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                         break;
                     }
                 }
             }
-            if (!dispatcher->isEventStopped()) {
+            if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
                 dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseDown);
             }
             break;
@@ -583,7 +583,7 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
                 if (pressedSprite > 0 && std::ranges::find(releasePath, pressedSprite) != releasePath.end()) {
                     for (const int channel : releasePath) {
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
-                        if (dispatcher->isEventStopped()) {
+                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                             break;
                         }
                     }
@@ -594,14 +594,14 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& inputEvent) {
                 } else if (releaseSprite > 0) {
                     for (const int channel : releasePath) {
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
-                        if (dispatcher->isEventStopped()) {
+                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                             break;
                         }
                     }
                 }
             }
             inputState_->setClickOnSprite(0);
-            if (!legacyConsumed && !dispatcher->isEventStopped()) {
+            if (!legacyConsumed && !dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
                 dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseUp);
             }
             break;

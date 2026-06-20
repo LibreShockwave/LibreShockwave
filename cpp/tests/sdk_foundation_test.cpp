@@ -3360,6 +3360,58 @@ void testPlayerInputFoundation() {
         assert(propagationHandler.processInputEvents());
         assert((propagationCalls == std::vector<std::string>{"5:mouseUp", "4:mouseUp"}));
     }
+    {
+        InputState propagationState;
+        StageRenderer propagationRenderer;
+        EventDispatcher propagationDispatcher;
+        propagationDispatcher.setSpriteRegistry(&propagationRenderer.spriteRegistry());
+        propagationDispatcher.setRespondsPredicate([mouseAndKeyHandlers](const EventTarget& target,
+                                                                          std::string_view handler) {
+            return target.kind == EventTargetKind::ScriptInstance &&
+                   mouseAndKeyHandlers.contains(std::string(handler));
+        });
+        std::vector<std::string> propagationCalls;
+        propagationDispatcher.setHandlerInvoker([&propagationCalls](const EventTarget& target,
+                                                                    std::string_view handler,
+                                                                    const std::vector<Datum>& args) {
+            assert(args.empty());
+            propagationCalls.push_back(std::to_string(target.channel) + ":" + std::string(handler));
+            return HandlerResult{true, false};
+        });
+        propagationRenderer.spriteRegistry()
+            .getOrCreateDynamic(4)
+            ->setScriptInstanceList({Datum::scriptInstance("transparent-lower")});
+        propagationRenderer.spriteRegistry()
+            .getOrCreateDynamic(5)
+            ->setScriptInstanceList({Datum::scriptInstance("top-interactive")});
+        propagationRenderer.setLastBakedSprites({
+            RenderSprite(4,
+                         0,
+                         0,
+                         20,
+                         20,
+                         4,
+                         true,
+                         SpriteType::Bitmap,
+                         nullptr,
+                         transparentMember,
+                         0,
+                         0,
+                         false,
+                         false,
+                         libreshockwave::id::code(InkMode::MATTE),
+                         100,
+                         false,
+                         false,
+                         transparentBitmap,
+                         false),
+            RenderSprite(5, 0, 0, 20, 20, 5, true, SpriteType::Shape, nullptr, nullptr, 0, 0, false, false, 0, 100, false, false, nullptr, true),
+        });
+        InputHandler propagationHandler(&propagationState, &propagationRenderer, &propagationDispatcher);
+        propagationHandler.onMouseDown(5, 5);
+        assert(propagationHandler.processInputEvents());
+        assert((propagationCalls == std::vector<std::string>{"5:mouseDown"}));
+    }
 
     auto makeNativeAlphaSpecificData = [](int alphaThreshold) {
         return std::vector<std::uint8_t>{
