@@ -688,30 +688,6 @@ lingo::Datum CastLibManager::getMemberByName(int castLibNumber, const std::strin
     return lingo::Datum::voidValue();
 }
 
-lingo::Datum CastLibManager::getRegistryMemberByName(int castLibNumber, const std::string& memberName) {
-    ensureInitialized();
-    if (castLibNumber > 0) {
-        const auto found = castLibs_.find(castLibNumber);
-        auto castLib = found == castLibs_.end() ? nullptr : found->second;
-        if (!isRegistryFallbackEligibleCast(castLib)) {
-            return lingo::Datum::voidValue();
-        }
-        return getMemberByNameInCast(getCastLib(castLibNumber), memberName);
-    }
-
-    for (const auto& [_, castLib] : castLibs_) {
-        if (!isRegistryFallbackEligibleCast(castLib)) {
-            continue;
-        }
-        auto loadedCast = getCastLib(castLib->number());
-        auto found = getMemberByNameInCast(loadedCast, memberName);
-        if (!found.isVoid()) {
-            return found;
-        }
-    }
-    return lingo::Datum::voidValue();
-}
-
 bool CastLibManager::memberExists(int castLibNumber, int memberNumber) {
     auto castLib = getCastLib(castLibNumber);
     return castLib && castLib->hasMemberNumber(memberNumber);
@@ -1403,9 +1379,6 @@ void CastLibManager::installBuiltinCallbacks(lingo::builtin::BuiltinContext& con
     };
     context.castMemberNameResolver = [this](int castLib, const std::string& memberName) {
         return getMemberByName(castLib, memberName);
-    };
-    context.registryCastMemberNameResolver = [this](int castLib, const std::string& memberName) {
-        return getRegistryMemberByName(castLib, memberName);
     };
     context.castMemberExistsResolver = [this](int castLib, int memberNum) {
         return memberExists(castLib, memberNum);
