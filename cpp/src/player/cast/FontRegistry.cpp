@@ -127,17 +127,119 @@ std::string embeddedFontCacheKey(const std::string& fontName, int fontSize, bool
            std::string(bold ? "1" : "0") + ":" + (italic ? "1" : "0");
 }
 
+int readU16(const std::vector<std::uint8_t>& data, int offset) {
+    if (offset < 0 || offset + 2 > static_cast<int>(data.size())) {
+        return 0;
+    }
+    return ((data[static_cast<std::size_t>(offset)] & 0xFF) << 8) |
+           (data[static_cast<std::size_t>(offset + 1)] & 0xFF);
+}
+
+int readI32(const std::vector<std::uint8_t>& data, int offset) {
+    if (offset < 0 || offset + 4 > static_cast<int>(data.size())) {
+        return 0;
+    }
+    const std::uint32_t value =
+        (static_cast<std::uint32_t>(data[static_cast<std::size_t>(offset)] & 0xFF) << 24U) |
+        (static_cast<std::uint32_t>(data[static_cast<std::size_t>(offset + 1)] & 0xFF) << 16U) |
+        (static_cast<std::uint32_t>(data[static_cast<std::size_t>(offset + 2)] & 0xFF) << 8U) |
+        static_cast<std::uint32_t>(data[static_cast<std::size_t>(offset + 3)] & 0xFF);
+    return static_cast<int>(static_cast<std::int32_t>(value));
+}
+
+std::string decodeTtfNameString(const std::vector<std::uint8_t>& data,
+                                int offset,
+                                int length,
+                                int platformId) {
+    if (offset < 0 || length <= 0 || offset + length > static_cast<int>(data.size())) {
+        return {};
+    }
+    std::string result;
+    if (platformId == 0 || platformId == 3) {
+        for (int pos = offset; pos + 1 < offset + length; pos += 2) {
+            const int codePoint = readU16(data, pos);
+            if (codePoint >= 0x20 && codePoint <= 0x7E) {
+                result.push_back(static_cast<char>(codePoint));
+            }
+        }
+    } else {
+        for (int pos = offset; pos < offset + length; ++pos) {
+            const auto ch = data[static_cast<std::size_t>(pos)];
+            if (ch >= 0x20 && ch <= 0x7E) {
+                result.push_back(static_cast<char>(ch));
+            }
+        }
+    }
+    return trimAscii(std::move(result));
+}
+
+std::string ttfFamilyName(const std::vector<std::uint8_t>& data) {
+    if (data.size() < 12) {
+        return {};
+    }
+    const int tableCount = readU16(data, 4);
+    int nameTableOffset = 0;
+    int nameTableLength = 0;
+    for (int index = 0; index < tableCount; ++index) {
+        const int recordOffset = 12 + index * 16;
+        if (recordOffset + 16 > static_cast<int>(data.size())) {
+            break;
+        }
+        const std::string tag(reinterpret_cast<const char*>(data.data() + recordOffset), 4);
+        if (tag == "name") {
+            nameTableOffset = readI32(data, recordOffset + 8);
+            nameTableLength = readI32(data, recordOffset + 12);
+            break;
+        }
+    }
+    if (nameTableOffset <= 0 || nameTableLength < 6 || nameTableOffset + 6 > static_cast<int>(data.size())) {
+        return {};
+    }
+    const int count = readU16(data, nameTableOffset + 2);
+    const int stringOffset = nameTableOffset + readU16(data, nameTableOffset + 4);
+    std::string fallback;
+    for (int index = 0; index < count; ++index) {
+        const int recordOffset = nameTableOffset + 6 + index * 12;
+        if (recordOffset + 12 > static_cast<int>(data.size())) {
+            break;
+        }
+        const int platformId = readU16(data, recordOffset);
+        const int languageId = readU16(data, recordOffset + 4);
+        const int nameId = readU16(data, recordOffset + 6);
+        const int length = readU16(data, recordOffset + 8);
+        const int offset = stringOffset + readU16(data, recordOffset + 10);
+        if (nameId != 1) {
+            continue;
+        }
+        const auto decoded = decodeTtfNameString(data, offset, length, platformId);
+        if (decoded.empty()) {
+            continue;
+        }
+        if ((platformId == 3 && languageId == 0x0409) || platformId == 0) {
+            return decoded;
+        }
+        if (fallback.empty()) {
+            fallback = decoded;
+        }
+    }
+    return fallback;
+}
+
 void seedDefaultEmbeddedFontsLocked(RegistryState& registry) {
     const auto& regular = ::libreshockwave::fonts::volter::regularData();
     if (regular.empty()) {
         return;
     }
     const auto& bold = ::libreshockwave::fonts::volter::boldData();
-    const auto key = lowerAscii("Volter");
+    auto fontName = ttfFamilyName(regular);
+    if (fontName.empty()) {
+        fontName = "Director Pixel";
+    }
+    const auto key = lowerAscii(fontName);
     registry.embeddedTtfFonts[key][0] = EmbeddedTtfVariants{regular, bold, {}, {}};
-    registry.canonicalIndex[FontRegistry::canonicalFontName("Volter")] = key;
+    registry.canonicalIndex[FontRegistry::canonicalFontName(fontName)] = key;
     if (!registry.firstEmbeddedFont.has_value()) {
-        registry.firstEmbeddedFont = "Volter";
+        registry.firstEmbeddedFont = std::move(fontName);
     }
 }
 
