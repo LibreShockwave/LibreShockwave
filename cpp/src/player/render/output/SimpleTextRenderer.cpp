@@ -167,6 +167,10 @@ bool isPreferredDirectorPixelDisplayName(std::string_view fontName) {
     return FontRegistry::canonicalFontName(std::string(fontName)).starts_with("volter");
 }
 
+bool isPlatformFontRequest(const std::string& fontName) {
+    return WindowsFontBundle::hasWindowsFont(fontName) || MacFontBundle::hasMacFont(fontName);
+}
+
 std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFont(const std::string& fontName,
                                                               int fontSize,
                                                               bool bold,
@@ -201,6 +205,33 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFont(const std::string&
             }
             return font;
         }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFallback(int fontSize,
+                                                                  bool bold,
+                                                                  bool italic,
+                                                                  bool* usedRealBold) {
+    if (italic) {
+        return nullptr;
+    }
+    const auto preferred = FontRegistry::getPreferredDirectorPixelFont();
+    if (!preferred.has_value() || preferred->empty()) {
+        return nullptr;
+    }
+    const int fallbackSize = fontSize > 1 ? fontSize - 1 : fontSize;
+    if (auto font = FontRegistry::getEmbeddedBitmapFont(*preferred, fallbackSize, bold, false); font != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+        }
+        return font;
+    }
+    if (auto font = FontRegistry::getPfrBitmapFont(*preferred, fallbackSize); font != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = false;
+        }
+        return font;
     }
     return nullptr;
 }
@@ -1289,25 +1320,50 @@ std::shared_ptr<BitmapFont> SimpleTextRenderer::resolveBitmapFont(const std::str
         return aliasFont;
     }
 
-    if (auto exact = FontRegistry::getBitmapFont(fontName, fontSize, bold, italic); exact != nullptr) {
-        if (usedRealBold != nullptr) {
-            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(fontName);
+    auto resolveEmbeddedOrPfr = [&](const std::string& candidate) -> std::shared_ptr<BitmapFont> {
+        if (auto embedded = FontRegistry::getEmbeddedBitmapFont(candidate, fontSize, bold, italic);
+            embedded != nullptr) {
+            if (usedRealBold != nullptr) {
+                *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(candidate);
+            }
+            return embedded;
         }
-        return exact;
+        if (auto pfr = FontRegistry::getPfrBitmapFont(candidate, fontSize); pfr != nullptr) {
+            if (usedRealBold != nullptr) {
+                *usedRealBold = false;
+            }
+            return pfr;
+        }
+        return nullptr;
+    };
+
+    if (auto exactDirectorFont = resolveEmbeddedOrPfr(fontName); exactDirectorFont != nullptr) {
+        return exactDirectorFont;
     }
 
     if (const auto resolved = FontRegistry::resolveFont(fontName); resolved.has_value()) {
-        if (auto font = FontRegistry::getBitmapFont(*resolved, fontSize, bold, italic); font != nullptr) {
-            if (usedRealBold != nullptr) {
-                *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*resolved);
-            }
-            return font;
+        if (auto resolvedDirectorFont = resolveEmbeddedOrPfr(*resolved); resolvedDirectorFont != nullptr) {
+            return resolvedDirectorFont;
+        }
+    }
+
+    if (isPlatformFontRequest(fontName)) {
+        if (auto preferred = resolvePreferredDirectorPixelFallback(fontSize, bold, italic, usedRealBold);
+            preferred != nullptr) {
+            return preferred;
         }
     }
 
     if (const auto fallback = FontRegistry::getFirstRegisteredFont(); fallback.has_value()) {
         const int fallbackSize = fontSize > 1 ? fontSize - 1 : fontSize;
         return FontRegistry::getBitmapFont(*fallback, fallbackSize);
+    }
+
+    if (auto platformFont = FontRegistry::getBitmapFont(fontName, fontSize, bold, italic); platformFont != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(fontName);
+        }
+        return platformFont;
     }
     return nullptr;
 }

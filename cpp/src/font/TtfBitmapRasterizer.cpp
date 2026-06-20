@@ -56,6 +56,17 @@ int javaRound(float value) {
     return static_cast<int>(std::floor(value + 0.5F));
 }
 
+float gridFit(float value) {
+    return static_cast<float>(javaRound(value));
+}
+
+RasterPoint scalePoint(const TtfPoint& point, float scale, int baselineY) {
+    return RasterPoint{
+        gridFit(static_cast<float>(point.x) * scale),
+        gridFit(static_cast<float>(baselineY) - static_cast<float>(point.y) * scale),
+    };
+}
+
 int readU16(const std::vector<std::uint8_t>& data, int offset) {
     if (offset < 0 || offset + 2 > static_cast<int>(data.size())) {
         return 0;
@@ -426,31 +437,23 @@ std::vector<RasterPoint> flattenTtfContour(const std::vector<TtfPoint>& contour,
 
     const int size = static_cast<int>(expanded.size());
     const auto& start = expanded[static_cast<std::size_t>(startIndex)];
-    result.push_back(RasterPoint{
-        static_cast<float>(start.x) * scale,
-        static_cast<float>(baselineY) - static_cast<float>(start.y) * scale,
-    });
+    result.push_back(scalePoint(start, scale, baselineY));
 
     int index = (startIndex + 1) % size;
     int count = 0;
     while (count < size) {
         const auto& point = expanded[static_cast<std::size_t>(index)];
         if (point.onCurve) {
-            result.push_back(RasterPoint{
-                static_cast<float>(point.x) * scale,
-                static_cast<float>(baselineY) - static_cast<float>(point.y) * scale,
-            });
+            result.push_back(scalePoint(point, scale, baselineY));
         } else {
             const auto& next = expanded[static_cast<std::size_t>((index + 1) % size)];
             if (!next.onCurve || result.empty()) {
                 return {};
             }
-            const float controlX = static_cast<float>(point.x) * scale;
-            const float controlY = static_cast<float>(baselineY) - static_cast<float>(point.y) * scale;
-            const float endX = static_cast<float>(next.x) * scale;
-            const float endY = static_cast<float>(baselineY) - static_cast<float>(next.y) * scale;
+            const auto control = scalePoint(point, scale, baselineY);
+            const auto end = scalePoint(next, scale, baselineY);
             const auto& last = result.back();
-            subdivideQuadratic(result, last.x, last.y, controlX, controlY, endX, endY, 3);
+            subdivideQuadratic(result, last.x, last.y, control.x, control.y, end.x, end.y, 3);
 
             index = (index + 1) % size;
             ++count;
