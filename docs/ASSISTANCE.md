@@ -135,7 +135,6 @@ Nearby asset and reference repositories:
 /opt/git/v14_assets
 /opt/git/v1_assets
 /opt/git/v1_assets/handshake-demo
-/opt/git/LibreShockwave-Java
 /opt/git/test/LibreShockwave
 ```
 
@@ -218,11 +217,6 @@ Director extraction output.
 for the v1 EnterpriseServer-style handshake. It only gets the client out of the
 connection-wait loop and intentionally does not implement login, rooms,
 messenger state, or gameplay.
-
-`/opt/git/LibreShockwave-Java` is the older Java LibreShockwave project. Its
-README documents the Java parser/player/editor split, and
-`docs/rendering-rules.md` contains an earlier version of the renderer rules
-that were later carried into this C++ repository.
 
 `/opt/git/test/LibreShockwave/docs/private-room-wall-investigation.md` contains
 older investigation notes for private room wall rendering. The key lesson is to

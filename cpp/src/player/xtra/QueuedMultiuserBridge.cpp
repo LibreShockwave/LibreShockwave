@@ -217,7 +217,7 @@ void writeLingoValue(ByteWriter& out, const lingo::Datum& value) {
         out.writeShort(3);
         out.writeChunk(value.stringValue());
     } else if (const auto* media = value.asMedia()) {
-        out.writeShort(20);
+        out.writeShort(5);
         out.writeChunk(media->bytes);
     } else if (const auto* floating = value.asFloat()) {
         out.writeShort(6);
