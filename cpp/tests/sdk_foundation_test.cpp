@@ -7761,6 +7761,9 @@ void testQueuedMultiuserBridgeFoundation() {
     assert(wire.size() > 6);
     assert(wire[0] == 114);
     assert(wire[1] == 0);
+    const std::vector<std::uint8_t> encodedMedia{0, 5, 0, 0, 0, 3, 1, 2, 3};
+    const auto mediaTag = std::search(wire.begin(), wire.end(), encodedMedia.begin(), encodedMedia.end());
+    assert(mediaTag != wire.end());
     smus.deliverMessageBytes(3, wire);
     messages = smus.pollMessages(3);
     assert(messages.size() == 1);
