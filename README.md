@@ -496,6 +496,14 @@ git diff --check
 
 Run fixture probes that match the risk of the change before saving a C++ port slice.
 
+## Acknowledgements
+
+LibreShockwave could not have been done without these projects:
+
+- [ProjectorRays](https://github.com/ProjectorRays/ProjectorRays)
+- [ScummVM](https://github.com/scummvm/scummvm)
+- [dirplayer-rs](https://github.com/igorlira/dirplayer-rs)
+
 ## License
 
 See [LICENCE](LICENCE).
