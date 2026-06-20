@@ -779,6 +779,9 @@ void testPfr1FontParserAndRegistry() {
     assert(directPfrMember != nullptr);
     assert(directPfrMember->getFontName() == "TinyPFR");
     assert(directPfrMember->getCharWidth('C') > 0);
+    assert(rasterizedMember->cellWidth() == directPfrMember->cellWidth());
+    assert(rasterizedMember->cellHeight() == directPfrMember->cellHeight());
+    assert(rasterizedMember->getCharWidth('C') == directPfrMember->getCharWidth('C'));
     assert(FontRegistry::resolveFont("TinyPFR").value() == "tinypfr");
     assert(FontRegistry::resolveFont("Tiny Member").value() == "tiny member");
     assert(FontRegistry::getFirstRegisteredFont().value() == "tiny member");
@@ -20254,6 +20257,13 @@ void testSimpleTextRendererFoundation() {
             FontRegistry::clear();
             FontRegistry::registerPfr1Font("vb", v31AliasNamedPfr);
             FontRegistry::registerFontAlias("vb", "Volter", true);
+            const auto directVb = FontRegistry::getBitmapFont("vb", 9);
+            const auto directVbPfr = FontRegistry::getPfrBitmapFont("vb", 9);
+            assert(directVb != nullptr);
+            assert(directVbPfr != nullptr);
+            assert(directVb->cellWidth() == directVbPfr->cellWidth());
+            assert(directVb->cellHeight() == directVbPfr->cellHeight());
+            assert(directVb->getCharWidth('W') == directVbPfr->getCharWidth('W'));
             auto aliasWithAliasNamedPfr = renderer.renderText("Hotel Navigator",
                                                               200,
                                                               15,
@@ -20269,6 +20279,22 @@ void testSimpleTextRendererFoundation() {
                                                               0);
             assert(aliasWithAliasNamedPfr != nullptr);
             assert(countPixels(*aliasWithAliasNamedPfr, 0xFFEEEEEEU) == 284);
+            auto dialogTitle = renderer.renderText("Whoops, error!",
+                                                   318,
+                                                   13,
+                                                   "VB",
+                                                   9,
+                                                   "plain",
+                                                   "left",
+                                                   static_cast<int>(0xFF000000U),
+                                                   0,
+                                                   false,
+                                                   false,
+                                                   11,
+                                                   0);
+            assert(dialogTitle != nullptr);
+            assert(countPartialAlphaPixels(*dialogTitle) == 0);
+            assert(findLastNonBackgroundColumn(*dialogTitle, 0) < 90);
             FontRegistry::clear();
             registerSyntheticFonts();
         }
@@ -20381,6 +20407,21 @@ void testSimpleTextRendererFoundation() {
                                                          3);
         assert(dialogVerdanaRendered != nullptr);
         assert(countPartialAlphaPixels(*dialogVerdanaRendered) == 0);
+        auto dialogVolterRendered = renderer.renderText("Whoops, error!",
+                                                        318,
+                                                        13,
+                                                        "Volter",
+                                                        9,
+                                                        "bold",
+                                                        "left",
+                                                        static_cast<int>(0xFF000000U),
+                                                        0,
+                                                        false,
+                                                        false,
+                                                        10,
+                                                        3);
+        assert(dialogVolterRendered != nullptr);
+        assert(dialogVerdanaRendered->pixels() == dialogVolterRendered->pixels());
     } catch (...) {
         FontRegistry::clear();
         throw;
