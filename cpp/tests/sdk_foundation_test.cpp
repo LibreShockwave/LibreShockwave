@@ -19360,6 +19360,48 @@ void testBitmapCacheAndInkProcessorFoundation() {
     assert(blackIndexedMatteResult.getPixel(1, 1) == 0xFF33CCFFU);
     assert(blackIndexedMatteResult.getPixel(2, 2) == 0x00000000U);
 
+    Bitmap whiteZeroIndexedMatte(4, 4, 8, {
+        0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
+        0xFFFFFFFFU, 0xFF444444U, 0xFF000000U, 0xFFFFFFFFU,
+        0xFFFFFFFFU, 0xFF222222U, 0xFF000000U, 0xFFFFFFFFU,
+        0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
+    });
+    whiteZeroIndexedMatte.setPaletteIndices({
+        0, 0, 0, 0,
+        0, 252, 255, 0,
+        0, 253, 255, 0,
+        0, 0, 0, 0
+    });
+    Bitmap whiteZeroIndexedMatteResult =
+        InkProcessor::applyInk(whiteZeroIndexedMatte, InkMode::MATTE, 255, false, &Palette::systemMacPalette());
+    assert(whiteZeroIndexedMatteResult.getPixel(0, 0) == 0x00000000U);
+    assert(whiteZeroIndexedMatteResult.getPixel(1, 1) == 0xFF444444U);
+    assert(whiteZeroIndexedMatteResult.getPixel(2, 1) == 0xFF000000U);
+    assert(whiteZeroIndexedMatteResult.getPixel(3, 3) == 0x00000000U);
+
+    Bitmap outlinedExteriorWhiteMatte(6, 6, 8, {
+        0xFF000000U, 0xFF000000U, 0xFF000000U, 0xFF000000U, 0xFF000000U, 0xFFFFFFFFU,
+        0xFF000000U, 0xFF444444U, 0xFF444444U, 0xFF444444U, 0xFF000000U, 0xFFFFFFFFU,
+        0xFF000000U, 0xFF444444U, 0xFF444444U, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU,
+        0xFF000000U, 0xFF444444U, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
+        0xFF000000U, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
+        0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
+    });
+    outlinedExteriorWhiteMatte.setPaletteIndices({
+        255, 255, 255, 255, 255, 0,
+        255, 252, 252, 252, 255, 0,
+        255, 252, 252, 255, 0, 0,
+        255, 252, 255, 0, 0, 0,
+        255, 255, 0, 0, 0, 0,
+        255, 0, 0, 0, 0, 0
+    });
+    Bitmap outlinedExteriorWhiteMatteResult =
+        InkProcessor::applyInk(outlinedExteriorWhiteMatte, InkMode::MATTE, 255, false, &Palette::systemMacPalette());
+    assert(outlinedExteriorWhiteMatteResult.getPixel(5, 0) == 0x00000000U);
+    assert(outlinedExteriorWhiteMatteResult.getPixel(3, 3) == 0x00000000U);
+    assert(outlinedExteriorWhiteMatteResult.getPixel(5, 5) == 0x00000000U);
+    assert(outlinedExteriorWhiteMatteResult.getPixel(1, 1) == 0xFF444444U);
+
     Bitmap darkenTintSource(2, 1, 32, {0xFFFFFFFFU, 0xFF808080U});
     Bitmap darkenTint = InkProcessor::applyInk(darkenTintSource, InkMode::DARKEN, 0x804020, false, nullptr);
     assert(darkenTint.getPixel(0, 0) == 0xFF804020U);

@@ -315,6 +315,19 @@ std::optional<int> resolveDefaultIndexedFloodFillMatteIndex(const bitmap::Bitmap
     return std::nullopt;
 }
 
+bool shouldPreferDefaultWhiteIndexedMatte(const bitmap::Bitmap& src,
+                                          const std::vector<std::uint8_t>& paletteIndices,
+                                          int defaultMatteIndex,
+                                          std::optional<int> explicitMatteIndex) {
+    if (src.isScriptModified() || !explicitMatteIndex.has_value() || *explicitMatteIndex == defaultMatteIndex) {
+        return false;
+    }
+    if (defaultMatteIndex != 0 || paletteIndices.size() < src.pixels().size()) {
+        return false;
+    }
+    return (resolvePaletteIndexRgb(src, paletteIndices, defaultMatteIndex) & 0x00FFFFFF) == 0xFFFFFF;
+}
+
 bitmap::Bitmap applyIndexedMatteInternal(const bitmap::Bitmap& src, int matteIndex, bool clearTransparentRgb) {
     const int width = src.width();
     const int height = src.height();
@@ -536,7 +549,7 @@ std::optional<bitmap::Bitmap> applyOutlinedWhiteBodyMatteIfNeeded(const bitmap::
             ++remainingWhite;
         }
     }
-    if (remainingWhite * 20 > white) {
+    if ((lowDepthAsset && remainingWhite == 0) || remainingWhite * 20 > white) {
         return std::nullopt;
     }
 
@@ -597,7 +610,15 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
             explicitMatteIndex.has_value() || !paletteIndices.has_value()
                 ? std::optional<int>{}
                 : resolveDefaultIndexedFloodFillMatteIndex(input, *paletteIndices);
-        const auto mattePaletteIndex = explicitMatteIndex.has_value() ? explicitMatteIndex : defaultMatteIndex;
+        const auto fallbackMatteIndex = explicitMatteIndex.has_value() && paletteIndices.has_value()
+            ? resolveDefaultIndexedFloodFillMatteIndex(input, *paletteIndices)
+            : std::optional<int>{};
+        const auto mattePaletteIndex =
+            fallbackMatteIndex.has_value() &&
+                    paletteIndices.has_value() &&
+                    shouldPreferDefaultWhiteIndexedMatte(input, *paletteIndices, *fallbackMatteIndex, explicitMatteIndex)
+                ? fallbackMatteIndex
+                : (explicitMatteIndex.has_value() ? explicitMatteIndex : defaultMatteIndex);
         const int matteColor = mattePaletteIndex.has_value() && paletteIndices.has_value()
             ? resolvePaletteIndexRgb(input, *paletteIndices, *mattePaletteIndex)
             : resolveMatteColorForInk(input, ink, backColor, useAlpha, palette, preserveScriptOutlinedWhiteBody);
