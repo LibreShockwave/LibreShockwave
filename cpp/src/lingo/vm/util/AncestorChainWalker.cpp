@@ -29,6 +29,11 @@ const Datum* propertyValue(const Datum::ScriptInstanceRef& instance, std::string
     return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
 }
 
+Datum* propertyValue(Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    const int index = instance.findPropertyIndex(propName);
+    return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
+}
+
 } // namespace
 
 Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
@@ -134,11 +139,14 @@ void setProperty(Datum::ScriptInstanceRef& instance, std::string_view propName, 
         return;
     }
 
-    if (auto* owner = findOwner(instance, propName)) {
-        if (auto* actualValue = owner->findMutablePropertyValue(propName)) {
+    auto* current = &instance;
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        if (auto* actualValue = propertyValue(*current, propName)) {
             *actualValue = std::move(value);
+            return;
         }
-        return;
+
+        current = current->ancestorRaw();
     }
 
     instance.setProperty(std::string(propName), std::move(value));
