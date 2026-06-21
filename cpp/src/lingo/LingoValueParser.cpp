@@ -356,6 +356,7 @@ std::optional<Datum> parseRgb(std::string_view expression) {
     }
     if (parts.size() == 3) {
         std::vector<int> values;
+        values.reserve(parts.size());
         for (const auto& part : parts) {
             const auto parsed = parseInt(trimView(part.value));
             if (!parsed.has_value()) {
