@@ -6572,15 +6572,17 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     if (equalsIgnoreCase(handlerName, "length") && argCount == 1) {
         const Datum& value = context.peekRef();
         Datum result = Datum::of(0);
-        if (value.isList()) {
-            result = Datum::of(value.listValue().count());
-        } else if (value.isPropList()) {
-            result = Datum::of(value.propListValue().count());
-        } else if (const auto directValue = directStringViewLikeJava(value)) {
-            result = Datum::of(static_cast<int>(directValue->size()));
-        } else {
-            std::string storage;
-            result = Datum::of(static_cast<int>(stringViewLikeJava(value, storage).size()));
+        if (!noReturn) {
+            if (value.isList()) {
+                result = Datum::of(value.listValue().count());
+            } else if (value.isPropList()) {
+                result = Datum::of(value.propListValue().count());
+            } else if (const auto directValue = directStringViewLikeJava(value)) {
+                result = Datum::of(static_cast<int>(directValue->size()));
+            } else {
+                std::string storage;
+                result = Datum::of(static_cast<int>(stringViewLikeJava(value, storage).size()));
+            }
         }
         context.scope().drop(1);
         if (!noReturn) {
@@ -6592,10 +6594,12 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     if (equalsIgnoreCase(handlerName, "count") && argCount == 1) {
         const Datum& value = context.peekRef();
         Datum result = Datum::of(0);
-        if (value.isList()) {
-            result = Datum::of(value.listValue().count());
-        } else if (value.isPropList()) {
-            result = Datum::of(value.propListValue().count());
+        if (!noReturn) {
+            if (value.isList()) {
+                result = Datum::of(value.listValue().count());
+            } else if (value.isPropList()) {
+                result = Datum::of(value.propListValue().count());
+            }
         }
         context.scope().drop(1);
         if (!noReturn) {
