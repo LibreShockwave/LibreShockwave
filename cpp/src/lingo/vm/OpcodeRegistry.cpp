@@ -7908,7 +7908,11 @@ bool tryImmediateCallBuiltin(ExecutionContext& context,
     const std::string targetHandlerName = handlerDatum.asSymbol() != nullptr ? handlerDatum.asSymbol()->name
                                                                              : toStringLikeJava(handlerDatum);
     const Datum& targetRef = context.peekRef(argCount - 2);
-    std::vector<Datum> callArgs = snapshotCallArgsFromStack(context, argCount);
+    static const std::vector<Datum> emptyCallArgs;
+    std::vector<Datum> materializedCallArgs;
+    const std::vector<Datum>& callArgs = argCount <= 2
+                                             ? emptyCallArgs
+                                             : (materializedCallArgs = snapshotCallArgsFromStack(context, argCount));
     Datum lastResult = Datum::voidValue();
     context.scope().setBytecodeIndex(nextIndex);
     context.setInstruction(nextInstruction);
