@@ -356,14 +356,14 @@ std::optional<Datum> parseRgb(std::string_view expression) {
         }
     }
     if (parts.size() == 3) {
-        std::vector<int> values;
-        values.reserve(parts.size());
-        for (const auto& part : parts) {
+        std::array<int, 3> values{};
+        for (std::size_t index = 0; index < parts.size(); ++index) {
+            const auto& part = parts[index];
             const auto parsed = parseInt(trimView(part.value));
             if (!parsed.has_value()) {
                 return std::nullopt;
             }
-            values.push_back(*parsed);
+            values[index] = *parsed;
         }
         return Datum::colorRef(values[0], values[1], values[2]);
     }
