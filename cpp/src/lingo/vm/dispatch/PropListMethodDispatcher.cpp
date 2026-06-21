@@ -445,8 +445,12 @@ Datum PropListMethodDispatcher::dispatch(Datum::PropList& propList,
     if (equalsIgnoreCase(methodName, "duplicate")) {
         Datum copy = Datum::propList(propList.sorted());
         const auto& properties = std::as_const(propList).properties();
-        copy.propListValue().properties() = properties;
-        return copy.deepCopy();
+        auto& copiedProperties = copy.propListValue().properties();
+        copiedProperties.reserve(properties.size());
+        for (const auto& entry : properties) {
+            copiedProperties.emplace_back(entry.first.deepCopy(), entry.second.deepCopy());
+        }
+        return copy;
     }
     Datum value = getPropListKey(propList, methodName);
     if (!value.isVoid()) {
