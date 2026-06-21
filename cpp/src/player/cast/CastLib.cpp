@@ -13,6 +13,7 @@
 
 #include "libreshockwave/DirectorFile.hpp"
 #include "libreshockwave/bitmap/Bitmap.hpp"
+#include "libreshockwave/bitmap/BitmapDecoder.hpp"
 #include "libreshockwave/bitmap/Palette.hpp"
 #include "libreshockwave/cast/CastMember.hpp"
 #include "libreshockwave/cast/MemberType.hpp"
@@ -71,6 +72,121 @@ bool endsWith(const std::string& value, const std::string& suffix) {
 
 lingo::Datum stringDatum(const std::string& value) {
     return lingo::Datum::of(value);
+}
+
+void appendU32LE(std::vector<std::uint8_t>& data, std::uint32_t value) {
+    data.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+    data.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    data.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    data.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+}
+
+void putU16BE(std::vector<std::uint8_t>& data, int offset, int value) {
+    const auto raw = static_cast<std::uint16_t>(value);
+    data[static_cast<std::size_t>(offset)] = static_cast<std::uint8_t>((raw >> 8U) & 0xFFU);
+    data[static_cast<std::size_t>(offset + 1)] = static_cast<std::uint8_t>(raw & 0xFFU);
+}
+
+int directorBitmapPitch(int width, int bitDepth) {
+    if (bitDepth == 32) {
+        return std::max(1, width) * 4;
+    }
+    return bitmap::BitmapDecoder::calculateScanWidth(std::max(1, width), bitDepth);
+}
+
+int directorPaletteId(const bitmap::Bitmap& bitmap) {
+    if (bitmap.paletteRefMemberNum() > 0) {
+        return bitmap.paletteRefMemberNum();
+    }
+    if (const auto& name = bitmap.paletteRefSystemName()) {
+        const auto normalized = bitmap::Palette::normalizeBuiltInSymbolName(*name);
+        if (normalized == "grayscale") {
+            return bitmap::Palette::GRAYSCALE + 1;
+        }
+        if (normalized == "rainbow") {
+            return bitmap::Palette::RAINBOW + 1;
+        }
+        if (normalized == "systemMac") {
+            return bitmap::Palette::SYSTEM_MAC + 1;
+        }
+        if (normalized == "systemWin") {
+            return bitmap::Palette::SYSTEM_WIN + 1;
+        }
+    }
+    if (bitmap.bitDepth() <= 8 && bitmap.imagePalette() != nullptr &&
+        bitmap.imagePalette()->name() == bitmap::Palette::grayscalePalette().name()) {
+        return bitmap::Palette::GRAYSCALE + 1;
+    }
+    return 0;
+}
+
+std::vector<std::uint8_t> bitmapPixelsAsDirectorBitd(const bitmap::Bitmap& bitmap, int pitch) {
+    const int width = std::max(1, bitmap.width());
+    const int height = std::max(1, bitmap.height());
+    const int bitDepth = bitmap.bitDepth() <= 8 ? 8 : 32;
+    std::vector<std::uint8_t> result(static_cast<std::size_t>(pitch * height), 0);
+
+    if (bitDepth == 8) {
+        const auto indices = bitmap.paletteIndices();
+        const auto* palette = bitmap.imagePalette().get();
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const auto offset = static_cast<std::size_t>(y * pitch + x);
+                if (indices.has_value() && static_cast<std::size_t>(y * width + x) < indices->size()) {
+                    result[offset] = (*indices)[static_cast<std::size_t>(y * width + x)];
+                } else if (palette != nullptr) {
+                    result[offset] = static_cast<std::uint8_t>(palette->nearestIndex(bitmap.getPixel(x, y)) & 0xFF);
+                } else {
+                    const auto pixel = bitmap.getPixel(x, y);
+                    const int r = static_cast<int>((pixel >> 16U) & 0xFFU);
+                    const int g = static_cast<int>((pixel >> 8U) & 0xFFU);
+                    const int b = static_cast<int>(pixel & 0xFFU);
+                    result[offset] = static_cast<std::uint8_t>((r + g + b) / 3);
+                }
+            }
+        }
+        return result;
+    }
+
+    result.assign(static_cast<std::size_t>(pitch * height), 0);
+    const int scanWidth = pitch / 4;
+    for (int y = 0; y < height; ++y) {
+        const int lineOffset = y * scanWidth * 4;
+        for (int x = 0; x < width; ++x) {
+            const auto pixel = bitmap.getPixel(x, y);
+            result[static_cast<std::size_t>(lineOffset + x)] = static_cast<std::uint8_t>((pixel >> 24U) & 0xFFU);
+            result[static_cast<std::size_t>(lineOffset + scanWidth + x)] = static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU);
+            result[static_cast<std::size_t>(lineOffset + scanWidth * 2 + x)] = static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU);
+            result[static_cast<std::size_t>(lineOffset + scanWidth * 3 + x)] = static_cast<std::uint8_t>(pixel & 0xFFU);
+        }
+    }
+    return result;
+}
+
+std::vector<std::uint8_t> encodeDirectorBitmapMedia(const bitmap::Bitmap& bitmap, int regX, int regY) {
+    const int width = std::max(1, bitmap.width());
+    const int height = std::max(1, bitmap.height());
+    const int bitDepth = bitmap.bitDepth() <= 8 ? 8 : 32;
+    const int pitch = directorBitmapPitch(width, bitDepth);
+
+    std::vector<std::uint8_t> media(32, 0);
+    putU16BE(media, 0, 0x8000 | pitch);
+    putU16BE(media, 2, 0);
+    putU16BE(media, 4, 0);
+    putU16BE(media, 6, height);
+    putU16BE(media, 8, width);
+    putU16BE(media, 18, regY);
+    putU16BE(media, 20, regX);
+    media[22] = bitmap.isNativeAlpha() || bitmap.hasTransparentPixels() || bitmap.hasTranslucentPixels() ? 0x10 : 0;
+    media[23] = static_cast<std::uint8_t>(bitDepth);
+    putU16BE(media, 24, bitmap.paletteRefCastLib() > 0 ? bitmap.paletteRefCastLib() : 0);
+    putU16BE(media, 26, bitDepth <= 8 ? directorPaletteId(bitmap) : 0);
+
+    const auto bitd = bitmapPixelsAsDirectorBitd(bitmap, pitch);
+    media.insert(media.end(), {'D', 'T', 'I', 'B'});
+    appendU32LE(media, static_cast<std::uint32_t>(bitd.size()));
+    media.insert(media.end(), bitd.begin(), bitd.end());
+    return media;
 }
 
 std::string shapeTypeSymbolName(libreshockwave::cast::ShapeType type) {
@@ -825,7 +941,21 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
             : lingo::Datum::voidValue();
     }
     if (prop == "scripttext") return stringDatum("");
-    if (prop == "media") return lingo::Datum::castMemberRef(castLibId_, id::MemberId(memberNumber));
+    if (prop == "media") {
+        if (member->isBitmap()) {
+            auto bitmap = member->runtimeBitmap();
+            if (!bitmap) {
+                const auto image = getMemberProp(memberNumber, "image");
+                if (const auto* imageRef = image.asImageRef()) {
+                    bitmap = imageRef->bitmap;
+                }
+            }
+            if (bitmap) {
+                return lingo::Datum::media(encodeDirectorBitmapMedia(*bitmap, member->regX(), member->regY()));
+            }
+        }
+        return lingo::Datum::castMemberRef(castLibId_, id::MemberId(memberNumber));
+    }
     if (prop == "mediaready") return lingo::Datum::of(1);
     if (member->isSound() && prop == "duration") {
         if (sourceFile_ != nullptr && member->rawChunk()) {

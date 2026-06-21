@@ -25975,6 +25975,24 @@ void testCastLibManagerFoundation() {
     assert(manager.getMemberProp(1, directMediaRef->memberNum(), "regPoint").asIntPoint()->y == 1);
     assert(directMediaImageRuntime->anchorX() == 0);
     assert(directMediaImageRuntime->anchorY() == 1);
+    const auto directRuntimeMediaDatum = manager.getMemberProp(1, directMediaRef->memberNum(), "media");
+    const auto* directRuntimeMedia = directRuntimeMediaDatum.asMedia();
+    assert(directRuntimeMedia != nullptr);
+    assert(directRuntimeMedia->bytes.size() > 40);
+    const auto directRuntimeMediaReceiver = manager.createMember(1, "bitmap");
+    const auto* directRuntimeMediaReceiverRef = directRuntimeMediaReceiver.asCastMemberRef();
+    assert(directRuntimeMediaReceiverRef != nullptr);
+    assert(manager.setMemberProp(1,
+                                 directRuntimeMediaReceiverRef->memberNum(),
+                                 "media",
+                                 directRuntimeMediaDatum));
+    auto decodedDirectRuntimeMedia = manager.resolveMember(1, directRuntimeMediaReceiverRef->memberNum())->runtimeBitmap();
+    assert(decodedDirectRuntimeMedia != nullptr);
+    assert(decodedDirectRuntimeMedia->width() == 1);
+    assert(decodedDirectRuntimeMedia->height() == 2);
+    assert(decodedDirectRuntimeMedia->getPixel(0, 1) == 0xFFABCDEFU);
+    assert(manager.getMemberProp(1, directRuntimeMediaReceiverRef->memberNum(), "regPoint").asIntPoint()->x == 0);
+    assert(manager.getMemberProp(1, directRuntimeMediaReceiverRef->memberNum(), "regPoint").asIntPoint()->y == 1);
     assert(manager.setMemberProp(1, directMediaRef->memberNum(), "media", Datum::media(importedImage)));
     auto directImportedRuntime = manager.resolveMember(1, directMediaRef->memberNum())->runtimeBitmap();
     assert(directImportedRuntime != nullptr);
@@ -26100,6 +26118,23 @@ void testCastLibManagerFoundation() {
     assert(runtimeIndexed->getPixel(1, 0) == 0xFF778899U);
     assert(runtimeIndexed->paletteIndex(0, 0).value() == 1);
     assert(runtimeIndexed->paletteIndex(1, 0).value() == 2);
+    const auto runtimeIndexedMediaDatum = manager.getMemberProp(1, 2, "media");
+    const auto* runtimeIndexedMediaValue = runtimeIndexedMediaDatum.asMedia();
+    assert(runtimeIndexedMediaValue != nullptr);
+    assert(runtimeIndexedMediaValue->bytes.size() == 42);
+    const auto runtimeIndexedReceiver = manager.createMember(1, "bitmap");
+    const auto* runtimeIndexedReceiverRef = runtimeIndexedReceiver.asCastMemberRef();
+    assert(runtimeIndexedReceiverRef != nullptr);
+    assert(manager.setMemberProp(1,
+                                 runtimeIndexedReceiverRef->memberNum(),
+                                 "media",
+                                 runtimeIndexedMediaDatum));
+    auto decodedRuntimeIndexed = manager.resolveMember(1, runtimeIndexedReceiverRef->memberNum())->runtimeBitmap();
+    assert(decodedRuntimeIndexed != nullptr);
+    assert(decodedRuntimeIndexed->bitDepth() == 8);
+    assert(decodedRuntimeIndexed->imagePalette() == sourceRuntimePalette);
+    assert(decodedRuntimeIndexed->paletteIndex(0, 0).value() == 1);
+    assert(decodedRuntimeIndexed->paletteIndex(1, 0).value() == 2);
     assert(!registry.invoke("importFileInto",
                             context,
                             {Datum::castMemberRef(CastLibId(1), MemberId(2)),
