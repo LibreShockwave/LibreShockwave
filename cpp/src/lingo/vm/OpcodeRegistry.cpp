@@ -5920,8 +5920,7 @@ bool getObjProp(ExecutionContext& context) {
 bool getChainedProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
     Datum result = getChainedObjectProperty(context, context.peekRef(), propName);
-    context.scope().drop(1);
-    context.push(std::move(result));
+    context.scope().replaceTop(std::move(result));
     return true;
 }
 
