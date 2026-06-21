@@ -407,8 +407,10 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
     std::optional<Bitmap> cursorBitmap;
     if (ctx.player != nullptr) {
         cursorCode = ctx.player->cursorManager().getCursorAtMouse();
-        cursorReg = ctx.player->cursorManager().getCursorRegPoint();
-        cursorBitmap = ctx.player->cursorManager().getCursorBitmap();
+        if (cursorCode == libreshockwave::player::CursorManager::CUSTOM_BITMAP_CURSOR) {
+            cursorReg = ctx.player->cursorManager().getCursorRegPoint();
+            cursorBitmap = ctx.player->cursorManager().getCursorBitmap();
+        }
     }
 
     out << '{'
@@ -1468,14 +1470,28 @@ EMSCRIPTEN_KEEPALIVE int lsw_director_key_from_browser(int browserKeyCode) {
     return DirectorKeyCodes::fromBrowserKeyCode(browserKeyCode);
 }
 
-EMSCRIPTEN_KEEPALIVE void lsw_mouse_move(int handle, int stageX, int stageY) {
+EMSCRIPTEN_KEEPALIVE int lsw_mouse_move(int handle, int stageX, int stageY) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
+        int resultFlags = 0;
         guardedVoid(*ctx, "mouse move", [&]() {
+            const int spriteRevisionBefore = ctx->player->stageRenderer().spriteRegistry().revision();
+            const int rolloverBefore = ctx->player->inputState().rolloverSprite();
+            const bool wasMouseDown = ctx->player->inputState().isMouseDown();
             ctx->player->inputHandler().onMouseMove(stageX, stageY);
             processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            const int spriteRevisionAfter = ctx->player->stageRenderer().spriteRegistry().revision();
+            if (wasMouseDown || spriteRevisionAfter != spriteRevisionBefore) {
+                if (renderCurrentFrame(*ctx)) {
+                    resultFlags |= 1;
+                }
+            }
+            if (ctx->player->inputState().rolloverSprite() != rolloverBefore) {
+                resultFlags |= 2;
+            }
         });
+        return resultFlags;
     }
+    return 0;
 }
 
 EMSCRIPTEN_KEEPALIVE void lsw_mouse_down(int handle, int stageX, int stageY, int rightButton) {

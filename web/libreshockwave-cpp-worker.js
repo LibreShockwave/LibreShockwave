@@ -115,7 +115,7 @@ function ensureModule() {
       socketDisconnected: Module.cwrap("lsw_multiuser_disconnected", null, ["number", "number"]),
       socketError: Module.cwrap("lsw_multiuser_error", null, ["number", "number", "number"]),
       socketMessageBytes: Module.cwrap("lsw_multiuser_message_bytes", null, ["number", "number", "number", "number"]),
-      mouseMove: Module.cwrap("lsw_mouse_move", null, ["number", "number", "number"]),
+      mouseMove: Module.cwrap("lsw_mouse_move", "number", ["number", "number", "number"]),
       mouseDown: Module.cwrap("lsw_mouse_down", null, ["number", "number", "number", "number"]),
       mouseUp: Module.cwrap("lsw_mouse_up", null, ["number", "number", "number", "number"]),
       blur: Module.cwrap("lsw_blur", null, ["number"]),
@@ -544,6 +544,18 @@ function sendFrame() {
   post("frame", { info, pixels }, [pixels.buffer]);
 }
 
+function sendFrameInfo() {
+  if (!handle) return;
+  const infoText = bridgeCall("frame info", () => api.frameInfoJson(handle), "{}");
+  let info = {};
+  try {
+    info = JSON.parse(infoText || "{}");
+  } catch {
+    info = {};
+  }
+  post("frameInfo", { info });
+}
+
 function paramsObjectToText(params) {
   if (!params) return "";
   if (typeof params === "string") return params;
@@ -678,9 +690,13 @@ self.addEventListener("message", (event) => {
         bridgeCall("set params", () => api.setParams(handle, paramsText));
         break;
       case "mouseMove":
-        bridgeCall("mouse move", () => api.mouseMove(handle, message.x | 0, message.y | 0));
+        const mouseMoveFlags = bridgeCall("mouse move", () => api.mouseMove(handle, message.x | 0, message.y | 0), 0);
         await pumpHostQueues();
-        sendFrame();
+        if (mouseMoveFlags & 1) {
+          sendFrame();
+        } else if (mouseMoveFlags & 2) {
+          sendFrameInfo();
+        }
         break;
       case "mouseDown":
         bridgeCall("mouse down", () => api.mouseDown(handle, message.x | 0, message.y | 0, message.right ? 1 : 0));
