@@ -1225,7 +1225,8 @@ Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& arg
 }
 
 Datum OutputBuiltins::alert(BuiltinContext& context, const std::vector<Datum>& args) {
-    const std::string message = args.empty() ? "" : toStringLikeJava(args[0]);
+    std::string messageStorage;
+    const std::string& message = args.empty() ? messageStorage : stringRefLikeJava(args[0], messageStorage);
     if (context.alertHookHandler && context.alertHookHandler("Alert", message)) {
         return Datum::voidValue();
     }
