@@ -464,6 +464,7 @@ Datum parseFirstValidExpression(std::string_view expression,
         }
 
         std::string value;
+        value.reserve(expr.size() - 1);
         for (++pos; pos < expr.size(); ++pos) {
             if (expr[pos] == '\\' && pos + 1 < expr.size()) {
                 value.push_back(expr[++pos]);
