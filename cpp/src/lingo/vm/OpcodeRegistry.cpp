@@ -6727,13 +6727,14 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if ((equalsIgnoreCase(handlerName, "min") || equalsIgnoreCase(handlerName, "max")) &&
-        (argCount == 1 || argCount == 2)) {
+    const bool isMinPrimitive = equalsIgnoreCase(handlerName, "min");
+    const bool isMaxPrimitive = !isMinPrimitive && equalsIgnoreCase(handlerName, "max");
+    if ((isMinPrimitive || isMaxPrimitive) && (argCount == 1 || argCount == 2)) {
         if (argCount == 1) {
             const Datum& value = context.peekRef();
             Datum result = Datum::voidValue();
             if (!noReturn) {
-                result = equalsIgnoreCase(handlerName, "min") ? fastMinValue(value) : fastMaxValue(value);
+                result = isMinPrimitive ? fastMinValue(value) : fastMaxValue(value);
             }
             context.scope().drop(1);
             if (!noReturn) {
@@ -6746,13 +6747,12 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         const Datum& left = context.peekRef(1);
         Datum result = Datum::voidValue();
         if (!noReturn) {
-            const bool isMin = equalsIgnoreCase(handlerName, "min");
             if (left.isFloat() || right.isFloat()) {
-                result = Datum::of(isMin
+                result = Datum::of(isMinPrimitive
                     ? std::min(toDoubleLikeJava(left), toDoubleLikeJava(right))
                     : std::max(toDoubleLikeJava(left), toDoubleLikeJava(right)));
             } else {
-                result = Datum::of(isMin
+                result = Datum::of(isMinPrimitive
                     ? std::min(toIntLikeJava(left), toIntLikeJava(right))
                     : std::max(toIntLikeJava(left), toIntLikeJava(right)));
             }
