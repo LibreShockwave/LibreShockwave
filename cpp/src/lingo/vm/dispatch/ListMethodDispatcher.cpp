@@ -438,14 +438,18 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
     if (equalsIgnoreCase(methodName, "join")) {
         std::string separatorStorage;
         const std::string_view separator = args.empty() ? "&" : stringViewLikeJava(args[0], separatorStorage);
-        std::ostringstream out;
+        std::string result;
+        if (!items.empty()) {
+            result.reserve(separator.size() * (items.size() - 1));
+        }
         for (std::size_t index = 0; index < items.size(); ++index) {
             if (index > 0) {
-                out << separator;
+                result.append(separator);
             }
-            out << toStringLikeJava(items[index]);
+            std::string itemStorage;
+            result.append(stringViewLikeJava(items[index], itemStorage));
         }
-        return Datum::of(out.str());
+        return Datum::of(std::move(result));
     }
     if (equalsIgnoreCase(methodName, "sort")) {
         std::sort(items.begin(), items.end(), [](const Datum& lhs, const Datum& rhs) {

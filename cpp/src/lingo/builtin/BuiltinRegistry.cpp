@@ -1561,15 +1561,19 @@ Datum ListBuiltins::join(BuiltinContext&, const std::vector<Datum>& args) {
     }
     std::string separatorStorage;
     const std::string_view separator = args.size() > 1 ? stringViewLikeJava(args[1], separatorStorage) : "&";
-    std::ostringstream out;
     const auto& items = args[0].listValue().items();
+    std::string result;
+    if (!items.empty()) {
+        result.reserve(separator.size() * (items.size() - 1));
+    }
     for (std::size_t index = 0; index < items.size(); ++index) {
         if (index > 0) {
-            out << separator;
+            result.append(separator);
         }
-        out << toStringLikeJava(items[index]);
+        std::string itemStorage;
+        result.append(stringViewLikeJava(items[index], itemStorage));
     }
-    return Datum::of(out.str());
+    return Datum::of(std::move(result));
 }
 
 Datum ListBuiltins::duplicate(BuiltinContext&, const std::vector<Datum>& args) {
