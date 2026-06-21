@@ -244,6 +244,9 @@ std::string datumReprLikeJava(const Datum& datum);
 std::string keyName(const Datum& datum);
 
 std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
     if (const auto* value = datum.asString()) {
         return value->value;
     }
