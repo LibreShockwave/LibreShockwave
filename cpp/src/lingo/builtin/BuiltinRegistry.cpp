@@ -2343,6 +2343,10 @@ Datum XtraBuiltins::callInstanceGlobalHandler(BuiltinContext& context,
                                  "." + std::string(handlerName));
         return Datum::voidValue();
     }
+    static const std::vector<Datum> emptyMethodArgs;
+    if (args.size() == 1) {
+        return context.xtraHandler(*instance, std::string(handlerName), emptyMethodArgs);
+    }
     std::vector<Datum> methodArgs(args.begin() + 1, args.end());
     return context.xtraHandler(*instance, std::string(handlerName), methodArgs);
 }
