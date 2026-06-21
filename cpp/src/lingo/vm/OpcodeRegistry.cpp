@@ -7099,9 +7099,9 @@ const Datum::PropList* singlePropListWrapper(const Datum::List& list) {
 }
 
 std::optional<Datum> indexedCollectionSnapshotGetAt(ExecutionContext& context,
-                                                    std::string_view methodName,
+                                                    ImmediateObjectMethod method,
                                                     std::span<const Datum> args) {
-    if (!equalsIgnoreCase(methodName, "getAt") || args.size() < 2 ||
+    if (method != ImmediateObjectMethod::GetAt || args.size() < 2 ||
         (!args[0].isList() && !args[0].isPropList()) ||
         args[1].isString() || args[1].isSymbol()) {
         return std::nullopt;
@@ -7117,10 +7117,10 @@ std::optional<Datum> indexedCollectionSnapshotGetAt(ExecutionContext& context,
 }
 
 std::optional<Datum> indexedCollectionSnapshotGetAtDirect(ExecutionContext& context,
-                                                          std::string_view methodName,
+                                                          ImmediateObjectMethod method,
                                                           const Datum& collection,
                                                           const Datum& index) {
-    if (!equalsIgnoreCase(methodName, "getAt") ||
+    if (method != ImmediateObjectMethod::GetAt ||
         (!collection.isList() && !collection.isPropList()) ||
         index.isString() || index.isSymbol()) {
         return std::nullopt;
@@ -7393,7 +7393,7 @@ bool executeObjCallWithArgs(ExecutionContext& context,
                             ImmediateObjectMethod method,
                             std::span<const Datum> args,
                             bool noReturn) {
-    if (auto snapshotResult = indexedCollectionSnapshotGetAt(context, methodName, args)) {
+    if (auto snapshotResult = indexedCollectionSnapshotGetAt(context, method, args)) {
         if (!noReturn) {
             context.push(std::move(*snapshotResult));
         }
@@ -7465,7 +7465,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 2 && method == ImmediateObjectMethod::GetAt) {
             const Datum& indexDatum = context.peekRef(0);
             if (auto snapshotResult =
-                    indexedCollectionSnapshotGetAtDirect(context, methodName, target, indexDatum)) {
+                    indexedCollectionSnapshotGetAtDirect(context, method, target, indexDatum)) {
                 context.scope().drop(argCount);
                 if (!noReturn) {
                     context.push(std::move(*snapshotResult));
@@ -7630,7 +7630,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 2 && method == ImmediateObjectMethod::GetAt) {
             const Datum& keyOrIndex = context.peekRef(0);
             if (auto snapshotResult =
-                    indexedCollectionSnapshotGetAtDirect(context, methodName, target, keyOrIndex)) {
+                    indexedCollectionSnapshotGetAtDirect(context, method, target, keyOrIndex)) {
                 context.scope().drop(argCount);
                 if (!noReturn) {
                     context.push(std::move(*snapshotResult));
