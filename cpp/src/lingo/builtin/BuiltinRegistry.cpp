@@ -1213,16 +1213,16 @@ void OutputBuiltins::registerBuiltins(BuiltinRegistry& registry) {
 }
 
 Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& args) {
+    if (!context.debugPlaybackEnabled && !vm::DebugConfig::isDebugPlaybackEnabled()) {
+        return Datum::voidValue();
+    }
+
     std::ostringstream text;
     for (std::size_t index = 0; index < args.size(); ++index) {
         if (index > 0) {
             text << ' ';
         }
         text << toStringLikeJava(args[index]);
-    }
-
-    if (!context.debugPlaybackEnabled && !vm::DebugConfig::isDebugPlaybackEnabled()) {
-        return Datum::voidValue();
     }
 
     const std::string value = text.str();
