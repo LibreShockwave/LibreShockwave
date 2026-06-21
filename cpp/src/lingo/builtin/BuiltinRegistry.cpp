@@ -2485,7 +2485,7 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
         std::vector<Datum> snapshot;
         snapshot.reserve(target.propListValue().properties().size());
         for (const auto& entry : target.propListValue().properties()) {
-            snapshot.push_back(entry.second);
+            snapshot.emplace_back(entry.second);
         }
         for (const auto& item : snapshot) {
             if (extraArgs.empty()) {

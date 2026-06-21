@@ -7933,7 +7933,7 @@ bool tryImmediateCallBuiltin(ExecutionContext& context,
         std::vector<Datum> snapshot;
         snapshot.reserve(targetRef.propListValue().properties().size());
         for (const auto& entry : targetRef.propListValue().properties()) {
-            snapshot.push_back(entry.second);
+            snapshot.emplace_back(entry.second);
         }
         context.scope().drop(argCount);
         for (const auto& item : snapshot) {
