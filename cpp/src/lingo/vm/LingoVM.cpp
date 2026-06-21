@@ -818,15 +818,15 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         emitTracedHandlerCall(currentHandlerName, script, traceArgs);
     }
 
-    std::vector<Datum> effectiveArgs;
+    const bool hasExplicitReceiver = !receiver.isVoid() && !receiver.isNull();
+    std::vector<Datum> effectiveArgs =
+        hasExplicitReceiver ? std::vector<Datum>() : std::vector<Datum>(args.begin(), args.end());
     bool firstParamDeclaredMe = false;
-    if (!receiver.isVoid() && !receiver.isNull()) {
+    if (hasExplicitReceiver) {
         firstParamDeclaredMe = metadata->firstParamDeclaredMe;
         effectiveArgs.reserve(args.size() + 1);
         effectiveArgs.push_back(receiver);
         effectiveArgs.insert(effectiveArgs.end(), args.begin(), args.end());
-    } else {
-        effectiveArgs.assign(args.begin(), args.end());
     }
 
     if (callStack_.empty()) {
