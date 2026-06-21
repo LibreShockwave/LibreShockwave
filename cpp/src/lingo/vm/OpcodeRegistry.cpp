@@ -1841,9 +1841,12 @@ std::string putIntoChunkValue(std::string_view value,
     if (!range) {
         return std::string(value);
     }
-    return std::string(value.substr(0, static_cast<std::size_t>(range->first))) +
-           std::string(replacement) +
-           std::string(value.substr(static_cast<std::size_t>(range->second)));
+    std::string result;
+    result.reserve(value.size() - static_cast<std::size_t>(range->second - range->first) + replacement.size());
+    result.append(value.substr(0, static_cast<std::size_t>(range->first)));
+    result.append(replacement);
+    result.append(value.substr(static_cast<std::size_t>(range->second)));
+    return result;
 }
 
 std::string putBeforeChunkValue(std::string_view value,
@@ -1852,9 +1855,12 @@ std::string putBeforeChunkValue(std::string_view value,
                                 std::string_view inserted,
                                 char itemDelimiter = ',') {
     const int insertAt = chunkInsertionIndex(value, type, first, true, itemDelimiter);
-    return std::string(value.substr(0, static_cast<std::size_t>(insertAt))) +
-           std::string(inserted) +
-           std::string(value.substr(static_cast<std::size_t>(insertAt)));
+    std::string result;
+    result.reserve(value.size() + inserted.size());
+    result.append(value.substr(0, static_cast<std::size_t>(insertAt)));
+    result.append(inserted);
+    result.append(value.substr(static_cast<std::size_t>(insertAt)));
+    return result;
 }
 
 std::string putAfterChunkValue(std::string_view value,
@@ -1863,9 +1869,12 @@ std::string putAfterChunkValue(std::string_view value,
                                std::string_view inserted,
                                char itemDelimiter = ',') {
     const int insertAt = chunkInsertionIndex(value, type, targetIndex, false, itemDelimiter);
-    return std::string(value.substr(0, static_cast<std::size_t>(insertAt))) +
-           std::string(inserted) +
-           std::string(value.substr(static_cast<std::size_t>(insertAt)));
+    std::string result;
+    result.reserve(value.size() + inserted.size());
+    result.append(value.substr(0, static_cast<std::size_t>(insertAt)));
+    result.append(inserted);
+    result.append(value.substr(static_cast<std::size_t>(insertAt)));
+    return result;
 }
 
 struct ChunkSpec {
