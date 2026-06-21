@@ -6486,17 +6486,21 @@ Datum fastMinValue(const Datum& value) {
     if (items.empty()) {
         return Datum::of(0);
     }
-    Datum result = items.front();
-    bool floatResult = result.isFloat();
+    bool floatResult = items.front().isFloat();
+    int intResult = toIntLikeJava(items.front());
+    double doubleResult = floatResult ? toDoubleLikeJava(items.front()) : static_cast<double>(intResult);
     for (std::size_t index = 1; index < items.size(); ++index) {
-        floatResult = floatResult || items[index].isFloat();
-        if (floatResult) {
-            result = Datum::of(std::min(toDoubleLikeJava(result), toDoubleLikeJava(items[index])));
+        if (floatResult || items[index].isFloat()) {
+            if (!floatResult) {
+                doubleResult = static_cast<double>(intResult);
+                floatResult = true;
+            }
+            doubleResult = std::min(doubleResult, toDoubleLikeJava(items[index]));
         } else {
-            result = Datum::of(std::min(toIntLikeJava(result), toIntLikeJava(items[index])));
+            intResult = std::min(intResult, toIntLikeJava(items[index]));
         }
     }
-    return result;
+    return floatResult ? Datum::of(doubleResult) : Datum::of(intResult);
 }
 
 Datum fastMaxValue(const Datum& value) {
@@ -6507,17 +6511,21 @@ Datum fastMaxValue(const Datum& value) {
     if (items.empty()) {
         return Datum::of(0);
     }
-    Datum result = items.front();
-    bool floatResult = result.isFloat();
+    bool floatResult = items.front().isFloat();
+    int intResult = toIntLikeJava(items.front());
+    double doubleResult = floatResult ? toDoubleLikeJava(items.front()) : static_cast<double>(intResult);
     for (std::size_t index = 1; index < items.size(); ++index) {
-        floatResult = floatResult || items[index].isFloat();
-        if (floatResult) {
-            result = Datum::of(std::max(toDoubleLikeJava(result), toDoubleLikeJava(items[index])));
+        if (floatResult || items[index].isFloat()) {
+            if (!floatResult) {
+                doubleResult = static_cast<double>(intResult);
+                floatResult = true;
+            }
+            doubleResult = std::max(doubleResult, toDoubleLikeJava(items[index]));
         } else {
-            result = Datum::of(std::max(toIntLikeJava(result), toIntLikeJava(items[index])));
+            intResult = std::max(intResult, toIntLikeJava(items[index]));
         }
     }
-    return result;
+    return floatResult ? Datum::of(doubleResult) : Datum::of(intResult);
 }
 
 bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
