@@ -899,7 +899,7 @@ Datum getStringProp(std::string_view value, std::string_view propName) {
         std::vector<Datum> lines;
         lines.reserve(chunks.size());
         for (auto& line : chunks) {
-            lines.push_back(Datum::of(std::move(line)));
+            lines.emplace_back(Datum::of(std::move(line)));
         }
         return Datum::list(std::move(lines));
     }
