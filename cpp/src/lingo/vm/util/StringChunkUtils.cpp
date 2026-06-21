@@ -13,7 +13,7 @@ std::vector<std::string> splitWords(std::string_view value) {
     for (char ch : value) {
         if (static_cast<unsigned char>(ch) <= static_cast<unsigned char>(' ')) {
             if (!current.empty()) {
-                words.push_back(current);
+                words.push_back(std::move(current));
                 current.clear();
             }
         } else {
@@ -55,7 +55,7 @@ std::vector<std::string> splitItems(std::string_view value, char delimiter) {
     std::string current;
     for (char ch : value) {
         if (ch == delimiter) {
-            items.push_back(current);
+            items.push_back(std::move(current));
             current.clear();
         } else {
             current.push_back(ch);
