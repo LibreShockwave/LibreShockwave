@@ -4235,7 +4235,8 @@ Datum chunkRefObjectMethod(ExecutionContext& context,
     }
 
     const Datum current = getContextVar(context, chunkRef.varType, Datum::of(chunkRef.rawIndex));
-    const std::string currentString = toStringLikeJava(current);
+    std::string currentStorage;
+    const std::string_view currentString = stringViewLikeJava(current, currentStorage);
     std::string newValue;
 
     if (chunkRef.chunkType == StringChunkType::Char) {
