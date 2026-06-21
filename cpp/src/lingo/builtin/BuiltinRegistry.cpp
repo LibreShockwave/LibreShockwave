@@ -2740,9 +2740,9 @@ Datum TypeBuiltins::value(BuiltinContext& context, const std::vector<Datum>& arg
     if (raw.empty()) {
         return Datum::of(std::string());
     }
-    if (const auto parsedLiteral = LingoValueParser::parseComplete(raw, identifierResolver);
+    if (auto parsedLiteral = LingoValueParser::parseComplete(raw, identifierResolver);
         parsedLiteral.has_value() && !parsedLiteral->isVoid()) {
-        return *parsedLiteral;
+        return std::move(*parsedLiteral);
     }
     if (context.valueEvaluator) {
         Datum evaluated = context.valueEvaluator(args[0]);
