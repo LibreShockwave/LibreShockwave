@@ -2668,8 +2668,16 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
         return Datum::voidValue();
     }
 
-    const auto constructorArgs = [&args]() {
-        return std::vector<Datum>(args.begin() + 1, args.end());
+    static const std::vector<Datum> emptyConstructorArgs;
+    std::vector<Datum> constructorArgStorage;
+    const auto constructorArgs = [&args, &constructorArgStorage]() -> const std::vector<Datum>& {
+        if (args.size() <= 1) {
+            return emptyConstructorArgs;
+        }
+        if (constructorArgStorage.empty()) {
+            constructorArgStorage.assign(args.begin() + 1, args.end());
+        }
+        return constructorArgStorage;
     };
     if (const auto* xtraRef = target.asXtra()) {
         return XtraBuiltins::createInstance(context, *xtraRef, constructorArgs());
