@@ -2247,7 +2247,8 @@ Datum CastLibBuiltins::field(BuiltinContext& context, const std::vector<Datum>& 
     if (fieldArg.isString() || fieldArg.isInt()) {
         return context.fieldResolver(fieldArg, castLibNumber);
     }
-    return context.fieldResolver(Datum::of(toStringLikeJava(fieldArg)), castLibNumber);
+    std::string fieldName = toStringLikeJava(fieldArg);
+    return context.fieldResolver(Datum::of(std::move(fieldName)), castLibNumber);
 }
 
 Datum CastLibBuiltins::createMember(BuiltinContext& context, const std::vector<Datum>& args) {
