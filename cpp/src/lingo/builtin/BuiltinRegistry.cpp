@@ -1531,7 +1531,8 @@ Datum ListBuiltins::join(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.empty() || !args[0].isList()) {
         return Datum::of(std::string());
     }
-    const std::string separator = args.size() > 1 ? toStringLikeJava(args[1]) : "&";
+    std::string separatorStorage;
+    const std::string_view separator = args.size() > 1 ? stringViewLikeJava(args[1], separatorStorage) : "&";
     std::ostringstream out;
     const auto& items = args[0].listValue().items();
     for (std::size_t index = 0; index < items.size(); ++index) {

@@ -433,7 +433,8 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
         return Datum::FALSE;
     }
     if (equalsIgnoreCase(methodName, "join")) {
-        const std::string separator = args.empty() ? "&" : toStringLikeJava(args[0]);
+        std::string separatorStorage;
+        const std::string_view separator = args.empty() ? "&" : stringViewLikeJava(args[0], separatorStorage);
         std::ostringstream out;
         for (std::size_t index = 0; index < items.size(); ++index) {
             if (index > 0) {
