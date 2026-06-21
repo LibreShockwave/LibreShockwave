@@ -6526,27 +6526,21 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "charToNum") && argCount == 1) {
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
-            result = fastCharToNumValue(context.peekRef());
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            context.scope().replaceTop(fastCharToNumValue(context.peekRef()));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "numToChar") && argCount == 1) {
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
             const Datum& value = context.peekRef();
             const int numericValue = value.asInt() != nullptr ? value.asInt()->value : toIntLikeJava(value);
-            result = Datum::of(std::string(1, static_cast<char>(numericValue)));
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+            context.scope().replaceTop(Datum::of(std::string(1, static_cast<char>(numericValue))));
         }
         return true;
     }
@@ -6579,9 +6573,11 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "length") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        Datum result = Datum::of(0);
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            const Datum& value = context.peekRef();
+            Datum result = Datum::of(0);
             if (value.isList()) {
                 result = Datum::of(value.listValue().count());
             } else if (value.isPropList()) {
@@ -6592,27 +6588,23 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
                 std::string storage;
                 result = Datum::of(static_cast<int>(stringViewLikeJava(value, storage).size()));
             }
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+            context.scope().replaceTop(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "count") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        Datum result = Datum::of(0);
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            const Datum& value = context.peekRef();
+            Datum result = Datum::of(0);
             if (value.isList()) {
                 result = Datum::of(value.listValue().count());
             } else if (value.isPropList()) {
                 result = Datum::of(value.propListValue().count());
             }
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+            context.scope().replaceTop(std::move(result));
         }
         return true;
     }
@@ -6643,35 +6635,31 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "string") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
-            result = value.isString() ? value : Datum::of(toStringLikeJava(value));
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            const Datum& value = context.peekRef();
+            Datum result = value.isString() ? value : Datum::of(toStringLikeJava(value));
+            context.scope().replaceTop(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "integer") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
-            result = fastIntegerValue(value);
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            context.scope().replaceTop(fastIntegerValue(context.peekRef()));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "abs") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            const Datum& value = context.peekRef();
+            Datum result;
             if (value.isFloat()) {
                 result = Datum::of(std::fabs(toDoubleLikeJava(value)));
             } else {
@@ -6680,32 +6668,26 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
                     ? Datum::of(numericValue)
                     : Datum::of(std::abs(numericValue));
             }
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(std::move(result));
+            context.scope().replaceTop(std::move(result));
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "listp") && argCount == 1) {
-        bool result = false;
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
             const Datum& value = context.peekRef();
-            result = value.isList() || value.isPropList();
-        }
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(result ? Datum::TRUE : Datum::FALSE);
+            context.scope().replaceTop(value.isList() || value.isPropList() ? Datum::TRUE : Datum::FALSE);
         }
         return true;
     }
 
     if (equalsIgnoreCase(handlerName, "voidp") && argCount == 1) {
-        const bool result = !noReturn && context.peekRef().isVoid();
-        context.scope().drop(1);
-        if (!noReturn) {
-            context.push(result ? Datum::TRUE : Datum::FALSE);
+        if (noReturn) {
+            context.scope().drop(1);
+        } else {
+            context.scope().replaceTop(context.peekRef().isVoid() ? Datum::TRUE : Datum::FALSE);
         }
         return true;
     }
@@ -6743,14 +6725,11 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     const bool isMaxPrimitive = !isMinPrimitive && equalsIgnoreCase(handlerName, "max");
     if ((isMinPrimitive || isMaxPrimitive) && (argCount == 1 || argCount == 2)) {
         if (argCount == 1) {
-            const Datum& value = context.peekRef();
-            Datum result = Datum::voidValue();
-            if (!noReturn) {
-                result = isMinPrimitive ? fastMinValue(value) : fastMaxValue(value);
-            }
-            context.scope().drop(1);
-            if (!noReturn) {
-                context.push(std::move(result));
+            if (noReturn) {
+                context.scope().drop(1);
+            } else {
+                const Datum& value = context.peekRef();
+                context.scope().replaceTop(isMinPrimitive ? fastMinValue(value) : fastMaxValue(value));
             }
             return true;
         }
