@@ -78,6 +78,7 @@ std::optional<double> parseDouble(std::string_view value) {
 
 std::vector<std::string> splitListElements(std::string_view content) {
     std::vector<std::string> elements;
+    elements.reserve(std::min<std::size_t>(content.size() / 8 + 1, 1024));
     std::string current;
     int bracketDepth = 0;
     bool inQuote = false;
