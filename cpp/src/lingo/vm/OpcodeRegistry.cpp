@@ -4523,7 +4523,8 @@ bool pushSymb(ExecutionContext& context) {
 }
 
 bool pushChunkVarRef(ExecutionContext& context) {
-    const int rawIndex = toIntLikeJava(context.pop());
+    const int rawIndex = toIntLikeJava(context.peekRef());
+    context.scope().drop(1);
     context.push(Datum::varRef(id::varTypeFromCode(context.argument()), rawIndex));
     return true;
 }
