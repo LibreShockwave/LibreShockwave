@@ -2199,6 +2199,7 @@ enum class ImmediateObjectMethod {
     DeleteProp,
     DeleteAt,
     Duplicate,
+    FindPos,
     GetAProp,
     GetAt,
     GetFirst,
@@ -2230,6 +2231,7 @@ ImmediateObjectMethod classifyImmediateObjectMethod(std::string_view methodName)
             break;
         case 7:
             if (equalsIgnoreCase(methodName, "addProp")) return ImmediateObjectMethod::AddProp;
+            if (equalsIgnoreCase(methodName, "findPos")) return ImmediateObjectMethod::FindPos;
             if (equalsIgnoreCase(methodName, "getLast")) return ImmediateObjectMethod::GetLast;
             if (equalsIgnoreCase(methodName, "getProp")) return ImmediateObjectMethod::GetProp;
             if (equalsIgnoreCase(methodName, "handler")) return ImmediateObjectMethod::Handler;
@@ -7148,7 +7150,7 @@ std::optional<Datum> indexedCollectionSnapshotCount(ExecutionContext& context,
                                                                     collection));
 }
 
-std::optional<Datum> fastListObjectCall(std::string_view methodName,
+std::optional<Datum> fastListObjectCall(ImmediateObjectMethod method,
                                         std::span<const Datum> args) {
     if (args.empty()) {
         return std::nullopt;
@@ -7157,10 +7159,10 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
     if (target.isList()) {
         const auto& readList = target.listValue();
         const auto& readItems = readList.items();
-        if (equalsIgnoreCase(methodName, "count")) {
+        if (method == ImmediateObjectMethod::Count) {
             return Datum::of(static_cast<int>(readItems.size()));
         }
-        if (equalsIgnoreCase(methodName, "getAt")) {
+        if (method == ImmediateObjectMethod::GetAt) {
             if (args.size() < 2) {
                 return Datum::voidValue();
             }
@@ -7181,7 +7183,7 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
         Datum mutableTarget = target;
         auto& list = mutableTarget.listValue();
         auto& items = list.items();
-        if (equalsIgnoreCase(methodName, "setAt")) {
+        if (method == ImmediateObjectMethod::SetAt) {
             if (args.size() >= 3) {
                 if ((args[1].isString() || args[1].isSymbol()) && singlePropListWrapper(list) != nullptr) {
                     singlePropListWrapper(list)->putTyped(args[1], args[2]);
@@ -7202,13 +7204,13 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
             }
             return Datum::voidValue();
         }
-        if (equalsIgnoreCase(methodName, "append") || equalsIgnoreCase(methodName, "add")) {
+        if (method == ImmediateObjectMethod::Append || method == ImmediateObjectMethod::Add) {
             if (args.size() >= 2) {
                 items.push_back(args[1]);
             }
             return Datum::voidValue();
         }
-        if (equalsIgnoreCase(methodName, "addAt")) {
+        if (method == ImmediateObjectMethod::AddAt) {
             if (args.size() >= 3) {
                 int index = toIntLikeJava(args[1]) - 1;
                 if (index < 0) {
@@ -7223,7 +7225,7 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
             }
             return Datum::voidValue();
         }
-        if (equalsIgnoreCase(methodName, "deleteAt")) {
+        if (method == ImmediateObjectMethod::DeleteAt) {
             if (args.size() >= 2) {
                 const int index = toIntLikeJava(args[1]) - 1;
                 if (index >= 0 && index < static_cast<int>(items.size())) {
@@ -7232,13 +7234,13 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
             }
             return Datum::voidValue();
         }
-        if (equalsIgnoreCase(methodName, "duplicate")) {
+        if (method == ImmediateObjectMethod::Duplicate) {
             return list.deepCopyDatum();
         }
-        if (equalsIgnoreCase(methodName, "getLast")) {
+        if (method == ImmediateObjectMethod::GetLast) {
             return items.empty() ? Datum::voidValue() : items.back();
         }
-        if (equalsIgnoreCase(methodName, "getFirst")) {
+        if (method == ImmediateObjectMethod::GetFirst) {
             return items.empty() ? Datum::voidValue() : items.front();
         }
         return std::nullopt;
@@ -7248,7 +7250,7 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
     }
 
     const auto& propList = target.propListValue();
-    if (equalsIgnoreCase(methodName, "count")) {
+    if (method == ImmediateObjectMethod::Count) {
         if (args.size() >= 2) {
             std::string keyNameStorage;
             const int index = propList.findUntypedKeyName(keyNameLikeJavaView(args[1], keyNameStorage));
@@ -7266,14 +7268,14 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
         }
         return Datum::of(propList.count());
     }
-    if (equalsIgnoreCase(methodName, "getAt")) {
+    if (method == ImmediateObjectMethod::GetAt) {
         if (args.size() < 2) {
             return Datum::voidValue();
         }
         return propListObjectGetAtValue(propList, args[1]);
     }
-    if (equalsIgnoreCase(methodName, "getAProp") || equalsIgnoreCase(methodName, "getProp") ||
-        equalsIgnoreCase(methodName, "getProperty") || equalsIgnoreCase(methodName, "getPropRef")) {
+    if (method == ImmediateObjectMethod::GetAProp || method == ImmediateObjectMethod::GetProp ||
+        method == ImmediateObjectMethod::GetProperty || method == ImmediateObjectMethod::GetPropRef) {
         if (args.size() < 2) {
             return Datum::voidValue();
         }
@@ -7292,7 +7294,7 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
         }
         return value;
     }
-    if (equalsIgnoreCase(methodName, "setAt")) {
+    if (method == ImmediateObjectMethod::SetAt) {
         if (args.size() >= 3) {
             Datum mutableTarget = target;
             auto& mutablePropList = mutableTarget.propListValue();
@@ -7307,14 +7309,14 @@ std::optional<Datum> fastListObjectCall(std::string_view methodName,
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "setProp") || equalsIgnoreCase(methodName, "setAProp")) {
+    if (method == ImmediateObjectMethod::SetProp || method == ImmediateObjectMethod::SetAProp) {
         if (args.size() >= 3) {
             Datum mutableTarget = target;
             mutableTarget.propListValue().putTyped(args[1], args[2]);
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "findPos")) {
+    if (method == ImmediateObjectMethod::FindPos) {
         if (args.size() < 2) {
             return Datum::voidValue();
         }
@@ -7397,7 +7399,7 @@ bool executeObjCallWithArgs(ExecutionContext& context,
         }
         return true;
     }
-    if (auto fastResult = fastListObjectCall(methodName, args)) {
+    if (auto fastResult = fastListObjectCall(method, args)) {
         if (!noReturn) {
             context.push(std::move(*fastResult));
         }
