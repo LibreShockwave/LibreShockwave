@@ -6234,6 +6234,33 @@ std::optional<Datum> fastListBuiltinCall(std::string_view handlerName, std::span
     return std::nullopt;
 }
 
+Datum fastCharToNumValue(const Datum& valueDatum) {
+    if (const auto* value = valueDatum.asString()) {
+        return value->value.empty()
+            ? Datum::of(0)
+            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
+    }
+    if (const auto* value = valueDatum.asFieldText()) {
+        return value->value.empty()
+            ? Datum::of(0)
+            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
+    }
+    if (const auto* value = valueDatum.asStringChunk()) {
+        return value->value.empty()
+            ? Datum::of(0)
+            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
+    }
+    if (const auto* value = valueDatum.asSymbol()) {
+        return value->name.empty()
+            ? Datum::of(0)
+            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->name.front())));
+    }
+    const std::string value = toStringLikeJava(valueDatum);
+    return value.empty()
+        ? Datum::of(0)
+        : Datum::of(static_cast<int>(static_cast<unsigned char>(value.front())));
+}
+
 std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
                                               std::string_view handlerName,
                                               std::span<const Datum> args) {
@@ -6321,30 +6348,7 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         if (args.empty()) {
             return Datum::of(0);
         }
-        if (const auto* value = args[0].asString()) {
-            return value->value.empty()
-                ? Datum::of(0)
-                : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-        }
-        if (const auto* value = args[0].asFieldText()) {
-            return value->value.empty()
-                ? Datum::of(0)
-                : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-        }
-        if (const auto* value = args[0].asStringChunk()) {
-            return value->value.empty()
-                ? Datum::of(0)
-                : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-        }
-        if (const auto* value = args[0].asSymbol()) {
-            return value->name.empty()
-                ? Datum::of(0)
-                : Datum::of(static_cast<int>(static_cast<unsigned char>(value->name.front())));
-        }
-        const std::string value = toStringLikeJava(args[0]);
-        return value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value.front())));
+        return fastCharToNumValue(args[0]);
     }
     if (equalsIgnoreCase(handlerName, "numToChar")) {
         if (args.empty()) {
@@ -6385,33 +6389,6 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
     }
 
     return std::nullopt;
-}
-
-Datum fastCharToNumValue(const Datum& valueDatum) {
-    if (const auto* value = valueDatum.asString()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = valueDatum.asFieldText()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = valueDatum.asStringChunk()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = valueDatum.asSymbol()) {
-        return value->name.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->name.front())));
-    }
-    const std::string value = toStringLikeJava(valueDatum);
-    return value.empty()
-        ? Datum::of(0)
-        : Datum::of(static_cast<int>(static_cast<unsigned char>(value.front())));
 }
 
 bool canUseImmediatePrimitiveExtCall(ExecutionContext& context, std::string_view handlerName) {
