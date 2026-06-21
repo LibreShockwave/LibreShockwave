@@ -6003,6 +6003,7 @@ bool getField(ExecutionContext& context) {
     const int castId = toIntLikeJava(castIdDatum);
 
     std::vector<Datum> args;
+    args.reserve(2);
     if (fieldNameOrNum.asString() != nullptr || fieldNameOrNum.asInt() != nullptr) {
         args.push_back(fieldNameOrNum);
     } else {
