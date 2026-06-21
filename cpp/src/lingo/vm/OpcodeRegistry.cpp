@@ -5018,13 +5018,24 @@ bool mul(ExecutionContext& context) {
 
 bool div(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
-        const auto* bi = context.peekRef(0).asInt();
-        const auto* ai = context.peekRef(1).asInt();
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        const auto* bi = b.asInt();
+        const auto* ai = a.asInt();
         if (ai != nullptr && bi != nullptr) {
             if (bi->value == 0) {
                 throw context.error("Division by zero");
             }
             context.scope().replaceTopTwo(Datum::of(ai->value / bi->value));
+            return true;
+        }
+
+        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
+            const double divisor = toDoubleLikeJava(b);
+            if (divisor == 0.0) {
+                throw context.error("Division by zero");
+            }
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) / divisor));
             return true;
         }
     }
@@ -5058,13 +5069,24 @@ bool div(ExecutionContext& context) {
 
 bool mod(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
-        const auto* bi = context.peekRef(0).asInt();
-        const auto* ai = context.peekRef(1).asInt();
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        const auto* bi = b.asInt();
+        const auto* ai = a.asInt();
         if (ai != nullptr && bi != nullptr) {
             if (bi->value == 0) {
                 throw context.error("Modulo by zero");
             }
             context.scope().replaceTopTwo(Datum::of(ai->value % bi->value));
+            return true;
+        }
+
+        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
+            const int divisor = toIntLikeJava(b);
+            if (divisor == 0) {
+                throw context.error("Modulo by zero");
+            }
+            context.scope().replaceTopTwo(Datum::of(toIntLikeJava(a) % divisor));
             return true;
         }
     }
