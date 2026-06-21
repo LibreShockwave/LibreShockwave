@@ -5091,20 +5091,20 @@ bool mod(ExecutionContext& context) {
 }
 
 bool inv(ExecutionContext& context) {
-    if (const auto* intValue = context.peekRef().asInt()) {
+    const Datum& value = context.peekRef();
+    if (const auto* intValue = value.asInt()) {
         context.scope().replaceTop(Datum::of(-intValue->value));
         return true;
     }
 
-    const Datum value = context.pop();
     if (const auto* floatValue = value.asFloat()) {
-        context.push(Datum::of(-floatValue->value));
+        context.scope().replaceTop(Datum::of(-floatValue->value));
     } else if (const auto* point = value.asIntPoint()) {
-        context.push(Datum::intPoint(-point->x, -point->y));
+        context.scope().replaceTop(Datum::intPoint(-point->x, -point->y));
     } else if (const auto* rect = value.asIntRect()) {
-        context.push(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
+        context.scope().replaceTop(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
     } else {
-        context.push(Datum::of(-toIntLikeJava(value)));
+        context.scope().replaceTop(Datum::of(-toIntLikeJava(value)));
     }
     return true;
 }
