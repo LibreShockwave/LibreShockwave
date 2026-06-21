@@ -264,6 +264,18 @@ std::string keyNameLikeJava(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
+    }
     return toStringLikeJava(datum);
 }
 
@@ -282,6 +294,9 @@ std::string_view keyNameLikeJavaView(const Datum& datum, std::string& storage) {
     }
     if (const auto* chunk = datum.asStringChunk()) {
         return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
     }
     storage = toStringLikeJava(datum);
     return storage;
