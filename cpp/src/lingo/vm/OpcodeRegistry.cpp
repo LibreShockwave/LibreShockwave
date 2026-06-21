@@ -618,6 +618,10 @@ Datum numericResult(const Datum& a, const Datum& b, double value) {
     return Datum::of(static_cast<int>(value));
 }
 
+bool isSpecialArithmeticDatum(const Datum& datum) {
+    return datum.isList() || datum.asIntPoint() != nullptr || datum.asIntRect() != nullptr || datum.asColorRef() != nullptr;
+}
+
 Datum::IntPoint listAsPointDelta(const Datum::List& list) {
     if (list.items().size() >= 2) {
         return Datum::IntPoint{toIntLikeJava(list.items()[0]), toIntLikeJava(list.items()[1])};
@@ -4952,6 +4956,13 @@ bool mul(ExecutionContext& context) {
         const auto* ai = context.peekRef(1).asInt();
         if (ai != nullptr && bi != nullptr) {
             context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) * bi->value)));
+            return true;
+        }
+
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) * toDoubleLikeJava(b)));
             return true;
         }
     }
