@@ -6614,10 +6614,12 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         const bool isBitOr = !isBitAnd && equalsIgnoreCase(handlerName, "bitOr");
         const bool isBitXor = !isBitAnd && !isBitOr && equalsIgnoreCase(handlerName, "bitXor");
         if (isBitAnd || isBitOr || isBitXor) {
-            const Datum& right = context.peekRef(0);
-            const Datum& left = context.peekRef(1);
-            Datum result = Datum::voidValue();
-            if (!noReturn) {
+            if (noReturn) {
+                context.scope().drop(2);
+            } else {
+                const Datum& right = context.peekRef(0);
+                const Datum& left = context.peekRef(1);
+                Datum result;
                 if (isBitAnd) {
                     result = Datum::of(toIntLikeJava(left) & toIntLikeJava(right));
                 } else if (isBitOr) {
@@ -6625,10 +6627,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
                 } else {
                     result = Datum::of(toIntLikeJava(left) ^ toIntLikeJava(right));
                 }
-            }
-            context.scope().drop(2);
-            if (!noReturn) {
-                context.push(std::move(result));
+                context.scope().replaceTopTwo(std::move(result));
             }
             return true;
         }
@@ -6734,10 +6733,12 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
             return true;
         }
 
-        const Datum& right = context.peekRef(0);
-        const Datum& left = context.peekRef(1);
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
+        if (noReturn) {
+            context.scope().drop(2);
+        } else {
+            const Datum& right = context.peekRef(0);
+            const Datum& left = context.peekRef(1);
+            Datum result;
             if (left.isFloat() || right.isFloat()) {
                 result = Datum::of(isMinPrimitive
                     ? std::min(toDoubleLikeJava(left), toDoubleLikeJava(right))
@@ -6747,10 +6748,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
                     ? std::min(toIntLikeJava(left), toIntLikeJava(right))
                     : std::max(toIntLikeJava(left), toIntLikeJava(right)));
             }
-        }
-        context.scope().drop(2);
-        if (!noReturn) {
-            context.push(std::move(result));
+            context.scope().replaceTopTwo(std::move(result));
         }
         return true;
     }
