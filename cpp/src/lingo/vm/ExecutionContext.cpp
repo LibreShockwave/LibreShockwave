@@ -21,7 +21,7 @@ std::optional<Datum> consumeBuiltinReturnValue(builtin::BuiltinContext& context)
     if (!returned) {
         return std::nullopt;
     }
-    return returnValue;
+    return std::move(returnValue);
 }
 
 } // namespace
