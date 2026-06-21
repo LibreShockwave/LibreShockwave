@@ -63,7 +63,7 @@ public:
         return &handler_->instructions[static_cast<std::size_t>(bytecodeIndex_)];
     }
 
-    void push(Datum value) { stack_.push_back(std::move(value)); }
+    void push(Datum value) { stack_.emplace_back(std::move(value)); }
     [[nodiscard]] Datum pop() {
         if (stack_.empty()) {
             return Datum::voidValue();
