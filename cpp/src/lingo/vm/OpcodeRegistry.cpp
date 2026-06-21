@@ -6517,7 +6517,10 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "charToNum") && argCount == 1) {
-        Datum result = fastCharToNumValue(context.peekRef());
+        Datum result = Datum::voidValue();
+        if (!noReturn) {
+            result = fastCharToNumValue(context.peekRef());
+        }
         context.scope().drop(1);
         if (!noReturn) {
             context.push(std::move(result));
@@ -6526,11 +6529,15 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "numToChar") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        const int numericValue = value.asInt() != nullptr ? value.asInt()->value : toIntLikeJava(value);
+        Datum result = Datum::voidValue();
+        if (!noReturn) {
+            const Datum& value = context.peekRef();
+            const int numericValue = value.asInt() != nullptr ? value.asInt()->value : toIntLikeJava(value);
+            result = Datum::of(std::string(1, static_cast<char>(numericValue)));
+        }
         context.scope().drop(1);
         if (!noReturn) {
-            context.push(Datum::of(std::string(1, static_cast<char>(numericValue))));
+            context.push(std::move(result));
         }
         return true;
     }
