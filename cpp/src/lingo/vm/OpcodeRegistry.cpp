@@ -3687,6 +3687,7 @@ std::optional<std::pair<std::array<int, 4>, std::array<int, 4>>> imageQuadPoints
 
 Datum imagePropListWithMaskImage(const Datum::PropList& propList, std::shared_ptr<bitmap::Bitmap> mask) {
     auto copy = Datum::propList(propList.sorted());
+    copy.propListValue().properties().reserve(propList.properties().size() + 1);
     bool replaced = false;
     for (const auto& [key, value] : propList.properties()) {
         std::string keyStorage;
