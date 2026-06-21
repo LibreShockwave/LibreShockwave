@@ -390,17 +390,17 @@ std::optional<Datum> tryParseComplete(std::string_view expression,
     if (startsWith(expr, "\"") && endsWith(expr, "\"") && expr.size() >= 2) {
         return Datum::of(unescapeString(std::string_view(expr).substr(1, expr.size() - 2)));
     }
-    if (const auto parsed = parseNumericCall(expr, "color", 3)) {
-        return *parsed;
+    if (auto parsed = parseNumericCall(expr, "color", 3)) {
+        return std::move(*parsed);
     }
-    if (const auto parsed = parseRgb(expr)) {
-        return *parsed;
+    if (auto parsed = parseRgb(expr)) {
+        return std::move(*parsed);
     }
-    if (const auto parsed = parseNumericCall(expr, "rect", 4)) {
-        return *parsed;
+    if (auto parsed = parseNumericCall(expr, "rect", 4)) {
+        return std::move(*parsed);
     }
-    if (const auto parsed = parseNumericCall(expr, "point", 2)) {
-        return *parsed;
+    if (auto parsed = parseNumericCall(expr, "point", 2)) {
+        return std::move(*parsed);
     }
     if (startsWith(expr, "[") && endsWith(expr, "]")) {
         return parseListOrPropList(std::string_view(expr).substr(1, expr.size() - 2), identifierResolver);
@@ -543,9 +543,9 @@ Datum LingoValueParser::parseWithPartial(std::string_view expression, Identifier
     if (expr.empty()) {
         return Datum::voidValue();
     }
-    const auto complete = tryParseComplete(expr, identifierResolver);
+    auto complete = tryParseComplete(expr, identifierResolver);
     if (complete.has_value()) {
-        return *complete;
+        return std::move(*complete);
     }
     return parseFirstValidExpression(expr, identifierResolver);
 }
