@@ -609,6 +609,7 @@ void putStringProp(Datum& propList, const std::string& key, Datum value) {
 
 Datum defaultStreamStatusDatum() {
     auto props = Datum::propList();
+    props.propListValue().properties().reserve(5);
     putStringProp(props, "URL", Datum::of(std::string()));
     putStringProp(props, "state", Datum::of(std::string("Error")));
     putStringProp(props, "bytesSoFar", Datum::of(0));
