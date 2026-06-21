@@ -865,7 +865,7 @@ std::vector<Datum> snapshotCallArgsFromStack(ExecutionContext& context, int argC
     }
     callArgs.reserve(static_cast<std::size_t>(argCount - 2));
     for (int index = 2; index < argCount; ++index) {
-        callArgs.push_back(snapshotCallArg(context.peekRef(argCount - 1 - index)));
+        callArgs.emplace_back(snapshotCallArg(context.peekRef(argCount - 1 - index)));
     }
     return callArgs;
 }

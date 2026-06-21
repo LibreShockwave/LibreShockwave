@@ -650,7 +650,7 @@ std::vector<Datum> snapshotStructArgsForCall(std::span<const Datum> args) {
     std::vector<Datum> snapshot;
     snapshot.reserve(args.size());
     for (const auto& arg : args) {
-        snapshot.push_back(snapshotStructArgForCall(arg));
+        snapshot.emplace_back(snapshotStructArgForCall(arg));
     }
     return snapshot;
 }
