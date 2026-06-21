@@ -6663,9 +6663,9 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
             result = Datum::scriptInstance("script", scriptRef->memberRef);
             initializeDeclaredScriptProperties(context, result, scriptRef->memberRef);
             if (builtinContext != nullptr && builtinContext->callTargetHandler) {
-                const Datum handlerResult = builtinContext->callTargetHandler(result, "new", emptyArgs);
+                Datum handlerResult = builtinContext->callTargetHandler(result, "new", emptyArgs);
                 if (!handlerResult.isVoid()) {
-                    result = handlerResult;
+                    result = std::move(handlerResult);
                 }
             }
         }
