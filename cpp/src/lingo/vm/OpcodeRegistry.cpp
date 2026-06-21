@@ -4449,6 +4449,9 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
     if (const auto* varRef = target.asVarRef()) {
         return varRefObjectMethod(context, *varRef, methodName, args);
     }
+    if (const auto* chunkRef = target.asChunkRef()) {
+        return chunkRefObjectMethod(context, *chunkRef, methodName, emptyDatumArgs());
+    }
     if (target.isList()) {
         return dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, args);
     }
