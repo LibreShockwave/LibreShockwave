@@ -6448,32 +6448,54 @@ bool canUseImmediatePrimitiveExtCall(ExecutionContext& context, std::string_view
            context.isBuiltin(handlerName);
 }
 
-bool isImmediatePrimitiveExtCallCandidate(std::string_view handlerName, int argCount) {
+enum class ImmediatePrimitiveExtCall {
+    None,
+    CharToNum,
+    NumToChar,
+    Length,
+    Count,
+    BitAnd,
+    BitOr,
+    BitXor,
+    String,
+    Integer,
+    Abs,
+    ListP,
+    VoidP,
+    New,
+    Min,
+    Max,
+    Chars
+};
+
+ImmediatePrimitiveExtCall immediatePrimitiveExtCallFor(std::string_view handlerName, int argCount) {
     if (argCount == 1) {
-        return equalsIgnoreCase(handlerName, "charToNum") ||
-               equalsIgnoreCase(handlerName, "numToChar") ||
-               equalsIgnoreCase(handlerName, "length") ||
-               equalsIgnoreCase(handlerName, "count") ||
-               equalsIgnoreCase(handlerName, "string") ||
-               equalsIgnoreCase(handlerName, "integer") ||
-               equalsIgnoreCase(handlerName, "abs") ||
-               equalsIgnoreCase(handlerName, "listp") ||
-               equalsIgnoreCase(handlerName, "voidp") ||
-               equalsIgnoreCase(handlerName, "new") ||
-               equalsIgnoreCase(handlerName, "min") ||
-               equalsIgnoreCase(handlerName, "max");
+        if (equalsIgnoreCase(handlerName, "charToNum")) return ImmediatePrimitiveExtCall::CharToNum;
+        if (equalsIgnoreCase(handlerName, "numToChar")) return ImmediatePrimitiveExtCall::NumToChar;
+        if (equalsIgnoreCase(handlerName, "length")) return ImmediatePrimitiveExtCall::Length;
+        if (equalsIgnoreCase(handlerName, "count")) return ImmediatePrimitiveExtCall::Count;
+        if (equalsIgnoreCase(handlerName, "string")) return ImmediatePrimitiveExtCall::String;
+        if (equalsIgnoreCase(handlerName, "integer")) return ImmediatePrimitiveExtCall::Integer;
+        if (equalsIgnoreCase(handlerName, "abs")) return ImmediatePrimitiveExtCall::Abs;
+        if (equalsIgnoreCase(handlerName, "listp")) return ImmediatePrimitiveExtCall::ListP;
+        if (equalsIgnoreCase(handlerName, "voidp")) return ImmediatePrimitiveExtCall::VoidP;
+        if (equalsIgnoreCase(handlerName, "new")) return ImmediatePrimitiveExtCall::New;
+        if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
+        if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+        return ImmediatePrimitiveExtCall::None;
     }
     if (argCount == 2) {
-        return equalsIgnoreCase(handlerName, "bitAnd") ||
-               equalsIgnoreCase(handlerName, "bitOr") ||
-               equalsIgnoreCase(handlerName, "bitXor") ||
-               equalsIgnoreCase(handlerName, "min") ||
-               equalsIgnoreCase(handlerName, "max");
+        if (equalsIgnoreCase(handlerName, "bitAnd")) return ImmediatePrimitiveExtCall::BitAnd;
+        if (equalsIgnoreCase(handlerName, "bitOr")) return ImmediatePrimitiveExtCall::BitOr;
+        if (equalsIgnoreCase(handlerName, "bitXor")) return ImmediatePrimitiveExtCall::BitXor;
+        if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
+        if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+        return ImmediatePrimitiveExtCall::None;
     }
     if (argCount == 3) {
-        return equalsIgnoreCase(handlerName, "chars");
+        return equalsIgnoreCase(handlerName, "chars") ? ImmediatePrimitiveExtCall::Chars : ImmediatePrimitiveExtCall::None;
     }
-    return false;
+    return ImmediatePrimitiveExtCall::None;
 }
 
 Datum fastIntegerValue(const Datum& value) {
@@ -6553,14 +6575,15 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
                                   std::string_view handlerName,
                                   int argCount,
                                   bool noReturn) {
-    if (!isImmediatePrimitiveExtCallCandidate(handlerName, argCount)) {
+    const ImmediatePrimitiveExtCall primitive = immediatePrimitiveExtCallFor(handlerName, argCount);
+    if (primitive == ImmediatePrimitiveExtCall::None) {
         return false;
     }
     if (!canUseImmediatePrimitiveExtCall(context, handlerName)) {
         return false;
     }
 
-    if (equalsIgnoreCase(handlerName, "charToNum") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::CharToNum) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6569,7 +6592,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "numToChar") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::NumToChar) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6580,7 +6603,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "chars") && argCount == 3) {
+    if (primitive == ImmediatePrimitiveExtCall::Chars) {
         Datum result = Datum::voidValue();
         if (!noReturn) {
             std::string valueStorage;
@@ -6607,7 +6630,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "length") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::Length) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6628,7 +6651,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "count") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::Count) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6645,9 +6668,9 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (argCount == 2) {
-        const bool isBitAnd = equalsIgnoreCase(handlerName, "bitAnd");
-        const bool isBitOr = !isBitAnd && equalsIgnoreCase(handlerName, "bitOr");
-        const bool isBitXor = !isBitAnd && !isBitOr && equalsIgnoreCase(handlerName, "bitXor");
+        const bool isBitAnd = primitive == ImmediatePrimitiveExtCall::BitAnd;
+        const bool isBitOr = primitive == ImmediatePrimitiveExtCall::BitOr;
+        const bool isBitXor = primitive == ImmediatePrimitiveExtCall::BitXor;
         if (isBitAnd || isBitOr || isBitXor) {
             if (noReturn) {
                 context.scope().drop(2);
@@ -6668,7 +6691,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         }
     }
 
-    if (equalsIgnoreCase(handlerName, "string") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::String) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6679,7 +6702,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "integer") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::Integer) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6688,7 +6711,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "abs") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::Abs) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6707,7 +6730,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "listp") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::ListP) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6717,7 +6740,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "voidp") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::VoidP) {
         if (noReturn) {
             context.scope().drop(1);
         } else {
@@ -6726,7 +6749,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if (equalsIgnoreCase(handlerName, "new") && argCount == 1) {
+    if (primitive == ImmediatePrimitiveExtCall::New) {
         const Datum& targetRef = context.peekRef(0);
         const auto* scriptRef = targetRef.asScriptRef();
         auto* builtinContext = context.builtinContext();
@@ -6755,8 +6778,8 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    const bool isMinPrimitive = equalsIgnoreCase(handlerName, "min");
-    const bool isMaxPrimitive = !isMinPrimitive && equalsIgnoreCase(handlerName, "max");
+    const bool isMinPrimitive = primitive == ImmediatePrimitiveExtCall::Min;
+    const bool isMaxPrimitive = primitive == ImmediatePrimitiveExtCall::Max;
     if ((isMinPrimitive || isMaxPrimitive) && (argCount == 1 || argCount == 2)) {
         if (argCount == 1) {
             if (noReturn) {
