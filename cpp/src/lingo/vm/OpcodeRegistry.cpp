@@ -4138,8 +4138,9 @@ Datum castLibObjectMethod(ExecutionContext& context,
                           const Datum::CastLibRef& castLib,
                           std::string_view methodName,
                           std::span<const Datum> args) {
+    std::string propNameStorage;
     if ((!equalsIgnoreCase(methodName, "getProp") && !equalsIgnoreCase(methodName, "getPropRef")) || args.size() < 2 ||
-        !equalsIgnoreCase(keyNameLikeJava(args[0]), "member")) {
+        !equalsIgnoreCase(keyNameLikeJavaView(args[0], propNameStorage), "member")) {
         return Datum::voidValue();
     }
 
