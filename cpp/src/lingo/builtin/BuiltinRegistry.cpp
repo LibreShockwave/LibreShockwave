@@ -1905,7 +1905,8 @@ Datum ImageBuiltins::importFileInto(BuiltinContext& context, const std::vector<D
         return Datum::FALSE;
     }
 
-    const std::string url = toStringLikeJava(args[1]);
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[1], urlStorage);
     const Datum options = args.size() >= 3 ? args[2] : Datum::voidValue();
     return boolDatum(context.importFileIntoHandler(*ref, url, options));
 }
