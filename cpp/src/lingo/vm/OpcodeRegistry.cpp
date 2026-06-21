@@ -5921,8 +5921,9 @@ bool getLegacyProperty(ExecutionContext& context) {
             return true;
         }
         if (const auto chunkType = legacyChunkPropertyTypeByCode(propertyId - 0x0B)) {
-            const std::string value = toStringLikeJava(context.pop());
-            context.push(Datum::of(getLastChunkValue(value, *chunkType, itemDelimiter)));
+            const Datum value = context.pop();
+            std::string storage;
+            context.push(Datum::of(getLastChunkValue(stringViewLikeJava(value, storage), *chunkType, itemDelimiter)));
             return true;
         }
         context.push(Datum::voidValue());
@@ -5930,9 +5931,10 @@ bool getLegacyProperty(ExecutionContext& context) {
     }
 
     if (propertyType == 0x01) {
-        const std::string value = toStringLikeJava(context.pop());
+        const Datum value = context.pop();
+        std::string storage;
         if (const auto chunkType = legacyChunkPropertyTypeByCode(propertyId)) {
-            context.push(Datum::of(countChunks(value, *chunkType, itemDelimiter)));
+            context.push(Datum::of(countChunks(stringViewLikeJava(value, storage), *chunkType, itemDelimiter)));
         } else {
             context.push(Datum::voidValue());
         }
