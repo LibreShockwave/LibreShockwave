@@ -159,6 +159,25 @@ std::string_view stringOrSymbolView(const Datum& datum) {
     return {};
 }
 
+std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    return std::nullopt;
+}
+
 std::string datumReprLikeJava(const Datum& datum) {
     if (datum.isVoid()) {
         return "<Void>";
@@ -267,20 +286,8 @@ std::string toStringLikeJava(const Datum& datum) {
 }
 
 std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
-    if (datum.isVoid() || datum.isNull()) {
-        return std::string_view();
-    }
-    if (const auto* value = datum.asString()) {
-        return value->value;
-    }
-    if (const auto* value = datum.asSymbol()) {
-        return value->name;
-    }
-    if (const auto* value = datum.asFieldText()) {
-        return value->value;
-    }
-    if (const auto* value = datum.asStringChunk()) {
-        return value->value;
+    if (const auto directValue = directStringViewLikeJava(datum)) {
+        return *directValue;
     }
     storage = toStringLikeJava(datum);
     return storage;
@@ -442,7 +449,13 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
         const std::string_view separator = args.empty() ? "&" : stringViewLikeJava(args[0], separatorStorage);
         std::string result;
         if (!items.empty()) {
-            result.reserve(separator.size() * (items.size() - 1));
+            std::size_t directItemSize = 0;
+            for (const auto& item : items) {
+                if (const auto directValue = directStringViewLikeJava(item)) {
+                    directItemSize += directValue->size();
+                }
+            }
+            result.reserve(separator.size() * (items.size() - 1) + directItemSize);
         }
         for (std::size_t index = 0; index < items.size(); ++index) {
             if (index > 0) {
