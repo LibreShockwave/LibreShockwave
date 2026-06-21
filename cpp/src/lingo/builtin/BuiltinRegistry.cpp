@@ -259,6 +259,9 @@ std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
     if (const auto* value = datum.asSymbol()) {
         return value->name;
     }
+    if (const auto* value = datum.asTimeoutRef()) {
+        return value->name;
+    }
     return std::nullopt;
 }
 
@@ -285,6 +288,9 @@ const std::string& stringRefLikeJava(const Datum& datum, std::string& storage) {
         return value->value;
     }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     storage = toStringLikeJava(datum);
@@ -340,7 +346,16 @@ std::string toStringLikeJava(const Datum& datum) {
     if (const auto* value = datum.asString()) {
         return value->value;
     }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     if (const auto* value = datum.asColorRef()) {

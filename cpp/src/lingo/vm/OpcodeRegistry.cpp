@@ -378,7 +378,16 @@ std::string toStringLikeJava(const Datum& datum) {
     if (datum.isString()) {
         return datum.stringValue();
     }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     if (const auto* value = datum.asColorRef()) {
