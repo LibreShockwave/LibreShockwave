@@ -333,8 +333,8 @@ std::string datumReprLikeJava(const Datum& datum) {
     if (datum.isVoid()) {
         return "<Void>";
     }
-    if (datum.isString()) {
-        return "\"" + datum.stringValue() + "\"";
+    if (const auto* value = datum.asString()) {
+        return "\"" + value->value + "\"";
     }
     if (const auto* value = datum.asSymbol()) {
         return "#" + value->name;
@@ -375,8 +375,8 @@ std::string toStringLikeJava(const Datum& datum) {
     if (datum.isVoid() || datum.isNull()) {
         return "";
     }
-    if (datum.isString()) {
-        return datum.stringValue();
+    if (const auto* value = datum.asString()) {
+        return value->value;
     }
     if (const auto* value = datum.asFieldText()) {
         return value->value;
