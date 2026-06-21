@@ -314,6 +314,7 @@ std::string getWordRangeDirect(std::string_view value, int start, int end) {
     std::size_t wordStart = 0;
     bool inWord = false;
     std::string result;
+    result.reserve(value.size());
 
     for (std::size_t pos = 0; pos <= value.size(); ++pos) {
         const bool isSpace = pos == value.size() ||
