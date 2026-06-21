@@ -2911,12 +2911,13 @@ Datum TypeBuiltins::callAncestor(BuiltinContext& context, const std::vector<Datu
     }
     if (args[1].isList()) {
         Datum result = Datum::voidValue();
+        std::vector<Datum> nestedArgs;
+        nestedArgs.reserve(args.size());
         for (const auto& item : args[1].listValue().items()) {
             if (item.type() != DatumType::ScriptInstanceRef) {
                 continue;
             }
-            std::vector<Datum> nestedArgs;
-            nestedArgs.reserve(args.size());
+            nestedArgs.clear();
             nestedArgs.push_back(args[0]);
             nestedArgs.push_back(item);
             nestedArgs.insert(nestedArgs.end(), args.begin() + 2, args.end());
