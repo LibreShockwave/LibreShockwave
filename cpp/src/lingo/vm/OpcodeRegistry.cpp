@@ -5526,15 +5526,16 @@ void setContextVar(ExecutionContext& context,
             context.setGlobal(context.resolveNameRef(toIntLikeJava(idDatum)), std::move(value));
             return;
         case id::VarType::PROPERTY: {
-            Datum receiver = context.scope().receiver();
+            const Datum& receiver = context.scope().receiver();
             if (receiver.type() == DatumType::ScriptInstanceRef) {
                 const std::string& propName = context.resolveNameRef(toIntLikeJava(idDatum));
+                auto instance = receiver.scriptInstancePtr();
                 if (!context.hasVariableSetListener()) {
-                    util::setProperty(receiver.scriptInstanceValue(), propName, std::move(value));
+                    util::setProperty(*instance, propName, std::move(value));
                     return;
                 }
                 const Datum tracedValue = value;
-                util::setProperty(receiver.scriptInstanceValue(), propName, std::move(value));
+                util::setProperty(*instance, propName, std::move(value));
                 context.tracePropertySet(propName, tracedValue);
             }
             return;
@@ -5848,15 +5849,16 @@ bool getProp(ExecutionContext& context) {
 
 bool setProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    Datum receiver = context.scope().receiver();
+    const Datum& receiver = context.scope().receiver();
     Datum value = context.pop();
     if (receiver.type() == DatumType::ScriptInstanceRef) {
+        auto instance = receiver.scriptInstancePtr();
         if (!context.hasVariableSetListener()) {
-            util::setProperty(receiver.scriptInstanceValue(), propName, std::move(value));
+            util::setProperty(*instance, propName, std::move(value));
             return true;
         }
         const Datum tracedValue = value;
-        util::setProperty(receiver.scriptInstanceValue(), propName, std::move(value));
+        util::setProperty(*instance, propName, std::move(value));
         context.tracePropertySet(propName, tracedValue);
     }
     return true;
