@@ -109,10 +109,14 @@ std::string propListKeyName(const Datum& datum) {
     }
 }
 
-std::string propListSameTypeKey(const Datum& datum) {
+std::string propListSameTypeKeyFromName(const Datum& datum, std::string_view keyName) {
     std::string key = datum.asSymbol() != nullptr ? "s:" : "v:";
-    key += lowerAscii(propListKeyName(datum));
+    key += lowerAscii(keyName);
     return key;
+}
+
+std::string propListSameTypeKey(const Datum& datum) {
+    return propListSameTypeKeyFromName(datum, propListKeyName(datum));
 }
 
 std::uint64_t nextScriptInstanceIdentityId() {
@@ -930,7 +934,7 @@ void Datum::PropList::indexEntry(std::size_t index) const {
     const int signedIndex = static_cast<int>(index);
     const auto& key = properties_[index].first;
     const std::string keyName = propListKeyName(key);
-    firstSameTypeKeyIndex_.try_emplace(propListSameTypeKey(key), signedIndex);
+    firstSameTypeKeyIndex_.try_emplace(propListSameTypeKeyFromName(key, keyName), signedIndex);
     firstUntypedKeyIndex_.try_emplace(keyName, signedIndex);
     firstCaseSensitiveKeyIndex_.try_emplace(keyName, signedIndex);
 }
