@@ -267,6 +267,23 @@ std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
     return storage;
 }
 
+const std::string& stringRefLikeJava(const Datum& datum, std::string& storage) {
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    storage = toStringLikeJava(datum);
+    return storage;
+}
+
 std::string listStringLikeJava(const Datum::List& list) {
     std::ostringstream out;
     out << '[';
@@ -1160,7 +1177,8 @@ Datum StringBuiltins::getPref(BuiltinContext& context, const std::vector<Datum>&
     if (args.empty()) {
         return Datum::voidValue();
     }
-    const std::string key = toStringLikeJava(args[0]);
+    std::string keyStorage;
+    const std::string& key = stringRefLikeJava(args[0], keyStorage);
     if (key.empty() || !context.getPrefHandler) {
         return Datum::voidValue();
     }
@@ -1171,7 +1189,8 @@ Datum StringBuiltins::setPref(BuiltinContext& context, const std::vector<Datum>&
     if (args.size() < 2) {
         return Datum::voidValue();
     }
-    const std::string key = toStringLikeJava(args[0]);
+    std::string keyStorage;
+    const std::string& key = stringRefLikeJava(args[0], keyStorage);
     if (key.empty() || !context.setPrefHandler) {
         return Datum::voidValue();
     }
