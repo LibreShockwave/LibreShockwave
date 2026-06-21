@@ -1037,6 +1037,9 @@ Datum StringBuiltins::string(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::of(std::string());
     }
+    if (args[0].isString()) {
+        return args[0];
+    }
     return Datum::of(toStringLikeJava(args[0]));
 }
 
