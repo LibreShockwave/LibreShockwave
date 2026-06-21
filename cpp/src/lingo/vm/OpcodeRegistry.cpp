@@ -1739,8 +1739,11 @@ std::string deleteChunkValue(std::string_view value,
     if (deleteEnd >= static_cast<int>(value.size())) {
         return std::string(value.substr(0, static_cast<std::size_t>(deleteStart)));
     }
-    return std::string(value.substr(0, static_cast<std::size_t>(deleteStart))) +
-           std::string(value.substr(static_cast<std::size_t>(deleteEnd)));
+    std::string result;
+    result.reserve(value.size() - static_cast<std::size_t>(deleteEnd - deleteStart));
+    result.append(value.substr(0, static_cast<std::size_t>(deleteStart)));
+    result.append(value.substr(static_cast<std::size_t>(deleteEnd)));
+    return result;
 }
 
 std::string deleteCharChunkRefValue(std::string_view value, int first, int last) {
@@ -1752,8 +1755,11 @@ std::string deleteCharChunkRefValue(std::string_view value, int first, int last)
     if (start >= static_cast<int>(value.size()) || start >= end) {
         return std::string(value);
     }
-    return std::string(value.substr(0, static_cast<std::size_t>(start))) +
-           std::string(value.substr(static_cast<std::size_t>(end)));
+    std::string result;
+    result.reserve(value.size() - static_cast<std::size_t>(end - start));
+    result.append(value.substr(0, static_cast<std::size_t>(start)));
+    result.append(value.substr(static_cast<std::size_t>(end)));
+    return result;
 }
 
 std::string getCharChunkRefValue(std::string_view value, int first, int last) {
