@@ -7185,8 +7185,9 @@ std::optional<Datum> fastListObjectCall(ImmediateObjectMethod method,
         auto& items = list.items();
         if (method == ImmediateObjectMethod::SetAt) {
             if (args.size() >= 3) {
-                if ((args[1].isString() || args[1].isSymbol()) && singlePropListWrapper(list) != nullptr) {
-                    singlePropListWrapper(list)->putTyped(args[1], args[2]);
+                auto* propList = (args[1].isString() || args[1].isSymbol()) ? singlePropListWrapper(list) : nullptr;
+                if (propList != nullptr) {
+                    propList->putTyped(args[1], args[2]);
                 } else {
                     const int index = toIntLikeJava(args[1]);
                     if (index >= 1) {
@@ -7525,9 +7526,11 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             Datum value = context.pop();
             Datum indexDatum = context.pop();
             Datum mutableTarget = context.pop();
-            if ((indexDatum.isString() || indexDatum.isSymbol()) &&
-                singlePropListWrapper(mutableTarget.listValue()) != nullptr) {
-                singlePropListWrapper(mutableTarget.listValue())->putTyped(std::move(indexDatum), std::move(value));
+            auto* propList = (indexDatum.isString() || indexDatum.isSymbol())
+                                 ? singlePropListWrapper(mutableTarget.listValue())
+                                 : nullptr;
+            if (propList != nullptr) {
+                propList->putTyped(std::move(indexDatum), std::move(value));
             } else {
                 const int index = toIntLikeJava(indexDatum);
                 if (index >= 1) {
