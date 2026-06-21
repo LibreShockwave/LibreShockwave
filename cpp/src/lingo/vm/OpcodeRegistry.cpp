@@ -6626,7 +6626,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         const Datum& value = context.peekRef();
         Datum result = Datum::voidValue();
         if (!noReturn) {
-            result = Datum::of(toStringLikeJava(value));
+            result = value.isString() ? value : Datum::of(toStringLikeJava(value));
         }
         context.scope().drop(1);
         if (!noReturn) {
