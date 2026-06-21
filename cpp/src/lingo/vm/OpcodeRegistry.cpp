@@ -4699,7 +4699,7 @@ void initializeDeclaredScriptProperties(ExecutionContext& context, Datum& instan
     }
 }
 
-Datum executeScriptNewHandler(ExecutionContext& context, const std::vector<Datum>& constructorArgs, Datum& receiver) {
+Datum executeScriptNewHandler(ExecutionContext& context, std::span<const Datum> constructorArgs, Datum& receiver) {
     if (receiver.type() == DatumType::ScriptInstanceRef) {
         auto& instance = receiver.scriptInstanceValue();
         if (const auto handler = findScriptInstanceScriptHandler(context, instance, "new")) {
@@ -4740,12 +4740,8 @@ bool newObj(ExecutionContext& context) {
     Datum instance = fallbackScriptInstance(constructorTarget.target);
     if (const auto memberRef = scriptConstructorMemberRef(constructorTarget.target)) {
         initializeDeclaredScriptProperties(context, instance, *memberRef);
-        const std::vector<Datum> constructorArgs =
-            constructorTarget.consumedArgs < args.size()
-                ? std::vector<Datum>(
-                      args.begin() + static_cast<std::vector<Datum>::difference_type>(constructorTarget.consumedArgs),
-                      args.end())
-                : std::vector<Datum>();
+        const auto constructorOffset = std::min(constructorTarget.consumedArgs, args.size());
+        const std::span<const Datum> constructorArgs(args.data() + constructorOffset, args.size() - constructorOffset);
         (void)executeScriptNewHandler(context, constructorArgs, instance);
     }
     context.push(std::move(instance));
