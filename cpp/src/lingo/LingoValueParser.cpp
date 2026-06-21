@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace libreshockwave::lingo {
@@ -269,12 +270,12 @@ Datum parseListOrPropList(std::string_view content, const IdentifierResolver& id
             if (colonIndex <= 0) {
                 continue;
             }
-            const Datum key = parsePropListKey(std::string_view(element).substr(0, static_cast<std::size_t>(colonIndex)),
-                                               identifierResolver);
-            const Datum value = LingoValueParser::parseWithPartial(
+            Datum key = parsePropListKey(std::string_view(element).substr(0, static_cast<std::size_t>(colonIndex)),
+                                         identifierResolver);
+            Datum value = LingoValueParser::parseWithPartial(
                 std::string_view(element).substr(static_cast<std::size_t>(colonIndex + 1)),
                 identifierResolver);
-            props.propListValue().properties().emplace_back(key, value);
+            props.propListValue().properties().emplace_back(std::move(key), std::move(value));
         }
         return props;
     }
