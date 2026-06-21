@@ -4539,7 +4539,18 @@ bool pop(ExecutionContext& context) {
 }
 
 bool peek(ExecutionContext& context) {
-    context.push(context.peek(context.argument()));
+    const Datum& value = context.peekRef(context.argument());
+    if (const auto* intValue = value.asInt()) {
+        context.push(Datum::of(intValue->value));
+    } else if (const auto* floatValue = value.asFloat()) {
+        context.push(Datum::of(floatValue->value));
+    } else if (value.isVoid()) {
+        context.push(Datum::voidValue());
+    } else if (value.isNull()) {
+        context.push(Datum::nullValue());
+    } else {
+        context.push(value);
+    }
     return true;
 }
 
