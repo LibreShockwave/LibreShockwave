@@ -1710,8 +1710,8 @@ Datum NetBuiltins::postNetText(BuiltinContext& context, const std::vector<Datum>
     if (context.netManager == nullptr || args.empty()) {
         return Datum::of(-1);
     }
-    const std::string postData = args.size() > 1 ? toStringLikeJava(args[1]) : "";
-    return Datum::of(context.netManager->postNetText(toStringLikeJava(args[0]), postData));
+    std::string postData = args.size() > 1 ? toStringLikeJava(args[1]) : "";
+    return Datum::of(context.netManager->postNetText(toStringLikeJava(args[0]), std::move(postData)));
 }
 
 Datum NetBuiltins::netDone(BuiltinContext& context, const std::vector<Datum>& args) {
