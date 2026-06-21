@@ -58,3 +58,6 @@ is fixed separately.
 
 Use harness/profile captures only as timing evidence when they collect real
 debug events and do not redirect to a concurrent-login/disconnected page.
+Use `http://localhost:3000/venus-quackster-harness` for browser harness checks,
+and inspect warning slow-method output when deciding the next generic VM/runtime
+hot path to optimise.
