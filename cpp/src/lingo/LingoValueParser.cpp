@@ -262,6 +262,7 @@ Datum parseListOrPropList(std::string_view content, const IdentifierResolver& id
 
     if (isPropListElement(elements.front())) {
         Datum props = Datum::propList();
+        props.propListValue().properties().reserve(elements.size());
         for (const auto& rawElement : elements) {
             const std::string_view element = rawElement.value;
             const int colonIndex = rawElement.colonIndex;
