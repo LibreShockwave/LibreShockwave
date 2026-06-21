@@ -6654,7 +6654,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         }
 
         Datum target = context.pop();
-        const std::vector<Datum> emptyArgs;
+        static const std::vector<Datum> emptyArgs;
         Datum result = Datum::voidValue();
         if (builtinContext != nullptr && builtinContext->newInstanceHandler) {
             result = builtinContext->newInstanceHandler(target, emptyArgs);
