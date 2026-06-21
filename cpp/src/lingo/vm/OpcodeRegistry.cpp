@@ -3454,8 +3454,7 @@ bool imageCanPreservePaletteIndices(const bitmap::Bitmap& dest,
 
 bool imageCanRefreshDestinationPaletteIndices(const bitmap::Bitmap& dest) {
     return dest.bitDepth() <= 8 &&
-           dest.imagePalette() != nullptr &&
-           dest.paletteIndices().has_value();
+           dest.imagePalette() != nullptr;
 }
 
 bool imageShouldSkipPaletteIndexPreserve(std::uint32_t sourcePixel, id::InkMode ink, int backgroundKeyRgb) {
@@ -3476,6 +3475,14 @@ bool imageCopiedWhiteCanKeepMatteIndex(const bitmap::Palette& palette, std::uint
 }
 
 int imageNearestCopiedRgbPaletteIndex(const bitmap::Palette& palette, std::uint32_t pixel) {
+    if (equalsIgnoreCase(palette.name(), "Grayscale")) {
+        const int nearest = palette.nearestIndex(pixel);
+        if (nearest == 0 || nearest == 255) {
+            return nearest;
+        }
+        return std::min(248, ((nearest + 3) / 8) * 8);
+    }
+
     const auto rgb = pixel & 0x00FFFFFFU;
     if (rgb != 0x00FFFFFFU || palette.size() <= 1 ||
         (palette.getColor(0) & 0x00FFFFFFU) != 0x00FFFFFFU) {

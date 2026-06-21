@@ -181,6 +181,7 @@ private:
     void joinVmWorker();
     void handleTraceError(std::string_view message, std::string_view errorDetail);
     [[nodiscard]] bool recentScriptErrorIsFresh(std::int64_t maxAgeMs) const;
+    [[nodiscard]] lingo::Datum currentStageImageDatum();
     void loadCastFromNetCache(int castLibNumber, const std::string& fileName);
     void handleExternalCastFetch(const std::string& url, const std::vector<std::uint8_t>& data);
     [[nodiscard]] bool applyExternalCastDataNow(int castLibNumber,

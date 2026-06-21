@@ -847,6 +847,19 @@ render::pipeline::FrameSnapshot Player::frameSnapshot() {
         "Frame " + std::to_string(frame) + " | " + std::string(name(state_)));
 }
 
+lingo::Datum Player::currentStageImageDatum() {
+    const int frame = currentFrame();
+    auto snapshot = frameRenderPipeline_.renderFrame(
+        frame,
+        stageRenderer_.stageWidth(),
+        stageRenderer_.stageHeight(),
+        stageRenderer_.backgroundColor(),
+        stageRenderer_.renderableStageImage(),
+        "Stage image " + std::to_string(frame));
+    auto composed = snapshot.renderFrame();
+    return lingo::Datum::imageRef(stageRenderer_.updateStageImageSnapshot(composed));
+}
+
 void Player::wireComponents() {
     frameContext_.setSpriteRegistry(&stageRenderer_.spriteRegistry());
     frameContext_.setEventListener([this](const frame::FrameEvent& event) {
@@ -897,7 +910,7 @@ void Player::wireComponents() {
         stageRenderer_.setBackgroundColor(rgb);
     });
     movieProperties_.setStageImageSupplier([this] {
-        return lingo::Datum::imageRef(stageRenderer_.stageImage());
+        return currentStageImageDatum();
     });
     movieProperties_.setGoToFrameHandler([this](int frame) {
         goToFrame(frame);

@@ -50,6 +50,7 @@ public:
     void setDefaultBackgroundColor(int color);
 
     [[nodiscard]] std::shared_ptr<bitmap::Bitmap> stageImage();
+    [[nodiscard]] std::shared_ptr<bitmap::Bitmap> updateStageImageSnapshot(const bitmap::Bitmap& snapshot);
     [[nodiscard]] bool hasStageImage() const;
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> renderableStageImage() const;
     void discardStageImage();

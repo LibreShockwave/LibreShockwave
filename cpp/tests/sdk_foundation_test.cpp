@@ -4797,6 +4797,13 @@ void testPlayerFacadeFoundation() {
     const auto stageImageSnapshot = stageImagePlayer.frameSnapshot();
     assert(stageImageSnapshot.stageImage.get() == stageImageRef->bitmap.get());
     assert(stageImageSnapshot.renderFrame().getPixel(0, 0) == 0xFF070809U);
+    const auto refreshedStageImageDatum = stageImagePlayer.movieProperties().getStageProp("image");
+    const auto* refreshedStageImageRef = refreshedStageImageDatum.asImageRef();
+    assert(refreshedStageImageRef != nullptr);
+    assert(refreshedStageImageRef->bitmap.get() == stageImageRef->bitmap.get());
+    assert(refreshedStageImageRef->bitmap->getPixel(0, 0) == 0xFF070809U);
+    assert(!refreshedStageImageRef->bitmap->isScriptModified());
+    assert(stageImagePlayer.stageRenderer().renderableStageImage() == nullptr);
 }
 
 void testPlayerVmEventDispatchFoundation() {
@@ -12707,6 +12714,45 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             Datum::intRect(0, 0, 1, 1)}).isVoid());
     assert(incompatiblePaletteDest->getPixel(0, 0) == 0xFFBEBEBEU);
     assert(!incompatiblePaletteDest->paletteIndices().has_value());
+    auto grayscalePhotoDest = std::make_shared<Bitmap>(2, 1, 8);
+    grayscalePhotoDest->setImagePalette(&Palette::grayscalePalette());
+    grayscalePhotoDest->fill(0xFFFFFFFFU);
+    auto grayscalePhotoSource = std::make_shared<Bitmap>(
+        2, 1, 32, std::vector<std::uint32_t>{0xFF336699U, 0xFFE8B050U});
+    assert(runObjCall(110, {Datum::imageRef(grayscalePhotoDest),
+                            Datum::imageRef(grayscalePhotoSource),
+                            Datum::intRect(0, 0, 2, 1),
+                            Datum::intRect(0, 0, 2, 1)}).isVoid());
+    const auto grayscalePhotoIndices = grayscalePhotoDest->paletteIndices();
+    assert(grayscalePhotoIndices.has_value());
+    assert(grayscalePhotoIndices->size() == 2);
+    auto grayscale32StepIndex = [](std::uint32_t pixel) {
+        const int nearest = Palette::grayscalePalette().nearestIndex(pixel);
+        if (nearest == 0 || nearest == 255) {
+            return nearest;
+        }
+        return std::min(248, ((nearest + 3) / 8) * 8);
+    };
+    assert((*grayscalePhotoIndices)[0] == grayscale32StepIndex(0xFF336699U));
+    assert((*grayscalePhotoIndices)[1] == grayscale32StepIndex(0xFFE8B050U));
+    assert(grayscalePhotoDest->getPixel(0, 0) ==
+           (0xFF000000U | (Palette::grayscalePalette().getColor((*grayscalePhotoIndices)[0]) & 0x00FFFFFFU)));
+    assert(grayscalePhotoDest->getPixel(1, 0) ==
+           (0xFF000000U | (Palette::grayscalePalette().getColor((*grayscalePhotoIndices)[1]) & 0x00FFFFFFU)));
+    auto grayscalePhotoWithBorder = std::make_shared<Bitmap>(3, 3, 8);
+    grayscalePhotoWithBorder->setImagePalette(&Palette::grayscalePalette());
+    grayscalePhotoWithBorder->fill(0xFF777777U);
+    auto borderProps = Datum::propList();
+    borderProps.propListValue().put(Datum::symbol("color"), Datum::colorRef(0, 0, 0));
+    borderProps.propListValue().put(Datum::symbol("shapeType"), Datum::symbol("rect"));
+    assert(runObjCall(107, {Datum::imageRef(grayscalePhotoWithBorder),
+                            Datum::intRect(0, 0, 3, 3),
+                            borderProps}).isVoid());
+    const auto grayscaleBorderIndices = grayscalePhotoWithBorder->paletteIndices();
+    assert(grayscaleBorderIndices.has_value());
+    assert(grayscaleBorderIndices->size() == 9);
+    assert((*grayscaleBorderIndices)[0] == Palette::grayscalePalette().nearestIndex(0xFF000000U));
+    assert((*grayscaleBorderIndices)[4] == Palette::grayscalePalette().nearestIndex(0xFF777777U));
     auto runDarkenBgTint = [&](std::shared_ptr<Bitmap> source, Datum bgColor) {
         auto darkenDest = std::make_shared<Bitmap>(1, 1, 32, std::vector<std::uint32_t>{0xFFFFFFFFU});
         auto darkenProps = Datum::propList();
@@ -17372,6 +17418,15 @@ void testStageRendererFoundation() {
     assert(defaultStage->getPixel(0, 0) == 0xFFABCDEFU);
     renderer.setBackgroundColor(0x010203);
     assert(defaultStage->getPixel(0, 0) == 0xFF010203U);
+    Bitmap snapshotBitmap(640, 480, 32);
+    snapshotBitmap.fill(0xFF445566U);
+    snapshotBitmap.setPixel(4, 5, 0xFF778899U);
+    auto refreshedStage = renderer.updateStageImageSnapshot(snapshotBitmap);
+    assert(refreshedStage.get() == defaultStage.get());
+    assert(refreshedStage->getPixel(0, 0) == 0xFF445566U);
+    assert(refreshedStage->getPixel(4, 5) == 0xFF778899U);
+    assert(!refreshedStage->isScriptModified());
+    assert(renderer.renderableStageImage() == nullptr);
     renderer.resetVisualState();
     assert(renderer.backgroundColor() == 0xABCDEF);
     assert(!renderer.hasStageImage());

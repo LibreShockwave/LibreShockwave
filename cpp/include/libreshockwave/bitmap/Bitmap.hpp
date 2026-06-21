@@ -32,6 +32,7 @@ public:
 
     [[nodiscard]] bool isScriptModified() const;
     void markScriptModified();
+    void clearScriptModified();
     [[nodiscard]] bool hasTransparentPixels() const;
     [[nodiscard]] bool hasTranslucentPixels() const;
     [[nodiscard]] bool hasDegenerateAlphaWithRgbContent() const;

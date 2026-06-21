@@ -46,6 +46,7 @@ std::vector<std::uint32_t>& Bitmap::pixels() { return pixels_; }
 
 bool Bitmap::isScriptModified() const { return scriptModified_; }
 void Bitmap::markScriptModified() { scriptModified_ = true; }
+void Bitmap::clearScriptModified() { scriptModified_ = false; }
 
 bool Bitmap::hasTransparentPixels() const {
     if (bitDepth_ < 32) {
@@ -328,6 +329,10 @@ std::uint32_t Bitmap::getPixel(int x, int y) const {
 
 void Bitmap::setPixel(int x, int y, std::uint32_t argb) {
     if (x >= 0 && x < width_ && y >= 0 && y < height_) {
+        if (shouldQuantizeRgbFills()) {
+            fillRectPaletteIndex(x, y, 1, 1, imagePalette_->nearestIndex(argb), quantizeArgb(argb));
+            return;
+        }
         clearPaletteIndices();
         pixels_[static_cast<std::size_t>(y * width_ + x)] = argb;
     }

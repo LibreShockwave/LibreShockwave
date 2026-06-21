@@ -80,6 +80,32 @@ std::shared_ptr<bitmap::Bitmap> StageRenderer::stageImage() {
     return stageImage_;
 }
 
+std::shared_ptr<bitmap::Bitmap> StageRenderer::updateStageImageSnapshot(const bitmap::Bitmap& snapshot) {
+    if (stageImage_ == nullptr ||
+        stageImage_->width() != snapshot.width() ||
+        stageImage_->height() != snapshot.height() ||
+        stageImage_->bitDepth() != snapshot.bitDepth()) {
+        stageImage_ = std::make_shared<bitmap::Bitmap>(snapshot.copy());
+    } else {
+        stageImage_->pixels() = snapshot.pixels();
+        stageImage_->copyPaletteMetadataFrom(&snapshot);
+        if (const auto indices = snapshot.paletteIndices()) {
+            stageImage_->setPaletteIndices(*indices);
+        } else {
+            stageImage_->clearPaletteIndices();
+        }
+        if (snapshot.hasAnchorPoint()) {
+            stageImage_->setAnchorPoint(snapshot.anchorX(), snapshot.anchorY());
+        } else {
+            stageImage_->clearAnchorPoint();
+        }
+        stageImage_->setNativeAlpha(snapshot.isNativeAlpha());
+        stageImage_->setRectangularMedia(snapshot.isRectangularMedia());
+    }
+    stageImage_->clearScriptModified();
+    return stageImage_;
+}
+
 bool StageRenderer::hasStageImage() const {
     return stageImage_ != nullptr;
 }
