@@ -96,7 +96,7 @@ std::string propListKeyName(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
-    if (datum.isVoid()) {
+    if (datum.isVoid() || datum.isNull()) {
         return "";
     }
     if (datum.isString() || datum.isNumber()) {
