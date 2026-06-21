@@ -1,6 +1,7 @@
 #include "libreshockwave/lingo/LingoValueParser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cctype>
 #include <optional>
@@ -301,22 +302,22 @@ std::optional<Datum> parseNumericCall(std::string_view expression, std::string_v
     if (static_cast<int>(parts.size()) != expectedParts) {
         return std::nullopt;
     }
-    std::vector<int> values;
-    values.reserve(parts.size());
-    for (const auto& part : parts) {
+    std::array<int, 4> values{};
+    for (std::size_t index = 0; index < parts.size(); ++index) {
+        const auto& part = parts[index];
         const auto parsed = parseInt(trimView(part.value));
         if (!parsed.has_value()) {
             return std::nullopt;
         }
-        values.push_back(*parsed);
+        values[index] = *parsed;
     }
-    if (name == "color" && values.size() == 3) {
+    if (name == "color" && expectedParts == 3) {
         return Datum::colorRef(values[0], values[1], values[2]);
     }
-    if (name == "point" && values.size() == 2) {
+    if (name == "point" && expectedParts == 2) {
         return Datum::intPoint(values[0], values[1]);
     }
-    if (name == "rect" && values.size() == 4) {
+    if (name == "rect" && expectedParts == 4) {
         return Datum::intRect(values[0], values[1], values[2], values[3]);
     }
     return std::nullopt;
