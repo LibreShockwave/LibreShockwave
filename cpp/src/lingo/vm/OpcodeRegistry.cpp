@@ -5521,7 +5521,8 @@ bool deleteChunk(ExecutionContext& context) {
                                             lastLine);
 
     const Datum current = getContextVar(context, varType, idDatum, fieldCastIdDatum);
-    const std::string currentString = toStringLikeJava(current);
+    std::string currentStorage;
+    const std::string_view currentString = stringViewLikeJava(current, currentStorage);
     const char itemDelimiter = currentItemDelimiter(context);
 
     if (chunk.type == StringChunkType::Char) {
