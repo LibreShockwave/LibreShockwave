@@ -2075,7 +2075,7 @@ void scriptInstancePutLocalProperty(Datum::ScriptInstanceRef& instance, std::str
         instance.setProperty(std::string(propName), std::move(value));
         return;
     }
-    instance.putLocalPropertyExact(std::string(propName), std::move(value));
+    instance.putLocalPropertyExactView(propName, std::move(value));
 }
 
 void scriptInstanceDeleteLocalProperty(Datum::ScriptInstanceRef& instance, std::string_view propName) {

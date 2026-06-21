@@ -654,6 +654,7 @@ public:
     void reserveLocalProperties(std::size_t additionalCount);
     void appendLocalProperty(std::string name, Datum value);
     void putLocalPropertyExact(std::string name, Datum value);
+    void putLocalPropertyExactView(std::string_view name, Datum value);
     bool eraseLocalPropertyExact(std::string_view name);
 
 private:

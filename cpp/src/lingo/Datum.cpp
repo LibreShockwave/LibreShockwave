@@ -1113,6 +1113,15 @@ void Datum::ScriptInstanceRef::putLocalPropertyExact(std::string name, Datum val
     appendLocalProperty(std::move(name), std::move(value));
 }
 
+void Datum::ScriptInstanceRef::putLocalPropertyExactView(std::string_view name, Datum value) {
+    const int index = findExactPropertyIndex(name);
+    if (index >= 0) {
+        properties_[static_cast<std::size_t>(index)].second = std::move(value);
+        return;
+    }
+    appendLocalProperty(std::string(name), std::move(value));
+}
+
 bool Datum::ScriptInstanceRef::eraseLocalPropertyExact(std::string_view name) {
     const int index = findExactPropertyIndex(name);
     if (index < 0) {
