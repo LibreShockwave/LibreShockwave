@@ -1227,15 +1227,14 @@ Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& arg
         return Datum::voidValue();
     }
 
-    std::ostringstream text;
+    std::string value;
     for (std::size_t index = 0; index < args.size(); ++index) {
         if (index > 0) {
-            text << ' ';
+            value.push_back(' ');
         }
-        text << toStringLikeJava(args[index]);
+        value.append(toStringLikeJava(args[index]));
     }
 
-    const std::string value = text.str();
     if (context.outputHandler) {
         context.outputHandler("PUT", value);
     } else {
