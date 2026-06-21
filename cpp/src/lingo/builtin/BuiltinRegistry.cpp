@@ -2465,12 +2465,17 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
     const std::span<const Datum> extraArgs(args.data() + 2, args.size() - 2);
     const Datum& target = args[1];
     Datum lastResult = Datum::voidValue();
+    static const std::vector<Datum> emptyCallArgs;
 
     if (target.isList()) {
         const auto snapshot = target.listValue().items();
         for (const auto& item : snapshot) {
-            const auto callArgs = snapshotStructArgsForCall(extraArgs);
-            lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            if (extraArgs.empty()) {
+                lastResult = context.callTargetHandler(item, handlerName, emptyCallArgs);
+            } else {
+                const auto callArgs = snapshotStructArgsForCall(extraArgs);
+                lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            }
         }
         return std::move(lastResult);
     }
@@ -2481,12 +2486,19 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
             snapshot.push_back(entry.second);
         }
         for (const auto& item : snapshot) {
-            const auto callArgs = snapshotStructArgsForCall(extraArgs);
-            lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            if (extraArgs.empty()) {
+                lastResult = context.callTargetHandler(item, handlerName, emptyCallArgs);
+            } else {
+                const auto callArgs = snapshotStructArgsForCall(extraArgs);
+                lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            }
         }
         return std::move(lastResult);
     }
 
+    if (extraArgs.empty()) {
+        return context.callTargetHandler(target, handlerName, emptyCallArgs);
+    }
     const auto callArgs = snapshotStructArgsForCall(extraArgs);
     return context.callTargetHandler(target, handlerName, callArgs);
 }
