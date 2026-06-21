@@ -1578,7 +1578,13 @@ Datum ListBuiltins::join(BuiltinContext&, const std::vector<Datum>& args) {
     const auto& items = args[0].listValue().items();
     std::string result;
     if (!items.empty()) {
-        result.reserve(separator.size() * (items.size() - 1));
+        std::size_t directItemSize = 0;
+        for (const auto& item : items) {
+            if (const auto directValue = directStringViewLikeJava(item)) {
+                directItemSize += directValue->size();
+            }
+        }
+        result.reserve(separator.size() * (items.size() - 1) + directItemSize);
     }
     for (std::size_t index = 0; index < items.size(); ++index) {
         if (index > 0) {
