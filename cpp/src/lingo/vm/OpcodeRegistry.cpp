@@ -3673,7 +3673,8 @@ Datum imagePropListWithMaskImage(const Datum::PropList& propList, std::shared_pt
     auto copy = Datum::propList(propList.sorted());
     bool replaced = false;
     for (const auto& [key, value] : propList.properties()) {
-        if (equalsIgnoreCase(keyNameLikeJava(key), "maskImage")) {
+        std::string keyStorage;
+        if (equalsIgnoreCase(keyNameLikeJavaView(key, keyStorage), "maskImage")) {
             copy.propListValue().put(key, Datum::imageRef(mask));
             replaced = true;
         } else {
