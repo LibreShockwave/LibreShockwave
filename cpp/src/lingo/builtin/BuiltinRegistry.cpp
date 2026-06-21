@@ -2344,7 +2344,7 @@ Datum XtraBuiltins::callInstanceGlobalHandler(BuiltinContext& context,
         return Datum::voidValue();
     }
     std::vector<Datum> methodArgs(args.begin() + 1, args.end());
-    return callHandler(context, *instance, handlerName, methodArgs);
+    return context.xtraHandler(*instance, std::string(handlerName), methodArgs);
 }
 
 Datum XtraBuiltins::getProperty(BuiltinContext& context,
