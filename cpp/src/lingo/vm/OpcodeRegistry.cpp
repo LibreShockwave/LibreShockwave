@@ -1016,7 +1016,8 @@ void notifyImageMutation(const Datum::ImageRef& image) {
 bool applyImagePaletteProperty(bitmap::Bitmap& bmp, const Datum& value, builtin::BuiltinContext* builtinContext) {
     bool resolved = false;
     if (value.isString() || value.isSymbol()) {
-        const std::string name = toStringLikeJava(value);
+        std::string nameStorage;
+        const std::string_view name = stringViewLikeJava(value, nameStorage);
         const auto normalizedName = bitmap::Palette::normalizeBuiltInSymbolName(name);
         const bitmap::Palette* palette = bitmap::Palette::builtInBySymbolName(name);
         if (palette != nullptr && normalizedName) {
