@@ -419,13 +419,9 @@ python3 -m http.server 8098 --bind 127.0.0.1
 http://127.0.0.1:8098/
 ```
 
-If you use another web server, serve the files from the same directory. Use these headers when your browser requires cross-origin isolation:
+If you use another web server, serve the files from the same directory. The current WASM build is single-threaded and does not use Emscripten pthreads or shared memory, so `SharedArrayBuffer` cross-origin isolation headers are not required.
 
-```http
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-Cross-Origin-Resource-Policy: same-origin
-```
+Direct remote movie and asset URLs still use normal browser `fetch()` behavior, so those servers must either allow CORS or be served through the same origin.
 
 ### Embed Example
 
