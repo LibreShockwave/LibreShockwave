@@ -2785,9 +2785,9 @@ Datum TypeBuiltins::ilk(BuiltinContext&, const std::vector<Datum>& args) {
         return Datum::symbol("void");
     }
 
-    const std::string typeName = ilkType(args[0]);
+    std::string typeName = ilkType(args[0]);
     if (args.size() < 2) {
-        return Datum::symbol(typeName);
+        return Datum::symbol(std::move(typeName));
     }
 
     const std::string checkName = keyName(args[1]);
