@@ -603,8 +603,8 @@ const Datum::PropList* singlePropListWrapper(const Datum::List& list) {
     return nullptr;
 }
 
-void putStringProp(Datum& propList, const std::string& key, Datum value) {
-    propList.propListValue().put(Datum::of(key), std::move(value));
+void putStringProp(Datum& propList, std::string_view key, Datum value) {
+    propList.propListValue().put(Datum::of(std::string(key)), std::move(value));
 }
 
 Datum defaultStreamStatusDatum() {
