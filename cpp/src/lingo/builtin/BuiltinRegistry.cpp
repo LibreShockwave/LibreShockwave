@@ -1750,7 +1750,8 @@ Datum NetBuiltins::getStreamStatus(BuiltinContext& context, const std::vector<Da
         return defaultStreamStatusDatum();
     }
     if (!args.empty() && (args[0].isString() || args[0].isSymbol())) {
-        const std::string value = toStringLikeJava(args[0]);
+        std::string valueStorage;
+        const std::string& value = stringRefLikeJava(args[0], valueStorage);
         if (const auto taskId = parseIntStrict(trimCopy(value))) {
             return context.netManager->getStreamStatusDatum(*taskId);
         }
