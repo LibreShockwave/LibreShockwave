@@ -25,7 +25,7 @@ continue to reduce those generic runtime costs.
 - Preserve authored script-instance handlers.
 - Do not commit credentials, SSO tickets, endpoint changes, generated harness
   HTML, or test-only host substitutions.
-- Commit after every verified change so each optimisation step remains
+- Commit after every change once it is verified so each optimisation step remains
   reviewable and bisectable.
 - Commit messages must not mention game, harness, room, user, asset, or
   endpoint names.
