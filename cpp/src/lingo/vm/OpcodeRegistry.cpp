@@ -7827,7 +7827,7 @@ bool executeExtCallWithArgsImpl(ExecutionContext& context,
     const std::vector<Datum>* materializedArgsPtr = existingArgs;
     auto vectorArgs = [&]() -> const std::vector<Datum>& {
         if (materializedArgsPtr == nullptr) {
-            materializedArgs.assign(args.begin(), args.end());
+            materializedArgs = std::vector<Datum>(args.begin(), args.end());
             materializedArgsPtr = &materializedArgs;
         }
         return *materializedArgsPtr;
