@@ -271,6 +271,10 @@ std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
 }
 
 const std::string& stringRefLikeJava(const Datum& datum, std::string& storage) {
+    static const std::string empty;
+    if (datum.isVoid() || datum.isNull()) {
+        return empty;
+    }
     if (const auto* value = datum.asString()) {
         return value->value;
     }
