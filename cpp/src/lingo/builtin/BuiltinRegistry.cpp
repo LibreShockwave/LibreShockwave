@@ -2471,7 +2471,7 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
             const auto callArgs = snapshotStructArgsForCall(extraArgs);
             lastResult = context.callTargetHandler(item, handlerName, callArgs);
         }
-        return lastResult;
+        return std::move(lastResult);
     }
     if (target.isPropList()) {
         std::vector<Datum> snapshot;
@@ -2483,7 +2483,7 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
             const auto callArgs = snapshotStructArgsForCall(extraArgs);
             lastResult = context.callTargetHandler(item, handlerName, callArgs);
         }
-        return lastResult;
+        return std::move(lastResult);
     }
 
     const auto callArgs = snapshotStructArgsForCall(extraArgs);
