@@ -112,7 +112,7 @@ void Scope::pushParam(int index) {
     if (index >= 0 && index < static_cast<int>(modifiedParams_.size())) {
         const auto& modified = modifiedParams_[static_cast<std::size_t>(index)];
         if (modified) {
-            push(*modified);
+            pushCopy(*modified);
             return;
         }
     }
