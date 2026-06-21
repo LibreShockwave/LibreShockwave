@@ -2455,7 +2455,8 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
         return Datum::voidValue();
     }
 
-    const std::string handlerName = args[0].asSymbol() != nullptr ? args[0].asSymbol()->name : toStringLikeJava(args[0]);
+    std::string handlerNameStorage;
+    const std::string& handlerName = stringRefLikeJava(args[0], handlerNameStorage);
     const std::span<const Datum> extraArgs(args.data() + 2, args.size() - 2);
     const Datum& target = args[1];
     Datum lastResult = Datum::voidValue();
