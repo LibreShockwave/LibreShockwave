@@ -5166,12 +5166,17 @@ bool gtEq(ExecutionContext& context) {
 
 bool eq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
-        const auto* bi = context.peekRef(0).asInt();
-        const auto* ai = context.peekRef(1).asInt();
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        const auto* bi = b.asInt();
+        const auto* ai = a.asInt();
         if (ai != nullptr && bi != nullptr) {
             context.scope().replaceTopTwo(ai->value == bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
+        const bool result = lingoEquals(a, b);
+        context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
+        return true;
     }
 
     const Datum b = context.pop();
@@ -5182,12 +5187,17 @@ bool eq(ExecutionContext& context) {
 
 bool notEq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
-        const auto* bi = context.peekRef(0).asInt();
-        const auto* ai = context.peekRef(1).asInt();
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        const auto* bi = b.asInt();
+        const auto* ai = a.asInt();
         if (ai != nullptr && bi != nullptr) {
             context.scope().replaceTopTwo(ai->value != bi->value ? Datum::TRUE : Datum::FALSE);
             return true;
         }
+        const bool result = !lingoEquals(a, b);
+        context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
+        return true;
     }
 
     const Datum b = context.pop();
