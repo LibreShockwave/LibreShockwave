@@ -1232,7 +1232,8 @@ Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& arg
         if (index > 0) {
             value.push_back(' ');
         }
-        value.append(toStringLikeJava(args[index]));
+        std::string argStorage;
+        value.append(stringViewLikeJava(args[index], argStorage));
     }
 
     if (context.outputHandler) {
