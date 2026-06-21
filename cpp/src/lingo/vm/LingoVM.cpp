@@ -939,7 +939,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
                 executeInstruction(scope, context, traceInstruction);
             }
         }
-        result = scope.returnValue();
+        result = scope.takeReturnValue();
     } catch (const std::exception& error) {
         fireTraceError("Error in " + currentHandlerName, error.what());
         if (!isAlertHookHandler && fireAlertHook("Script Error", error.what())) {

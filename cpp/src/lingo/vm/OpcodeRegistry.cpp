@@ -4137,7 +4137,7 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view methodNam
 Datum castLibObjectMethod(ExecutionContext& context,
                           const Datum::CastLibRef& castLib,
                           std::string_view methodName,
-                          const std::vector<Datum>& args) {
+                          std::span<const Datum> args) {
     if ((!equalsIgnoreCase(methodName, "getProp") && !equalsIgnoreCase(methodName, "getPropRef")) || args.size() < 2 ||
         !equalsIgnoreCase(keyNameLikeJava(args[0]), "member")) {
         return Datum::voidValue();
@@ -4160,7 +4160,7 @@ Datum castLibObjectMethod(ExecutionContext& context,
 Datum castLibMemberAccessorObjectMethod(ExecutionContext& context,
                                         const Datum::CastLibMemberAccessor& accessor,
                                         std::string_view methodName,
-                                        const std::vector<Datum>& args) {
+                                        std::span<const Datum> args) {
     if (args.empty() ||
         (!equalsIgnoreCase(methodName, "getAt") && !equalsIgnoreCase(methodName, "getProp") &&
          !equalsIgnoreCase(methodName, "getPropRef"))) {
@@ -4282,7 +4282,7 @@ Datum scriptRefObjectMethod(ExecutionContext& context,
 Datum varRefObjectMethod(ExecutionContext& context,
                          const Datum::VarRef& varRef,
                          std::string_view methodName,
-                         const std::vector<Datum>& args) {
+                         std::span<const Datum> args) {
     Datum value = getContextVar(context, varRef.varType, Datum::of(varRef.rawIndex));
     if (equalsIgnoreCase(methodName, "getProp")) {
         if (args.size() < 2) {
@@ -4326,7 +4326,8 @@ Datum varRefObjectMethod(ExecutionContext& context,
         return dispatch::PropListMethodDispatcher::dispatch(value.propListValue(), methodName, args);
     }
     if (value.isString()) {
-        return dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(value),
+        std::string valueStorage;
+        return dispatch::StringMethodDispatcher::dispatch(stringViewLikeJava(value, valueStorage),
                                                           methodName,
                                                           args,
                                                           currentItemDelimiter(context));
@@ -4338,7 +4339,7 @@ Datum varRefObjectMethod(ExecutionContext& context,
         return rectObjectMethod(*rect, methodName, args);
     }
     if (value.type() == DatumType::ScriptInstanceRef) {
-        return dispatch::ScriptInstanceMethodDispatcher::dispatch(context, value, methodName, args);
+        return scriptInstanceObjectMethod(context, value, methodName, args);
     }
     return Datum::voidValue();
 }
@@ -4381,7 +4382,8 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
         return dispatch::PropListMethodDispatcher::dispatch(target.propListValue(), methodName, args);
     }
     if (target.isString()) {
-        return dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(target),
+        std::string targetStorage;
+        return dispatch::StringMethodDispatcher::dispatch(stringViewLikeJava(target, targetStorage),
                                                           methodName,
                                                           args,
                                                           currentItemDelimiter(context));
@@ -4422,6 +4424,9 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
                                Datum target,
                                std::string_view methodName,
                                std::span<const Datum> args) {
+    if (const auto* varRef = target.asVarRef()) {
+        return varRefObjectMethod(context, *varRef, methodName, args);
+    }
     if (target.isList()) {
         return dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, args);
     }
@@ -4429,7 +4434,8 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
         return dispatch::PropListMethodDispatcher::dispatch(target.propListValue(), methodName, args);
     }
     if (target.isString()) {
-        return dispatch::StringMethodDispatcher::dispatch(toStringLikeJava(target),
+        std::string targetStorage;
+        return dispatch::StringMethodDispatcher::dispatch(stringViewLikeJava(target, targetStorage),
                                                           methodName,
                                                           args,
                                                           currentItemDelimiter(context));
@@ -4439,6 +4445,15 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
     }
     if (auto* rect = target.asIntRect()) {
         return rectObjectMethod(*rect, methodName, args);
+    }
+    if (const auto* castLib = target.asCastLibRef()) {
+        return castLibObjectMethod(context, *castLib, methodName, args);
+    }
+    if (const auto* accessor = target.asCastLibMemberAccessor()) {
+        return castLibMemberAccessorObjectMethod(context, *accessor, methodName, args);
+    }
+    if (target.type() == DatumType::ScriptInstanceRef) {
+        return scriptInstanceObjectMethod(context, target, methodName, args);
     }
 
     if (args.empty()) {

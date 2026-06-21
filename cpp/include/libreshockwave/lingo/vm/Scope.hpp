@@ -143,6 +143,7 @@ public:
     [[nodiscard]] bool returned() const { return returned_; }
     void setReturned(bool returned) { returned_ = returned; }
     [[nodiscard]] Datum returnValue() const { return returnValue_; }
+    [[nodiscard]] Datum takeReturnValue() { return std::move(returnValue_); }
     void setReturnValue(Datum value) {
         returnValue_ = std::move(value);
         returned_ = true;
