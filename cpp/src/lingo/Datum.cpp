@@ -736,7 +736,7 @@ Datum Datum::deepCopy() const {
         std::vector<Datum> copied;
         copied.reserve(argListValue().args().size());
         for (const auto& arg : argListValue().args()) {
-            copied.push_back(arg.deepCopy());
+            copied.emplace_back(arg.deepCopy());
         }
         return Datum::argList(std::move(copied));
     }
@@ -745,7 +745,7 @@ Datum Datum::deepCopy() const {
         std::vector<Datum> copied;
         copied.reserve(argListNoRetValue().args().size());
         for (const auto& arg : argListNoRetValue().args()) {
-            copied.push_back(arg.deepCopy());
+            copied.emplace_back(arg.deepCopy());
         }
         return Datum::argListNoRet(std::move(copied));
     }
@@ -794,7 +794,7 @@ Datum Datum::List::deepCopyDatum() const {
     std::vector<Datum> copied;
     copied.reserve(items_.size());
     for (const auto& item : items_) {
-        copied.push_back(item.deepCopy());
+        copied.emplace_back(item.deepCopy());
     }
     return Datum::list(std::move(copied), sorted_);
 }
