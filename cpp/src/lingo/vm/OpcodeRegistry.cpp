@@ -4731,12 +4731,12 @@ bool newObj(ExecutionContext& context) {
     Datum instance = fallbackScriptInstance(constructorTarget.target);
     if (const auto memberRef = scriptConstructorMemberRef(constructorTarget.target)) {
         initializeDeclaredScriptProperties(context, instance, *memberRef);
-        std::vector<Datum> constructorArgs;
-        if (constructorTarget.consumedArgs < args.size()) {
-            constructorArgs.assign(args.begin() +
-                                       static_cast<std::vector<Datum>::difference_type>(constructorTarget.consumedArgs),
-                                   args.end());
-        }
+        const std::vector<Datum> constructorArgs =
+            constructorTarget.consumedArgs < args.size()
+                ? std::vector<Datum>(
+                      args.begin() + static_cast<std::vector<Datum>::difference_type>(constructorTarget.consumedArgs),
+                      args.end())
+                : std::vector<Datum>();
         (void)executeScriptNewHandler(context, constructorArgs, instance);
     }
     context.push(std::move(instance));
