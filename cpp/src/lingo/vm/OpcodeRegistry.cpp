@@ -5999,13 +5999,13 @@ bool getLegacyProperty(ExecutionContext& context) {
 
 bool getField(ExecutionContext& context) {
     const Datum castIdDatum = context.pop();
-    const Datum fieldNameOrNum = context.pop();
+    Datum fieldNameOrNum = context.pop();
     const int castId = toIntLikeJava(castIdDatum);
 
     std::vector<Datum> args;
     args.reserve(2);
     if (fieldNameOrNum.asString() != nullptr || fieldNameOrNum.asInt() != nullptr) {
-        args.push_back(fieldNameOrNum);
+        args.push_back(std::move(fieldNameOrNum));
     } else {
         args.push_back(Datum::of(toStringLikeJava(fieldNameOrNum)));
     }
