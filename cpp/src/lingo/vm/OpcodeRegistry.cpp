@@ -5456,7 +5456,7 @@ Datum getContextVar(ExecutionContext& context,
         case id::VarType::GLOBAL2:
             return context.getGlobal(context.resolveNameRef(toIntLikeJava(idDatum)));
         case id::VarType::PROPERTY: {
-            const Datum receiver = context.scope().receiver();
+            const Datum& receiver = context.scope().receiver();
             if (receiver.type() == DatumType::ScriptInstanceRef) {
                 return util::getProperty(receiver.scriptInstanceValue(), context.resolveNameRef(toIntLikeJava(idDatum)));
             }
@@ -5802,7 +5802,7 @@ bool pushArgListNoRet(ExecutionContext& context) {
 
 bool getProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    const Datum receiver = context.scope().receiver();
+    const Datum& receiver = context.scope().receiver();
     if (receiver.type() == DatumType::ScriptInstanceRef) {
         context.push(util::getProperty(receiver.scriptInstanceValue(), propName));
     } else {
