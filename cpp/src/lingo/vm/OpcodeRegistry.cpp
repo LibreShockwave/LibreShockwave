@@ -6333,21 +6333,33 @@ enum class FastPrimitiveBuiltin {
 };
 
 FastPrimitiveBuiltin fastPrimitiveBuiltinFor(std::string_view handlerName) {
-    if (equalsIgnoreCase(handlerName, "length")) return FastPrimitiveBuiltin::Length;
-    if (equalsIgnoreCase(handlerName, "count")) return FastPrimitiveBuiltin::Count;
-    if (equalsIgnoreCase(handlerName, "chars")) return FastPrimitiveBuiltin::Chars;
-    if (equalsIgnoreCase(handlerName, "bitAnd")) return FastPrimitiveBuiltin::BitAnd;
-    if (equalsIgnoreCase(handlerName, "bitOr")) return FastPrimitiveBuiltin::BitOr;
-    if (equalsIgnoreCase(handlerName, "bitXor")) return FastPrimitiveBuiltin::BitXor;
-    if (equalsIgnoreCase(handlerName, "bitNot")) return FastPrimitiveBuiltin::BitNot;
-    if (equalsIgnoreCase(handlerName, "abs")) return FastPrimitiveBuiltin::Abs;
-    if (equalsIgnoreCase(handlerName, "listp")) return FastPrimitiveBuiltin::ListP;
-    if (equalsIgnoreCase(handlerName, "voidp")) return FastPrimitiveBuiltin::VoidP;
-    if (equalsIgnoreCase(handlerName, "charToNum")) return FastPrimitiveBuiltin::CharToNum;
-    if (equalsIgnoreCase(handlerName, "numToChar")) return FastPrimitiveBuiltin::NumToChar;
-    if (equalsIgnoreCase(handlerName, "string")) return FastPrimitiveBuiltin::String;
-    if (equalsIgnoreCase(handlerName, "random")) return FastPrimitiveBuiltin::Random;
-    if (equalsIgnoreCase(handlerName, "add")) return FastPrimitiveBuiltin::Add;
+    switch (handlerName.size()) {
+        case 3:
+            if (equalsIgnoreCase(handlerName, "abs")) return FastPrimitiveBuiltin::Abs;
+            if (equalsIgnoreCase(handlerName, "add")) return FastPrimitiveBuiltin::Add;
+            break;
+        case 5:
+            if (equalsIgnoreCase(handlerName, "count")) return FastPrimitiveBuiltin::Count;
+            if (equalsIgnoreCase(handlerName, "chars")) return FastPrimitiveBuiltin::Chars;
+            if (equalsIgnoreCase(handlerName, "bitOr")) return FastPrimitiveBuiltin::BitOr;
+            if (equalsIgnoreCase(handlerName, "listp")) return FastPrimitiveBuiltin::ListP;
+            if (equalsIgnoreCase(handlerName, "voidp")) return FastPrimitiveBuiltin::VoidP;
+            break;
+        case 6:
+            if (equalsIgnoreCase(handlerName, "length")) return FastPrimitiveBuiltin::Length;
+            if (equalsIgnoreCase(handlerName, "bitAnd")) return FastPrimitiveBuiltin::BitAnd;
+            if (equalsIgnoreCase(handlerName, "bitXor")) return FastPrimitiveBuiltin::BitXor;
+            if (equalsIgnoreCase(handlerName, "bitNot")) return FastPrimitiveBuiltin::BitNot;
+            if (equalsIgnoreCase(handlerName, "string")) return FastPrimitiveBuiltin::String;
+            if (equalsIgnoreCase(handlerName, "random")) return FastPrimitiveBuiltin::Random;
+            break;
+        case 9:
+            if (equalsIgnoreCase(handlerName, "charToNum")) return FastPrimitiveBuiltin::CharToNum;
+            if (equalsIgnoreCase(handlerName, "numToChar")) return FastPrimitiveBuiltin::NumToChar;
+            break;
+        default:
+            break;
+    }
     return FastPrimitiveBuiltin::None;
 }
 
