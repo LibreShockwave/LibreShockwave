@@ -5305,11 +5305,11 @@ bool joinStr(ExecutionContext& context) {
     const std::string_view aString = stringViewLikeJava(a, aStorage);
     const std::string_view bString = stringViewLikeJava(b, bStorage);
     if (aString.empty()) {
-        context.push(b.asString() != nullptr ? b : Datum::of(std::string(bString)));
+        context.push(b.asString() != nullptr ? std::move(b) : Datum::of(std::string(bString)));
         return true;
     }
     if (bString.empty()) {
-        context.push(a.asString() != nullptr ? a : Datum::of(std::string(aString)));
+        context.push(a.asString() != nullptr ? std::move(a) : Datum::of(std::string(aString)));
         return true;
     }
     std::string result;
@@ -5328,11 +5328,11 @@ bool joinPadStr(ExecutionContext& context) {
     const std::string_view aString = stringViewLikeJava(a, aStorage);
     const std::string_view bString = stringViewLikeJava(b, bStorage);
     if (aString.empty()) {
-        context.push(b.asString() != nullptr ? b : Datum::of(std::string(bString)));
+        context.push(b.asString() != nullptr ? std::move(b) : Datum::of(std::string(bString)));
         return true;
     }
     if (bString.empty()) {
-        context.push(a.asString() != nullptr ? a : Datum::of(std::string(aString)));
+        context.push(a.asString() != nullptr ? std::move(a) : Datum::of(std::string(aString)));
         return true;
     }
     std::string result;
