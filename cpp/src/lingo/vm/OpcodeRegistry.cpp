@@ -4534,14 +4534,7 @@ bool swap(ExecutionContext& context) {
 }
 
 bool pop(ExecutionContext& context) {
-    const int count = context.argument();
-    if (count <= 1) {
-        (void)context.pop();
-    } else {
-        for (int index = 0; index < count; ++index) {
-            (void)context.pop();
-        }
-    }
+    context.scope().drop(context.argument() <= 0 ? 1 : context.argument());
     return true;
 }
 
