@@ -169,7 +169,7 @@ std::vector<ListElement> splitListElements(std::string_view content) {
             } else if (ch == ':' && bracketDepth == 0 && parenDepth == 0 && elementColonIndex < 0) {
                 elementColonIndex = static_cast<int>(i - elementStart);
             } else if (ch == ',' && bracketDepth == 0 && parenDepth == 0) {
-                elements.push_back(ListElement{content.substr(elementStart, i - elementStart), elementColonIndex});
+                elements.emplace_back(content.substr(elementStart, i - elementStart), elementColonIndex);
                 elementStart = i + 1;
                 elementColonIndex = -1;
             }
@@ -177,7 +177,7 @@ std::vector<ListElement> splitListElements(std::string_view content) {
     }
 
     if (elementStart < content.size()) {
-        elements.push_back(ListElement{content.substr(elementStart), elementColonIndex});
+        elements.emplace_back(content.substr(elementStart), elementColonIndex);
     }
     return elements;
 }
