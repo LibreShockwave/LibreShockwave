@@ -826,11 +826,9 @@ Datum getPropListProp(const Datum::PropList& propList, std::string_view propName
     if (equalsIgnoreCase(propName, "count") || equalsIgnoreCase(propName, "length")) {
         return Datum::of(propList.count());
     }
-    for (const auto& entry : propList.properties()) {
-        std::string keyStorage;
-        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), propName)) {
-            return entry.second;
-        }
+    const int index = propList.findUntypedKeyName(propName);
+    if (index >= 0) {
+        return propList.properties()[static_cast<std::size_t>(index)].second;
     }
     if (equalsIgnoreCase(propName, "ilk")) {
         return Datum::symbol("propList");
@@ -839,13 +837,8 @@ Datum getPropListProp(const Datum::PropList& propList, std::string_view propName
 }
 
 Datum getPropListKey(const Datum::PropList& propList, std::string_view keyName) {
-    for (const auto& entry : propList.properties()) {
-        std::string keyStorage;
-        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), keyName)) {
-            return entry.second;
-        }
-    }
-    return Datum::voidValue();
+    const int index = propList.findUntypedKeyName(keyName);
+    return index >= 0 ? propList.properties()[static_cast<std::size_t>(index)].second : Datum::voidValue();
 }
 
 bool isCallMessageStruct(const Datum::PropList& propList) {
@@ -882,12 +875,10 @@ std::vector<Datum> snapshotCallArgsFromStack(ExecutionContext& context, int argC
 }
 
 void putPropListProp(Datum::PropList& propList, std::string_view propName, Datum value) {
-    for (auto& entry : propList.properties()) {
-        std::string keyStorage;
-        if (equalsIgnoreCase(keyNameLikeJavaView(entry.first, keyStorage), propName)) {
-            entry.second = std::move(value);
-            return;
-        }
+    const int index = propList.findUntypedKeyName(propName);
+    if (index >= 0) {
+        propList.properties()[static_cast<std::size_t>(index)].second = std::move(value);
+        return;
     }
     propList.appendProperty(Datum::symbol(std::string(propName)), std::move(value));
 }
