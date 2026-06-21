@@ -5470,22 +5470,28 @@ bool put(ExecutionContext& context) {
             break;
         case 3: {
             const Datum current = getContextVar(context, varType, idDatum, fieldCastIdDatum);
-            const std::string valueString = toStringLikeJava(value);
-            const std::string currentString = toStringLikeJava(current);
-            const std::string newValue = currentString.empty()
-                                             ? valueString
-                                             : valueString.empty() ? currentString : valueString + currentString;
-            setContextVar(context, varType, idDatum, Datum::of(newValue), fieldCastIdDatum);
+            std::string valueStorage;
+            std::string currentStorage;
+            const std::string_view valueString = stringViewLikeJava(value, valueStorage);
+            const std::string_view currentString = stringViewLikeJava(current, currentStorage);
+            std::string newValue;
+            newValue.reserve(valueString.size() + currentString.size());
+            newValue.append(valueString);
+            newValue.append(currentString);
+            setContextVar(context, varType, idDatum, Datum::of(std::move(newValue)), fieldCastIdDatum);
             break;
         }
         case 2: {
             const Datum current = getContextVar(context, varType, idDatum, fieldCastIdDatum);
-            const std::string currentString = toStringLikeJava(current);
-            const std::string valueString = toStringLikeJava(value);
-            const std::string newValue = currentString.empty()
-                                             ? valueString
-                                             : valueString.empty() ? currentString : currentString + valueString;
-            setContextVar(context, varType, idDatum, Datum::of(newValue), fieldCastIdDatum);
+            std::string currentStorage;
+            std::string valueStorage;
+            const std::string_view currentString = stringViewLikeJava(current, currentStorage);
+            const std::string_view valueString = stringViewLikeJava(value, valueStorage);
+            std::string newValue;
+            newValue.reserve(currentString.size() + valueString.size());
+            newValue.append(currentString);
+            newValue.append(valueString);
+            setContextVar(context, varType, idDatum, Datum::of(std::move(newValue)), fieldCastIdDatum);
             break;
         }
         default:
