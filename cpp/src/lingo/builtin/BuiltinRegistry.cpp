@@ -2495,16 +2495,15 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
     const Datum& target = args[1];
     Datum lastResult = Datum::voidValue();
     static const std::vector<Datum> emptyCallArgs;
+    const std::vector<Datum> callArgs = extraArgs.empty()
+                                            ? std::vector<Datum>()
+                                            : snapshotStructArgsForCall(extraArgs);
+    const std::vector<Datum>& callArgsRef = extraArgs.empty() ? emptyCallArgs : callArgs;
 
     if (target.isList()) {
         const auto snapshot = target.listValue().items();
         for (const auto& item : snapshot) {
-            if (extraArgs.empty()) {
-                lastResult = context.callTargetHandler(item, handlerName, emptyCallArgs);
-            } else {
-                const auto callArgs = snapshotStructArgsForCall(extraArgs);
-                lastResult = context.callTargetHandler(item, handlerName, callArgs);
-            }
+            lastResult = context.callTargetHandler(item, handlerName, callArgsRef);
         }
         return std::move(lastResult);
     }
@@ -2515,21 +2514,12 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
             snapshot.emplace_back(entry.second);
         }
         for (const auto& item : snapshot) {
-            if (extraArgs.empty()) {
-                lastResult = context.callTargetHandler(item, handlerName, emptyCallArgs);
-            } else {
-                const auto callArgs = snapshotStructArgsForCall(extraArgs);
-                lastResult = context.callTargetHandler(item, handlerName, callArgs);
-            }
+            lastResult = context.callTargetHandler(item, handlerName, callArgsRef);
         }
         return std::move(lastResult);
     }
 
-    if (extraArgs.empty()) {
-        return context.callTargetHandler(target, handlerName, emptyCallArgs);
-    }
-    const auto callArgs = snapshotStructArgsForCall(extraArgs);
-    return context.callTargetHandler(target, handlerName, callArgs);
+    return context.callTargetHandler(target, handlerName, callArgsRef);
 }
 
 void ConstructorBuiltins::registerBuiltins(BuiltinRegistry& registry) {
