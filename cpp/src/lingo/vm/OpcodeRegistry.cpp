@@ -6171,14 +6171,15 @@ bool localCall(ExecutionContext& context) {
     std::vector<Datum> argStorage;
     const std::vector<Datum>& argItems = argListItemsRef(argListDatum, argStorage);
     std::span<const Datum> args(argItems);
-    Datum receiver = context.scope().receiver();
-    if (!receiver.isVoid() && !receiver.isNull() && !args.empty() && args.front() == receiver) {
+    const Datum& scopeReceiver = context.scope().receiver();
+    const Datum* receiver = &scopeReceiver;
+    if (!scopeReceiver.isVoid() && !scopeReceiver.isNull() && !args.empty() && args.front() == scopeReceiver) {
         bool handlerDeclaresMe = false;
         if (!targetHandler->argNameIds.empty()) {
             handlerDeclaresMe = equalsIgnoreCase(context.resolveNameRef(targetHandler->argNameIds.front()), "me");
         }
         if (!handlerDeclaresMe) {
-            receiver = args.front();
+            receiver = &args.front();
         }
         args = args.subspan(1);
     }
@@ -6193,7 +6194,7 @@ bool localCall(ExecutionContext& context) {
             context.scope().scriptNamesOwner()
         },
         args,
-        receiver);
+        *receiver);
     if (!noReturn) {
         context.push(std::move(result));
     }
