@@ -2133,13 +2133,11 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
 
     std::string cacheKey;
     cacheKey.reserve(static_cast<std::size_t>(util::MAX_ANCESTOR_DEPTH * 4) + methodName.size());
-    auto* current = &instance;
-    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
+    const auto* current = &instance;
     for (int depth = 0; current != nullptr && depth < util::MAX_ANCESTOR_DEPTH; ++depth) {
         appendInt(cacheKey, current->identityId());
         cacheKey.push_back('/');
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
     appendLowerAscii(cacheKey, methodName);
     if (const auto cached = builtinContext->scriptInstanceHandlerCache.find(cacheKey);
@@ -2148,7 +2146,6 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
     }
 
     current = &instance;
-    currentOwner.reset();
     for (int depth = 0; current != nullptr && depth < util::MAX_ANCESTOR_DEPTH; ++depth) {
         if (const auto& scriptRef = current->scriptRef(); scriptRef.has_value()) {
             const int castLib = scriptRef->castLib > 0 ? scriptRef->castLib : 1;
@@ -2160,8 +2157,7 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
             }
         }
 
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
     builtinContext->scriptInstanceHandlerCache[cacheKey] = std::nullopt;
     return std::nullopt;

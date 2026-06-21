@@ -979,6 +979,14 @@ std::shared_ptr<Datum::ScriptInstanceRef> Datum::ScriptInstanceRef::ancestor() c
     return ancestor_;
 }
 
+Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() {
+    return ancestor_.get();
+}
+
+const Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() const {
+    return ancestor_.get();
+}
+
 void Datum::ScriptInstanceRef::setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor) {
     ancestor_ = std::move(ancestor);
 }
