@@ -448,8 +448,10 @@ std::vector<std::string> splitPropertyText(std::string_view text, std::string_vi
 Datum parseDirectorPropertyText(std::string_view text, std::string_view delimiter) {
     Datum result = Datum::propList();
     auto& properties = result.propListValue();
+    const auto lines = splitPropertyText(text, delimiter);
+    properties.properties().reserve(lines.size());
 
-    for (const auto& rawLine : splitPropertyText(text, delimiter)) {
+    for (const auto& rawLine : lines) {
         std::string line = trimCopy(rawLine);
         if (line.empty() || line.front() == '#' || line.starts_with("--")) {
             continue;
