@@ -5854,35 +5854,30 @@ bool getObjProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
     const Datum& objectRef = context.peekRef();
     if (const auto snapshotCount = indexedCollectionSnapshotCount(context, propName, objectRef)) {
-        context.scope().drop(1);
-        context.push(*snapshotCount);
+        context.scope().replaceTop(*snapshotCount);
         return true;
     }
     if (objectRef.type() == DatumType::ScriptInstanceRef) {
         Datum result = equalsIgnoreCase(propName, "ilk")
             ? Datum::symbol("instance")
             : util::getProperty(objectRef.scriptInstanceValue(), propName);
-        context.scope().drop(1);
-        context.push(std::move(result));
+        context.scope().replaceTop(std::move(result));
         return true;
     }
     if (objectRef.isList()) {
         Datum result = getListProp(objectRef.listValue(), propName);
-        context.scope().drop(1);
-        context.push(std::move(result));
+        context.scope().replaceTop(std::move(result));
         return true;
     }
     if (objectRef.isPropList()) {
         Datum result = getPropListProp(objectRef.propListValue(), propName);
-        context.scope().drop(1);
-        context.push(std::move(result));
+        context.scope().replaceTop(std::move(result));
         return true;
     }
     if (objectRef.isString()) {
         std::string storage;
         Datum result = getStringProp(stringViewLikeJava(objectRef, storage), propName);
-        context.scope().drop(1);
-        context.push(std::move(result));
+        context.scope().replaceTop(std::move(result));
         return true;
     }
 
