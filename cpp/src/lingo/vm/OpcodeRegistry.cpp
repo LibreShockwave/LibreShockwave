@@ -892,11 +892,11 @@ Datum getStringProp(std::string_view value, std::string_view propName) {
         return Datum::of(countLines(value));
     }
     if (equalsIgnoreCase(propName, "line")) {
-        const auto chunks = splitLines(value);
+        auto chunks = splitLines(value);
         std::vector<Datum> lines;
         lines.reserve(chunks.size());
-        for (const auto& line : chunks) {
-            lines.push_back(Datum::of(line));
+        for (auto& line : chunks) {
+            lines.push_back(Datum::of(std::move(line)));
         }
         return Datum::list(std::move(lines));
     }
