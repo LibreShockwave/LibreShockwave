@@ -16,7 +16,7 @@ void resetBuiltinControlFlow(builtin::BuiltinContext& context) {
 
 std::optional<Datum> consumeBuiltinReturnValue(builtin::BuiltinContext& context) {
     const bool returned = context.returned || context.aborted;
-    Datum returnValue = returned ? context.returnValue : Datum::voidValue();
+    Datum returnValue = returned ? std::move(context.returnValue) : Datum::voidValue();
     resetBuiltinControlFlow(context);
     if (!returned) {
         return std::nullopt;
