@@ -2296,12 +2296,12 @@ Datum XtraBuiltins::xtra(BuiltinContext& context, const std::vector<Datum>& args
     if (args.empty() || !context.xtraRegisteredResolver) {
         return Datum::voidValue();
     }
-    const std::string xtraName = toStringLikeJava(args[0]);
+    std::string xtraName = toStringLikeJava(args[0]);
     if (!context.xtraRegisteredResolver(xtraName)) {
         debugPlaybackMessage(context, "Unsupported Xtra: " + xtraName);
         return Datum::voidValue();
     }
-    return Datum::xtra(xtraName);
+    return Datum::xtra(std::move(xtraName));
 }
 
 Datum XtraBuiltins::createInstance(BuiltinContext& context,
