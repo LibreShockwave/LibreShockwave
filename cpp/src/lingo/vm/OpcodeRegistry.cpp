@@ -5586,18 +5586,24 @@ bool putChunk(ExecutionContext& context) {
                                             firstLine,
                                             lastLine);
 
-    const std::string currentString = toStringLikeJava(getContextVar(context, varType, idDatum, fieldCastIdDatum));
-    const std::string valueString = toStringLikeJava(value);
+    const Datum current = getContextVar(context, varType, idDatum, fieldCastIdDatum);
+    std::string currentStorage;
+    std::string valueStorage;
+    const std::string_view currentString = stringViewLikeJava(current, currentStorage);
+    const std::string_view valueString = stringViewLikeJava(value, valueStorage);
     const char itemDelimiter = currentItemDelimiter(context);
-    std::string newString = currentString;
+    std::string newString(currentString);
 
     if (chunk.type == StringChunkType::Char) {
         switch (putType) {
             case 1:
                 if (const auto range = charChunkReplaceRange(currentString, chunk.first, chunk.last)) {
-                    newString = std::string(currentString.substr(0, static_cast<std::size_t>(range->first))) +
-                                valueString +
-                                std::string(currentString.substr(static_cast<std::size_t>(range->second)));
+                    newString.clear();
+                    newString.reserve(currentString.size() - static_cast<std::size_t>(range->second - range->first) +
+                                      valueString.size());
+                    newString.append(currentString.substr(0, static_cast<std::size_t>(range->first)));
+                    newString.append(valueString);
+                    newString.append(currentString.substr(static_cast<std::size_t>(range->second)));
                 }
                 break;
             case 3:
