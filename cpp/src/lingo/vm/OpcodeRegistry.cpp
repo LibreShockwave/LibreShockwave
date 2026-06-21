@@ -6529,26 +6529,50 @@ enum class ImmediatePrimitiveExtCall {
 
 ImmediatePrimitiveExtCall immediatePrimitiveExtCallFor(std::string_view handlerName, int argCount) {
     if (argCount == 1) {
-        if (equalsIgnoreCase(handlerName, "charToNum")) return ImmediatePrimitiveExtCall::CharToNum;
-        if (equalsIgnoreCase(handlerName, "numToChar")) return ImmediatePrimitiveExtCall::NumToChar;
-        if (equalsIgnoreCase(handlerName, "length")) return ImmediatePrimitiveExtCall::Length;
-        if (equalsIgnoreCase(handlerName, "count")) return ImmediatePrimitiveExtCall::Count;
-        if (equalsIgnoreCase(handlerName, "string")) return ImmediatePrimitiveExtCall::String;
-        if (equalsIgnoreCase(handlerName, "integer")) return ImmediatePrimitiveExtCall::Integer;
-        if (equalsIgnoreCase(handlerName, "abs")) return ImmediatePrimitiveExtCall::Abs;
-        if (equalsIgnoreCase(handlerName, "listp")) return ImmediatePrimitiveExtCall::ListP;
-        if (equalsIgnoreCase(handlerName, "voidp")) return ImmediatePrimitiveExtCall::VoidP;
-        if (equalsIgnoreCase(handlerName, "new")) return ImmediatePrimitiveExtCall::New;
-        if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
-        if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+        switch (handlerName.size()) {
+            case 3:
+                if (equalsIgnoreCase(handlerName, "abs")) return ImmediatePrimitiveExtCall::Abs;
+                if (equalsIgnoreCase(handlerName, "new")) return ImmediatePrimitiveExtCall::New;
+                if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
+                if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+                break;
+            case 5:
+                if (equalsIgnoreCase(handlerName, "count")) return ImmediatePrimitiveExtCall::Count;
+                if (equalsIgnoreCase(handlerName, "listp")) return ImmediatePrimitiveExtCall::ListP;
+                if (equalsIgnoreCase(handlerName, "voidp")) return ImmediatePrimitiveExtCall::VoidP;
+                break;
+            case 6:
+                if (equalsIgnoreCase(handlerName, "length")) return ImmediatePrimitiveExtCall::Length;
+                if (equalsIgnoreCase(handlerName, "string")) return ImmediatePrimitiveExtCall::String;
+                break;
+            case 7:
+                if (equalsIgnoreCase(handlerName, "integer")) return ImmediatePrimitiveExtCall::Integer;
+                break;
+            case 9:
+                if (equalsIgnoreCase(handlerName, "charToNum")) return ImmediatePrimitiveExtCall::CharToNum;
+                if (equalsIgnoreCase(handlerName, "numToChar")) return ImmediatePrimitiveExtCall::NumToChar;
+                break;
+            default:
+                break;
+        }
         return ImmediatePrimitiveExtCall::None;
     }
     if (argCount == 2) {
-        if (equalsIgnoreCase(handlerName, "bitAnd")) return ImmediatePrimitiveExtCall::BitAnd;
-        if (equalsIgnoreCase(handlerName, "bitOr")) return ImmediatePrimitiveExtCall::BitOr;
-        if (equalsIgnoreCase(handlerName, "bitXor")) return ImmediatePrimitiveExtCall::BitXor;
-        if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
-        if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+        switch (handlerName.size()) {
+            case 3:
+                if (equalsIgnoreCase(handlerName, "min")) return ImmediatePrimitiveExtCall::Min;
+                if (equalsIgnoreCase(handlerName, "max")) return ImmediatePrimitiveExtCall::Max;
+                break;
+            case 5:
+                if (equalsIgnoreCase(handlerName, "bitOr")) return ImmediatePrimitiveExtCall::BitOr;
+                break;
+            case 6:
+                if (equalsIgnoreCase(handlerName, "bitAnd")) return ImmediatePrimitiveExtCall::BitAnd;
+                if (equalsIgnoreCase(handlerName, "bitXor")) return ImmediatePrimitiveExtCall::BitXor;
+                break;
+            default:
+                break;
+        }
         return ImmediatePrimitiveExtCall::None;
     }
     if (argCount == 3) {
