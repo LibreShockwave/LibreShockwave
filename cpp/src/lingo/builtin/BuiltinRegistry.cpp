@@ -806,7 +806,7 @@ Datum BuiltinRegistry::invoke(std::string_view name,
                               BuiltinContext& context,
                               const std::vector<Datum>& args) const {
     if (auto result = invokeIfPresent(name, context, args)) {
-        return *result;
+        return std::move(*result);
     }
     return Datum::voidValue();
 }
