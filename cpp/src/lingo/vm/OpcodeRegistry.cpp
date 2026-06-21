@@ -4791,6 +4791,13 @@ bool add(ExecutionContext& context) {
             context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) + bi->value)));
             return true;
         }
+
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) + toDoubleLikeJava(b)));
+            return true;
+        }
     }
 
     const Datum b = context.pop();
@@ -4875,6 +4882,13 @@ bool sub(ExecutionContext& context) {
         const auto* ai = context.peekRef(1).asInt();
         if (ai != nullptr && bi != nullptr) {
             context.scope().replaceTopTwo(Datum::of(static_cast<int>(static_cast<std::int64_t>(ai->value) - bi->value)));
+            return true;
+        }
+
+        const Datum& b = context.peekRef(0);
+        const Datum& a = context.peekRef(1);
+        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) - toDoubleLikeJava(b)));
             return true;
         }
     }
