@@ -640,9 +640,9 @@ Datum scaleList(const Datum::List& list, double scalar, bool scalarIsFloat) {
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
         if (isFloatLike(item) || scalarIsFloat) {
-            result.push_back(Datum::of(toDoubleLikeJava(item) * scalar));
+            result.emplace_back(Datum::of(toDoubleLikeJava(item) * scalar));
         } else {
-            result.push_back(Datum::of(static_cast<int>(toIntLikeJava(item) * scalar)));
+            result.emplace_back(Datum::of(static_cast<int>(toIntLikeJava(item) * scalar)));
         }
     }
     return Datum::list(std::move(result));
@@ -653,7 +653,7 @@ Datum addScalarToList(const Datum::List& list, const Datum& scalarDatum) {
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
-        result.push_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) + scalar));
+        result.emplace_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) + scalar));
     }
     return Datum::list(std::move(result));
 }
@@ -663,7 +663,7 @@ Datum subtractScalarFromList(const Datum::List& list, const Datum& scalarDatum) 
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
-        result.push_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) - scalar));
+        result.emplace_back(numericResult(item, scalarDatum, toDoubleLikeJava(item) - scalar));
     }
     return Datum::list(std::move(result));
 }
@@ -673,7 +673,7 @@ Datum subtractListFromScalar(const Datum& scalarDatum, const Datum::List& list) 
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
-        result.push_back(numericResult(scalarDatum, item, scalar - toDoubleLikeJava(item)));
+        result.emplace_back(numericResult(scalarDatum, item, scalar - toDoubleLikeJava(item)));
     }
     return Datum::list(std::move(result));
 }
@@ -686,9 +686,9 @@ Datum divideList(const Datum::List& list, const Datum& divisor) {
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
         if (isFloatLike(item) || divisorIsFloat) {
-            result.push_back(Datum::of(toDoubleLikeJava(item) / scalar));
+            result.emplace_back(Datum::of(toDoubleLikeJava(item) / scalar));
         } else {
-            result.push_back(Datum::of(toIntLikeJava(item) / intDivisor));
+            result.emplace_back(Datum::of(toIntLikeJava(item) / intDivisor));
         }
     }
     return Datum::list(std::move(result));
@@ -698,7 +698,7 @@ Datum modList(const Datum::List& list, int divisor) {
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
-        result.push_back(Datum::of(toIntLikeJava(item) % divisor));
+        result.emplace_back(Datum::of(toIntLikeJava(item) % divisor));
     }
     return Datum::list(std::move(result));
 }
