@@ -4298,10 +4298,12 @@ Datum varRefObjectMethod(ExecutionContext& context,
         }
         const int start = toIntLikeJava(args[1]);
         const int end = args.size() >= 3 ? toIntLikeJava(args[2]) : start;
+        std::string valueStorage;
+        const std::string_view valueText = stringViewLikeJava(value, valueStorage);
         if (chunkType == StringChunkType::Char) {
-            return Datum::of(getCharChunkRefValue(toStringLikeJava(value), start, end));
+            return Datum::of(getCharChunkRefValue(valueText, start, end));
         }
-        return Datum::of(resolveChunkRange(toStringLikeJava(value), chunkType, start, end, currentItemDelimiter(context)));
+        return Datum::of(resolveChunkRange(valueText, chunkType, start, end, currentItemDelimiter(context)));
     }
     if (equalsIgnoreCase(methodName, "getPropRef")) {
         if (args.size() < 2) {
