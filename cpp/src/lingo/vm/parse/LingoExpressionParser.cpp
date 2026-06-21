@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "libreshockwave/lingo/vm/LingoVM.hpp"
@@ -77,6 +78,7 @@ std::optional<double> parseDouble(std::string_view value) {
 
 std::vector<std::string> splitListElements(std::string_view content) {
     std::vector<std::string> elements;
+    elements.reserve(std::min<std::size_t>(content.size() / 8 + 1, 1024));
     std::string current;
     int bracketDepth = 0;
     bool inQuote = false;
@@ -95,7 +97,7 @@ std::vector<std::string> splitListElements(std::string_view content) {
             --bracketDepth;
             current.push_back(ch);
         } else if (ch == ',' && bracketDepth == 0) {
-            elements.push_back(current);
+            elements.push_back(std::move(current));
             current.clear();
         } else {
             current.push_back(ch);
@@ -103,7 +105,7 @@ std::vector<std::string> splitListElements(std::string_view content) {
     }
 
     if (!current.empty()) {
-        elements.push_back(current);
+        elements.push_back(std::move(current));
     }
     return elements;
 }

@@ -269,7 +269,7 @@ OpcodeRegistry& LingoVM::opcodeRegistry() { return opcodeRegistry_; }
 const OpcodeRegistry& LingoVM::opcodeRegistry() const { return opcodeRegistry_; }
 
 Datum LingoVM::getGlobal(std::string_view name) const {
-    const auto found = globals_.find(std::string(name));
+    const auto found = globals_.find(name);
     return found == globals_.end() ? Datum::voidValue() : found->second;
 }
 
@@ -277,7 +277,7 @@ void LingoVM::setGlobal(std::string name, Datum value) {
     globals_[std::move(name)] = std::move(value);
 }
 
-const std::unordered_map<std::string, Datum>& LingoVM::globals() const {
+const RuntimeGlobals& LingoVM::globals() const {
     return globals_;
 }
 
@@ -814,19 +814,18 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         throw LingoException("Call stack overflow (max " + std::to_string(MAX_CALL_STACK_DEPTH) + " frames)");
     }
     if (tracedHandlers_.contains(normalizedHandlerName)) {
-        const std::vector<Datum> traceArgs(args.begin(), args.end());
-        emitTracedHandlerCall(currentHandlerName, script, traceArgs);
+        emitTracedHandlerCall(currentHandlerName, script, args);
     }
 
-    std::vector<Datum> effectiveArgs;
+    const bool hasExplicitReceiver = !receiver.isVoid() && !receiver.isNull();
+    std::vector<Datum> effectiveArgs =
+        hasExplicitReceiver ? std::vector<Datum>() : std::vector<Datum>(args.begin(), args.end());
     bool firstParamDeclaredMe = false;
-    if (!receiver.isVoid() && !receiver.isNull()) {
+    if (hasExplicitReceiver) {
         firstParamDeclaredMe = metadata->firstParamDeclaredMe;
         effectiveArgs.reserve(args.size() + 1);
         effectiveArgs.push_back(receiver);
         effectiveArgs.insert(effectiveArgs.end(), args.begin(), args.end());
-    } else {
-        effectiveArgs.assign(args.begin(), args.end());
     }
 
     if (callStack_.empty()) {
@@ -889,8 +888,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     try {
         const bool traceHandler = traceEnabled_ || (traceListener_ && traceListener_->needsHandlerTrace());
         if (traceHandler) {
-            const std::vector<Datum> traceArgs(args.begin(), args.end());
-            handlerInfo = buildHandlerInfo(script, handler, traceArgs, receiver, fileOwner, scriptNamesOwner);
+            handlerInfo = buildHandlerInfo(script, handler, args, receiver, fileOwner, scriptNamesOwner);
             if (traceEnabled_) {
                 emitConsoleHandlerEnter(*handlerInfo);
             }
@@ -939,7 +937,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
                 executeInstruction(scope, context, traceInstruction);
             }
         }
-        result = scope.returnValue();
+        result = scope.takeReturnValue();
     } catch (const std::exception& error) {
         fireTraceError("Error in " + currentHandlerName, error.what());
         if (!isAlertHookHandler && fireAlertHook("Script Error", error.what())) {
@@ -1167,7 +1165,7 @@ std::string LingoVM::scriptDisplayName(const chunks::ScriptChunk& script,
 TraceListener::HandlerInfo LingoVM::buildHandlerInfo(
     const chunks::ScriptChunk& script,
     const chunks::ScriptChunk::Handler& handler,
-    const std::vector<Datum>& args,
+    std::span<const Datum> args,
     const Datum& receiver,
     const std::shared_ptr<const DirectorFile>& fileOwner,
     const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner) const {
@@ -1389,7 +1387,7 @@ void LingoVM::traceRandomCall(int max, int result) {
 
 void LingoVM::emitTracedHandlerCall(std::string_view handlerNameValue,
                                     const chunks::ScriptChunk& script,
-                                    const std::vector<Datum>& args) {
+                                    std::span<const Datum> args) {
     std::ostringstream out;
     out << "[TRACE] " << handlerNameValue << '(';
     for (std::size_t index = 0; index < args.size(); ++index) {

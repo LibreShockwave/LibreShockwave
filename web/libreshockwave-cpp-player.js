@@ -177,6 +177,16 @@
     let destroyed = false;
     let frameCssWidth = 1;
     let frameCssHeight = 1;
+    let inputTempo = clampTempo(options.tempoOverride || 15);
+    let lastMouseClientX = 0;
+    let lastMouseClientY = 0;
+    let hasMousePosition = false;
+    let lastSentMouseStageX = -1;
+    let lastSentMouseStageY = -1;
+    let mouseInputTimer = 0;
+    let appliedCursorKey = "";
+    let appliedCursorCss = "";
+    const customCursorUrlCache = new Map();
     let audioContext = null;
     let audioWarningShown = false;
     const audioChannels = new Map();
@@ -197,6 +207,59 @@
 
     function send(type, payload = {}) {
       if (!destroyed) worker.postMessage({ type, ...payload });
+    }
+
+    function clampTempo(value) {
+      return Math.max(1, Math.min(240, Number(value || 0) || 15));
+    }
+
+    function inputDelayMs() {
+      return Math.max(1, Math.round(1000 / inputTempo));
+    }
+
+    function clearMouseInputTimer() {
+      if (mouseInputTimer) {
+        clearTimeout(mouseInputTimer);
+        mouseInputTimer = 0;
+      }
+    }
+
+    function sendSampledMousePosition() {
+      if (!hasMousePosition || destroyed) return;
+      const point = stagePointFromClient(lastMouseClientX, lastMouseClientY);
+      if (point.x === lastSentMouseStageX && point.y === lastSentMouseStageY) return;
+      lastSentMouseStageX = point.x;
+      lastSentMouseStageY = point.y;
+      send("mouseMove", point);
+    }
+
+    function scheduleMouseInputSample(reset = false) {
+      if (reset) {
+        clearMouseInputTimer();
+      } else if (mouseInputTimer) {
+        return;
+      }
+      if (destroyed || !hasMousePosition) return;
+      mouseInputTimer = setTimeout(() => {
+        mouseInputTimer = 0;
+        sendSampledMousePosition();
+        scheduleMouseInputSample();
+      }, inputDelayMs());
+    }
+
+    function recordMousePosition(event) {
+      lastMouseClientX = event.clientX;
+      lastMouseClientY = event.clientY;
+      hasMousePosition = true;
+      scheduleMouseInputSample();
+    }
+
+    function recordMouseClientPosition(clientX, clientY) {
+      lastMouseClientX = clientX;
+      lastMouseClientY = clientY;
+      if (hasMousePosition) return;
+      hasMousePosition = true;
+      scheduleMouseInputSample();
     }
 
     function request(type, payload = {}) {
@@ -358,33 +421,52 @@
       }
     }
 
-    function stagePoint(event) {
+    function stagePointFromClient(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const scaleX = lastInfo && lastInfo.width ? lastInfo.width / rect.width : frameCssWidth / rect.width;
       const scaleY = lastInfo && lastInfo.height ? lastInfo.height / rect.height : frameCssHeight / rect.height;
       return {
-        x: Math.max(0, Math.floor((event.clientX - rect.left) * scaleX)),
-        y: Math.max(0, Math.floor((event.clientY - rect.top) * scaleY))
+        x: Math.max(0, Math.floor((clientX - rect.left) * scaleX)),
+        y: Math.max(0, Math.floor((clientY - rect.top) * scaleY))
       };
     }
 
+    function stagePoint(event) {
+      return stagePointFromClient(event.clientX, event.clientY);
+    }
+
     function applyCursor(cursor) {
+      const cursorKey = cursor
+        ? `${cursor.css || ""}|${cursor.hotX || 0}|${cursor.hotY || 0}|${cursor.width || 0}|${cursor.height || 0}|${cursor.pixels || ""}`
+        : "default";
+      if (cursorKey === appliedCursorKey) return;
+
+      let css = "default";
       if (!cursor) {
-        canvas.style.cursor = "default";
-        return;
-      }
-      if (cursor.pixels) {
-        const url = customCursorDataUrl(cursor);
-        if (url) {
-          canvas.style.cursor = `url("${url}") ${cursor.hotX || 0} ${cursor.hotY || 0}, ${cursor.css || "default"}`;
-          return;
+        css = "default";
+      } else if (cursor.pixels) {
+        let url = customCursorUrlCache.get(cursorKey);
+        if (!url) {
+          url = customCursorDataUrl(cursor);
+          if (url) customCursorUrlCache.set(cursorKey, url);
         }
+        css = url
+          ? `url("${url}") ${cursor.hotX || 0} ${cursor.hotY || 0}, ${cursor.css || "default"}`
+          : (cursor.css || "default");
+      } else {
+        css = cursor.css || "default";
       }
-      canvas.style.cursor = cursor.css || "default";
+
+      appliedCursorKey = cursorKey;
+      if (css !== appliedCursorCss) {
+        appliedCursorCss = css;
+        canvas.style.cursor = css;
+      }
     }
 
     function drawFrame(info, pixels) {
       lastInfo = info || lastInfo;
+      if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
       if (!info || !pixels || !info.width || !info.height) return;
       if (canvas.width !== info.width) canvas.width = info.width;
       if (canvas.height !== info.height) canvas.height = info.height;
@@ -528,8 +610,10 @@
         drawFrame(message.info, message.pixels);
       } else if (message.type === "frameInfo") {
         lastInfo = message.info || lastInfo;
+        if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
         applyCursor(lastInfo && lastInfo.cursor);
       } else if (message.type === "load") {
+        if (message.info && message.info.tempo) inputTempo = clampTempo(message.info.tempo);
         if (typeof options.onLoad === "function") options.onLoad(message.info || {});
         const resolve = callbacks.get(message.requestId);
         if (resolve) {
@@ -574,8 +658,10 @@
         void handleAudioCommand(message.command || {}, message.bytes).catch((error) => {
           reportAudioWarning(`Audio playback failed: ${error.message || String(error)}`);
         });
-      } else if (message.type === "tempo" && typeof options.onTempo === "function") {
-        options.onTempo(message);
+      } else if (message.type === "tempo") {
+        inputTempo = clampTempo(message.tempo || message.baseTempo || inputTempo);
+        scheduleMouseInputSample(true);
+        if (typeof options.onTempo === "function") options.onTempo(message);
       } else if (message.type === "navigation") {
         handleNavigation(message.url || "");
       } else if (message.type === "debug" && typeof options.onDebug === "function") {
@@ -589,19 +675,24 @@
     });
 
     canvas.addEventListener("mousemove", (event) => {
-      const point = stagePoint(event);
-      send("mouseMove", point);
-    });
+      recordMouseClientPosition(event.clientX, event.clientY);
+    }, { passive: true });
     canvas.addEventListener("mousedown", (event) => {
       canvas.focus();
       event.preventDefault();
       void unlockAudio();
+      recordMousePosition(event);
       const point = stagePoint(event);
+      lastSentMouseStageX = point.x;
+      lastSentMouseStageY = point.y;
       send("mouseDown", { ...point, right: event.button === 2 });
     });
     canvas.addEventListener("mouseup", (event) => {
       event.preventDefault();
+      recordMousePosition(event);
       const point = stagePoint(event);
+      lastSentMouseStageX = point.x;
+      lastSentMouseStageY = point.y;
       send("mouseUp", { ...point, right: event.button === 2 });
     });
     canvas.addEventListener("contextmenu", (event) => {
@@ -705,7 +796,11 @@
         stopAllAudio();
         send("stop");
       },
-      setTempoOverride(tempo) { send("tempo", { tempo: Number(tempo || 0) }); },
+      setTempoOverride(tempo) {
+        inputTempo = clampTempo(tempo || inputTempo);
+        scheduleMouseInputSample(true);
+        send("tempo", { tempo: Number(tempo || 0) });
+      },
       setDebugPlaybackEnabled(enabled) { send("debugPlayback", { enabled: Boolean(enabled) }); },
       setSlowHandlerWarningMs(milliseconds) { send("slowHandlerWarningMs", { milliseconds: Math.max(0, Number(milliseconds || 0)) }); },
       setParams(params) { send("params", { params }); },
@@ -717,6 +812,7 @@
       destroy() {
         stopAllAudio();
         destroyed = true;
+        clearMouseInputTimer();
         if (contextMenu) contextMenu.remove();
         if (aboutPanel) aboutPanel.remove();
         document.removeEventListener("pointerdown", handleDocumentPointerDown);

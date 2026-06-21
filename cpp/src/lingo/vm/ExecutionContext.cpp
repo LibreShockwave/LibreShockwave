@@ -16,12 +16,12 @@ void resetBuiltinControlFlow(builtin::BuiltinContext& context) {
 
 std::optional<Datum> consumeBuiltinReturnValue(builtin::BuiltinContext& context) {
     const bool returned = context.returned || context.aborted;
-    Datum returnValue = returned ? context.returnValue : Datum::voidValue();
+    Datum returnValue = returned ? std::move(context.returnValue) : Datum::voidValue();
     resetBuiltinControlFlow(context);
     if (!returned) {
         return std::nullopt;
     }
-    return returnValue;
+    return std::move(returnValue);
 }
 
 } // namespace
@@ -201,14 +201,15 @@ Datum ExecutionContext::executeHandler(const HandlerRef& handler,
     if (callbacks_.handlerRefSpanExecutor) {
         return callbacks_.handlerRefSpanExecutor(handler, args, receiver);
     }
-    const std::vector<Datum> argVector(args.begin(), args.end());
     if (callbacks_.handlerRefExecutor) {
+        const std::vector<Datum> argVector(args.begin(), args.end());
         return callbacks_.handlerRefExecutor(handler, argVector, receiver);
     }
     if (callbacks_.handlerExecutor) {
         if (handler.script == nullptr || handler.handler == nullptr) {
             return Datum::voidValue();
         }
+        const std::vector<Datum> argVector(args.begin(), args.end());
         return callbacks_.handlerExecutor(*handler.script, *handler.handler, argVector, receiver);
     }
     return Datum::voidValue();

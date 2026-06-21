@@ -148,8 +148,8 @@ std::string datumReprLikeJava(const Datum& datum) {
     if (datum.isVoid()) {
         return "<Void>";
     }
-    if (datum.isString()) {
-        return "\"" + datum.stringValue() + "\"";
+    if (const auto* value = datum.asString()) {
+        return "\"" + value->value + "\"";
     }
     if (const auto* value = datum.asSymbol()) {
         return "#" + value->name;
@@ -158,40 +158,51 @@ std::string datumReprLikeJava(const Datum& datum) {
 }
 
 std::string listStringLikeJava(const Datum::List& list) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     for (std::size_t index = 0; index < list.items().size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(list.items()[index]);
+        result.append(datumReprLikeJava(list.items()[index]));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string propListStringLikeJava(const Datum::PropList& propList) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     const auto& properties = propList.properties();
     for (std::size_t index = 0; index < properties.size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(properties[index].first) << ": " << datumReprLikeJava(properties[index].second);
+        result.append(datumReprLikeJava(properties[index].first));
+        result.append(": ");
+        result.append(datumReprLikeJava(properties[index].second));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string toStringLikeJava(const Datum& datum) {
     if (datum.isVoid() || datum.isNull()) {
         return "";
     }
-    if (datum.isString()) {
-        return datum.stringValue();
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
     }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     if (const auto* value = datum.asColorRef()) {
@@ -253,10 +264,25 @@ std::string keyNameLikeJava(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
+    }
     return toStringLikeJava(datum);
 }
 
 std::string_view keyNameLikeJavaView(const Datum& datum, std::string& storage) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
@@ -268,6 +294,9 @@ std::string_view keyNameLikeJavaView(const Datum& datum, std::string& storage) {
     }
     if (const auto* chunk = datum.asStringChunk()) {
         return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
     }
     storage = toStringLikeJava(datum);
     return storage;
@@ -440,8 +469,12 @@ Datum PropListMethodDispatcher::dispatch(Datum::PropList& propList,
     if (equalsIgnoreCase(methodName, "duplicate")) {
         Datum copy = Datum::propList(propList.sorted());
         const auto& properties = std::as_const(propList).properties();
-        copy.propListValue().properties() = properties;
-        return copy.deepCopy();
+        auto& copiedProperties = copy.propListValue().properties();
+        copiedProperties.reserve(properties.size());
+        for (const auto& entry : properties) {
+            copiedProperties.emplace_back(entry.first.deepCopy(), entry.second.deepCopy());
+        }
+        return copy;
     }
     Datum value = getPropListKey(propList, methodName);
     if (!value.isVoid()) {

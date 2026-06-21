@@ -58,7 +58,7 @@ public:
 
     [[nodiscard]] Datum getGlobal(std::string_view name) const;
     void setGlobal(std::string name, Datum value);
-    [[nodiscard]] const std::unordered_map<std::string, Datum>& globals() const;
+    [[nodiscard]] const RuntimeGlobals& globals() const;
     void clearGlobals();
 
     [[nodiscard]] Datum getPref(std::string_view name) const;
@@ -179,7 +179,7 @@ private:
     [[nodiscard]] TraceListener::HandlerInfo buildHandlerInfo(
         const chunks::ScriptChunk& script,
         const chunks::ScriptChunk::Handler& handler,
-        const std::vector<Datum>& args,
+        std::span<const Datum> args,
         const Datum& receiver,
         const std::shared_ptr<const DirectorFile>& fileOwner = nullptr,
         const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner = nullptr) const;
@@ -202,7 +202,7 @@ private:
     void traceRandomCall(int max, int result);
     void emitTracedHandlerCall(std::string_view handlerName,
                                const chunks::ScriptChunk& script,
-                               const std::vector<Datum>& args);
+                               std::span<const Datum> args);
     void traceOutput(const std::string& line) const;
     void emitConsoleHandlerEnter(const TraceListener::HandlerInfo& info);
     void emitConsoleHandlerExit(const TraceListener::HandlerInfo& info, const Datum& returnValue);
@@ -274,7 +274,7 @@ private:
     };
 
     DirectorFile* file_{nullptr};
-    std::unordered_map<std::string, Datum> globals_;
+    RuntimeGlobals globals_;
     std::map<std::string, Datum> prefs_;
     std::deque<Scope> callStack_;
     std::deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls_;

@@ -13,7 +13,7 @@ std::vector<std::string> splitWords(std::string_view value) {
     for (char ch : value) {
         if (static_cast<unsigned char>(ch) <= static_cast<unsigned char>(' ')) {
             if (!current.empty()) {
-                words.push_back(current);
+                words.emplace_back(std::move(current));
                 current.clear();
             }
         } else {
@@ -21,7 +21,7 @@ std::vector<std::string> splitWords(std::string_view value) {
         }
     }
     if (!current.empty()) {
-        words.push_back(std::move(current));
+        words.emplace_back(std::move(current));
     }
     return words;
 }
@@ -55,13 +55,13 @@ std::vector<std::string> splitItems(std::string_view value, char delimiter) {
     std::string current;
     for (char ch : value) {
         if (ch == delimiter) {
-            items.push_back(current);
+            items.emplace_back(std::move(current));
             current.clear();
         } else {
             current.push_back(ch);
         }
     }
-    items.push_back(std::move(current));
+    items.emplace_back(std::move(current));
     return items;
 }
 
@@ -314,6 +314,7 @@ std::string getWordRangeDirect(std::string_view value, int start, int end) {
     std::size_t wordStart = 0;
     bool inWord = false;
     std::string result;
+    result.reserve(value.size());
 
     for (std::size_t pos = 0; pos <= value.size(); ++pos) {
         const bool isSpace = pos == value.size() ||

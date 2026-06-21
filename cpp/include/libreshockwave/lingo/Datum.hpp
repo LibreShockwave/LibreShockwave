@@ -638,6 +638,8 @@ public:
     [[nodiscard]] const std::optional<CastMemberRef>& scriptRef() const;
     [[nodiscard]] std::uint64_t identityId() const;
     [[nodiscard]] std::shared_ptr<ScriptInstanceRef> ancestor() const;
+    [[nodiscard]] ScriptInstanceRef* ancestorRaw();
+    [[nodiscard]] const ScriptInstanceRef* ancestorRaw() const;
     void setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor);
 
     [[nodiscard]] Datum getProperty(const std::string& name) const;
@@ -652,6 +654,7 @@ public:
     void reserveLocalProperties(std::size_t additionalCount);
     void appendLocalProperty(std::string name, Datum value);
     void putLocalPropertyExact(std::string name, Datum value);
+    void putLocalPropertyExactView(std::string_view name, Datum value);
     bool eraseLocalPropertyExact(std::string_view name);
 
 private:

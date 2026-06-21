@@ -63,7 +63,7 @@ public:
         return &handler_->instructions[static_cast<std::size_t>(bytecodeIndex_)];
     }
 
-    void push(Datum value) { stack_.push_back(std::move(value)); }
+    void push(Datum value) { stack_.emplace_back(std::move(value)); }
     [[nodiscard]] Datum pop() {
         if (stack_.empty()) {
             return Datum::voidValue();
@@ -114,8 +114,16 @@ public:
         if (count <= 0 || stack_.empty()) {
             return;
         }
-        const auto newSize = static_cast<std::size_t>(std::max(0, static_cast<int>(stack_.size()) - count));
-        stack_.resize(newSize);
+        if (count == 1) {
+            stack_.pop_back();
+            return;
+        }
+        const auto dropCount = static_cast<std::size_t>(count);
+        if (dropCount >= stack_.size()) {
+            stack_.clear();
+            return;
+        }
+        stack_.resize(stack_.size() - dropCount);
     }
 
     [[nodiscard]] Datum getParam(int index) const;
@@ -143,6 +151,7 @@ public:
     [[nodiscard]] bool returned() const { return returned_; }
     void setReturned(bool returned) { returned_ = returned; }
     [[nodiscard]] Datum returnValue() const { return returnValue_; }
+    [[nodiscard]] Datum takeReturnValue() { return std::move(returnValue_); }
     void setReturnValue(Datum value) {
         returnValue_ = std::move(value);
         returned_ = true;

@@ -604,13 +604,4 @@ std::vector<DebugStateListener*> DebugController::listenersSnapshotLocked() cons
     return listeners_;
 }
 
-std::map<std::string, lingo::Datum> DebugController::toOrderedMap(
-    const std::unordered_map<std::string, lingo::Datum>& values) {
-    std::map<std::string, lingo::Datum> ordered;
-    for (const auto& [key, value] : values) {
-        ordered[key] = value;
-    }
-    return ordered;
-}
-
 } // namespace libreshockwave::player::debug

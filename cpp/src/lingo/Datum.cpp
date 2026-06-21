@@ -96,7 +96,7 @@ std::string propListKeyName(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
-    if (datum.isVoid()) {
+    if (datum.isVoid() || datum.isNull()) {
         return "";
     }
     if (datum.isString() || datum.isNumber()) {
@@ -109,10 +109,14 @@ std::string propListKeyName(const Datum& datum) {
     }
 }
 
-std::string propListSameTypeKey(const Datum& datum) {
+std::string propListSameTypeKeyFromName(const Datum& datum, std::string_view keyName) {
     std::string key = datum.asSymbol() != nullptr ? "s:" : "v:";
-    key += lowerAscii(propListKeyName(datum));
+    key += lowerAscii(keyName);
     return key;
+}
+
+std::string propListSameTypeKey(const Datum& datum) {
+    return propListSameTypeKeyFromName(datum, propListKeyName(datum));
 }
 
 std::uint64_t nextScriptInstanceIdentityId() {
@@ -736,7 +740,7 @@ Datum Datum::deepCopy() const {
         std::vector<Datum> copied;
         copied.reserve(argListValue().args().size());
         for (const auto& arg : argListValue().args()) {
-            copied.push_back(arg.deepCopy());
+            copied.emplace_back(arg.deepCopy());
         }
         return Datum::argList(std::move(copied));
     }
@@ -745,7 +749,7 @@ Datum Datum::deepCopy() const {
         std::vector<Datum> copied;
         copied.reserve(argListNoRetValue().args().size());
         for (const auto& arg : argListNoRetValue().args()) {
-            copied.push_back(arg.deepCopy());
+            copied.emplace_back(arg.deepCopy());
         }
         return Datum::argListNoRet(std::move(copied));
     }
@@ -794,7 +798,7 @@ Datum Datum::List::deepCopyDatum() const {
     std::vector<Datum> copied;
     copied.reserve(items_.size());
     for (const auto& item : items_) {
-        copied.push_back(item.deepCopy());
+        copied.emplace_back(item.deepCopy());
     }
     return Datum::list(std::move(copied), sorted_);
 }
@@ -930,7 +934,7 @@ void Datum::PropList::indexEntry(std::size_t index) const {
     const int signedIndex = static_cast<int>(index);
     const auto& key = properties_[index].first;
     const std::string keyName = propListKeyName(key);
-    firstSameTypeKeyIndex_.try_emplace(propListSameTypeKey(key), signedIndex);
+    firstSameTypeKeyIndex_.try_emplace(propListSameTypeKeyFromName(key, keyName), signedIndex);
     firstUntypedKeyIndex_.try_emplace(keyName, signedIndex);
     firstCaseSensitiveKeyIndex_.try_emplace(keyName, signedIndex);
 }
@@ -973,6 +977,14 @@ std::uint64_t Datum::ScriptInstanceRef::identityId() const {
 
 std::shared_ptr<Datum::ScriptInstanceRef> Datum::ScriptInstanceRef::ancestor() const {
     return ancestor_;
+}
+
+Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() {
+    return ancestor_.get();
+}
+
+const Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() const {
+    return ancestor_.get();
 }
 
 void Datum::ScriptInstanceRef::setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor) {
@@ -1099,6 +1111,15 @@ void Datum::ScriptInstanceRef::putLocalPropertyExact(std::string name, Datum val
         return;
     }
     appendLocalProperty(std::move(name), std::move(value));
+}
+
+void Datum::ScriptInstanceRef::putLocalPropertyExactView(std::string_view name, Datum value) {
+    const int index = findExactPropertyIndex(name);
+    if (index >= 0) {
+        properties_[static_cast<std::size_t>(index)].second = std::move(value);
+        return;
+    }
+    appendLocalProperty(std::string(name), std::move(value));
 }
 
 bool Datum::ScriptInstanceRef::eraseLocalPropertyExact(std::string_view name) {

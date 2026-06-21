@@ -244,6 +244,9 @@ std::string datumReprLikeJava(const Datum& datum);
 std::string keyName(const Datum& datum);
 
 std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
     if (const auto* value = datum.asString()) {
         return value->value;
     }
@@ -254,6 +257,9 @@ std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
         return value->value;
     }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     return std::nullopt;
@@ -267,31 +273,57 @@ std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
     return storage;
 }
 
+const std::string& stringRefLikeJava(const Datum& datum, std::string& storage) {
+    static const std::string empty;
+    if (datum.isVoid() || datum.isNull()) {
+        return empty;
+    }
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
+        return value->name;
+    }
+    storage = toStringLikeJava(datum);
+    return storage;
+}
+
 std::string listStringLikeJava(const Datum::List& list) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     for (std::size_t index = 0; index < list.items().size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(list.items()[index]);
+        result.append(datumReprLikeJava(list.items()[index]));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string propListStringLikeJava(const Datum::PropList& propList) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     const auto& properties = propList.properties();
     for (std::size_t index = 0; index < properties.size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(properties[index].first) << ": " << datumReprLikeJava(properties[index].second);
+        result.append(datumReprLikeJava(properties[index].first));
+        result.append(": ");
+        result.append(datumReprLikeJava(properties[index].second));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string datumReprLikeJava(const Datum& datum) {
@@ -314,7 +346,16 @@ std::string toStringLikeJava(const Datum& datum) {
     if (const auto* value = datum.asString()) {
         return value->value;
     }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     if (const auto* value = datum.asColorRef()) {
@@ -374,8 +415,8 @@ std::string toStringLikeJava(const Datum& datum) {
 
 bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs);
 
-std::string delimiterFromArg(const Datum& datum) {
-    std::string delimiter = toStringLikeJava(datum);
+std::string_view delimiterFromArg(const Datum& datum, std::string& storage) {
+    const std::string_view delimiter = stringViewLikeJava(datum, storage);
     if (equalsIgnoreCase(delimiter, "return")) {
         return "\r";
     }
@@ -393,7 +434,7 @@ std::vector<std::string> splitPropertyText(std::string_view text, std::string_vi
     std::string current;
 
     auto flush = [&]() {
-        lines.push_back(current);
+        lines.push_back(std::move(current));
         current.clear();
     };
 
@@ -431,8 +472,10 @@ std::vector<std::string> splitPropertyText(std::string_view text, std::string_vi
 Datum parseDirectorPropertyText(std::string_view text, std::string_view delimiter) {
     Datum result = Datum::propList();
     auto& properties = result.propListValue();
+    const auto lines = splitPropertyText(text, delimiter);
+    properties.properties().reserve(lines.size());
 
-    for (const auto& rawLine : splitPropertyText(text, delimiter)) {
+    for (const auto& rawLine : lines) {
         std::string line = trimCopy(rawLine);
         if (line.empty() || line.front() == '#' || line.starts_with("--")) {
             continue;
@@ -586,12 +629,13 @@ const Datum::PropList* singlePropListWrapper(const Datum::List& list) {
     return nullptr;
 }
 
-void putStringProp(Datum& propList, const std::string& key, Datum value) {
-    propList.propListValue().put(Datum::of(key), std::move(value));
+void putStringProp(Datum& propList, std::string_view key, Datum value) {
+    propList.propListValue().put(Datum::of(std::string(key)), std::move(value));
 }
 
 Datum defaultStreamStatusDatum() {
     auto props = Datum::propList();
+    props.propListValue().properties().reserve(5);
     putStringProp(props, "URL", Datum::of(std::string()));
     putStringProp(props, "state", Datum::of(std::string("Error")));
     putStringProp(props, "bytesSoFar", Datum::of(0));
@@ -630,7 +674,7 @@ std::vector<Datum> snapshotStructArgsForCall(std::span<const Datum> args) {
     std::vector<Datum> snapshot;
     snapshot.reserve(args.size());
     for (const auto& arg : args) {
-        snapshot.push_back(snapshotStructArgForCall(arg));
+        snapshot.emplace_back(snapshotStructArgForCall(arg));
     }
     return snapshot;
 }
@@ -708,10 +752,22 @@ std::string keyName(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
-    if (datum.isVoid()) {
+    if (datum.isVoid() || datum.isNull()) {
         return "";
     }
-    if (datum.isString() || datum.isNumber()) {
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
+    }
+    if (datum.isNumber()) {
         return datum.stringValue();
     }
     try {
@@ -724,6 +780,18 @@ std::string keyName(const Datum& datum) {
 std::string toKeyNameLikeJava(const Datum& datum) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
+    }
+    if (const auto* string = datum.asString()) {
+        return string->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    if (const auto* timeout = datum.asTimeoutRef()) {
+        return timeout->name;
     }
     return toStringLikeJava(datum);
 }
@@ -788,7 +856,7 @@ Datum BuiltinRegistry::invoke(std::string_view name,
                               BuiltinContext& context,
                               const std::vector<Datum>& args) const {
     if (auto result = invokeIfPresent(name, context, args)) {
-        return *result;
+        return std::move(*result);
     }
     return Datum::voidValue();
 }
@@ -973,17 +1041,21 @@ Datum MathBuiltins::min(BuiltinContext&, const std::vector<Datum>& args) {
         if (items.empty()) {
             return Datum::of(0);
         }
-        Datum result = items.front();
-        bool floatResult = result.isFloat();
+        bool floatResult = items.front().isFloat();
+        int intResult = toIntLikeJava(items.front());
+        double doubleResult = floatResult ? toDoubleLikeJava(items.front()) : static_cast<double>(intResult);
         for (std::size_t index = 1; index < items.size(); ++index) {
-            floatResult = floatResult || items[index].isFloat();
-            if (floatResult) {
-                result = Datum::of(std::min(toDoubleLikeJava(result), toDoubleLikeJava(items[index])));
+            if (floatResult || items[index].isFloat()) {
+                if (!floatResult) {
+                    doubleResult = static_cast<double>(intResult);
+                    floatResult = true;
+                }
+                doubleResult = std::min(doubleResult, toDoubleLikeJava(items[index]));
             } else {
-                result = Datum::of(std::min(toIntLikeJava(result), toIntLikeJava(items[index])));
+                intResult = std::min(intResult, toIntLikeJava(items[index]));
             }
         }
-        return result;
+        return floatResult ? Datum::of(doubleResult) : Datum::of(intResult);
     }
     if (args.size() < 2) {
         return args.empty() ? Datum::of(0) : args[0];
@@ -1000,17 +1072,21 @@ Datum MathBuiltins::max(BuiltinContext&, const std::vector<Datum>& args) {
         if (items.empty()) {
             return Datum::of(0);
         }
-        Datum result = items.front();
-        bool floatResult = result.isFloat();
+        bool floatResult = items.front().isFloat();
+        int intResult = toIntLikeJava(items.front());
+        double doubleResult = floatResult ? toDoubleLikeJava(items.front()) : static_cast<double>(intResult);
         for (std::size_t index = 1; index < items.size(); ++index) {
-            floatResult = floatResult || items[index].isFloat();
-            if (floatResult) {
-                result = Datum::of(std::max(toDoubleLikeJava(result), toDoubleLikeJava(items[index])));
+            if (floatResult || items[index].isFloat()) {
+                if (!floatResult) {
+                    doubleResult = static_cast<double>(intResult);
+                    floatResult = true;
+                }
+                doubleResult = std::max(doubleResult, toDoubleLikeJava(items[index]));
             } else {
-                result = Datum::of(std::max(toIntLikeJava(result), toIntLikeJava(items[index])));
+                intResult = std::max(intResult, toIntLikeJava(items[index]));
             }
         }
-        return result;
+        return floatResult ? Datum::of(doubleResult) : Datum::of(intResult);
     }
     if (args.size() < 2) {
         return args.empty() ? Datum::of(0) : args[0];
@@ -1036,6 +1112,9 @@ void StringBuiltins::registerBuiltins(BuiltinRegistry& registry) {
 Datum StringBuiltins::string(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::of(std::string());
+    }
+    if (args[0].isString()) {
+        return args[0];
     }
     return Datum::of(toStringLikeJava(args[0]));
 }
@@ -1087,27 +1166,8 @@ Datum StringBuiltins::charToNum(BuiltinContext&, const std::vector<Datum>& args)
     if (args.empty()) {
         return Datum::of(0);
     }
-    if (const auto* value = args[0].asString()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = args[0].asFieldText()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = args[0].asStringChunk()) {
-        return value->value.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->value.front())));
-    }
-    if (const auto* value = args[0].asSymbol()) {
-        return value->name.empty()
-            ? Datum::of(0)
-            : Datum::of(static_cast<int>(static_cast<unsigned char>(value->name.front())));
-    }
-    const std::string value = toStringLikeJava(args[0]);
+    std::string storage;
+    const std::string_view value = stringViewLikeJava(args[0], storage);
     if (value.empty()) {
         return Datum::of(0);
     }
@@ -1154,27 +1214,30 @@ Datum StringBuiltins::stringReplace(BuiltinContext&, const std::vector<Datum>& a
     }
     std::string result = toStringLikeJava(args[0]);
     if (args.size() < 3) {
-        return Datum::of(result);
+        return Datum::of(std::move(result));
     }
 
-    const std::string from = toStringLikeJava(args[1]);
+    std::string fromStorage;
+    const std::string_view from = stringViewLikeJava(args[1], fromStorage);
     if (from.empty()) {
-        return Datum::of(result);
+        return Datum::of(std::move(result));
     }
-    const std::string to = toStringLikeJava(args[2]);
+    std::string toStorage;
+    const std::string_view to = stringViewLikeJava(args[2], toStorage);
     std::size_t pos = 0;
-    while ((pos = result.find(from, pos)) != std::string::npos) {
-        result.replace(pos, from.size(), to);
+    while ((pos = result.find(from.data(), pos, from.size())) != std::string::npos) {
+        result.replace(pos, from.size(), to.data(), to.size());
         pos += to.size();
     }
-    return Datum::of(result);
+    return Datum::of(std::move(result));
 }
 
 Datum StringBuiltins::getPref(BuiltinContext& context, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::voidValue();
     }
-    const std::string key = toStringLikeJava(args[0]);
+    std::string keyStorage;
+    const std::string& key = stringRefLikeJava(args[0], keyStorage);
     if (key.empty() || !context.getPrefHandler) {
         return Datum::voidValue();
     }
@@ -1185,7 +1248,8 @@ Datum StringBuiltins::setPref(BuiltinContext& context, const std::vector<Datum>&
     if (args.size() < 2) {
         return Datum::voidValue();
     }
-    const std::string key = toStringLikeJava(args[0]);
+    std::string keyStorage;
+    const std::string& key = stringRefLikeJava(args[0], keyStorage);
     if (key.empty() || !context.setPrefHandler) {
         return Datum::voidValue();
     }
@@ -1198,19 +1262,19 @@ void OutputBuiltins::registerBuiltins(BuiltinRegistry& registry) {
 }
 
 Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& args) {
-    std::ostringstream text;
-    for (std::size_t index = 0; index < args.size(); ++index) {
-        if (index > 0) {
-            text << ' ';
-        }
-        text << toStringLikeJava(args[index]);
-    }
-
     if (!context.debugPlaybackEnabled && !vm::DebugConfig::isDebugPlaybackEnabled()) {
         return Datum::voidValue();
     }
 
-    const std::string value = text.str();
+    std::string value;
+    for (std::size_t index = 0; index < args.size(); ++index) {
+        if (index > 0) {
+            value.push_back(' ');
+        }
+        std::string argStorage;
+        value.append(stringViewLikeJava(args[index], argStorage));
+    }
+
     if (context.outputHandler) {
         context.outputHandler("PUT", value);
     } else {
@@ -1220,7 +1284,8 @@ Datum OutputBuiltins::put(BuiltinContext& context, const std::vector<Datum>& arg
 }
 
 Datum OutputBuiltins::alert(BuiltinContext& context, const std::vector<Datum>& args) {
-    const std::string message = args.empty() ? "" : toStringLikeJava(args[0]);
+    std::string messageStorage;
+    const std::string& message = args.empty() ? messageStorage : stringRefLikeJava(args[0], messageStorage);
     if (context.alertHookHandler && context.alertHookHandler("Alert", message)) {
         return Datum::voidValue();
     }
@@ -1547,16 +1612,27 @@ Datum ListBuiltins::join(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.empty() || !args[0].isList()) {
         return Datum::of(std::string());
     }
-    const std::string separator = args.size() > 1 ? toStringLikeJava(args[1]) : "&";
-    std::ostringstream out;
+    std::string separatorStorage;
+    const std::string_view separator = args.size() > 1 ? stringViewLikeJava(args[1], separatorStorage) : "&";
     const auto& items = args[0].listValue().items();
+    std::string result;
+    if (!items.empty()) {
+        std::size_t directItemSize = 0;
+        for (const auto& item : items) {
+            if (const auto directValue = directStringViewLikeJava(item)) {
+                directItemSize += directValue->size();
+            }
+        }
+        result.reserve(separator.size() * (items.size() - 1) + directItemSize);
+    }
     for (std::size_t index = 0; index < items.size(); ++index) {
         if (index > 0) {
-            out << separator;
+            result.append(separator);
         }
-        out << toStringLikeJava(items[index]);
+        std::string itemStorage;
+        result.append(stringViewLikeJava(items[index], itemStorage));
     }
-    return Datum::of(out.str());
+    return Datum::of(std::move(result));
 }
 
 Datum ListBuiltins::duplicate(BuiltinContext&, const std::vector<Datum>& args) {
@@ -1570,8 +1646,10 @@ Datum ListBuiltins::convertToPropList(BuiltinContext&, const std::vector<Datum>&
     if (args.empty()) {
         return Datum::propList();
     }
-    const std::string text = toStringLikeJava(args[0]);
-    const std::string delimiter = args.size() > 1 ? delimiterFromArg(args[1]) : std::string();
+    std::string textStorage;
+    const std::string_view text = stringViewLikeJava(args[0], textStorage);
+    std::string delimiterStorage;
+    const std::string_view delimiter = args.size() > 1 ? delimiterFromArg(args[1], delimiterStorage) : std::string_view();
     return parseDirectorPropertyText(text, delimiter);
 }
 
@@ -1701,8 +1779,8 @@ Datum NetBuiltins::postNetText(BuiltinContext& context, const std::vector<Datum>
     if (context.netManager == nullptr || args.empty()) {
         return Datum::of(-1);
     }
-    const std::string postData = args.size() > 1 ? toStringLikeJava(args[1]) : "";
-    return Datum::of(context.netManager->postNetText(toStringLikeJava(args[0]), postData));
+    std::string postData = args.size() > 1 ? toStringLikeJava(args[1]) : "";
+    return Datum::of(context.netManager->postNetText(toStringLikeJava(args[0]), std::move(postData)));
 }
 
 Datum NetBuiltins::netDone(BuiltinContext& context, const std::vector<Datum>& args) {
@@ -1741,7 +1819,8 @@ Datum NetBuiltins::getStreamStatus(BuiltinContext& context, const std::vector<Da
         return defaultStreamStatusDatum();
     }
     if (!args.empty() && (args[0].isString() || args[0].isSymbol())) {
-        const std::string value = toStringLikeJava(args[0]);
+        std::string valueStorage;
+        const std::string& value = stringRefLikeJava(args[0], valueStorage);
         if (const auto taskId = parseIntStrict(trimCopy(value))) {
             return context.netManager->getStreamStatusDatum(*taskId);
         }
@@ -1764,8 +1843,11 @@ Datum NetBuiltins::gotoNetPage(BuiltinContext& context, const std::vector<Datum>
     if (context.movieProperties == nullptr || args.empty()) {
         return Datum::FALSE;
     }
-    const std::string target = args.size() > 1 ? toStringLikeJava(args[1]) : "";
-    context.movieProperties->gotoNetPage(toStringLikeJava(args[0]), target);
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[0], urlStorage);
+    std::string targetStorage;
+    const std::string& target = args.size() > 1 ? stringRefLikeJava(args[1], targetStorage) : targetStorage;
+    context.movieProperties->gotoNetPage(url, target);
     return Datum::TRUE;
 }
 
@@ -1773,7 +1855,9 @@ Datum NetBuiltins::gotoNetMovie(BuiltinContext& context, const std::vector<Datum
     if (context.movieProperties == nullptr || args.empty()) {
         return Datum::of(-1);
     }
-    return Datum::of(context.movieProperties->gotoNetMovie(toStringLikeJava(args[0])));
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[0], urlStorage);
+    return Datum::of(context.movieProperties->gotoNetMovie(url));
 }
 
 void ExternalParamBuiltins::registerBuiltins(BuiltinRegistry& registry) {
@@ -1851,7 +1935,8 @@ Datum ImageBuiltins::image(BuiltinContext& context, const std::vector<Datum>& ar
         const Datum& paletteArg = args[3];
         bool resolved = false;
         if (paletteArg.isString() || paletteArg.isSymbol()) {
-            const std::string name = toStringLikeJava(paletteArg);
+            std::string nameStorage;
+            const std::string_view name = stringViewLikeJava(paletteArg, nameStorage);
             if (const auto* palette = bitmap::Palette::builtInBySymbolName(name)) {
                 image->setImagePalette(palette);
                 if (auto normalized = bitmap::Palette::normalizeBuiltInSymbolName(name)) {
@@ -1889,7 +1974,8 @@ Datum ImageBuiltins::importFileInto(BuiltinContext& context, const std::vector<D
         return Datum::FALSE;
     }
 
-    const std::string url = toStringLikeJava(args[1]);
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[1], urlStorage);
     const Datum options = args.size() >= 3 ? args[2] : Datum::voidValue();
     return boolDatum(context.importFileIntoHandler(*ref, url, options));
 }
@@ -2231,15 +2317,18 @@ Datum CastLibBuiltins::field(BuiltinContext& context, const std::vector<Datum>& 
     if (fieldArg.isString() || fieldArg.isInt()) {
         return context.fieldResolver(fieldArg, castLibNumber);
     }
-    return context.fieldResolver(Datum::of(toStringLikeJava(fieldArg)), castLibNumber);
+    std::string fieldName = toStringLikeJava(fieldArg);
+    return context.fieldResolver(Datum::of(std::move(fieldName)), castLibNumber);
 }
 
 Datum CastLibBuiltins::createMember(BuiltinContext& context, const std::vector<Datum>& args) {
     if (args.size() < 2 || !context.namedCastMemberCreator) {
         return Datum::voidValue();
     }
-    const std::string memberName = toStringLikeJava(args[0]);
-    const std::string memberType = args[1].asSymbol() != nullptr ? args[1].asSymbol()->name : toStringLikeJava(args[1]);
+    std::string memberNameStorage;
+    const std::string& memberName = stringRefLikeJava(args[0], memberNameStorage);
+    std::string memberTypeStorage;
+    const std::string& memberType = stringRefLikeJava(args[1], memberTypeStorage);
     context.scriptResolutionCache.clear();
     return context.namedCastMemberCreator(memberName, memberType);
 }
@@ -2276,12 +2365,12 @@ Datum XtraBuiltins::xtra(BuiltinContext& context, const std::vector<Datum>& args
     if (args.empty() || !context.xtraRegisteredResolver) {
         return Datum::voidValue();
     }
-    const std::string xtraName = toStringLikeJava(args[0]);
+    std::string xtraName = toStringLikeJava(args[0]);
     if (!context.xtraRegisteredResolver(xtraName)) {
         debugPlaybackMessage(context, "Unsupported Xtra: " + xtraName);
         return Datum::voidValue();
     }
-    return Datum::xtra(xtraName);
+    return Datum::xtra(std::move(xtraName));
 }
 
 Datum XtraBuiltins::createInstance(BuiltinContext& context,
@@ -2323,8 +2412,12 @@ Datum XtraBuiltins::callInstanceGlobalHandler(BuiltinContext& context,
                                  "." + std::string(handlerName));
         return Datum::voidValue();
     }
+    static const std::vector<Datum> emptyMethodArgs;
+    if (args.size() == 1) {
+        return context.xtraHandler(*instance, std::string(handlerName), emptyMethodArgs);
+    }
     std::vector<Datum> methodArgs(args.begin() + 1, args.end());
-    return callHandler(context, *instance, handlerName, methodArgs);
+    return context.xtraHandler(*instance, std::string(handlerName), methodArgs);
 }
 
 Datum XtraBuiltins::getProperty(BuiltinContext& context,
@@ -2435,34 +2528,37 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
         return Datum::voidValue();
     }
 
-    const std::string handlerName = args[0].asSymbol() != nullptr ? args[0].asSymbol()->name : toStringLikeJava(args[0]);
+    std::string handlerNameStorage;
+    const std::string& handlerName = stringRefLikeJava(args[0], handlerNameStorage);
     const std::span<const Datum> extraArgs(args.data() + 2, args.size() - 2);
     const Datum& target = args[1];
     Datum lastResult = Datum::voidValue();
+    static const std::vector<Datum> emptyCallArgs;
+    const std::vector<Datum> callArgs = extraArgs.empty()
+                                            ? std::vector<Datum>()
+                                            : snapshotStructArgsForCall(extraArgs);
+    const std::vector<Datum>& callArgsRef = extraArgs.empty() ? emptyCallArgs : callArgs;
 
     if (target.isList()) {
         const auto snapshot = target.listValue().items();
         for (const auto& item : snapshot) {
-            const auto callArgs = snapshotStructArgsForCall(extraArgs);
-            lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            lastResult = context.callTargetHandler(item, handlerName, callArgsRef);
         }
-        return lastResult;
+        return std::move(lastResult);
     }
     if (target.isPropList()) {
         std::vector<Datum> snapshot;
         snapshot.reserve(target.propListValue().properties().size());
         for (const auto& entry : target.propListValue().properties()) {
-            snapshot.push_back(entry.second);
+            snapshot.emplace_back(entry.second);
         }
         for (const auto& item : snapshot) {
-            const auto callArgs = snapshotStructArgsForCall(extraArgs);
-            lastResult = context.callTargetHandler(item, handlerName, callArgs);
+            lastResult = context.callTargetHandler(item, handlerName, callArgsRef);
         }
-        return lastResult;
+        return std::move(lastResult);
     }
 
-    const auto callArgs = snapshotStructArgsForCall(extraArgs);
-    return context.callTargetHandler(target, handlerName, callArgs);
+    return context.callTargetHandler(target, handlerName, callArgsRef);
 }
 
 void ConstructorBuiltins::registerBuiltins(BuiltinRegistry& registry) {
@@ -2594,6 +2690,8 @@ Datum ConstructorBuiltins::sprite(BuiltinContext&, const std::vector<Datum>& arg
     return Datum::spriteRef(id::ChannelId(channel));
 }
 
+Datum scriptFromArgs(BuiltinContext& context, std::span<const Datum> args);
+
 Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::voidValue();
@@ -2617,8 +2715,16 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
         return Datum::voidValue();
     }
 
-    const auto constructorArgs = [&args]() {
-        return std::vector<Datum>(args.begin() + 1, args.end());
+    static const std::vector<Datum> emptyConstructorArgs;
+    std::vector<Datum> constructorArgStorage;
+    const auto constructorArgs = [&args, &constructorArgStorage]() -> const std::vector<Datum>& {
+        if (args.size() <= 1) {
+            return emptyConstructorArgs;
+        }
+        if (constructorArgStorage.empty()) {
+            constructorArgStorage.assign(args.begin() + 1, args.end());
+        }
+        return constructorArgStorage;
     };
     if (const auto* xtraRef = target.asXtra()) {
         return XtraBuiltins::createInstance(context, *xtraRef, constructorArgs());
@@ -2630,7 +2736,7 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
     Datum resolvedTarget = target;
     if (target.asScriptRef() == nullptr && target.asCastMemberRef() == nullptr &&
         (target.isString() || target.isSymbol())) {
-        const Datum resolvedScript = TypeBuiltins::script(context, {target});
+        const Datum resolvedScript = scriptFromArgs(context, std::span<const Datum>(&target, 1));
         if (resolvedScript.asScriptRef() != nullptr) {
             resolvedTarget = resolvedScript;
         }
@@ -2700,9 +2806,9 @@ Datum TypeBuiltins::value(BuiltinContext& context, const std::vector<Datum>& arg
     if (raw.empty()) {
         return Datum::of(std::string());
     }
-    if (const auto parsedLiteral = LingoValueParser::parseComplete(raw, identifierResolver);
+    if (auto parsedLiteral = LingoValueParser::parseComplete(raw, identifierResolver);
         parsedLiteral.has_value() && !parsedLiteral->isVoid()) {
-        return *parsedLiteral;
+        return std::move(*parsedLiteral);
     }
     if (context.valueEvaluator) {
         Datum evaluated = context.valueEvaluator(args[0]);
@@ -2725,7 +2831,7 @@ Datum TypeBuiltins::value(BuiltinContext& context, const std::vector<Datum>& arg
     return parsed;
 }
 
-Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& args) {
+Datum scriptFromArgs(BuiltinContext& context, std::span<const Datum> args) {
     if (args.empty()) {
         return Datum::voidValue();
     }
@@ -2776,7 +2882,7 @@ Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& ar
 
     if (identifier.isList()) {
         for (const auto& item : identifier.listValue().items()) {
-            Datum result = script(context, {item});
+            Datum result = scriptFromArgs(context, std::span<const Datum>(&item, 1));
             if (!result.isVoid()) {
                 return result;
             }
@@ -2790,14 +2896,18 @@ Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& ar
     return Datum::voidValue();
 }
 
+Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& args) {
+    return scriptFromArgs(context, std::span<const Datum>(args));
+}
+
 Datum TypeBuiltins::ilk(BuiltinContext&, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::symbol("void");
     }
 
-    const std::string typeName = ilkType(args[0]);
+    std::string typeName = ilkType(args[0]);
     if (args.size() < 2) {
-        return Datum::symbol(typeName);
+        return Datum::symbol(std::move(typeName));
     }
 
     const std::string checkName = keyName(args[1]);
@@ -2871,12 +2981,13 @@ Datum TypeBuiltins::callAncestor(BuiltinContext& context, const std::vector<Datu
     }
     if (args[1].isList()) {
         Datum result = Datum::voidValue();
+        std::vector<Datum> nestedArgs;
+        nestedArgs.reserve(args.size());
         for (const auto& item : args[1].listValue().items()) {
             if (item.type() != DatumType::ScriptInstanceRef) {
                 continue;
             }
-            std::vector<Datum> nestedArgs;
-            nestedArgs.reserve(args.size());
+            nestedArgs.clear();
             nestedArgs.push_back(args[0]);
             nestedArgs.push_back(item);
             nestedArgs.insert(nestedArgs.end(), args.begin() + 2, args.end());

@@ -7,6 +7,29 @@ login/security callback path, especially authored big-number arithmetic such as
 `powMod` and its callers. The VM work has improved substantially, but the last
 valid profile evidence still showed the security path above the target range.
 
+The latest harness warning output still shows the security path dominated by
+authored modular arithmetic. The next work should specifically make these
+reported slow handlers faster through generic VM/runtime improvements, not by
+hardcoding the handler names:
+
+- tick: 2723.0ms
+- `powMod`: 2455ms / 2448ms, 4387 instructions
+- `responseWithPublicKey`: 2477ms, 1557 instructions
+- `securityCastDownloadCallback`: 2477ms, 8 instructions
+- `DoCallBack`: 2478ms, 51 instructions
+- `removeCastLoadTask`: 2479ms, 33 instructions
+- `DoneCurrentDownLoad`: 2483ms, 61 instructions
+- `update`: 2483ms, 85 instructions
+- `prepare`: 2484ms, 57 instructions
+- `prepareFrame`: 2487ms, 208 instructions
+- socket message: 2814.0ms
+- `handleServerSecretKey`: 2812ms, 166 instructions
+- `forwardMsg`: 2812ms, 84 instructions
+- `msghandler`: 2814ms, 129 instructions
+- `xtraMsgHandler`: 2814ms, 64 instructions
+- host xtra callbacks: 2814ms
+- multiuser message: 2814ms
+
 The important symptom is generic VM overhead: many authored instructions and
 small calls spend too much time in dispatch, argument setup, property/list
 access, `Datum` copying, string conversion, and allocator churn. Fixes should
@@ -25,6 +48,8 @@ continue to reduce those generic runtime costs.
 - Preserve authored script-instance handlers.
 - Do not commit credentials, SSO tickets, endpoint changes, generated harness
   HTML, or test-only host substitutions.
+- Commit after every change once it is verified so each optimisation step remains
+  reviewable and bisectable.
 - Commit messages must not mention game, harness, room, user, asset, or
   endpoint names.
 
@@ -56,3 +81,6 @@ is fixed separately.
 
 Use harness/profile captures only as timing evidence when they collect real
 debug events and do not redirect to a concurrent-login/disconnected page.
+Use `http://localhost:3000/venus-quackster-harness` for browser harness checks,
+and inspect warning slow-method output when deciding the next generic VM/runtime
+hot path to optimise.

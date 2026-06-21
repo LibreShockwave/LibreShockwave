@@ -12,7 +12,7 @@ namespace libreshockwave::lingo::vm::trace {
 TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
     const Scope& scope,
     const chunks::ScriptChunk::Instruction& instruction,
-    const std::unordered_map<std::string, Datum>& globals,
+    const RuntimeGlobals& globals,
     const chunks::ScriptNamesChunk* names) const {
     std::vector<Datum> stackSnapshot;
     const int snapshotCount = std::min(10, scope.stackSize());
@@ -58,22 +58,33 @@ std::unordered_map<std::string, Datum> TracingHelper::captureLocals(
 TraceListener::HandlerInfo TracingHelper::buildHandlerInfo(
     const chunks::ScriptChunk& script,
     const chunks::ScriptChunk::Handler& handler,
-    const std::vector<Datum>& args,
+    std::span<const Datum> args,
     const Datum& receiver,
-    const std::unordered_map<std::string, Datum>& globals,
+    const RuntimeGlobals& globals,
     const chunks::ScriptNamesChunk* names,
     const std::string& scriptDisplayName) const {
     return TraceListener::HandlerInfo{
         script.getHandlerName(handler, names),
         script.id().value(),
         scriptDisplayName.empty() ? "script#" + std::to_string(script.id().value()) : scriptDisplayName,
-        args,
+        std::vector<Datum>(args.begin(), args.end()),
         receiver,
         globals,
         script.literals(),
         handler.localCount,
         handler.argCount,
     };
+}
+
+TraceListener::HandlerInfo TracingHelper::buildHandlerInfo(
+    const chunks::ScriptChunk& script,
+    const chunks::ScriptChunk::Handler& handler,
+    const std::vector<Datum>& args,
+    const Datum& receiver,
+    const RuntimeGlobals& globals,
+    const chunks::ScriptNamesChunk* names,
+    const std::string& scriptDisplayName) const {
+    return buildHandlerInfo(script, handler, std::span<const Datum>(args), receiver, globals, names, scriptDisplayName);
 }
 
 std::string TracingHelper::buildAnnotation(

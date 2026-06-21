@@ -159,12 +159,34 @@ std::string_view stringOrSymbolView(const Datum& datum) {
     return {};
 }
 
+std::optional<std::string_view> directStringViewLikeJava(const Datum& datum) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
+        return value->name;
+    }
+    return std::nullopt;
+}
+
 std::string datumReprLikeJava(const Datum& datum) {
     if (datum.isVoid()) {
         return "<Void>";
     }
-    if (datum.isString()) {
-        return "\"" + datum.stringValue() + "\"";
+    if (const auto* value = datum.asString()) {
+        return "\"" + value->value + "\"";
     }
     if (const auto* value = datum.asSymbol()) {
         return "#" + value->name;
@@ -173,40 +195,51 @@ std::string datumReprLikeJava(const Datum& datum) {
 }
 
 std::string listStringLikeJava(const Datum::List& list) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     for (std::size_t index = 0; index < list.items().size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(list.items()[index]);
+        result.append(datumReprLikeJava(list.items()[index]));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string propListStringLikeJava(const Datum::PropList& propList) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     const auto& properties = propList.properties();
     for (std::size_t index = 0; index < properties.size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(properties[index].first) << ": " << datumReprLikeJava(properties[index].second);
+        result.append(datumReprLikeJava(properties[index].first));
+        result.append(": ");
+        result.append(datumReprLikeJava(properties[index].second));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string toStringLikeJava(const Datum& datum) {
     if (datum.isVoid() || datum.isNull()) {
         return "";
     }
-    if (datum.isString()) {
-        return datum.stringValue();
+    if (const auto* value = datum.asString()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asFieldText()) {
+        return value->value;
+    }
+    if (const auto* value = datum.asStringChunk()) {
+        return value->value;
     }
     if (const auto* value = datum.asSymbol()) {
+        return value->name;
+    }
+    if (const auto* value = datum.asTimeoutRef()) {
         return value->name;
     }
     if (const auto* value = datum.asColorRef()) {
@@ -265,17 +298,8 @@ std::string toStringLikeJava(const Datum& datum) {
 }
 
 std::string_view stringViewLikeJava(const Datum& datum, std::string& storage) {
-    if (const auto* value = datum.asString()) {
-        return value->value;
-    }
-    if (const auto* value = datum.asSymbol()) {
-        return value->name;
-    }
-    if (const auto* value = datum.asFieldText()) {
-        return value->value;
-    }
-    if (const auto* value = datum.asStringChunk()) {
-        return value->value;
+    if (const auto directValue = directStringViewLikeJava(datum)) {
+        return *directValue;
     }
     storage = toStringLikeJava(datum);
     return storage;
@@ -433,15 +457,26 @@ Datum ListMethodDispatcher::dispatch(Datum::List& list,
         return Datum::FALSE;
     }
     if (equalsIgnoreCase(methodName, "join")) {
-        const std::string separator = args.empty() ? "&" : toStringLikeJava(args[0]);
-        std::ostringstream out;
+        std::string separatorStorage;
+        const std::string_view separator = args.empty() ? "&" : stringViewLikeJava(args[0], separatorStorage);
+        std::string result;
+        if (!items.empty()) {
+            std::size_t directItemSize = 0;
+            for (const auto& item : items) {
+                if (const auto directValue = directStringViewLikeJava(item)) {
+                    directItemSize += directValue->size();
+                }
+            }
+            result.reserve(separator.size() * (items.size() - 1) + directItemSize);
+        }
         for (std::size_t index = 0; index < items.size(); ++index) {
             if (index > 0) {
-                out << separator;
+                result.append(separator);
             }
-            out << toStringLikeJava(items[index]);
+            std::string itemStorage;
+            result.append(stringViewLikeJava(items[index], itemStorage));
         }
-        return Datum::of(out.str());
+        return Datum::of(std::move(result));
     }
     if (equalsIgnoreCase(methodName, "sort")) {
         std::sort(items.begin(), items.end(), [](const Datum& lhs, const Datum& rhs) {

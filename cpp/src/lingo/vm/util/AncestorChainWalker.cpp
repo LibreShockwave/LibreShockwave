@@ -29,6 +29,11 @@ const Datum* propertyValue(const Datum::ScriptInstanceRef& instance, std::string
     return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
 }
 
+Datum* propertyValue(Datum::ScriptInstanceRef& instance, std::string_view propName) {
+    const int index = instance.findPropertyIndex(propName);
+    return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
+}
+
 } // namespace
 
 Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view propName) {
@@ -40,14 +45,12 @@ Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view pro
     }
 
     const auto* current = &instance;
-    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
         if (const auto* value = propertyValue(*current, propName)) {
             return *value;
         }
 
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
 
     return Datum::voidValue();
@@ -59,14 +62,12 @@ const Datum* findPropertyValue(const Datum::ScriptInstanceRef& instance, std::st
     }
 
     const auto* current = &instance;
-    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
         if (const auto* value = propertyValue(*current, propName)) {
             return value;
         }
 
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
 
     return nullptr;
@@ -85,14 +86,12 @@ Datum::ScriptInstanceRef* findOwner(Datum::ScriptInstanceRef& instance, std::str
     }
 
     auto* current = &instance;
-    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
         if (propertyValue(*current, propName) != nullptr) {
             return current;
         }
 
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
 
     return nullptr;
@@ -104,14 +103,12 @@ const Datum::ScriptInstanceRef* findOwner(const Datum::ScriptInstanceRef& instan
     }
 
     const auto* current = &instance;
-    std::shared_ptr<Datum::ScriptInstanceRef> currentOwner;
     for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
         if (propertyValue(*current, propName) != nullptr) {
             return current;
         }
 
-        currentOwner = current->ancestor();
-        current = currentOwner.get();
+        current = current->ancestorRaw();
     }
 
     return nullptr;
@@ -142,11 +139,14 @@ void setProperty(Datum::ScriptInstanceRef& instance, std::string_view propName, 
         return;
     }
 
-    if (auto* owner = findOwner(instance, propName)) {
-        if (auto* actualValue = owner->findMutablePropertyValue(propName)) {
+    auto* current = &instance;
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        if (auto* actualValue = propertyValue(*current, propName)) {
             *actualValue = std::move(value);
+            return;
         }
-        return;
+
+        current = current->ancestorRaw();
     }
 
     instance.setProperty(std::string(propName), std::move(value));
@@ -156,12 +156,11 @@ int getAncestorDepth(const Datum::ScriptInstanceRef& instance) {
     int depth = 0;
     const auto* current = &instance;
     for (int index = 0; current != nullptr && index < MAX_ANCESTOR_DEPTH; ++index) {
-        auto ancestor = current->ancestor();
-        if (!ancestor) {
+        current = current->ancestorRaw();
+        if (current == nullptr) {
             break;
         }
         ++depth;
-        current = ancestor.get();
     }
     return depth;
 }
