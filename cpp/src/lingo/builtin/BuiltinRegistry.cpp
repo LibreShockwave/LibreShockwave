@@ -1773,8 +1773,11 @@ Datum NetBuiltins::gotoNetPage(BuiltinContext& context, const std::vector<Datum>
     if (context.movieProperties == nullptr || args.empty()) {
         return Datum::FALSE;
     }
-    const std::string target = args.size() > 1 ? toStringLikeJava(args[1]) : "";
-    context.movieProperties->gotoNetPage(toStringLikeJava(args[0]), target);
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[0], urlStorage);
+    std::string targetStorage;
+    const std::string& target = args.size() > 1 ? stringRefLikeJava(args[1], targetStorage) : targetStorage;
+    context.movieProperties->gotoNetPage(url, target);
     return Datum::TRUE;
 }
 
@@ -1782,7 +1785,9 @@ Datum NetBuiltins::gotoNetMovie(BuiltinContext& context, const std::vector<Datum
     if (context.movieProperties == nullptr || args.empty()) {
         return Datum::of(-1);
     }
-    return Datum::of(context.movieProperties->gotoNetMovie(toStringLikeJava(args[0])));
+    std::string urlStorage;
+    const std::string& url = stringRefLikeJava(args[0], urlStorage);
+    return Datum::of(context.movieProperties->gotoNetMovie(url));
 }
 
 void ExternalParamBuiltins::registerBuiltins(BuiltinRegistry& registry) {
