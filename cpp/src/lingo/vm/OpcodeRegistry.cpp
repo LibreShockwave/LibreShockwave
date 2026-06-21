@@ -6270,7 +6270,13 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         return Datum::of(std::string(1, static_cast<char>(numericValue)));
     }
     if (equalsIgnoreCase(handlerName, "string")) {
-        return Datum::of(args.empty() ? std::string() : toStringLikeJava(args[0]));
+        if (args.empty()) {
+            return Datum::of(std::string());
+        }
+        if (args[0].isString()) {
+            return args[0];
+        }
+        return Datum::of(toStringLikeJava(args[0]));
     }
     if (equalsIgnoreCase(handlerName, "random")) {
         if (args.empty()) {
