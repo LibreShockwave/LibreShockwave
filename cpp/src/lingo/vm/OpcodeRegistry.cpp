@@ -755,6 +755,9 @@ std::string keyNameLikeJava(const Datum& datum) {
 }
 
 std::string_view keyNameLikeJavaView(const Datum& datum, std::string& storage) {
+    if (datum.isVoid() || datum.isNull()) {
+        return std::string_view();
+    }
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
