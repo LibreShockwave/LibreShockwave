@@ -292,30 +292,32 @@ const std::string& stringRefLikeJava(const Datum& datum, std::string& storage) {
 }
 
 std::string listStringLikeJava(const Datum::List& list) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     for (std::size_t index = 0; index < list.items().size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(list.items()[index]);
+        result.append(datumReprLikeJava(list.items()[index]));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string propListStringLikeJava(const Datum::PropList& propList) {
-    std::ostringstream out;
-    out << '[';
+    std::string result;
+    result.push_back('[');
     const auto& properties = propList.properties();
     for (std::size_t index = 0; index < properties.size(); ++index) {
         if (index > 0) {
-            out << ", ";
+            result.append(", ");
         }
-        out << datumReprLikeJava(properties[index].first) << ": " << datumReprLikeJava(properties[index].second);
+        result.append(datumReprLikeJava(properties[index].first));
+        result.append(": ");
+        result.append(datumReprLikeJava(properties[index].second));
     }
-    out << ']';
-    return out.str();
+    result.push_back(']');
+    return result;
 }
 
 std::string datumReprLikeJava(const Datum& datum) {
