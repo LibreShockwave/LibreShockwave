@@ -19,7 +19,7 @@ public:
     [[nodiscard]] TraceListener::InstructionInfo buildInstructionInfo(
         const Scope& scope,
         const chunks::ScriptChunk::Instruction& instruction,
-        const std::unordered_map<std::string, Datum>& globals,
+        const RuntimeGlobals& globals,
         const chunks::ScriptNamesChunk* names = nullptr) const;
 
     [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(
@@ -31,7 +31,7 @@ public:
         const chunks::ScriptChunk::Handler& handler,
         const std::vector<Datum>& args,
         const Datum& receiver,
-        const std::unordered_map<std::string, Datum>& globals,
+        const RuntimeGlobals& globals,
         const chunks::ScriptNamesChunk* names = nullptr,
         const std::string& scriptDisplayName = {}) const;
 

@@ -269,7 +269,7 @@ OpcodeRegistry& LingoVM::opcodeRegistry() { return opcodeRegistry_; }
 const OpcodeRegistry& LingoVM::opcodeRegistry() const { return opcodeRegistry_; }
 
 Datum LingoVM::getGlobal(std::string_view name) const {
-    const auto found = globals_.find(std::string(name));
+    const auto found = globals_.find(name);
     return found == globals_.end() ? Datum::voidValue() : found->second;
 }
 
@@ -277,7 +277,7 @@ void LingoVM::setGlobal(std::string name, Datum value) {
     globals_[std::move(name)] = std::move(value);
 }
 
-const std::unordered_map<std::string, Datum>& LingoVM::globals() const {
+const RuntimeGlobals& LingoVM::globals() const {
     return globals_;
 }
 

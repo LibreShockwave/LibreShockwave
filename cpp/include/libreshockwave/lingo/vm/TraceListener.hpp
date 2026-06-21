@@ -10,6 +10,8 @@
 
 namespace libreshockwave::lingo::vm {
 
+using RuntimeGlobals = std::unordered_map<std::string, Datum, TransparentStringHash, std::equal_to<>>;
+
 class TraceListener {
 public:
     struct HandlerInfo {
@@ -18,7 +20,7 @@ public:
         std::string scriptDisplayName;
         std::vector<Datum> arguments;
         Datum receiver{Datum::voidValue()};
-        std::unordered_map<std::string, Datum> globals;
+        RuntimeGlobals globals;
         std::vector<chunks::ScriptChunk::LiteralEntry> literals;
         int localCount{0};
         int argCount{0};
@@ -33,7 +35,7 @@ public:
         int stackSize{0};
         std::vector<Datum> stackSnapshot;
         std::unordered_map<std::string, Datum> localsSnapshot;
-        std::unordered_map<std::string, Datum> globalsSnapshot;
+        RuntimeGlobals globalsSnapshot;
     };
 
     virtual ~TraceListener() = default;

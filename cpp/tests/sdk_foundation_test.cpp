@@ -7968,7 +7968,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     for (int value = 1; value <= 12; ++value) {
         traceScope.push(Datum::of(value));
     }
-    std::unordered_map<std::string, Datum> traceGlobals{{"globalScore", Datum::of(77)}};
+    libreshockwave::lingo::vm::RuntimeGlobals traceGlobals{{"globalScore", Datum::of(77)}};
     TracingHelper tracingHelper;
     const auto localsSnapshot = tracingHelper.captureLocals(traceScope, &traceScriptNames);
     assert(localsSnapshot.at("firstArg").intValue() == 10);

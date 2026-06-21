@@ -104,8 +104,14 @@ private:
     void notifyBreakpointsChanged();
     void notifyWatchExpressionsChanged();
     [[nodiscard]] std::vector<DebugStateListener*> listenersSnapshotLocked() const;
-    [[nodiscard]] static std::map<std::string, lingo::Datum> toOrderedMap(
-        const std::unordered_map<std::string, lingo::Datum>& values);
+    template <typename Map>
+    [[nodiscard]] static std::map<std::string, lingo::Datum> toOrderedMap(const Map& values) {
+        std::map<std::string, lingo::Datum> ordered;
+        for (const auto& [key, value] : values) {
+            ordered[key] = value;
+        }
+        return ordered;
+    }
 
     mutable std::mutex mutex_;
     std::condition_variable pauseCv_;

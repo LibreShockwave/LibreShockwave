@@ -58,7 +58,7 @@ public:
 
     [[nodiscard]] Datum getGlobal(std::string_view name) const;
     void setGlobal(std::string name, Datum value);
-    [[nodiscard]] const std::unordered_map<std::string, Datum>& globals() const;
+    [[nodiscard]] const RuntimeGlobals& globals() const;
     void clearGlobals();
 
     [[nodiscard]] Datum getPref(std::string_view name) const;
@@ -274,7 +274,7 @@ private:
     };
 
     DirectorFile* file_{nullptr};
-    std::unordered_map<std::string, Datum> globals_;
+    RuntimeGlobals globals_;
     std::map<std::string, Datum> prefs_;
     std::deque<Scope> callStack_;
     std::deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls_;
