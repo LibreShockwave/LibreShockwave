@@ -2256,8 +2256,10 @@ Datum CastLibBuiltins::createMember(BuiltinContext& context, const std::vector<D
     if (args.size() < 2 || !context.namedCastMemberCreator) {
         return Datum::voidValue();
     }
-    const std::string memberName = toStringLikeJava(args[0]);
-    const std::string memberType = args[1].asSymbol() != nullptr ? args[1].asSymbol()->name : toStringLikeJava(args[1]);
+    std::string memberNameStorage;
+    const std::string& memberName = stringRefLikeJava(args[0], memberNameStorage);
+    std::string memberTypeStorage;
+    const std::string& memberType = stringRefLikeJava(args[1], memberTypeStorage);
     context.scriptResolutionCache.clear();
     return context.namedCastMemberCreator(memberName, memberType);
 }
