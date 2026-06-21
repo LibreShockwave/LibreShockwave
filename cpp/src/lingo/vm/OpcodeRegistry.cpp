@@ -4450,6 +4450,19 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
     if (const auto* chunkRef = target.asChunkRef()) {
         return chunkRefObjectMethod(context, *chunkRef, methodName, emptyDatumArgs());
     }
+    if (const auto* scriptRef = target.asScriptRef()) {
+        if (!equalsIgnoreCase(methodName, "new")) {
+            return Datum::voidValue();
+        }
+        std::vector<Datum> fullArgs;
+        fullArgs.reserve(args.size() + 1);
+        fullArgs.push_back(Datum::scriptRef(scriptRef->memberRef));
+        fullArgs.insert(fullArgs.end(), args.begin(), args.end());
+        if (auto result = context.invokeBuiltinIfPresent("new", fullArgs)) {
+            return std::move(*result);
+        }
+        return Datum::voidValue();
+    }
     if (target.isList()) {
         return dispatch::ListMethodDispatcher::dispatch(target.listValue(), methodName, args);
     }
