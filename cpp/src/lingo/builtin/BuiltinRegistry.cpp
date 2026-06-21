@@ -374,8 +374,8 @@ std::string toStringLikeJava(const Datum& datum) {
 
 bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs);
 
-std::string delimiterFromArg(const Datum& datum) {
-    std::string delimiter = toStringLikeJava(datum);
+std::string_view delimiterFromArg(const Datum& datum, std::string& storage) {
+    const std::string_view delimiter = stringViewLikeJava(datum, storage);
     if (equalsIgnoreCase(delimiter, "return")) {
         return "\r";
     }
@@ -1557,8 +1557,10 @@ Datum ListBuiltins::convertToPropList(BuiltinContext&, const std::vector<Datum>&
     if (args.empty()) {
         return Datum::propList();
     }
-    const std::string text = toStringLikeJava(args[0]);
-    const std::string delimiter = args.size() > 1 ? delimiterFromArg(args[1]) : std::string();
+    std::string textStorage;
+    const std::string_view text = stringViewLikeJava(args[0], textStorage);
+    std::string delimiterStorage;
+    const std::string_view delimiter = args.size() > 1 ? delimiterFromArg(args[1], delimiterStorage) : std::string_view();
     return parseDirectorPropertyText(text, delimiter);
 }
 
