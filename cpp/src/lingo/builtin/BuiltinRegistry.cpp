@@ -410,7 +410,7 @@ std::vector<std::string> splitPropertyText(std::string_view text, std::string_vi
     std::string current;
 
     auto flush = [&]() {
-        lines.push_back(current);
+        lines.push_back(std::move(current));
         current.clear();
     };
 
