@@ -114,8 +114,16 @@ public:
         if (count <= 0 || stack_.empty()) {
             return;
         }
-        const auto newSize = static_cast<std::size_t>(std::max(0, static_cast<int>(stack_.size()) - count));
-        stack_.resize(newSize);
+        if (count == 1) {
+            stack_.pop_back();
+            return;
+        }
+        const auto dropCount = static_cast<std::size_t>(count);
+        if (dropCount >= stack_.size()) {
+            stack_.clear();
+            return;
+        }
+        stack_.resize(stack_.size() - dropCount);
     }
 
     [[nodiscard]] Datum getParam(int index) const;
