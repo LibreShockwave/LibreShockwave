@@ -748,7 +748,7 @@ const std::vector<Datum>& argListItemsRef(const Datum& datum, std::vector<Datum>
     if (const auto* args = argListItemsPtr(datum)) {
         return *args;
     }
-    storage = argListItems(datum);
+    storage.clear();
     return storage;
 }
 
