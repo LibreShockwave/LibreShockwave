@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build zip
+          sudo apt-get install -y cmake ninja-build zip zlib1g-dev
 
       - name: Set up Emscripten
         uses: emscripten-core/setup-emsdk@v16
