@@ -6680,8 +6680,11 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "listp") && argCount == 1) {
-        const Datum& value = context.peekRef();
-        const bool result = value.isList() || value.isPropList();
+        bool result = false;
+        if (!noReturn) {
+            const Datum& value = context.peekRef();
+            result = value.isList() || value.isPropList();
+        }
         context.scope().drop(1);
         if (!noReturn) {
             context.push(result ? Datum::TRUE : Datum::FALSE);
@@ -6690,7 +6693,7 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
     }
 
     if (equalsIgnoreCase(handlerName, "voidp") && argCount == 1) {
-        const bool result = context.peekRef().isVoid();
+        const bool result = !noReturn && context.peekRef().isVoid();
         context.scope().drop(1);
         if (!noReturn) {
             context.push(result ? Datum::TRUE : Datum::FALSE);
