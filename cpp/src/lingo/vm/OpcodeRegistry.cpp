@@ -2121,12 +2121,13 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
             if (const auto cached = scriptCache.find(methodName); cached != scriptCache.end()) {
                 return cached->second;
             }
-            if (auto handler = builtinContext->scriptHandlerFinder(castLib, memberNum, std::string(methodName));
+            std::string methodNameString(methodName);
+            if (auto handler = builtinContext->scriptHandlerFinder(castLib, memberNum, methodNameString);
                 handler.has_value() && handler->script != nullptr) {
-                scriptCache.emplace(std::string(methodName), handler);
+                scriptCache.emplace(std::move(methodNameString), handler);
                 return handler;
             }
-            scriptCache.emplace(std::string(methodName), std::nullopt);
+            scriptCache.emplace(std::move(methodNameString), std::nullopt);
         }
         return std::nullopt;
     }
@@ -2145,12 +2146,13 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
         return cached->second;
     }
 
+    const std::string methodNameString(methodName);
     current = &instance;
     for (int depth = 0; current != nullptr && depth < util::MAX_ANCESTOR_DEPTH; ++depth) {
         if (const auto& scriptRef = current->scriptRef(); scriptRef.has_value()) {
             const int castLib = scriptRef->castLib > 0 ? scriptRef->castLib : 1;
             const int memberNum = scriptRef->memberNum();
-            if (auto handler = builtinContext->scriptHandlerFinder(castLib, memberNum, std::string(methodName));
+            if (auto handler = builtinContext->scriptHandlerFinder(castLib, memberNum, methodNameString);
                 handler.has_value() && handler->script != nullptr) {
                 builtinContext->scriptInstanceHandlerCache[cacheKey] = handler;
                 return handler;
