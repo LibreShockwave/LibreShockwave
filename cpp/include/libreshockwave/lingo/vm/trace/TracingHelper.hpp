@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -26,6 +27,14 @@ public:
         const Scope& scope,
         const chunks::ScriptNamesChunk* names = nullptr) const;
 
+    [[nodiscard]] TraceListener::HandlerInfo buildHandlerInfo(
+        const chunks::ScriptChunk& script,
+        const chunks::ScriptChunk::Handler& handler,
+        std::span<const Datum> args,
+        const Datum& receiver,
+        const RuntimeGlobals& globals,
+        const chunks::ScriptNamesChunk* names = nullptr,
+        const std::string& scriptDisplayName = {}) const;
     [[nodiscard]] TraceListener::HandlerInfo buildHandlerInfo(
         const chunks::ScriptChunk& script,
         const chunks::ScriptChunk::Handler& handler,

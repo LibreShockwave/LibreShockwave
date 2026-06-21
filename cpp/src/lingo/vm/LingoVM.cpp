@@ -814,8 +814,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         throw LingoException("Call stack overflow (max " + std::to_string(MAX_CALL_STACK_DEPTH) + " frames)");
     }
     if (tracedHandlers_.contains(normalizedHandlerName)) {
-        const std::vector<Datum> traceArgs(args.begin(), args.end());
-        emitTracedHandlerCall(currentHandlerName, script, traceArgs);
+        emitTracedHandlerCall(currentHandlerName, script, args);
     }
 
     const bool hasExplicitReceiver = !receiver.isVoid() && !receiver.isNull();
@@ -889,8 +888,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     try {
         const bool traceHandler = traceEnabled_ || (traceListener_ && traceListener_->needsHandlerTrace());
         if (traceHandler) {
-            const std::vector<Datum> traceArgs(args.begin(), args.end());
-            handlerInfo = buildHandlerInfo(script, handler, traceArgs, receiver, fileOwner, scriptNamesOwner);
+            handlerInfo = buildHandlerInfo(script, handler, args, receiver, fileOwner, scriptNamesOwner);
             if (traceEnabled_) {
                 emitConsoleHandlerEnter(*handlerInfo);
             }
@@ -1167,7 +1165,7 @@ std::string LingoVM::scriptDisplayName(const chunks::ScriptChunk& script,
 TraceListener::HandlerInfo LingoVM::buildHandlerInfo(
     const chunks::ScriptChunk& script,
     const chunks::ScriptChunk::Handler& handler,
-    const std::vector<Datum>& args,
+    std::span<const Datum> args,
     const Datum& receiver,
     const std::shared_ptr<const DirectorFile>& fileOwner,
     const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner) const {
@@ -1389,7 +1387,7 @@ void LingoVM::traceRandomCall(int max, int result) {
 
 void LingoVM::emitTracedHandlerCall(std::string_view handlerNameValue,
                                     const chunks::ScriptChunk& script,
-                                    const std::vector<Datum>& args) {
+                                    std::span<const Datum> args) {
     std::ostringstream out;
     out << "[TRACE] " << handlerNameValue << '(';
     for (std::size_t index = 0; index < args.size(); ++index) {

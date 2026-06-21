@@ -179,7 +179,7 @@ private:
     [[nodiscard]] TraceListener::HandlerInfo buildHandlerInfo(
         const chunks::ScriptChunk& script,
         const chunks::ScriptChunk::Handler& handler,
-        const std::vector<Datum>& args,
+        std::span<const Datum> args,
         const Datum& receiver,
         const std::shared_ptr<const DirectorFile>& fileOwner = nullptr,
         const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner = nullptr) const;
@@ -202,7 +202,7 @@ private:
     void traceRandomCall(int max, int result);
     void emitTracedHandlerCall(std::string_view handlerName,
                                const chunks::ScriptChunk& script,
-                               const std::vector<Datum>& args);
+                               std::span<const Datum> args);
     void traceOutput(const std::string& line) const;
     void emitConsoleHandlerEnter(const TraceListener::HandlerInfo& info);
     void emitConsoleHandlerExit(const TraceListener::HandlerInfo& info, const Datum& returnValue);
