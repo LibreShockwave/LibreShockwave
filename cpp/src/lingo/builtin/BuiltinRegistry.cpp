@@ -2645,6 +2645,8 @@ Datum ConstructorBuiltins::sprite(BuiltinContext&, const std::vector<Datum>& arg
     return Datum::spriteRef(id::ChannelId(channel));
 }
 
+Datum scriptFromArgs(BuiltinContext& context, std::span<const Datum> args);
+
 Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vector<Datum>& args) {
     if (args.empty()) {
         return Datum::voidValue();
@@ -2689,7 +2691,7 @@ Datum ConstructorBuiltins::newInstance(BuiltinContext& context, const std::vecto
     Datum resolvedTarget = target;
     if (target.asScriptRef() == nullptr && target.asCastMemberRef() == nullptr &&
         (target.isString() || target.isSymbol())) {
-        const Datum resolvedScript = TypeBuiltins::script(context, {target});
+        const Datum resolvedScript = scriptFromArgs(context, std::span<const Datum>(&target, 1));
         if (resolvedScript.asScriptRef() != nullptr) {
             resolvedTarget = resolvedScript;
         }
@@ -2784,7 +2786,7 @@ Datum TypeBuiltins::value(BuiltinContext& context, const std::vector<Datum>& arg
     return parsed;
 }
 
-Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& args) {
+Datum scriptFromArgs(BuiltinContext& context, std::span<const Datum> args) {
     if (args.empty()) {
         return Datum::voidValue();
     }
@@ -2835,7 +2837,7 @@ Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& ar
 
     if (identifier.isList()) {
         for (const auto& item : identifier.listValue().items()) {
-            Datum result = script(context, {item});
+            Datum result = scriptFromArgs(context, std::span<const Datum>(&item, 1));
             if (!result.isVoid()) {
                 return result;
             }
@@ -2847,6 +2849,10 @@ Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& ar
         return context.scriptResolver(identifier, scope);
     }
     return Datum::voidValue();
+}
+
+Datum TypeBuiltins::script(BuiltinContext& context, const std::vector<Datum>& args) {
+    return scriptFromArgs(context, std::span<const Datum>(args));
 }
 
 Datum TypeBuiltins::ilk(BuiltinContext&, const std::vector<Datum>& args) {
