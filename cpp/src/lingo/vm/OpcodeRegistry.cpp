@@ -6305,6 +6305,44 @@ Datum fastCharToNumValue(const Datum& valueDatum) {
         : Datum::of(static_cast<int>(static_cast<unsigned char>(value.front())));
 }
 
+enum class FastPrimitiveBuiltin {
+    None,
+    Length,
+    Count,
+    Chars,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
+    Abs,
+    ListP,
+    VoidP,
+    CharToNum,
+    NumToChar,
+    String,
+    Random,
+    Add
+};
+
+FastPrimitiveBuiltin fastPrimitiveBuiltinFor(std::string_view handlerName) {
+    if (equalsIgnoreCase(handlerName, "length")) return FastPrimitiveBuiltin::Length;
+    if (equalsIgnoreCase(handlerName, "count")) return FastPrimitiveBuiltin::Count;
+    if (equalsIgnoreCase(handlerName, "chars")) return FastPrimitiveBuiltin::Chars;
+    if (equalsIgnoreCase(handlerName, "bitAnd")) return FastPrimitiveBuiltin::BitAnd;
+    if (equalsIgnoreCase(handlerName, "bitOr")) return FastPrimitiveBuiltin::BitOr;
+    if (equalsIgnoreCase(handlerName, "bitXor")) return FastPrimitiveBuiltin::BitXor;
+    if (equalsIgnoreCase(handlerName, "bitNot")) return FastPrimitiveBuiltin::BitNot;
+    if (equalsIgnoreCase(handlerName, "abs")) return FastPrimitiveBuiltin::Abs;
+    if (equalsIgnoreCase(handlerName, "listp")) return FastPrimitiveBuiltin::ListP;
+    if (equalsIgnoreCase(handlerName, "voidp")) return FastPrimitiveBuiltin::VoidP;
+    if (equalsIgnoreCase(handlerName, "charToNum")) return FastPrimitiveBuiltin::CharToNum;
+    if (equalsIgnoreCase(handlerName, "numToChar")) return FastPrimitiveBuiltin::NumToChar;
+    if (equalsIgnoreCase(handlerName, "string")) return FastPrimitiveBuiltin::String;
+    if (equalsIgnoreCase(handlerName, "random")) return FastPrimitiveBuiltin::Random;
+    if (equalsIgnoreCase(handlerName, "add")) return FastPrimitiveBuiltin::Add;
+    return FastPrimitiveBuiltin::None;
+}
+
 std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
                                               std::string_view handlerName,
                                               std::span<const Datum> args) {
@@ -6312,7 +6350,8 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         return std::nullopt;
     }
 
-    if (equalsIgnoreCase(handlerName, "length")) {
+    switch (fastPrimitiveBuiltinFor(handlerName)) {
+    case FastPrimitiveBuiltin::Length: {
         if (args.empty()) {
             return Datum::of(0);
         }
@@ -6328,7 +6367,7 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         std::string storage;
         return Datum::of(static_cast<int>(stringViewLikeJava(args[0], storage).size()));
     }
-    if (equalsIgnoreCase(handlerName, "count")) {
+    case FastPrimitiveBuiltin::Count: {
         if (args.empty()) {
             return Datum::of(0);
         }
@@ -6340,7 +6379,7 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         }
         return Datum::of(0);
     }
-    if (equalsIgnoreCase(handlerName, "chars")) {
+    case FastPrimitiveBuiltin::Chars: {
         if (args.size() < 3) {
             return Datum::of(std::string());
         }
@@ -6360,19 +6399,15 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         return Datum::of(std::string(value.substr(static_cast<std::size_t>(start),
                                                   static_cast<std::size_t>(end - start))));
     }
-    if (equalsIgnoreCase(handlerName, "bitAnd")) {
+    case FastPrimitiveBuiltin::BitAnd:
         return args.size() < 2 ? Datum::of(0) : Datum::of(toIntLikeJava(args[0]) & toIntLikeJava(args[1]));
-    }
-    if (equalsIgnoreCase(handlerName, "bitOr")) {
+    case FastPrimitiveBuiltin::BitOr:
         return args.size() < 2 ? Datum::of(0) : Datum::of(toIntLikeJava(args[0]) | toIntLikeJava(args[1]));
-    }
-    if (equalsIgnoreCase(handlerName, "bitXor")) {
+    case FastPrimitiveBuiltin::BitXor:
         return args.size() < 2 ? Datum::of(0) : Datum::of(toIntLikeJava(args[0]) ^ toIntLikeJava(args[1]));
-    }
-    if (equalsIgnoreCase(handlerName, "bitNot")) {
+    case FastPrimitiveBuiltin::BitNot:
         return args.empty() ? Datum::of(0) : Datum::of(~toIntLikeJava(args[0]));
-    }
-    if (equalsIgnoreCase(handlerName, "abs")) {
+    case FastPrimitiveBuiltin::Abs: {
         if (args.empty()) {
             return Datum::of(0);
         }
@@ -6382,19 +6417,17 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         const int value = toIntLikeJava(args[0]);
         return value == std::numeric_limits<int>::min() ? Datum::of(value) : Datum::of(std::abs(value));
     }
-    if (equalsIgnoreCase(handlerName, "listp")) {
+    case FastPrimitiveBuiltin::ListP:
         return !args.empty() && (args[0].isList() || args[0].isPropList()) ? Datum::TRUE : Datum::FALSE;
-    }
-    if (equalsIgnoreCase(handlerName, "voidp")) {
+    case FastPrimitiveBuiltin::VoidP:
         return args.empty() || args[0].isVoid() ? Datum::TRUE : Datum::FALSE;
-    }
-    if (equalsIgnoreCase(handlerName, "charToNum")) {
+    case FastPrimitiveBuiltin::CharToNum: {
         if (args.empty()) {
             return Datum::of(0);
         }
         return fastCharToNumValue(args[0]);
     }
-    if (equalsIgnoreCase(handlerName, "numToChar")) {
+    case FastPrimitiveBuiltin::NumToChar: {
         if (args.empty()) {
             return Datum::of(std::string());
         }
@@ -6403,7 +6436,7 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
             : toIntLikeJava(args[0]);
         return Datum::of(std::string(1, static_cast<char>(numericValue)));
     }
-    if (equalsIgnoreCase(handlerName, "string")) {
+    case FastPrimitiveBuiltin::String: {
         if (args.empty()) {
             return Datum::of(std::string());
         }
@@ -6412,7 +6445,7 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         }
         return Datum::of(toStringLikeJava(args[0]));
     }
-    if (equalsIgnoreCase(handlerName, "random")) {
+    case FastPrimitiveBuiltin::Random: {
         if (args.empty()) {
             return Datum::of(1);
         }
@@ -6426,10 +6459,16 @@ std::optional<Datum> fastPrimitiveBuiltinCall(ExecutionContext& context,
         }
         return Datum::of(1);
     }
-    if (equalsIgnoreCase(handlerName, "add") && args.size() >= 2 && args[0].isList()) {
-        Datum mutableTarget = args[0];
-        mutableTarget.listValue().items().push_back(args[1]);
-        return Datum::voidValue();
+    case FastPrimitiveBuiltin::Add: {
+        if (args.size() >= 2 && args[0].isList()) {
+            Datum mutableTarget = args[0];
+            mutableTarget.listValue().items().push_back(args[1]);
+            return Datum::voidValue();
+        }
+        return std::nullopt;
+    }
+    case FastPrimitiveBuiltin::None:
+        return std::nullopt;
     }
 
     return std::nullopt;
