@@ -6612,26 +6612,29 @@ bool tryImmediatePrimitiveExtCall(ExecutionContext& context,
         return true;
     }
 
-    if ((equalsIgnoreCase(handlerName, "bitAnd") ||
-         equalsIgnoreCase(handlerName, "bitOr") ||
-         equalsIgnoreCase(handlerName, "bitXor")) && argCount == 2) {
-        const Datum& right = context.peekRef(0);
-        const Datum& left = context.peekRef(1);
-        Datum result = Datum::voidValue();
-        if (!noReturn) {
-            if (equalsIgnoreCase(handlerName, "bitAnd")) {
-                result = Datum::of(toIntLikeJava(left) & toIntLikeJava(right));
-            } else if (equalsIgnoreCase(handlerName, "bitOr")) {
-                result = Datum::of(toIntLikeJava(left) | toIntLikeJava(right));
-            } else {
-                result = Datum::of(toIntLikeJava(left) ^ toIntLikeJava(right));
+    if (argCount == 2) {
+        const bool isBitAnd = equalsIgnoreCase(handlerName, "bitAnd");
+        const bool isBitOr = !isBitAnd && equalsIgnoreCase(handlerName, "bitOr");
+        const bool isBitXor = !isBitAnd && !isBitOr && equalsIgnoreCase(handlerName, "bitXor");
+        if (isBitAnd || isBitOr || isBitXor) {
+            const Datum& right = context.peekRef(0);
+            const Datum& left = context.peekRef(1);
+            Datum result = Datum::voidValue();
+            if (!noReturn) {
+                if (isBitAnd) {
+                    result = Datum::of(toIntLikeJava(left) & toIntLikeJava(right));
+                } else if (isBitOr) {
+                    result = Datum::of(toIntLikeJava(left) | toIntLikeJava(right));
+                } else {
+                    result = Datum::of(toIntLikeJava(left) ^ toIntLikeJava(right));
+                }
             }
+            context.scope().drop(2);
+            if (!noReturn) {
+                context.push(std::move(result));
+            }
+            return true;
         }
-        context.scope().drop(2);
-        if (!noReturn) {
-            context.push(std::move(result));
-        }
-        return true;
     }
 
     if (equalsIgnoreCase(handlerName, "string") && argCount == 1) {
