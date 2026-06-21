@@ -1141,14 +1141,16 @@ Datum StringBuiltins::stringReplace(BuiltinContext&, const std::vector<Datum>& a
         return Datum::of(result);
     }
 
-    const std::string from = toStringLikeJava(args[1]);
+    std::string fromStorage;
+    const std::string_view from = stringViewLikeJava(args[1], fromStorage);
     if (from.empty()) {
         return Datum::of(result);
     }
-    const std::string to = toStringLikeJava(args[2]);
+    std::string toStorage;
+    const std::string_view to = stringViewLikeJava(args[2], toStorage);
     std::size_t pos = 0;
-    while ((pos = result.find(from, pos)) != std::string::npos) {
-        result.replace(pos, from.size(), to);
+    while ((pos = result.find(from.data(), pos, from.size())) != std::string::npos) {
+        result.replace(pos, from.size(), to.data(), to.size());
         pos += to.size();
     }
     return Datum::of(result);
