@@ -1840,7 +1840,8 @@ Datum ImageBuiltins::image(BuiltinContext& context, const std::vector<Datum>& ar
         const Datum& paletteArg = args[3];
         bool resolved = false;
         if (paletteArg.isString() || paletteArg.isSymbol()) {
-            const std::string name = toStringLikeJava(paletteArg);
+            std::string nameStorage;
+            const std::string_view name = stringViewLikeJava(paletteArg, nameStorage);
             if (const auto* palette = bitmap::Palette::builtInBySymbolName(name)) {
                 image->setImagePalette(palette);
                 if (auto normalized = bitmap::Palette::normalizeBuiltInSymbolName(name)) {
