@@ -1138,13 +1138,13 @@ Datum StringBuiltins::stringReplace(BuiltinContext&, const std::vector<Datum>& a
     }
     std::string result = toStringLikeJava(args[0]);
     if (args.size() < 3) {
-        return Datum::of(result);
+        return Datum::of(std::move(result));
     }
 
     std::string fromStorage;
     const std::string_view from = stringViewLikeJava(args[1], fromStorage);
     if (from.empty()) {
-        return Datum::of(result);
+        return Datum::of(std::move(result));
     }
     std::string toStorage;
     const std::string_view to = stringViewLikeJava(args[2], toStorage);
@@ -1153,7 +1153,7 @@ Datum StringBuiltins::stringReplace(BuiltinContext&, const std::vector<Datum>& a
         result.replace(pos, from.size(), to.data(), to.size());
         pos += to.size();
     }
-    return Datum::of(result);
+    return Datum::of(std::move(result));
 }
 
 Datum StringBuiltins::getPref(BuiltinContext& context, const std::vector<Datum>& args) {
