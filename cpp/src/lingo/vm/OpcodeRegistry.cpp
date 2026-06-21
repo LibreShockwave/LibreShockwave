@@ -4840,7 +4840,7 @@ bool add(ExecutionContext& context) {
         result.reserve(count);
         for (std::size_t index = 0; index < count; ++index) {
             const double value = toDoubleLikeJava(lhs[index]) + toDoubleLikeJava(rhs[index]);
-            result.push_back(numericResult(lhs[index], rhs[index], value));
+            result.emplace_back(numericResult(lhs[index], rhs[index], value));
         }
         context.push(Datum::list(std::move(result)));
         return true;
@@ -4921,7 +4921,7 @@ bool sub(ExecutionContext& context) {
         result.reserve(count);
         for (std::size_t index = 0; index < count; ++index) {
             const double value = toDoubleLikeJava(lhs[index]) - toDoubleLikeJava(rhs[index]);
-            result.push_back(numericResult(lhs[index], rhs[index], value));
+            result.emplace_back(numericResult(lhs[index], rhs[index], value));
         }
         context.push(Datum::list(std::move(result)));
         return true;
