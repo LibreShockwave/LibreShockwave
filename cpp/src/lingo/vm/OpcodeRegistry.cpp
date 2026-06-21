@@ -4434,7 +4434,7 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
 
     std::vector<Datum> fullArgs;
     fullArgs.reserve(args.size() + 1);
-    fullArgs.push_back(target);
+    fullArgs.push_back(std::move(target));
     fullArgs.insert(fullArgs.end(), args.begin(), args.end());
     if (auto builtinResult = context.invokeBuiltinIfPresent(methodName, fullArgs)) {
         return std::move(*builtinResult);
