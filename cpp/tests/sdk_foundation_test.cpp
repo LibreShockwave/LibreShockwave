@@ -19324,6 +19324,19 @@ void testBitmapCacheAndInkProcessorFoundation() {
     Bitmap remappedThroughCache = BitmapCache::applyIndexedMatteColorRemap(&raw, masked, matteRemap);
     assert(remappedThroughCache.getPixel(1, 0) == 0xFF196633U);
 
+    Bitmap neutralMaskRaw(2, 1, 8, {0xFFFFFFFFU, 0xFF000000U});
+    neutralMaskRaw.setPaletteIndices({0, 255});
+    Bitmap neutralMaskProcessed(2, 1, 8, {0x00000000U, 0xFF000000U});
+    auto legacyDefaultRemap = BitmapCache::resolveIndexedMatteColorRemap(
+        &neutralMaskRaw, libreshockwave::id::code(InkMode::MATTE), 255, 0, true, true, nullptr);
+    assert(legacyDefaultRemap.has_value());
+    assert(legacyDefaultRemap->foreColor == 0x0000FFU);
+    assert(legacyDefaultRemap->backColor == 0xFFFFFFU);
+    Bitmap preservedNeutralMask = BitmapCache::applyIndexedMatteColorRemap(
+        &neutralMaskRaw, neutralMaskProcessed, legacyDefaultRemap);
+    assert(preservedNeutralMask.getPixel(0, 0) == 0x00000000U);
+    assert(preservedNeutralMask.getPixel(1, 0) == 0xFF000000U);
+
     Bitmap darkenSource(2, 1, 8, {0xFF010203U, 0x00000000U});
     darkenSource.setPaletteIndices({64, 128});
     Bitmap darkenOffset = BitmapCache::applyIndexedMatteColorRemapIfNeeded(

@@ -7,6 +7,25 @@
 
 namespace libreshockwave::player::render::pipeline {
 
+namespace {
+
+bool isTransparentOrBlackMask(const bitmap::Bitmap& bitmap) {
+    bool hasOpaqueBlack = false;
+    for (const auto pixel : bitmap.pixels()) {
+        const auto alpha = (pixel >> 24U) & 0xFFU;
+        if (alpha == 0) {
+            continue;
+        }
+        if ((pixel & 0x00FFFFFFU) != 0x000000U) {
+            return false;
+        }
+        hasOpaqueBlack = true;
+    }
+    return hasOpaqueBlack;
+}
+
+} // namespace
+
 std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedProcessed(const chunks::CastMemberChunk& member,
                                                                       int ink,
                                                                       int backColor,
@@ -181,6 +200,9 @@ bitmap::Bitmap BitmapCache::applyIndexedMatteColorRemap(
     const bitmap::Bitmap& processed,
     const std::optional<IndexedMatteColorRemap>& remap) {
     if (raw == nullptr || !remap.has_value()) {
+        return processed.copy();
+    }
+    if (remap->foreColor == 0x0000FFU && remap->backColor == 0xFFFFFFU && isTransparentOrBlackMask(processed)) {
         return processed.copy();
     }
     return InkProcessor::applyIndexedColorRemap(*raw, processed, remap->foreColor, remap->backColor);
