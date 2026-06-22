@@ -216,6 +216,14 @@ add_executable(libreshockwave_wasm_bridge_probe
 target_link_libraries(libreshockwave_wasm_bridge_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_wasm_bridge_probe PRIVATE cxx_std_20)
 
+add_library(libreshockwave_editor_model
+    apps/editor/EditorModels.cpp
+    apps/editor/EditorModels.hpp
+)
+target_link_libraries(libreshockwave_editor_model PUBLIC LibreShockwave::libreshockwave)
+target_include_directories(libreshockwave_editor_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/apps/editor")
+target_compile_features(libreshockwave_editor_model PUBLIC cxx_std_20)
+
 find_package(Threads REQUIRED)
 target_link_libraries(libreshockwave PUBLIC Threads::Threads)
 
@@ -228,8 +236,6 @@ endif()
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(GTK4 QUIET IMPORTED_TARGET gtk4)
-    pkg_check_modules(LIBPANEL QUIET IMPORTED_TARGET libpanel-1)
-    pkg_check_modules(LIBADWAITA QUIET IMPORTED_TARGET libadwaita-1)
 endif()
 find_package(CURL QUIET)
 
@@ -248,21 +254,47 @@ else()
     message(STATUS "GTK4 or libcurl not found; libreshockwave_player target disabled. Install gtk4-devel and libcurl-devel to build it.")
 endif()
 
-if(LIBPANEL_FOUND AND LIBADWAITA_FOUND)
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    set(LIBRESHOCKWAVE_QT_WIDGETS_TARGET Qt6::Widgets)
+    find_package(Qt6 QUIET COMPONENTS Multimedia)
+    if(Qt6Multimedia_FOUND)
+        set(LIBRESHOCKWAVE_QT_MULTIMEDIA_TARGET Qt6::Multimedia)
+    endif()
+else()
+    find_package(Qt5 QUIET COMPONENTS Widgets)
+    if(Qt5_FOUND)
+        set(LIBRESHOCKWAVE_QT_WIDGETS_TARGET Qt5::Widgets)
+    endif()
+endif()
+
+if(DEFINED LIBRESHOCKWAVE_QT_WIDGETS_TARGET)
     add_executable(libreshockwave_editor
-        apps/editor/EditorApp.cpp
-        apps/editor/EditorStyle.cpp
-        apps/editor/DirectorStudio.cpp
+        apps/editor/EditorContext.cpp
+        apps/editor/EditorContext.hpp
+        apps/editor/EditorPreferences.cpp
+        apps/editor/EditorPreferences.hpp
+        apps/editor/ExternalParamsDialog.cpp
+        apps/editor/ExternalParamsDialog.hpp
+        apps/editor/MainWindow.cpp
+        apps/editor/MainWindow.hpp
+        apps/editor/StartScreenDialog.cpp
+        apps/editor/StartScreenDialog.hpp
+        apps/editor/main.cpp
     )
     target_link_libraries(libreshockwave_editor
         PRIVATE
-            LibreShockwave::libreshockwave
-            PkgConfig::LIBPANEL
-            PkgConfig::LIBADWAITA
+            libreshockwave_editor_model
+            ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET}
     )
     target_compile_features(libreshockwave_editor PRIVATE cxx_std_20)
+    if(DEFINED LIBRESHOCKWAVE_QT_MULTIMEDIA_TARGET)
+        target_link_libraries(libreshockwave_editor PRIVATE ${LIBRESHOCKWAVE_QT_MULTIMEDIA_TARGET})
+        target_compile_definitions(libreshockwave_editor PRIVATE LIBRESHOCKWAVE_HAVE_QT_MULTIMEDIA=1)
+    endif()
+    set_target_properties(libreshockwave_editor PROPERTIES AUTOMOC ON)
 else()
-    message(STATUS "libpanel-1 or libadwaita-1 not found; libreshockwave_editor target disabled. Install libpanel-devel/libpanel-dev and libadwaita-devel/libadwaita-1-dev to build it.")
+    message(STATUS "Qt Widgets not found; libreshockwave_editor target disabled. Install Qt6 Widgets or Qt5 Widgets development packages to build it.")
 endif()
 
 if(BUILD_TESTING)
@@ -270,7 +302,12 @@ if(BUILD_TESTING)
         tests/sdk_foundation_test.cpp
     )
     target_link_libraries(libreshockwave_tests PRIVATE LibreShockwave::libreshockwave)
+    add_executable(libreshockwave_editor_model_tests
+        tests/editor_model_test.cpp
+    )
+    target_link_libraries(libreshockwave_editor_model_tests PRIVATE libreshockwave_editor_model)
     add_test(NAME libreshockwave_cpp_tests COMMAND libreshockwave_tests)
+    add_test(NAME libreshockwave_editor_model_tests COMMAND libreshockwave_editor_model_tests)
     add_test(NAME libreshockwave_wasm_bridge_probe COMMAND libreshockwave_wasm_bridge_probe)
 endif()
 

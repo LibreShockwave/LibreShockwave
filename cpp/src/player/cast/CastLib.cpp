@@ -664,6 +664,13 @@ const std::map<int, std::shared_ptr<chunks::CastMemberChunk>>& CastLib::memberCh
     return memberChunks_;
 }
 
+const std::map<int, std::shared_ptr<libreshockwave::cast::CastMember>>& CastLib::runtimeMembers() {
+    if (!isLoaded()) {
+        load();
+    }
+    return members_;
+}
+
 std::shared_ptr<chunks::CastMemberChunk> CastLib::findMemberByNumber(int memberNumber) {
     if (!isLoaded()) {
         load();

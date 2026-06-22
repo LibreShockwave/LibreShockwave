@@ -88,6 +88,10 @@ public:
     [[nodiscard]] lingo::Datum createMember(int castLibNumber, const std::string& memberType);
     [[nodiscard]] lingo::Datum createMember(const std::string& memberName, const std::string& memberType);
     bool eraseMember(int castLibNumber, int memberNumber);
+    bool exchangeMemberMedia(int firstCastLibNumber,
+                             int firstMemberNumber,
+                             int secondCastLibNumber,
+                             int secondMemberNumber);
     [[nodiscard]] lingo::Datum callMemberMethod(int castLibNumber,
                                                 int memberNumber,
                                                 const std::string& methodName,

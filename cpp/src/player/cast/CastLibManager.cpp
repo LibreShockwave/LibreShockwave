@@ -39,6 +39,23 @@ bool equalsIgnoreCase(const std::string& lhs, const std::string& rhs) {
     return lower(lhs) == lower(rhs);
 }
 
+std::optional<std::string_view> temporaryMemberTypeForExchange(const ::libreshockwave::cast::CastMember& first,
+                                                               const ::libreshockwave::cast::CastMember& second) {
+    if (first.isBitmap() && second.isBitmap()) {
+        return "bitmap";
+    }
+    if (first.isTextLike() && second.isTextLike()) {
+        return "text";
+    }
+    if (first.isPalette() && second.isPalette()) {
+        return "palette";
+    }
+    if (first.isScript() && second.isScript()) {
+        return "script";
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> normalizeUnderscoreNumericTokens(std::string_view value) {
     std::string normalized;
     normalized.reserve(value.size());
@@ -1103,6 +1120,44 @@ bool CastLibManager::eraseMember(int castLibNumber, int memberNumber) {
         memberSlotRetiredCallback_(castLibNumber, memberNumber);
     }
     return true;
+}
+
+bool CastLibManager::exchangeMemberMedia(int firstCastLibNumber,
+                                         int firstMemberNumber,
+                                         int secondCastLibNumber,
+                                         int secondMemberNumber) {
+    auto first = resolveMember(firstCastLibNumber, firstMemberNumber);
+    auto second = resolveMember(secondCastLibNumber, secondMemberNumber);
+    if (!first || !second) {
+        return false;
+    }
+    const auto temporaryType = temporaryMemberTypeForExchange(*first, *second);
+    if (!temporaryType.has_value()) {
+        return false;
+    }
+
+    const auto temporary = createMember(firstCastLibNumber, std::string{*temporaryType});
+    const auto* temporaryRef = temporary.asCastMemberRef();
+    if (temporaryRef == nullptr) {
+        return false;
+    }
+
+    const auto firstRef = lingo::Datum::CastMemberRef::of(id::CastLibId(firstCastLibNumber),
+                                                          id::MemberId(firstMemberNumber));
+    const auto secondRef = lingo::Datum::CastMemberRef::of(id::CastLibId(secondCastLibNumber),
+                                                           id::MemberId(secondMemberNumber));
+    const auto temporarySourceRef = lingo::Datum::CastMemberRef::of(id::CastLibId(temporaryRef->castLib),
+                                                                    id::MemberId(temporaryRef->memberNum()));
+    const bool stagedFirst = copyMemberMedia(temporaryRef->castLib, temporaryRef->memberNum(), firstRef);
+    const bool copiedSecondToFirst = stagedFirst &&
+        copyMemberMedia(firstCastLibNumber, firstMemberNumber, secondRef);
+    const bool copiedFirstToSecond = copiedSecondToFirst &&
+        copyMemberMedia(secondCastLibNumber, secondMemberNumber, temporarySourceRef);
+    if (!copiedFirstToSecond && copiedSecondToFirst) {
+        (void)copyMemberMedia(firstCastLibNumber, firstMemberNumber, temporarySourceRef);
+    }
+    (void)eraseMember(temporaryRef->castLib, temporaryRef->memberNum());
+    return stagedFirst && copiedSecondToFirst && copiedFirstToSecond;
 }
 
 lingo::Datum CastLibManager::callMemberMethod(int castLibNumber,

@@ -13,7 +13,7 @@ It **won't** *just* be an emulator: the goal is to eventually become a full soft
 - zlib development headers, or a zlib-compatible zlib-ng package
 - Optional: Ninja for faster incremental builds
 - Optional: GTK4 and libcurl development packages for the native player
-- Optional: libpanel-1 and libadwaita-1 development packages for the editor
+- Optional: Qt6 Widgets or Qt5 Widgets development packages for the editor
 - Optional: Emscripten for the browser/WASM target
 - Optional: Node.js and npm for browser/WASM verification
 
@@ -32,13 +32,12 @@ The player can be used in two ways:
 
 ## Editor
 
-`libreshockwave_editor` is a GTK/libadwaita Director Studio prototype for inspecting Director and Shockwave projects.
-It opens `.dcr`, `.dir`, `.dxr`, `.cct`, `.cst`, and `.libresw` workspace files, previews the stage, browses cast
-members, inspects score/chunk/property data, previews bitmap and palette images, decompiles script previews, applies
-external parameters, saves workspace layout, and exports selected or all cast members. Project editing is currently
-read-only.
+`libreshockwave_editor` is a Qt Widgets Director Studio prototype for inspecting Director and Shockwave projects.
+It is being migrated from the Java Swing editor in `/opt/git/LibreShockwaveJava2/editor` and currently provides the
+Director MX-style main window, menus, toolbar, dockable panel surface, layout persistence, and native C++ movie loading
+summary views. See `docs/EDITOR_PROGRESS.md` for the full migration checklist.
 
-The target is enabled when libpanel-1 and libadwaita-1 development packages are available.
+The target is enabled when Qt6 Widgets or Qt5 Widgets development packages are available.
 
 ```bash
 ./build.sh --target libreshockwave_editor --no-tests
@@ -466,7 +465,7 @@ cpp/
   include/libreshockwave/       Public C++ headers
   src/                          Runtime, SDK, VM, and player sources
   apps/
-    editor/                     GTK/libadwaita editor source
+    editor/                     Qt Widgets editor source
     player/                     GTK player executable source
     tools/                      Native probes and browser fixture checker
     wasm/                       WASM bridge entry points

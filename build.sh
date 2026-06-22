@@ -72,34 +72,34 @@ dependency_commands() {
         *" debian "*|*" ubuntu "*)
             cat <<'EOF'
 sudo apt update
-sudo apt install build-essential cmake ninja-build zlib1g-dev
+sudo apt install build-essential cmake ninja-build zlib1g-dev qt6-base-dev
 EOF
             ;;
         *" fedora "*)
             cat <<'EOF'
-sudo dnf install cmake gcc-c++ ninja-build zlib-ng-compat-devel
+sudo dnf install cmake gcc-c++ ninja-build zlib-ng-compat-devel qt6-qtbase-devel
 # If zlib-ng-compat-devel is unavailable on your Fedora release:
-sudo dnf install cmake gcc-c++ ninja-build zlib-devel
+sudo dnf install cmake gcc-c++ ninja-build zlib-devel qt6-qtbase-devel
 EOF
             ;;
         *" rhel "*|*" centos "*|*" rocky "*|*" almalinux "*)
             cat <<'EOF'
-sudo dnf install cmake gcc-c++ ninja-build zlib-devel
+sudo dnf install cmake gcc-c++ ninja-build zlib-devel qt6-qtbase-devel
 EOF
             ;;
         *" arch "*)
             cat <<'EOF'
-sudo pacman -S --needed base-devel cmake ninja zlib
+sudo pacman -S --needed base-devel cmake ninja zlib qt6-base
 EOF
             ;;
         *" opensuse "*|*" suse "*)
             cat <<'EOF'
-sudo zypper install cmake gcc-c++ ninja zlib-devel
+sudo zypper install cmake gcc-c++ ninja zlib-devel qt6-base-devel
 EOF
             ;;
         *" alpine "*)
             cat <<'EOF'
-sudo apk add build-base cmake ninja zlib-dev linux-headers
+sudo apk add build-base cmake ninja zlib-dev linux-headers qt6-qtbase-dev
 EOF
             ;;
         *)
@@ -109,6 +109,7 @@ EOF
 # - A C++20 compiler
 # - zlib development headers
 # - Optional: Ninja
+# - Optional: Qt6 Widgets development headers for the editor
 EOF
             ;;
     esac
@@ -122,24 +123,24 @@ install_deps() {
     case " ${distro} ${like} " in
         *" debian "*|*" ubuntu "*)
             sudo_cmd apt update
-            sudo_cmd apt install -y build-essential cmake ninja-build zlib1g-dev
+            sudo_cmd apt install -y build-essential cmake ninja-build zlib1g-dev qt6-base-dev
             ;;
         *" fedora "*)
-            if ! sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-ng-compat-devel; then
-                sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-devel
+            if ! sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-ng-compat-devel qt6-qtbase-devel; then
+                sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-devel qt6-qtbase-devel
             fi
             ;;
         *" rhel "*|*" centos "*|*" rocky "*|*" almalinux "*)
-            sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-devel
+            sudo_cmd dnf install -y cmake gcc-c++ ninja-build zlib-devel qt6-qtbase-devel
             ;;
         *" arch "*)
-            sudo_cmd pacman -S --needed --noconfirm base-devel cmake ninja zlib
+            sudo_cmd pacman -S --needed --noconfirm base-devel cmake ninja zlib qt6-base
             ;;
         *" opensuse "*|*" suse "*)
-            sudo_cmd zypper install -y cmake gcc-c++ ninja zlib-devel
+            sudo_cmd zypper install -y cmake gcc-c++ ninja zlib-devel qt6-base-devel
             ;;
         *" alpine "*)
-            sudo_cmd apk add build-base cmake ninja zlib-dev linux-headers
+            sudo_cmd apk add build-base cmake ninja zlib-dev linux-headers qt6-qtbase-dev
             ;;
         *)
             echo "Unsupported distribution for automatic dependency installation." >&2
@@ -274,6 +275,7 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
     else
         TARGETS=(
             libreshockwave_tests
+            libreshockwave_editor_model_tests
             libreshockwave_probe
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe

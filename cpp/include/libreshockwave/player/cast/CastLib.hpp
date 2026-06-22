@@ -73,6 +73,7 @@ public:
     void load();
     [[nodiscard]] int memberCount();
     [[nodiscard]] const std::map<int, std::shared_ptr<chunks::CastMemberChunk>>& memberChunks();
+    [[nodiscard]] const std::map<int, std::shared_ptr<libreshockwave::cast::CastMember>>& runtimeMembers();
     [[nodiscard]] std::shared_ptr<chunks::CastMemberChunk> findMemberByNumber(int memberNumber);
     [[nodiscard]] std::shared_ptr<chunks::CastMemberChunk> findMemberByName(const std::string& memberName);
     [[nodiscard]] std::shared_ptr<libreshockwave::cast::CastMember> getMember(int memberNumber);

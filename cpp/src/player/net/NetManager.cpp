@@ -164,12 +164,24 @@ const std::string& NetManager::localHttpRoot() const {
     return localHttpRoot_;
 }
 
+void NetManager::setRemoteFetchEnabled(bool enabled) {
+    remoteFetchEnabled_ = enabled;
+}
+
+bool NetManager::remoteFetchEnabled() const {
+    return remoteFetchEnabled_;
+}
+
 void NetManager::setFetchHandler(FetchHandler handler) {
     fetchHandler_ = std::move(handler);
 }
 
 void NetManager::setCompletionCallback(CompletionCallback callback) {
     completionCallback_ = std::move(callback);
+}
+
+void NetManager::setTaskCallback(TaskCallback callback) {
+    taskCallback_ = std::move(callback);
 }
 
 int NetManager::preloadNetThing(std::string url) {
@@ -181,6 +193,7 @@ int NetManager::preloadNetThing(std::string url) {
         task.markInProgress();
         task.complete(*cached);
         notifyCompletion(task.originalUrl(), *cached);
+        notifyTask(task);
         return taskId;
     }
 
@@ -464,7 +477,16 @@ void NetManager::executeTask(NetTask& task, bool useCache) {
                 return;
             }
         }
+        const auto requestUrl = task.method() == NetTaskMethod::Get
+            ? httpUrlAgainstBase(task.originalUrl(), basePath_)
+            : task.originalUrl();
+        if (!remoteFetchEnabled_ && isHttpUrl(requestUrl)) {
+            task.fail(403, "Remote network access disabled");
+            notifyTask(task);
+            return;
+        }
         task.fail(404, "No fetch handler configured");
+        notifyTask(task);
         return;
     }
 
@@ -482,10 +504,20 @@ void NetManager::executeTask(NetTask& task, bool useCache) {
         }
     }
 
+    const auto effectiveRequestUrl = task.method() == NetTaskMethod::Get
+        ? requestTask->originalUrl()
+        : httpUrlAgainstBase(task.originalUrl(), basePath_);
+    if (!remoteFetchEnabled_ && isHttpUrl(effectiveRequestUrl)) {
+        task.fail(403, "Remote network access disabled");
+        notifyTask(task);
+        return;
+    }
+
     auto result = fetchHandler_(*requestTask);
     if (!result.data.has_value()) {
         task.fail(result.errorCode != 0 ? result.errorCode : 404,
                   result.errorMessage.empty() ? "Load returned no data" : result.errorMessage);
+        notifyTask(task);
         return;
     }
 
@@ -503,11 +535,18 @@ void NetManager::completeTask(NetTask& task,
     if (task.result().has_value()) {
         notifyCompletion(task.originalUrl(), *task.result());
     }
+    notifyTask(task);
 }
 
 void NetManager::notifyCompletion(const std::string& url, const std::vector<std::uint8_t>& data) const {
     if (completionCallback_) {
         completionCallback_(url, data);
+    }
+}
+
+void NetManager::notifyTask(const NetTask& task) const {
+    if (taskCallback_) {
+        taskCallback_(task);
     }
 }
 

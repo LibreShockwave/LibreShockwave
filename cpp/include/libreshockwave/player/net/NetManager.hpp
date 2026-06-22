@@ -41,6 +41,7 @@ public:
 
     using FetchHandler = std::function<LoadResult(const NetTask&)>;
     using CompletionCallback = std::function<void(const std::string&, const std::vector<std::uint8_t>&)>;
+    using TaskCallback = std::function<void(const NetTask&)>;
 
     void setBasePath(std::string basePath);
     [[nodiscard]] const std::string& basePath() const;
@@ -49,8 +50,12 @@ public:
     void setLocalHttpRoot(std::string root);
     [[nodiscard]] const std::string& localHttpRoot() const;
 
+    void setRemoteFetchEnabled(bool enabled);
+    [[nodiscard]] bool remoteFetchEnabled() const;
+
     void setFetchHandler(FetchHandler handler);
     void setCompletionCallback(CompletionCallback callback);
+    void setTaskCallback(TaskCallback callback);
 
     [[nodiscard]] int preloadNetThing(std::string url) override;
     [[nodiscard]] int postNetText(std::string url, std::string postData) override;
@@ -87,6 +92,7 @@ private:
                       bool cacheResult,
                       std::string_view cacheUrl);
     void notifyCompletion(const std::string& url, const std::vector<std::uint8_t>& data) const;
+    void notifyTask(const NetTask& task) const;
 
     std::unordered_map<int, NetTask> tasks_;
     std::unordered_map<std::string, std::vector<std::uint8_t>> urlCache_;
@@ -94,8 +100,10 @@ private:
     int lastTaskId_{0};
     std::string basePath_;
     std::string localHttpRoot_;
+    bool remoteFetchEnabled_{true};
     FetchHandler fetchHandler_;
     CompletionCallback completionCallback_;
+    TaskCallback taskCallback_;
 };
 
 } // namespace libreshockwave::player::net
