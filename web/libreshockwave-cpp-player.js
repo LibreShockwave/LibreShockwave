@@ -166,6 +166,8 @@
     const canvas = $(canvasOrId);
     if (!canvas) throw new Error("LibreShockwave canvas not found");
     const ctx = canvas.getContext("2d", { alpha: false });
+    const frameBufferCanvas = document.createElement("canvas");
+    const frameBufferCtx = frameBufferCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
     const scriptUrl = document.currentScript && document.currentScript.src
       ? document.currentScript.src
       : location.href;
@@ -198,6 +200,9 @@
     let aboutPanel = null;
 
     canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
+    canvas.style.imageRendering = canvas.style.imageRendering || "pixelated";
+    ctx.imageSmoothingEnabled = false;
+    frameBufferCtx.imageSmoothingEnabled = false;
     if (canvasMenuEnabled) {
       installCanvasMenuStyles();
       if (global.getComputedStyle && getComputedStyle(overlayHost).position === "static") {
@@ -464,15 +469,45 @@
       }
     }
 
+    function resetCanvasTransform(renderContext) {
+      if (typeof renderContext.resetTransform === "function") {
+        renderContext.resetTransform();
+      } else {
+        renderContext.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
+
     function drawFrame(info, pixels) {
       lastInfo = info || lastInfo;
       if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
       if (!info || !pixels || !info.width || !info.height) return;
-      if (canvas.width !== info.width) canvas.width = info.width;
-      if (canvas.height !== info.height) canvas.height = info.height;
+      let resized = false;
+      if (canvas.width !== info.width) {
+        canvas.width = info.width;
+        resized = true;
+      }
+      if (canvas.height !== info.height) {
+        canvas.height = info.height;
+        resized = true;
+      }
+      if (frameBufferCanvas.width !== info.width) {
+        frameBufferCanvas.width = info.width;
+        resized = true;
+      }
+      if (frameBufferCanvas.height !== info.height) {
+        frameBufferCanvas.height = info.height;
+        resized = true;
+      }
+      if (resized) {
+        ctx.imageSmoothingEnabled = false;
+        frameBufferCtx.imageSmoothingEnabled = false;
+      }
       frameCssWidth = info.width;
       frameCssHeight = info.height;
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), info.width, info.height), 0, 0);
+      frameBufferCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels), info.width, info.height), 0, 0);
+      resetCanvasTransform(ctx);
+      ctx.clearRect(0, 0, info.width, info.height);
+      ctx.drawImage(frameBufferCanvas, 0, 0);
       applyCursor(info.cursor);
       if (typeof options.onFrame === "function") options.onFrame(info);
     }

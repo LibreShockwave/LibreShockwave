@@ -266,6 +266,15 @@ std::vector<std::uint8_t> bitmapToRgba(const Bitmap& bitmap, int backgroundRgb) 
     return rgba;
 }
 
+std::uint32_t fnv1a32(const std::vector<std::uint8_t>& bytes) {
+    std::uint32_t hash = 2166136261U;
+    for (const auto byte : bytes) {
+        hash ^= static_cast<std::uint32_t>(byte);
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
 std::string cursorCssForCode(int code) {
     switch (code) {
         case libreshockwave::player::CursorManager::IBEAM_CURSOR:
@@ -416,6 +425,7 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
     out << '{'
         << "\"width\":" << ctx.frameWidth
         << ",\"height\":" << ctx.frameHeight
+        << ",\"checksum\":" << fnv1a32(ctx.frameRgba)
         << ",\"background\":" << ctx.frameBackground
         << ",\"currentFrame\":" << currentFrame
         << ",\"frameCount\":" << frameCount

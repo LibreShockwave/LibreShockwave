@@ -128,7 +128,8 @@
           time: Date.now(),
           frame: info.frame || 0,
           width: info.width || 0,
-          height: info.height || 0
+          height: info.height || 0,
+          checksum: info.checksum || 0
         });
         if (window.__venusHarness.frames.length > 240) {
           window.__venusHarness.frames.shift();
