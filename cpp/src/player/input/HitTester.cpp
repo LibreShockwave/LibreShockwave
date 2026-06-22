@@ -140,6 +140,10 @@ bool HitTester::hitTestSpritePixel(const render::pipeline::RenderSprite& sprite,
         return false;
     }
 
+    if (sprite.type() == render::pipeline::SpriteType::Button) {
+        return true;
+    }
+
     const auto alphaRule = getAlphaHitRule(sprite);
     if (!alphaRule.enabled || alphaRule.threshold <= 0) {
         return true;

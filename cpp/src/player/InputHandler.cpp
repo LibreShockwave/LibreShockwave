@@ -13,6 +13,7 @@
 #include "libreshockwave/player/event/EventDispatcher.hpp"
 #include "libreshockwave/player/input/HitTester.hpp"
 #include "libreshockwave/player/input/InputState.hpp"
+#include "libreshockwave/player/CursorManager.hpp"
 #include "libreshockwave/player/render/SpriteRegistry.hpp"
 #include "libreshockwave/player/render/pipeline/StageRenderer.hpp"
 
@@ -481,29 +482,92 @@ std::vector<int> InputHandler::getInteractiveHits(int stageX, int stageY, bool f
     }
 
     auto sprites = hitSprites();
+    auto hasCustomCursor = [this](int channel) {
+        if (stageRenderer_ == nullptr) {
+            return false;
+        }
+        const auto sprite = stageRenderer_->spriteRegistry().get(channel);
+        return sprite != nullptr &&
+               (sprite->hasBitmapCursor() ||
+                (sprite->cursor() != CursorManager::DEFAULT_CURSOR && sprite->cursor() != CursorManager::ARROW_CURSOR));
+    };
+    auto hasAuthoredCursorBehavior = [&sprites, &hasCustomCursor](int channel) {
+        const bool hasBehavior = std::ranges::any_of(sprites, [channel](const auto& sprite) {
+            return sprite.channel() == channel && sprite.hasBehaviors();
+        });
+        return hasBehavior && hasCustomCursor(channel);
+    };
+    auto isInteractive = [dispatcher, &hasAuthoredCursorBehavior](int channel) {
+        return dispatcher->isSpriteMouseInteractive(channel) || hasAuthoredCursorBehavior(channel);
+    };
     auto hitChannels = input::HitTester::hitTestAll(
         sprites,
         stageX,
         stageY,
-        [dispatcher, forceBoundingBox](int channel) {
-            return forceBoundingBox && dispatcher->isSpriteMouseInteractive(channel);
+        [forceBoundingBox, &isInteractive](int channel) {
+            return forceBoundingBox && isInteractive(channel);
         });
+    if (forceBoundingBox && stageRenderer_ != nullptr) {
+        for (const auto& [channel, sprite] : stageRenderer_->spriteRegistry().getAll()) {
+            if (sprite == nullptr || !sprite->isVisible() || !isInteractive(channel)) {
+                continue;
+            }
+            const int left = sprite->locH();
+            const int top = sprite->locV();
+            const int right = left + sprite->width();
+            const int bottom = top + sprite->height();
+            if (stageX >= left && stageX < right && stageY >= top && stageY < bottom &&
+                std::ranges::find(hitChannels, channel) == hitChannels.end()) {
+                hitChannels.push_back(channel);
+            }
+        }
+    }
 
     std::vector<int> interactive;
     interactive.reserve(hitChannels.size());
-    std::copy_if(hitChannels.begin(), hitChannels.end(), std::back_inserter(interactive), [dispatcher](int channel) {
-        return dispatcher->isSpriteMouseInteractive(channel);
-    });
+    std::copy_if(
+        hitChannels.begin(),
+        hitChannels.end(),
+        std::back_inserter(interactive),
+        isInteractive);
     return interactive;
 }
 
 std::vector<int> InputHandler::getInteractiveHitPath(int stageX, int stageY) const {
-    auto hits = getInteractiveHits(stageX, stageY, false);
+    auto exactHits = getInteractiveHits(stageX, stageY, false);
     auto boundingHits = getInteractiveHits(stageX, stageY, true);
-    for (const int channel : boundingHits) {
+    auto hasPointerCursor = [this](int channel) {
+        if (stageRenderer_ == nullptr) {
+            return false;
+        }
+        const auto sprite = stageRenderer_->spriteRegistry().get(channel);
+        return sprite != nullptr &&
+               (sprite->hasBitmapCursor() ||
+                (sprite->cursor() != CursorManager::DEFAULT_CURSOR && sprite->cursor() != CursorManager::ARROW_CURSOR));
+    };
+    std::vector<int> hits;
+    hits.reserve(exactHits.size() + boundingHits.size());
+    auto appendUnique = [&hits](int channel) {
         if (std::ranges::find(hits, channel) == hits.end()) {
             hits.push_back(channel);
         }
+    };
+
+    for (const int channel : exactHits) {
+        if (hasPointerCursor(channel)) {
+            appendUnique(channel);
+        }
+    }
+    for (const int channel : boundingHits) {
+        if (hasPointerCursor(channel)) {
+            appendUnique(channel);
+        }
+    }
+    for (const int channel : exactHits) {
+        appendUnique(channel);
+    }
+    for (const int channel : boundingHits) {
+        appendUnique(channel);
     }
     return hits;
 }

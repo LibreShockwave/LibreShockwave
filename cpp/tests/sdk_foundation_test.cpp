@@ -3502,6 +3502,84 @@ void testPlayerInputFoundation() {
     assert(HitTester::hitTest(stageRenderer.lastBakedSprites(), 5, 5) == 4);
     assert(inputHandler.hitTestExact(5, 5) == 4);
 
+    {
+        InputState brokeredState;
+        StageRenderer brokeredRenderer;
+        EventDispatcher brokeredDispatcher;
+        brokeredDispatcher.setSpriteRegistry(&brokeredRenderer.spriteRegistry());
+        brokeredDispatcher.setRespondsPredicate([mouseAndKeyHandlers](const EventTarget& target,
+                                                                        std::string_view handler) {
+            return target.kind == EventTargetKind::ScriptInstance &&
+                   mouseAndKeyHandlers.contains(std::string(handler));
+        });
+        brokeredRenderer.spriteRegistry()
+            .getOrCreateDynamic(6)
+            ->setScriptInstanceList({Datum::scriptInstance("brokered-button")});
+        auto brokeredButtonState = brokeredRenderer.spriteRegistry().getOrCreateDynamic(6);
+        brokeredButtonState->setLocH(0);
+        brokeredButtonState->setLocV(0);
+        brokeredButtonState->setWidth(20);
+        brokeredButtonState->setHeight(20);
+        brokeredButtonState->setCursor(280);
+        brokeredRenderer.spriteRegistry()
+            .getOrCreateDynamic(7)
+            ->setScriptInstanceList({Datum::scriptInstance("brokered-background")});
+        auto brokeredBackgroundState = brokeredRenderer.spriteRegistry().getOrCreateDynamic(7);
+        brokeredBackgroundState->setLocH(0);
+        brokeredBackgroundState->setLocV(0);
+        brokeredBackgroundState->setWidth(20);
+        brokeredBackgroundState->setHeight(20);
+        brokeredBackgroundState->setCursor(CursorManager::ARROW_CURSOR);
+        brokeredRenderer.setLastBakedSprites({
+            RenderSprite(6,
+                         8,
+                         0,
+                         4,
+                         20,
+                         6,
+                         true,
+                         SpriteType::Text,
+                         nullptr,
+                         transparentMember,
+                         0,
+                         0,
+                         false,
+                         false,
+                         libreshockwave::id::code(InkMode::MATTE),
+                         100,
+                         false,
+                         false,
+                         transparentBitmap,
+                         true),
+            RenderSprite(7,
+                         0,
+                         0,
+                         20,
+                         20,
+                         7,
+                         true,
+                         SpriteType::Bitmap,
+                         nullptr,
+                         nullptr,
+                         0,
+                         0,
+                         false,
+                         false,
+                         0,
+                         100,
+                         false,
+                         false,
+                         lowerOpaqueBitmap,
+                         true),
+        });
+        InputHandler brokeredHandler(&brokeredState, &brokeredRenderer, &brokeredDispatcher);
+        assert(HitTester::hitTest(brokeredRenderer.lastBakedSprites(), 5, 5) == 7);
+        assert(brokeredHandler.hitTestExact(5, 5) == 6);
+        brokeredHandler.onMouseDown(5, 5);
+        assert(brokeredState.clickOnSprite() == 6);
+        assert(brokeredHandler.processInputEvents());
+    }
+
     stageRenderer.setLastBakedSprites({
         RenderSprite(1,
                      0,
@@ -15081,6 +15159,28 @@ void testHitTesterFoundation() {
             std::vector<int>{44, 40}));
     assert((HitTester::hitTestAll({lower, dynamicMatte}, 11, 11, [](int) { return false; }) ==
             std::vector<int>{40}));
+
+    auto buttonSprite = RenderSprite(47,
+                                     10,
+                                     10,
+                                     3,
+                                     3,
+                                     0,
+                                     true,
+                                     SpriteType::Button,
+                                     nullptr,
+                                     dynamicMember,
+                                     0,
+                                     0,
+                                     false,
+                                     false,
+                                     libreshockwave::id::code(InkMode::MATTE),
+                                     100,
+                                     false,
+                                     false,
+                                     dynamicBaked,
+                                     false);
+    assert(HitTester::hitTest({lower, buttonSprite}, 11, 11) == 47);
 
     auto scaled = std::make_shared<Bitmap>(2, 1, 32, std::vector<std::uint32_t>{0x00000000U, 0xFF112233U});
     scaled->setNativeAlpha(true);
