@@ -93,6 +93,18 @@ void Bitmap::setNativeAlpha(bool nativeAlpha) { nativeAlpha_ = nativeAlpha; }
 bool Bitmap::isRectangularMedia() const { return rectangularMedia_; }
 void Bitmap::setRectangularMedia(bool rectangularMedia) { rectangularMedia_ = rectangularMedia; }
 
+bool Bitmap::isTextRendered() const { return textRendered_; }
+void Bitmap::markTextRendered() { textRendered_ = true; }
+void Bitmap::clearTextRendered() { textRendered_ = false; }
+
+bool Bitmap::hasScriptFillBacking() const { return scriptFillBacking_; }
+void Bitmap::markScriptFillBacking() { scriptFillBacking_ = true; }
+void Bitmap::clearScriptFillBacking() { scriptFillBacking_ = false; }
+
+bool Bitmap::preservesScriptFillBacking() const { return preserveScriptFillBacking_; }
+void Bitmap::markPreserveScriptFillBacking() { preserveScriptFillBacking_ = true; }
+void Bitmap::clearPreserveScriptFillBacking() { preserveScriptFillBacking_ = false; }
+
 Bitmap Bitmap::copyWithNonNativeAlphaOpaque() const {
     if (bitDepth_ != 32 || nativeAlpha_ || !hasTransparentPixels()) {
         return *this;
@@ -293,6 +305,9 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
         scriptModified_ = false;
         nativeAlpha_ = false;
         rectangularMedia_ = false;
+        textRendered_ = false;
+        scriptFillBacking_ = false;
+        preserveScriptFillBacking_ = false;
         clearPaletteRefMetadata();
         clearAnchorPoint();
         return;
@@ -303,6 +318,9 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
     scriptModified_ = other->scriptModified_;
     nativeAlpha_ = other->nativeAlpha_;
     rectangularMedia_ = other->rectangularMedia_;
+    textRendered_ = other->textRendered_;
+    scriptFillBacking_ = other->scriptFillBacking_;
+    preserveScriptFillBacking_ = other->preserveScriptFillBacking_;
     paletteRefCastLib_ = other->paletteRefCastLib_;
     paletteRefMemberNum_ = other->paletteRefMemberNum_;
     paletteRefSystemName_ = other->paletteRefSystemName_;

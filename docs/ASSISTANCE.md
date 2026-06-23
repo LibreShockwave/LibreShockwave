@@ -238,8 +238,29 @@ Core rendering principles:
 - Preserve authored transparency, masks, palette indices, and matte behavior.
 - Avoid broad heuristics that erase ordinary light pixels, text, highlights, or
   overlays.
+- For v31 fuse_client window-buffer white-backing issues, read the layout and
+  wrapper Lingo before changing `SpriteBaker` rules. The relevant framework
+  files are the Layout Parser, Window Instance, Unique Element, Grouped
+  Element, and Image Wrapper classes under
+  `/opt/git/v31_assets/projectorrays_lingo/fuse_client/casts/External/`.
+  `Image Wrapper Class.feedImage()` fills `pBuffer.image` before rendering the
+  fed source, but Navigator also uses that same image-wrapper path for
+  writer-rendered text/link mattes. A correct fix must distinguish sparse
+  viewport/list content from Navigator text/link mattes, Catalogue product
+  strips, and room compositor surfaces.
+- When verifying a runtime-backing transparency change in the v31 harness,
+  capture all four canaries from the same rebuilt WASM bundle: Navigator,
+  Messenger/Friends, Catalogue Collectables, and the `test` private room. For
+  private-room regressions, use Firefox/geckodriver and repeat the load because
+  furniture timing can vary.
 - For script-created UI surfaces, inspect the baked `RenderSprite`, dynamic
   `CastMember`, and runtime bitmap before changing final transparency rules.
+- For fuse_client window/image wrapper white-fill regressions, inspect the
+  Lingo `image.fill()` and `copyPixels()` sequence as well as the copied source
+  rectangle. A wrapper fill should survive final `BACKGROUND_TRANSPARENT`
+  baking only when the source rectangle extends beyond the fed source image;
+  full-size artwork/image slots, product strips, Navigator mattes, and room
+  compositor surfaces should keep normal white-keying.
 - A missing sprite can be a bake-source or runtime-bitmap selection problem, not
   a matte problem.
 - Dynamic runtime bitmaps can be authoritative even when
@@ -248,6 +269,10 @@ Core rendering principles:
   always-open UI too. Broad `backgroundTransparent` or runtime-backing
   preservation changes can make a target window look correct while adding large
   white fills to another window such as the Navigator.
+- For v31 harness white-keying fixes, include Messenger/Friends, Hotel
+  Navigator, Catalogue page image slots/product strips, and a loaded private
+  room in final visual acceptance. The same transparency path affects each of
+  those surfaces differently.
 - For toolbar/icon repros, prefer a full mouse move/down/up/click sequence at
   the stage coordinate. A synthetic click-only event can fail to trigger
   Director-style pressed/released handlers.

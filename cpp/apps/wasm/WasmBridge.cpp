@@ -509,6 +509,10 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                << ",\"paletteIndices\":" << (bitmap.paletteIndices().has_value() ? "true" : "false")
                << ",\"nativeAlpha\":" << (bitmap.isNativeAlpha() ? "true" : "false")
                << ",\"scriptModified\":" << (bitmap.isScriptModified() ? "true" : "false")
+               << ",\"scriptFillBacking\":" << (bitmap.hasScriptFillBacking() ? "true" : "false")
+               << ",\"preserveScriptFillBacking\":" << (bitmap.preservesScriptFillBacking() ? "true" : "false")
+               << ",\"rectangularMedia\":" << (bitmap.isRectangularMedia() ? "true" : "false")
+               << ",\"textRendered\":" << (bitmap.isTextRendered() ? "true" : "false")
                << ",\"transparent\":" << (bitmap.hasTransparentPixels() ? "true" : "false")
                << ",\"translucent\":" << (bitmap.hasTranslucentPixels() ? "true" : "false")
                << ",\"opaquePixels\":" << opaquePixels
@@ -604,6 +608,11 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
             }
             out << ",\"ink\":" << sprite.ink()
                 << ",\"blend\":" << sprite.blend()
+                << ",\"flipH\":" << (sprite.isFlipH() ? "true" : "false")
+                << ",\"flipV\":" << (sprite.isFlipV() ? "true" : "false")
+                << ",\"rotation\":" << sprite.rotation()
+                << ",\"skew\":" << sprite.skew()
+                << ",\"directorMirrorH\":" << (sprite.hasDirectorHorizontalMirror() ? "true" : "false")
                 << ",\"foreColor\":" << sprite.foreColor()
                 << ",\"backColor\":" << sprite.backColor()
                 << ",\"hasBakedBitmap\":" << (baked != nullptr ? "true" : "false");
@@ -651,6 +660,10 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                     << ",\"paletteIndices\":" << (baked->paletteIndices().has_value() ? "true" : "false")
                     << ",\"nativeAlpha\":" << (baked->isNativeAlpha() ? "true" : "false")
                     << ",\"scriptModified\":" << (baked->isScriptModified() ? "true" : "false")
+                    << ",\"scriptFillBacking\":" << (baked->hasScriptFillBacking() ? "true" : "false")
+                    << ",\"preserveScriptFillBacking\":" << (baked->preservesScriptFillBacking() ? "true" : "false")
+                    << ",\"rectangularMedia\":" << (baked->isRectangularMedia() ? "true" : "false")
+                    << ",\"textRendered\":" << (baked->isTextRendered() ? "true" : "false")
                     << ",\"transparent\":" << (baked->hasTransparentPixels() ? "true" : "false")
                     << ",\"translucent\":" << (baked->hasTranslucentPixels() ? "true" : "false")
                     << ",\"opaquePixels\":" << opaquePixels

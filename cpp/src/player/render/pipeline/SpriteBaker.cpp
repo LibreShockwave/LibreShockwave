@@ -100,43 +100,13 @@ bool shouldPreserveOutlinedWhiteBodyForScriptCanvas(const RenderSprite& sprite, 
             memberName->starts_with("chat_item_sing_background_"));
 }
 
-bool shouldPreserveTallRuntimeBacking(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
+bool shouldPreserveScriptFillBacking(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
     if (sprite.inkMode() != id::InkMode::BACKGROUND_TRANSPARENT ||
         !bitmap.isScriptModified() ||
         bitmap.isNativeAlpha()) {
         return false;
     }
-
-    const int width = bitmap.width();
-    const int height = bitmap.height();
-    const int area = width * height;
-    if (width <= 0 || height <= 0 || area < 4096 || width < 160 || height < 180) {
-        return false;
-    }
-    if (width > 512 || area > 131072) {
-        return false;
-    }
-
-    if (bitmap.isRectangularMedia()) {
-        return true;
-    }
-
-    if (bitmap.hasTransparentPixels()) {
-        return false;
-    }
-
-    int whitePixels = 0;
-    int opaquePixels = 0;
-    for (const auto pixel : bitmap.pixels()) {
-        if (((pixel >> 24U) & 0xFFU) == 0) {
-            continue;
-        }
-        ++opaquePixels;
-        if ((pixel & 0x00FFFFFFU) == 0x00FFFFFFU) {
-            ++whitePixels;
-        }
-    }
-    return opaquePixels == area && whitePixels * 4 >= opaquePixels * 3;
+    return bitmap.preservesScriptFillBacking();
 }
 
 int shapeBorderStrokeCount(const RenderSprite& sprite, const ::libreshockwave::cast::ShapeInfo& shapeInfo) {
@@ -1269,7 +1239,7 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
 
     bitmap::Bitmap processed = source.copy();
     if (InkProcessor::shouldProcessInk(sprite.inkMode()) &&
-        !shouldPreserveTallRuntimeBacking(sprite, source)) {
+        !shouldPreserveScriptFillBacking(sprite, source)) {
         bitmap::Bitmap inkSource =
             (shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, source) ||
              shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, source))

@@ -42,6 +42,7 @@ std::function<void()> imageMutationCallback;
 void* imageMutationCallbackOwner = nullptr;
 std::deque<std::string> imageOperationTrace;
 int imageOperationTraceNextId = 1;
+int imageWrapperFeedImageDepth = 0;
 constexpr std::size_t kMaxImageOperationTraceEntries = 512;
 
 void appendTraceJsonString(std::ostringstream& out, std::string_view value) {
@@ -119,6 +120,10 @@ void appendTraceBitmapSummary(std::ostringstream& out, const char* key, const bi
         << ",\"bitDepth\":" << bitmap.bitDepth()
         << ",\"nativeAlpha\":" << (bitmap.isNativeAlpha() ? "true" : "false")
         << ",\"scriptModified\":" << (bitmap.isScriptModified() ? "true" : "false")
+        << ",\"scriptFillBacking\":" << (bitmap.hasScriptFillBacking() ? "true" : "false")
+        << ",\"preserveScriptFillBacking\":" << (bitmap.preservesScriptFillBacking() ? "true" : "false")
+        << ",\"rectangularMedia\":" << (bitmap.isRectangularMedia() ? "true" : "false")
+        << ",\"textRendered\":" << (bitmap.isTextRendered() ? "true" : "false")
         << ",\"paletteIndices\":" << (bitmap.paletteIndices().has_value() ? "true" : "false")
         << ",\"opaquePixels\":" << opaquePixels
         << ",\"transparentPixels\":" << transparentPixels;
@@ -2365,6 +2370,21 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
     }
     const auto handler = findScriptInstanceScriptHandler(context, instance, methodName);
     if (handler) {
+        const Datum props = util::getProperty(instance, "pProps");
+        const Datum type = props.isPropList() ? getPropListKey(props.propListValue(), "type") : Datum::voidValue();
+        std::string typeStorage;
+        const bool imageWrapperFeedImage =
+            equalsIgnoreCase(methodName, "feedImage") &&
+            args.size() == 1 &&
+            args[0].asImageRef() != nullptr &&
+            !type.isVoid() &&
+            equalsIgnoreCase(keyNameLikeJavaView(type, typeStorage), "image");
+        if (imageWrapperFeedImage) {
+            ++imageWrapperFeedImageDepth;
+            auto result = safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
+            --imageWrapperFeedImageDepth;
+            return result;
+        }
         return safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
     }
 
@@ -2430,7 +2450,43 @@ bool imageFill(bitmap::Bitmap& bmp, const std::vector<Datum>& args) {
     } else {
         bmp.fillRect(left, top, width, height, colorArgb);
     }
+    if (imageWrapperFeedImageDepth > 0) {
+        bmp.markScriptFillBacking();
+    }
     return true;
+}
+
+bool imageHasOpaqueNonWhiteContent(const bitmap::Bitmap& bitmap) {
+    for (const auto pixel : bitmap.pixels()) {
+        const auto alpha = (pixel >> 24U) & 0xFFU;
+        if (alpha != 0 && (pixel & 0x00FFFFFFU) != 0x00FFFFFFU) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool imageWrapperFeedLooksLikeSparseViewportContent(const bitmap::Bitmap& src,
+                                                    const Datum::IntRect& destRect,
+                                                    const Datum::IntRect& srcRect) {
+    if (src.width() <= 0 || src.height() <= 0) {
+        return false;
+    }
+    const int destWidth = destRect.right - destRect.left;
+    const int destHeight = destRect.bottom - destRect.top;
+    if (destWidth <= 0 || destHeight <= 0) {
+        return false;
+    }
+    if (!imageHasOpaqueNonWhiteContent(src)) {
+        return false;
+    }
+
+    const int visibleSrcWidth = std::max(0, std::min(srcRect.right, src.width()) - std::max(srcRect.left, 0));
+    const int visibleSrcHeight = std::max(0, std::min(srcRect.bottom, src.height()) - std::max(srcRect.top, 0));
+    // Friend-style list buffers feed a short content strip into a viewport.
+    // Navigator text/link feeds either contain only matte white or occupy most of the target height.
+    return visibleSrcWidth * 2 >= destWidth &&
+           visibleSrcHeight * 4 <= destHeight;
 }
 
 Datum imageDraw(bitmap::Bitmap& bmp, const std::vector<Datum>& args) {
@@ -4052,6 +4108,22 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
 
     if (destPaletteIndices.has_value()) {
         dest.setPaletteIndices(std::move(*destPaletteIndices));
+    }
+    const bool sourceRectExtendsPastSource =
+        srcRect->left < 0 ||
+        srcRect->top < 0 ||
+        srcRect->right > src.width() ||
+        srcRect->bottom > src.height();
+    if (ink == id::InkMode::BACKGROUND_TRANSPARENT &&
+        dest.hasScriptFillBacking() &&
+        src.isRectangularMedia() &&
+        !src.isTextRendered() &&
+        sourceRectExtendsPastSource &&
+        imageWrapperFeedLooksLikeSparseViewportContent(src, *destRect, *srcRect) &&
+        mask == nullptr &&
+        !colorRemap.has_value() &&
+        !bgColorRemap.has_value()) {
+        dest.markPreserveScriptFillBacking();
     }
     return Datum::voidValue();
 }

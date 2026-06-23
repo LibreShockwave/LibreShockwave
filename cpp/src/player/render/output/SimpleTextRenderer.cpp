@@ -540,6 +540,7 @@ std::shared_ptr<Bitmap> applyTextAA(const Bitmap& bitmap) {
     }
     auto result = std::make_shared<Bitmap>(width, height, 32, std::move(dst));
     result->markScriptModified();
+    result->markTextRendered();
     return result;
 }
 
@@ -773,6 +774,7 @@ std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& 
 
     auto bitmap = std::make_shared<Bitmap>(width, height, 32, std::move(pixels));
     bitmap->markScriptModified();
+    bitmap->markTextRendered();
     return bitmap;
 }
 
@@ -934,6 +936,7 @@ std::shared_ptr<Bitmap> renderWithBuiltinFont(const std::string& text,
 
     auto bitmap = std::make_shared<Bitmap>(width, height, 32, std::move(pixels));
     bitmap->markScriptModified();
+    bitmap->markTextRendered();
     return bitmap;
 }
 
@@ -1039,6 +1042,7 @@ std::shared_ptr<Bitmap> renderStyledXmedText(const std::vector<ResolvedXmedSpan>
 
     auto bitmap = std::make_shared<Bitmap>(width, neededHeight, 32, std::move(pixels));
     bitmap->markScriptModified();
+    bitmap->markTextRendered();
     return bitmap;
 }
 

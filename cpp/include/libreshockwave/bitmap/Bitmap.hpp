@@ -41,6 +41,15 @@ public:
     void setNativeAlpha(bool nativeAlpha);
     [[nodiscard]] bool isRectangularMedia() const;
     void setRectangularMedia(bool rectangularMedia);
+    [[nodiscard]] bool isTextRendered() const;
+    void markTextRendered();
+    void clearTextRendered();
+    [[nodiscard]] bool hasScriptFillBacking() const;
+    void markScriptFillBacking();
+    void clearScriptFillBacking();
+    [[nodiscard]] bool preservesScriptFillBacking() const;
+    void markPreserveScriptFillBacking();
+    void clearPreserveScriptFillBacking();
 
     [[nodiscard]] Bitmap copyWithNonNativeAlphaOpaque() const;
     [[nodiscard]] Bitmap copyWithDegenerateAlphaOpaque() const;
@@ -104,6 +113,9 @@ private:
     bool scriptModified_ = false;
     bool nativeAlpha_ = false;
     bool rectangularMedia_ = false;
+    bool textRendered_ = false;
+    bool scriptFillBacking_ = false;
+    bool preserveScriptFillBacking_ = false;
     std::shared_ptr<const Palette> imagePalette_;
     int paletteRefCastLib_ = -1;
     int paletteRefMemberNum_ = -1;

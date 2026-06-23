@@ -90,11 +90,22 @@ complete rendering specification.
   other palette entries.
 - Background-transparent copies should treat border-connected key pixels as
   transparent while preserving enclosed key-colored content when required.
-- Script-built runtime backings under `BACKGROUND_TRANSPARENT` need size-aware
-  handling. UI-panel-sized opaque white buffers may be intentional backings and
-  should not be white-keyed away, but tall narrow product/list strips and
-  stage-sized room/compositor buffers must stay on the normal white-keying path
-  or they can cover the scene with broad white fills.
+- Script-built runtime backings under `BACKGROUND_TRANSPARENT` need provenance
+  from the Lingo window framework plus copy geometry and source content. Do not
+  treat every white `image.fill()` as backing that should survive final baking.
+  In the v31 fuse_client framework, `Image Wrapper Class.feedImage()` is the
+  path that fills `pBuffer.image` and then renders a source image into it. Only
+  that transaction may mark a possible preserved fill backing.
+- Not every `feedImage` result should preserve white. Navigator text/link
+  surfaces are also `#type: "image"` wrappers fed with writer-rendered images;
+  their white is a matte and must still key out. Preserve the wrapper fill only
+  when the source is a script-created rectangular image copied with
+  `BACKGROUND_TRANSPARENT`, the requested source rectangle extends beyond the
+  source image, and the visible source looks like sparse viewport/list content
+  rather than a text/link matte or artwork slot. Full-size catalogue artwork,
+  product strips, Navigator text/link mattes, untouched `image()` default
+  white, generated text mattes, and room/compositor surfaces must stay on the
+  normal white-keying path.
 - Near-white matte preprocessing must stay narrow. Apply it only when the source
   has a border-connected near-white matte and real non-near-white content. A
   broad near-white rule can erase legitimate light text, highlights, and
@@ -169,11 +180,11 @@ complete rendering specification.
   as the Habbo Navigator Public Spaces illustration.
 - Preserve the existing `processLiveBitmap` path for runtime images so
   background-transparent and matte handling remains centralized.
-- If preserving opaque script-built runtime backing pixels, keep the rule
-  narrow enough to exclude tall skinny strips and full-stage or room-sized
-  compositor surfaces. Verify both the target UI window and adjacent
-  always-visible surfaces such as the Navigator, catalogue pages, or loaded room
-  playfield.
+- If preserving opaque script-built runtime backing pixels, use runtime
+  provenance from the Lingo image operations, the current window-wrapper path,
+  the `copyPixels` source/dest geometry, and source content. Verify the target
+  UI window and adjacent always-visible surfaces such as the Navigator,
+  catalogue pages, or loaded room playfield.
 - Do not add special cases for individual member names, room names, or harness
   states. If a runtime bitmap is present but not rendering, fix the generic
   dynamic-member bake path.
@@ -198,10 +209,16 @@ complete rendering specification.
 - For `SpriteBaker` changes, add tests for authored bitmap members, dynamic
   bitmap members, authored text members, and dynamic text members when the
   change affects live bitmap selection.
-- When changing white-keying or runtime-backing preservation, include regression
-  cases for both a UI-panel-sized backing that should remain opaque and a
-  tall narrow product/list strip or stage-sized runtime surface that should
-  still key white transparent.
+- When changing white-keying or runtime-backing preservation, include
+  regression cases for a marked image-wrapper sparse viewport composite that
+  should remain opaque and full-size artwork slots, Navigator text/link mattes,
+  product/list strips, or stage-sized runtime surfaces that should still key
+  white transparent.
+- For v31-style window-buffer fixes, verify at least these surfaces together:
+  Navigator Public Spaces/Rooms text areas, Messenger/Friends after opening the
+  toolbar icon, Catalogue Collectables product strip, and the private room
+  playfield/furniture load. A preservation rule that fixes only Messenger can
+  easily reintroduce broad white fills elsewhere.
 - Use pixel counts around the target region and at least one adjacent control
   region. A fix that restores one window can still be wrong if it introduces
   large white fills elsewhere in the same frame.

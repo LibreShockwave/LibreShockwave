@@ -12208,6 +12208,69 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(scaleDest->getPixel(1, 0) == 0xFFFF0000U);
     assert(scaleDest->getPixel(2, 0) == 0xFF0000FFU);
     assert(scaleDest->getPixel(3, 0) == 0xFF0000FFU);
+
+    auto wrapperBackingCopySource = std::make_shared<Bitmap>(
+        3, 1, 32, std::vector<std::uint32_t>{
+            0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU
+        });
+    wrapperBackingCopySource->setRectangularMedia(true);
+    auto wrapperBackingCopyDest = std::make_shared<Bitmap>(4, 8, 32);
+    wrapperBackingCopyDest->fill(0xFFFFFFFFU);
+    wrapperBackingCopyDest->markScriptFillBacking();
+    auto backgroundTransparentProps = Datum::propList();
+    backgroundTransparentProps.propListValue().put(
+        Datum::symbol("ink"), Datum::symbol("backgroundTransparent"));
+    assert(runObjCall(110, {Datum::imageRef(wrapperBackingCopyDest),
+                            Datum::imageRef(wrapperBackingCopySource),
+                            Datum::intRect(0, 0, 4, 8),
+                            Datum::intRect(0, 0, 4, 8),
+                            backgroundTransparentProps}).isVoid());
+    assert(wrapperBackingCopyDest->preservesScriptFillBacking());
+
+    auto navigatorWhiteLinkCopySource = std::make_shared<Bitmap>(
+        1, 1, 32, std::vector<std::uint32_t>{0xFFFFFFFFU});
+    navigatorWhiteLinkCopySource->setRectangularMedia(true);
+    auto navigatorWhiteLinkCopyDest = std::make_shared<Bitmap>(4, 8, 32);
+    navigatorWhiteLinkCopyDest->fill(0xFFFFFFFFU);
+    navigatorWhiteLinkCopyDest->markScriptFillBacking();
+    assert(runObjCall(110, {Datum::imageRef(navigatorWhiteLinkCopyDest),
+                            Datum::imageRef(navigatorWhiteLinkCopySource),
+                            Datum::intRect(0, 0, 4, 8),
+                            Datum::intRect(0, 0, 4, 8),
+                            backgroundTransparentProps}).isVoid());
+    assert(!navigatorWhiteLinkCopyDest->preservesScriptFillBacking());
+
+    auto navigatorDenseTextCopySource = std::make_shared<Bitmap>(
+        4, 3, 32, std::vector<std::uint32_t>{
+            0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU,
+            0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU,
+            0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU, 0xFFFFFFFFU
+        });
+    navigatorDenseTextCopySource->setRectangularMedia(true);
+    auto navigatorDenseTextCopyDest = std::make_shared<Bitmap>(4, 4, 32);
+    navigatorDenseTextCopyDest->fill(0xFFFFFFFFU);
+    navigatorDenseTextCopyDest->markScriptFillBacking();
+    assert(runObjCall(110, {Datum::imageRef(navigatorDenseTextCopyDest),
+                            Datum::imageRef(navigatorDenseTextCopySource),
+                            Datum::intRect(0, 0, 4, 4),
+                            Datum::intRect(0, 0, 4, 4),
+                            backgroundTransparentProps}).isVoid());
+    assert(!navigatorDenseTextCopyDest->preservesScriptFillBacking());
+
+    auto navigatorTextCopySource = std::make_shared<Bitmap>(
+        1, 1, 32, std::vector<std::uint32_t>{0xFF000000U});
+    navigatorTextCopySource->setRectangularMedia(true);
+    navigatorTextCopySource->markTextRendered();
+    auto navigatorTextCopyDest = std::make_shared<Bitmap>(2, 2, 32);
+    navigatorTextCopyDest->fill(0xFFFFFFFFU);
+    navigatorTextCopyDest->markScriptFillBacking();
+    assert(runObjCall(110, {Datum::imageRef(navigatorTextCopyDest),
+                            Datum::imageRef(navigatorTextCopySource),
+                            Datum::intRect(0, 0, 2, 2),
+                            Datum::intRect(0, 0, 2, 2),
+                            backgroundTransparentProps}).isVoid());
+    assert(!navigatorTextCopyDest->preservesScriptFillBacking());
+
     auto alphaCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0x80000000U});
     auto alphaCopyDest = std::make_shared<Bitmap>(1, 1, 32);
@@ -18009,37 +18072,51 @@ void testSpriteBakerFoundation() {
     assert(bakedNonRectangularRuntime.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
     assert(bakedNonRectangularRuntime.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
 
-    auto largeScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
-    largeScriptBackingBitmap->fill(0xFFFFFFFFU);
-    largeScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
-    largeScriptBackingBitmap->markScriptModified();
-    SpriteBaker largeScriptBackingBaker;
-    largeScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
-        return largeScriptBackingBitmap;
+    auto compositedScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
+    compositedScriptBackingBitmap->fill(0xFFFFFFFFU);
+    compositedScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
+    compositedScriptBackingBitmap->markScriptModified();
+    compositedScriptBackingBitmap->markScriptFillBacking();
+    compositedScriptBackingBitmap->markPreserveScriptFillBacking();
+    SpriteBaker compositedScriptBackingBaker;
+    compositedScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return compositedScriptBackingBitmap;
     });
-    RenderSprite largeScriptBackingSprite(17,
-                                          0,
-                                          0,
-                                          202,
-                                          200,
-                                          0,
-                                          true,
-                                          SpriteType::Bitmap,
-                                          nullptr,
-                                          nullptr,
-                                          0,
-                                          0xFFFFFF,
-                                          false,
-                                          true,
-                                          libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
-                                          100,
-                                          false,
-                                          false,
-                                          nullptr,
-                                          false);
-    auto bakedLargeScriptBacking = largeScriptBackingBaker.bake(largeScriptBackingSprite);
-    assert(bakedLargeScriptBacking.bakedBitmap()->getPixel(0, 0) == 0xFFFFFFFFU);
-    assert(bakedLargeScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+    RenderSprite compositedScriptBackingSprite(17,
+                                               0,
+                                               0,
+                                               202,
+                                               200,
+                                               0,
+                                               true,
+                                               SpriteType::Bitmap,
+                                               nullptr,
+                                               nullptr,
+                                               0,
+                                               0xFFFFFF,
+                                               false,
+                                               true,
+                                               libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                               100,
+                                               false,
+                                               false,
+                                               nullptr,
+                                               false);
+    auto bakedCompositedScriptBacking = compositedScriptBackingBaker.bake(compositedScriptBackingSprite);
+    assert(bakedCompositedScriptBacking.bakedBitmap()->getPixel(0, 0) == 0xFFFFFFFFU);
+    assert(bakedCompositedScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+
+    auto unmarkedLargeScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
+    unmarkedLargeScriptBackingBitmap->fill(0xFFFFFFFFU);
+    unmarkedLargeScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
+    unmarkedLargeScriptBackingBitmap->markScriptModified();
+    SpriteBaker unmarkedLargeScriptBackingBaker;
+    unmarkedLargeScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return unmarkedLargeScriptBackingBitmap;
+    });
+    auto bakedUnmarkedLargeScriptBacking = unmarkedLargeScriptBackingBaker.bake(compositedScriptBackingSprite);
+    assert(bakedUnmarkedLargeScriptBacking.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedUnmarkedLargeScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
 
     auto narrowScriptStripBitmap = std::make_shared<Bitmap>(118, 226, 32);
     narrowScriptStripBitmap->fill(0xFFFFFFFFU);
