@@ -42,7 +42,6 @@ std::function<void()> imageMutationCallback;
 void* imageMutationCallbackOwner = nullptr;
 std::deque<std::string> imageOperationTrace;
 int imageOperationTraceNextId = 1;
-int imageWrapperFeedImageDepth = 0;
 constexpr std::size_t kMaxImageOperationTraceEntries = 512;
 
 void appendTraceJsonString(std::ostringstream& out, std::string_view value) {
@@ -2370,21 +2369,6 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
     }
     const auto handler = findScriptInstanceScriptHandler(context, instance, methodName);
     if (handler) {
-        const Datum props = util::getProperty(instance, "pProps");
-        const Datum type = props.isPropList() ? getPropListKey(props.propListValue(), "type") : Datum::voidValue();
-        std::string typeStorage;
-        const bool imageWrapperFeedImage =
-            equalsIgnoreCase(methodName, "feedImage") &&
-            args.size() == 1 &&
-            args[0].asImageRef() != nullptr &&
-            !type.isVoid() &&
-            equalsIgnoreCase(keyNameLikeJavaView(type, typeStorage), "image");
-        if (imageWrapperFeedImage) {
-            ++imageWrapperFeedImageDepth;
-            auto result = safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
-            --imageWrapperFeedImageDepth;
-            return result;
-        }
         return safeExecuteHandler(context, handlerRefFromLocation(*handler), args, receiver);
     }
 
@@ -2450,7 +2434,8 @@ bool imageFill(bitmap::Bitmap& bmp, const std::vector<Datum>& args) {
     } else {
         bmp.fillRect(left, top, width, height, colorArgb);
     }
-    if (imageWrapperFeedImageDepth > 0) {
+    bmp.clearPreserveScriptFillBacking();
+    if (((colorArgb >> 24U) & 0xFFU) == 0xFFU) {
         bmp.markScriptFillBacking();
     }
     return true;
@@ -2466,9 +2451,9 @@ bool imageHasOpaqueNonWhiteContent(const bitmap::Bitmap& bitmap) {
     return false;
 }
 
-bool imageWrapperFeedLooksLikeSparseViewportContent(const bitmap::Bitmap& src,
-                                                    const Datum::IntRect& destRect,
-                                                    const Datum::IntRect& srcRect) {
+bool imageCopyLooksLikeSparseViewportContent(const bitmap::Bitmap& src,
+                                             const Datum::IntRect& destRect,
+                                             const Datum::IntRect& srcRect) {
     if (src.width() <= 0 || src.height() <= 0) {
         return false;
     }
@@ -4119,7 +4104,7 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
         src.isRectangularMedia() &&
         !src.isTextRendered() &&
         sourceRectExtendsPastSource &&
-        imageWrapperFeedLooksLikeSparseViewportContent(src, *destRect, *srcRect) &&
+        imageCopyLooksLikeSparseViewportContent(src, *destRect, *srcRect) &&
         mask == nullptr &&
         !colorRemap.has_value() &&
         !bgColorRemap.has_value()) {

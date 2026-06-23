@@ -116,7 +116,8 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
         return taskId;
     }
 
-    if (isFetchAlreadySatisfied(url, resolvedUrl, fallbacks)) {
+    if (!isCastLikeFileName(util::getFileName(resolvedUrl)) &&
+        isFetchAlreadySatisfied(url, resolvedUrl, fallbacks)) {
         task.byteCount = 1;
         task.done = true;
         return taskId;

@@ -11688,6 +11688,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     const Datum rectFillRef = Datum::imageRef(rectFillBitmap);
     assert(runObjCall(103, {rectFillRef, Datum::intRect(0, 1, 2, 2), Datum::of(std::string("#123456"))}).isVoid());
     assert(rectFillBitmap->isScriptModified());
+    assert(rectFillBitmap->hasScriptFillBacking());
     assert(rectFillBitmap->getPixel(0, 1) == 0xFF123456U);
     assert(rectFillBitmap->getPixel(1, 1) == 0xFF123456U);
     auto coordFillBitmap = std::make_shared<Bitmap>(2, 2, 32);
@@ -11696,6 +11697,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runObjCall(103, {coordFillRef, Datum::of(0), Datum::of(0), Datum::of(1), Datum::of(1), Datum::of(0)})
                .isVoid());
     assert(coordFillBitmap->isScriptModified());
+    assert(coordFillBitmap->hasScriptFillBacking());
     assert(coordFillBitmap->getPixel(0, 0) == 0xFFFFFFFFU);
     auto imageFillProps = Datum::propList();
     imageFillProps.propListValue().put(Datum::symbol("color"), Datum::colorRef(70, 80, 90));
@@ -11704,6 +11706,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     const Datum propFillRef = Datum::imageRef(propFillBitmap);
     assert(runObjCall(103, {propFillRef, Datum::intRect(1, 0, 2, 1), imageFillProps}).isVoid());
     assert(propFillBitmap->isScriptModified());
+    assert(propFillBitmap->hasScriptFillBacking());
     assert(propFillBitmap->getPixel(1, 0) == 0xFF46505AU);
     auto paletteFillBitmap = std::make_shared<Bitmap>(2, 2, 32);
     paletteFillBitmap->setImagePalette(std::make_shared<Palette>(
@@ -12215,8 +12218,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         });
     wrapperBackingCopySource->setRectangularMedia(true);
     auto wrapperBackingCopyDest = std::make_shared<Bitmap>(4, 8, 32);
-    wrapperBackingCopyDest->fill(0xFFFFFFFFU);
-    wrapperBackingCopyDest->markScriptFillBacking();
+    assert(runObjCall(103, {Datum::imageRef(wrapperBackingCopyDest),
+                            Datum::intRect(0, 0, 4, 8),
+                            Datum::colorRef(255, 255, 255)}).isVoid());
+    assert(wrapperBackingCopyDest->hasScriptFillBacking());
     auto backgroundTransparentProps = Datum::propList();
     backgroundTransparentProps.propListValue().put(
         Datum::symbol("ink"), Datum::symbol("backgroundTransparent"));
@@ -12231,8 +12236,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         1, 1, 32, std::vector<std::uint32_t>{0xFFFFFFFFU});
     navigatorWhiteLinkCopySource->setRectangularMedia(true);
     auto navigatorWhiteLinkCopyDest = std::make_shared<Bitmap>(4, 8, 32);
-    navigatorWhiteLinkCopyDest->fill(0xFFFFFFFFU);
-    navigatorWhiteLinkCopyDest->markScriptFillBacking();
+    assert(runObjCall(103, {Datum::imageRef(navigatorWhiteLinkCopyDest),
+                            Datum::intRect(0, 0, 4, 8),
+                            Datum::colorRef(255, 255, 255)}).isVoid());
+    assert(navigatorWhiteLinkCopyDest->hasScriptFillBacking());
     assert(runObjCall(110, {Datum::imageRef(navigatorWhiteLinkCopyDest),
                             Datum::imageRef(navigatorWhiteLinkCopySource),
                             Datum::intRect(0, 0, 4, 8),
@@ -12248,8 +12255,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         });
     navigatorDenseTextCopySource->setRectangularMedia(true);
     auto navigatorDenseTextCopyDest = std::make_shared<Bitmap>(4, 4, 32);
-    navigatorDenseTextCopyDest->fill(0xFFFFFFFFU);
-    navigatorDenseTextCopyDest->markScriptFillBacking();
+    assert(runObjCall(103, {Datum::imageRef(navigatorDenseTextCopyDest),
+                            Datum::intRect(0, 0, 4, 4),
+                            Datum::colorRef(255, 255, 255)}).isVoid());
+    assert(navigatorDenseTextCopyDest->hasScriptFillBacking());
     assert(runObjCall(110, {Datum::imageRef(navigatorDenseTextCopyDest),
                             Datum::imageRef(navigatorDenseTextCopySource),
                             Datum::intRect(0, 0, 4, 4),
@@ -12262,8 +12271,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     navigatorTextCopySource->setRectangularMedia(true);
     navigatorTextCopySource->markTextRendered();
     auto navigatorTextCopyDest = std::make_shared<Bitmap>(2, 2, 32);
-    navigatorTextCopyDest->fill(0xFFFFFFFFU);
-    navigatorTextCopyDest->markScriptFillBacking();
+    assert(runObjCall(103, {Datum::imageRef(navigatorTextCopyDest),
+                            Datum::intRect(0, 0, 2, 2),
+                            Datum::colorRef(255, 255, 255)}).isVoid());
+    assert(navigatorTextCopyDest->hasScriptFillBacking());
     assert(runObjCall(110, {Datum::imageRef(navigatorTextCopyDest),
                             Datum::imageRef(navigatorTextCopySource),
                             Datum::intRect(0, 0, 2, 2),
@@ -21269,9 +21280,19 @@ void testQueuedNetProviderFoundation() {
         return url == "already.cct" || url == "https://example.invalid/already.cct";
     });
     const int satisfiedTask = satisfiedProvider.preloadNetThing("already.cct");
+    assert(!satisfiedProvider.netDone(satisfiedTask));
+    assert(satisfiedProvider.pendingRequests().size() == 1);
+    assert(satisfiedProvider.pendingRequests().back().url == "https://example.invalid/already.cct");
+    assert(statusProp(satisfiedProvider.getStreamStatusDatum(satisfiedTask), "state").stringValue() == "Loading");
+    satisfiedProvider.drainPendingRequests();
+    satisfiedProvider.onFetchComplete(satisfiedTask, {'D', 'A', 'T', 'A'});
     assert(satisfiedProvider.netDone(satisfiedTask));
+    assert(statusProp(satisfiedProvider.getStreamStatusDatum(satisfiedTask), "bytesTotal").intValue() == 4);
+
+    const int cachedSatisfiedTask = satisfiedProvider.preloadNetThing("already.cct");
+    assert(satisfiedProvider.netDone(cachedSatisfiedTask));
     assert(satisfiedProvider.pendingRequests().empty());
-    assert(statusProp(satisfiedProvider.getStreamStatusDatum(satisfiedTask), "bytesTotal").intValue() == 1);
+    assert(satisfiedProvider.netTextResult(cachedSatisfiedTask) == "DATA");
 
     const int emptyTask = satisfiedProvider.preloadNetThing("");
     assert(satisfiedProvider.netDone(emptyTask));
