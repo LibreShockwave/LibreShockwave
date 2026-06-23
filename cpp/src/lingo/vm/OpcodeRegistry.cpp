@@ -722,6 +722,20 @@ bool lingoEquals(const Datum& a, const Datum& b) {
     if ((a.isVoid() && b.isNumber()) || (a.isNumber() && b.isVoid()) || (a.isNumber() && b.isNumber())) {
         return toDoubleLikeJava(a) == toDoubleLikeJava(b);
     }
+    if (a.isNumber()) {
+        if (const auto stringValue = directStringViewLikeJava(b)) {
+            if (const auto numericValue = parseDoubleStrict(*stringValue)) {
+                return toDoubleLikeJava(a) == *numericValue;
+            }
+        }
+    }
+    if (b.isNumber()) {
+        if (const auto stringValue = directStringViewLikeJava(a)) {
+            if (const auto numericValue = parseDoubleStrict(*stringValue)) {
+                return toDoubleLikeJava(b) == *numericValue;
+            }
+        }
+    }
     if ((a.isString() || a.isSymbol()) && (b.isString() || b.isSymbol())) {
         const auto lhs = directStringViewLikeJava(a);
         const auto rhs = directStringViewLikeJava(b);

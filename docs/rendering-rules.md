@@ -90,6 +90,11 @@ complete rendering specification.
   other palette entries.
 - Background-transparent copies should treat border-connected key pixels as
   transparent while preserving enclosed key-colored content when required.
+- Script-built runtime backings under `BACKGROUND_TRANSPARENT` need size-aware
+  handling. UI-panel-sized opaque white buffers may be intentional backings and
+  should not be white-keyed away, but tall narrow product/list strips and
+  stage-sized room/compositor buffers must stay on the normal white-keying path
+  or they can cover the scene with broad white fills.
 - Near-white matte preprocessing must stay narrow. Apply it only when the source
   has a border-connected near-white matte and real non-near-white content. A
   broad near-white rule can erase legitimate light text, highlights, and
@@ -164,6 +169,11 @@ complete rendering specification.
   as the Habbo Navigator Public Spaces illustration.
 - Preserve the existing `processLiveBitmap` path for runtime images so
   background-transparent and matte handling remains centralized.
+- If preserving opaque script-built runtime backing pixels, keep the rule
+  narrow enough to exclude tall skinny strips and full-stage or room-sized
+  compositor surfaces. Verify both the target UI window and adjacent
+  always-visible surfaces such as the Navigator, catalogue pages, or loaded room
+  playfield.
 - Do not add special cases for individual member names, room names, or harness
   states. If a runtime bitmap is present but not rendering, fix the generic
   dynamic-member bake path.
@@ -188,6 +198,13 @@ complete rendering specification.
 - For `SpriteBaker` changes, add tests for authored bitmap members, dynamic
   bitmap members, authored text members, and dynamic text members when the
   change affects live bitmap selection.
+- When changing white-keying or runtime-backing preservation, include regression
+  cases for both a UI-panel-sized backing that should remain opaque and a
+  tall narrow product/list strip or stage-sized runtime surface that should
+  still key white transparent.
+- Use pixel counts around the target region and at least one adjacent control
+  region. A fix that restores one window can still be wrong if it introduces
+  large white fills elsewhere in the same frame.
 - Include a non-`scriptModified` dynamic runtime bitmap test. The expected
   behavior is that a meaningful dynamic runtime image still bakes.
 - Keep landscape and mask regression coverage in the test set when touching

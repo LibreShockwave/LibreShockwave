@@ -1,0 +1,1 @@
+- Private-room furniture-loading current capture:

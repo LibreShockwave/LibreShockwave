@@ -547,6 +547,20 @@ bool lingoEquals(const Datum& lhs, const Datum& rhs) {
     if (lhs.isNumber() && rhs.isNumber()) {
         return toDoubleLikeJava(lhs) == toDoubleLikeJava(rhs);
     }
+    if (lhs.isNumber()) {
+        if (const auto stringValue = directStringViewLikeJava(rhs)) {
+            if (const auto numericValue = parseDoubleStrict(std::string(*stringValue))) {
+                return toDoubleLikeJava(lhs) == *numericValue;
+            }
+        }
+    }
+    if (rhs.isNumber()) {
+        if (const auto stringValue = directStringViewLikeJava(lhs)) {
+            if (const auto numericValue = parseDoubleStrict(std::string(*stringValue))) {
+                return toDoubleLikeJava(rhs) == *numericValue;
+            }
+        }
+    }
     if ((lhs.isString() || lhs.isSymbol()) && (rhs.isString() || rhs.isSymbol())) {
         const auto lhsView = directStringViewLikeJava(lhs);
         const auto rhsView = directStringViewLikeJava(rhs);
@@ -1962,6 +1976,7 @@ Datum ImageBuiltins::image(BuiltinContext& context, const std::vector<Datum>& ar
     }
 
     image->fill(0xFFFFFFFFU);
+    image->setRectangularMedia(true);
     return Datum::imageRef(std::move(image));
 }
 

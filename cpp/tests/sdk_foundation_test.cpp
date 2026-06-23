@@ -13568,6 +13568,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(runBinary(Opcode::GT, Datum::of(5), Datum::of(4)).boolValue());
     assert(runBinary(Opcode::GT_EQ, Datum::of(5.0F), Datum::of(5)).boolValue());
     assert(runBinary(Opcode::EQ, Datum::of(5), Datum::of(5.0F)).boolValue());
+    assert(runBinary(Opcode::EQ, Datum::of(std::string("0")), Datum::of(0)).boolValue());
+    assert(runBinary(Opcode::EQ, Datum::of(-3), Datum::of(std::string("-3"))).boolValue());
+    assert(!runBinary(Opcode::NT_EQ, Datum::of(std::string("5")), Datum::of(5)).boolValue());
+    assert(runBinary(Opcode::NT_EQ, Datum::of(std::string("5a")), Datum::of(5)).boolValue());
     assert(runBinary(Opcode::EQ, Datum::of(std::string("Door")), Datum::symbol("door")).boolValue());
     assert(runBinary(Opcode::EQ, Datum::symbol("field"), Datum::symbol("text")).boolValue());
     assert(runBinary(Opcode::EQ, Datum::of(std::string("field")), Datum::symbol("text")).boolValue());
@@ -17959,6 +17963,149 @@ void testSpriteBakerFoundation() {
     auto bakedLiveCopy = liveCopyBaker.bake(liveCopySprite);
     assert(bakedLiveCopy.bakedBitmap()->getPixel(0, 0) == 0xFF224466U);
     assert(bakedLiveCopy.bakedBitmap()->getPixel(1, 0) == 0xFF112233U);
+
+    auto rectangularRuntimeBitmap = std::make_shared<Bitmap>(3, 2, 32);
+    rectangularRuntimeBitmap->fill(0xFFFFFFFFU);
+    rectangularRuntimeBitmap->setPixel(1, 1, 0xFF010203U);
+    rectangularRuntimeBitmap->setRectangularMedia(true);
+    rectangularRuntimeBitmap->markScriptModified();
+    SpriteBaker rectangularRuntimeBaker;
+    rectangularRuntimeBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return rectangularRuntimeBitmap;
+    });
+    RenderSprite rectangularRuntimeSprite(16,
+                                          0,
+                                          0,
+                                          3,
+                                          2,
+                                          0,
+                                          true,
+                                          SpriteType::Bitmap,
+                                          nullptr,
+                                          nullptr,
+                                          0,
+                                          0xFFFFFF,
+                                          false,
+                                          true,
+                                          libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                          100,
+                                          false,
+                                          false,
+                                          nullptr,
+                                          false);
+    auto bakedRectangularRuntime = rectangularRuntimeBaker.bake(rectangularRuntimeSprite);
+    assert(bakedRectangularRuntime.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedRectangularRuntime.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+
+    auto nonRectangularRuntimeBitmap = std::make_shared<Bitmap>(3, 2, 32);
+    nonRectangularRuntimeBitmap->fill(0xFFFFFFFFU);
+    nonRectangularRuntimeBitmap->setPixel(1, 1, 0xFF010203U);
+    nonRectangularRuntimeBitmap->markScriptModified();
+    SpriteBaker nonRectangularRuntimeBaker;
+    nonRectangularRuntimeBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return nonRectangularRuntimeBitmap;
+    });
+    auto bakedNonRectangularRuntime = nonRectangularRuntimeBaker.bake(rectangularRuntimeSprite);
+    assert(bakedNonRectangularRuntime.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedNonRectangularRuntime.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+
+    auto largeScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
+    largeScriptBackingBitmap->fill(0xFFFFFFFFU);
+    largeScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
+    largeScriptBackingBitmap->markScriptModified();
+    SpriteBaker largeScriptBackingBaker;
+    largeScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return largeScriptBackingBitmap;
+    });
+    RenderSprite largeScriptBackingSprite(17,
+                                          0,
+                                          0,
+                                          202,
+                                          200,
+                                          0,
+                                          true,
+                                          SpriteType::Bitmap,
+                                          nullptr,
+                                          nullptr,
+                                          0,
+                                          0xFFFFFF,
+                                          false,
+                                          true,
+                                          libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                          100,
+                                          false,
+                                          false,
+                                          nullptr,
+                                          false);
+    auto bakedLargeScriptBacking = largeScriptBackingBaker.bake(largeScriptBackingSprite);
+    assert(bakedLargeScriptBacking.bakedBitmap()->getPixel(0, 0) == 0xFFFFFFFFU);
+    assert(bakedLargeScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+
+    auto narrowScriptStripBitmap = std::make_shared<Bitmap>(118, 226, 32);
+    narrowScriptStripBitmap->fill(0xFFFFFFFFU);
+    narrowScriptStripBitmap->setPixel(10, 10, 0xFF010203U);
+    narrowScriptStripBitmap->setRectangularMedia(true);
+    narrowScriptStripBitmap->markScriptModified();
+    SpriteBaker narrowScriptStripBaker;
+    narrowScriptStripBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return narrowScriptStripBitmap;
+    });
+    RenderSprite narrowScriptStripSprite(18,
+                                         0,
+                                         0,
+                                         118,
+                                         226,
+                                         0,
+                                         true,
+                                         SpriteType::Bitmap,
+                                         nullptr,
+                                         nullptr,
+                                         0,
+                                         0xFFFFFF,
+                                         false,
+                                         true,
+                                         libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                         100,
+                                         false,
+                                         false,
+                                         nullptr,
+                                         false);
+    auto bakedNarrowScriptStrip = narrowScriptStripBaker.bake(narrowScriptStripSprite);
+    assert(bakedNarrowScriptStrip.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedNarrowScriptStrip.bakedBitmap()->getPixel(10, 10) == 0xFF010203U);
+
+    auto stageSizedScriptBackingBitmap = std::make_shared<Bitmap>(960, 400, 32);
+    stageSizedScriptBackingBitmap->fill(0xFFFFFFFFU);
+    stageSizedScriptBackingBitmap->setPixel(200, 200, 0xFF010203U);
+    stageSizedScriptBackingBitmap->setRectangularMedia(true);
+    stageSizedScriptBackingBitmap->markScriptModified();
+    SpriteBaker stageSizedScriptBackingBaker;
+    stageSizedScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return stageSizedScriptBackingBitmap;
+    });
+    RenderSprite stageSizedScriptBackingSprite(19,
+                                               0,
+                                               0,
+                                               960,
+                                               400,
+                                               0,
+                                               true,
+                                               SpriteType::Bitmap,
+                                               nullptr,
+                                               nullptr,
+                                               0,
+                                               0xFFFFFF,
+                                               false,
+                                               true,
+                                               libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                               100,
+                                               false,
+                                               false,
+                                               nullptr,
+                                               false);
+    auto bakedStageSizedScriptBacking = stageSizedScriptBackingBaker.bake(stageSizedScriptBackingSprite);
+    assert(bakedStageSizedScriptBacking.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedStageSizedScriptBacking.bakedBitmap()->getPixel(200, 200) == 0xFF010203U);
 
     auto darkenLiveBitmap = std::make_shared<Bitmap>(3, 1, 32, std::vector<std::uint32_t>{
         0xFFFFFFFFU,

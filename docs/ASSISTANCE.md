@@ -244,6 +244,16 @@ Core rendering principles:
   a matte problem.
 - Dynamic runtime bitmaps can be authoritative even when
   `Bitmap::isScriptModified()` is false.
+- When fixing one dynamic window or toolbar surface, pixel-diff nearby
+  always-open UI too. Broad `backgroundTransparent` or runtime-backing
+  preservation changes can make a target window look correct while adding large
+  white fills to another window such as the Navigator.
+- For toolbar/icon repros, prefer a full mouse move/down/up/click sequence at
+  the stage coordinate. A synthetic click-only event can fail to trigger
+  Director-style pressed/released handlers.
+- Record white-pixel counts for the affected region and at least one adjacent
+  control region when investigating white-keying regressions; keep the expected
+  image and actual canvas paths in the goal note.
 - Add focused tests for visible pixels and palette indices when touching shared
   copy or rendering behavior.
 
