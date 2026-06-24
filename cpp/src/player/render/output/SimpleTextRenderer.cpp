@@ -728,7 +728,7 @@ std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& 
     const int verticalOverflow = std::max(0, font->getLineHeight() - lineHeight);
     int y = initialBitmapTextY(font.get(), lineHeight, topSpacing);
     if (fixedLineSpace <= 0 && topSpacing == 0) {
-        ++y;
+        --y;
     }
     for (const auto& line : lines) {
         if (y >= height) {

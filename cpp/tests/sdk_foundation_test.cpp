@@ -1110,9 +1110,9 @@ void testBitmapFontAndFontRegistry() {
                                                                0,
                                                                0);
     assert(directorFontRendered != nullptr);
-    assert(countOpaqueOnRow(*directorFontRendered, 0) == 0);
-    assert(countOpaqueOnRow(*directorFontRendered, 1) > 0);
-    assert(countOpaqueOnRow(*directorFontRendered, 9) > 0);
+    assert(countOpaqueOnRow(*directorFontRendered, 0) > 0);
+    assert(countOpaqueOnRow(*directorFontRendered, 7) > 0);
+    assert(countOpaqueOnRow(*directorFontRendered, 10) == 0);
     assert(FontRegistry::getBitmapFont("Tiny", 9) == nullptr);
     FontRegistry::registerBitmapFont("Tiny", 9, font);
     assert(FontRegistry::getBitmapFont("tiny", 9) == font);
@@ -3792,6 +3792,7 @@ void testPlayerInputFoundation() {
     secondEditableField->setDynamicText("next");
     secondEditableField->setEditable(true);
     auto nonEditableField = editableCast->createDynamicMember("text");
+    nonEditableField->setName("named_locked_text");
     nonEditableField->setDynamicText("locked");
 
     class EditableInputTextRenderer final : public TextRenderer {
@@ -4029,6 +4030,265 @@ void testPlayerInputFoundation() {
     editableInput.onMouseDown(55, 105);
     assert(editableInput.processInputEvents());
     assert(editableState.keyboardFocusSprite() == 0);
+
+    lockedSprite->setLegacyProperty("behaviorparam:maxlength", Datum::of(141));
+    editableInput.onMouseDown(55, 105);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableInput.onKeyDown(0, "R", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(nonEditableField->textContent() == "Qlocked");
+    lockedSprite->clearLegacyProperties();
+
+    auto namedEmptyField = editableCast->createDynamicMember("text");
+    namedEmptyField->setName("named_empty_field");
+    auto namedEmptySprite = editableRenderer.spriteRegistry().getOrCreateDynamic(15);
+    namedEmptySprite->setDynamicMember(1, namedEmptyField->memberNum());
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(15, 50, 130, 80, 18, 4, true, SpriteType::Text, nullptr, namedEmptyField, 0, 0, false, false, 0, 100, false, false, nullptr, false),
+    });
+    editableInput.onMouseDown(55, 135);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableState.setKeyboardFocusSprite(15);
+    editableState.setSelStart(0);
+    editableState.setSelEnd(0);
+    editableInput.onKeyDown(0, "S", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(namedEmptyField->textContent() == "S");
+    editableInput.onKeyDown(0, "T", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(namedEmptyField->textContent() == "ST");
+    assert(namedEmptyField->name() == "named_empty_field");
+
+    auto authoredTextChunk = std::make_shared<CastMemberChunk>(nullptr,
+                                                               ChunkId(401),
+                                                               MemberType::Text,
+                                                               0,
+                                                               0,
+                                                               std::vector<std::uint8_t>{},
+                                                               std::vector<std::uint8_t>{},
+                                                               "authored_field_text",
+                                                               0,
+                                                               0,
+                                                               0);
+    auto authoredTextField = std::make_shared<CastMember>(0, 1, 401, authoredTextChunk);
+    const_cast<std::map<int, std::shared_ptr<CastMember>>&>(editableCast->runtimeMembers())[401] = authoredTextField;
+    auto authoredTextState = editableRenderer.spriteRegistry().getOrCreateDynamic(21);
+    authoredTextState->setDynamicMember(1, authoredTextField->memberNum());
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(21, 50, 150, 80, 18, 5, true, SpriteType::Text, nullptr, authoredTextField, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, nullptr, false),
+    });
+    editableInput.onMouseDown(55, 155);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 21);
+    editableInput.onKeyDown(0, "A", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(authoredTextField->textContent() == "A");
+
+    auto oldScoreTextField = editableCast->createDynamicMember("text");
+    oldScoreTextField->setName("old_score_text_field");
+    auto oldScoreFieldData = ScoreChunk::ChannelData::empty();
+    oldScoreFieldData.spriteType = 1;
+    oldScoreFieldData.ink = libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT);
+    oldScoreFieldData.castLib = 1;
+    oldScoreFieldData.castMember = oldScoreTextField->memberNum();
+    oldScoreFieldData.posX = 50;
+    oldScoreFieldData.posY = 160;
+    oldScoreFieldData.width = 80;
+    oldScoreFieldData.height = 18;
+    auto oldScoreTextState = editableRenderer.spriteRegistry().getOrCreate(18, oldScoreFieldData);
+    oldScoreTextState->setDynamicMember(1, oldScoreTextField->memberNum());
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(18, 50, 160, 80, 18, 5, true, SpriteType::Text, nullptr, oldScoreTextField, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, nullptr, false),
+    });
+    editableInput.onMouseDown(55, 165);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableDispatcher.setRespondsPredicate([mouseAndKeyHandlers](const EventTarget& target,
+                                                                   std::string_view handler) {
+        return target.kind == EventTargetKind::ScriptInstance &&
+               mouseAndKeyHandlers.contains(std::string(handler));
+    });
+    oldScoreTextState->setScriptInstanceList({Datum::scriptInstance("old-score-field-key-handler")});
+    editableInput.onMouseDown(55, 165);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 18);
+    editableInput.onKeyDown(0, "V", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(oldScoreTextField->textContent() == "V");
+
+    auto oldScoreButtonText = editableCast->createDynamicMember("button");
+    oldScoreButtonText->setName("old_score_button_text");
+    oldScoreFieldData.castMember = oldScoreButtonText->memberNum();
+    auto oldScoreButtonState = editableRenderer.spriteRegistry().getOrCreate(19, oldScoreFieldData);
+    oldScoreButtonState->setDynamicMember(1, oldScoreButtonText->memberNum());
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(19, 50, 185, 80, 18, 5, true, SpriteType::Button, nullptr, oldScoreButtonText, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, nullptr, false),
+    });
+    editableInput.onMouseDown(55, 190);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+
+    // Mirrors old recorded-cast patterns: authored focus chooses a text field
+    // while an invisible scripted bitmap remains the clickable button area.
+    std::vector<std::string> v1InputCalls;
+    editableDispatcher.setRespondsPredicate([mouseAndKeyHandlers](const EventTarget& target,
+                                                                   std::string_view handler) {
+        return target.kind == EventTargetKind::ScriptInstance &&
+               mouseAndKeyHandlers.contains(std::string(handler));
+    });
+    editableDispatcher.setHandlerInvoker([&v1InputCalls](const EventTarget& target,
+                                                          std::string_view handler,
+                                                          const std::vector<Datum>& args) {
+        assert(args.empty());
+        v1InputCalls.push_back(std::to_string(target.channel) + ":" + std::string(handler));
+        return HandlerResult{true, true};
+    });
+    auto v1LoginName = editableCast->createDynamicMember("text");
+    v1LoginName->setName("old_empty_text_field");
+    auto v1LoginState = editableRenderer.spriteRegistry().getOrCreateDynamic(16);
+    v1LoginState->setDynamicMember(1, v1LoginName->memberNum());
+    auto v1InvisibleButton = editableCast->createDynamicMember("bitmap");
+    v1InvisibleButton->setName("old_invisible_button_area");
+    auto v1ButtonState = editableRenderer.spriteRegistry().getOrCreateDynamic(17);
+    v1ButtonState->setDynamicMember(1, v1InvisibleButton->memberNum());
+    v1ButtonState->setScriptInstanceList({Datum::scriptInstance("v1-invisible-button")});
+    v1ButtonState->setLocH(150);
+    v1ButtonState->setLocV(130);
+    v1ButtonState->setWidth(60);
+    v1ButtonState->setHeight(20);
+    std::vector<std::uint32_t> transparentV1ButtonPixels(60 * 20, 0x00000000U);
+    auto transparentV1ButtonBitmap = std::make_shared<Bitmap>(60, 20, 32, transparentV1ButtonPixels);
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(16, 50, 130, 80, 18, 4, true, SpriteType::Text, nullptr, v1LoginName, 0, 0, false, false, 0, 100, false, false, nullptr, false),
+        RenderSprite(17,
+                     150,
+                     130,
+                     60,
+                     20,
+                     5,
+                     true,
+                     SpriteType::Bitmap,
+                     nullptr,
+                     v1InvisibleButton,
+                     0,
+                     0,
+                     false,
+                     false,
+                     libreshockwave::id::code(InkMode::MATTE),
+                     100,
+                     false,
+                     false,
+                     transparentV1ButtonBitmap,
+                     false),
+    });
+    editableInput.onMouseDown(55, 135);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableState.setKeyboardFocusSprite(16);
+    editableState.setSelStart(0);
+    editableState.setSelEnd(0);
+    editableInput.onKeyDown(0, "u", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(v1LoginName->textContent() == "u");
+    editableInput.onMouseDown(155, 135);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableInput.onMouseUp(155, 135);
+    assert(editableInput.processInputEvents());
+    assert((v1InputCalls == std::vector<std::string>{"17:mouseDown", "17:mouseUp"}));
+
+    // Grounded in old Director assets:
+    // - ../v1_assets/projectorrays_lingo/habbo_entry/.../focusTextInput.ls
+    //   sets `the keyboardFocusSprite = me.spriteNum`.
+    // - MobilesDisco/FuseScript `password field` and `nospace field` use
+    //   authored keyDown handlers and field() mutation.
+    // Old versions expose input through authored field/key-focus behavior,
+    // not through login member names or behavior parameter names.
+    v1InputCalls.clear();
+    auto recordedLoginName = editableCast->createDynamicMember("text");
+    recordedLoginName->setName("recorded_empty_login_field");
+    auto recordedLoginNameState = editableRenderer.spriteRegistry().getOrCreateDynamic(85);
+    recordedLoginNameState->setDynamicMember(1, recordedLoginName->memberNum());
+    recordedLoginNameState->setScriptInstanceList({Datum::scriptInstance("recorded-login-field")});
+
+    auto recordedPasswordShow = editableCast->createDynamicMember("text");
+    recordedPasswordShow->setName("recorded_empty_password_display_field");
+    auto recordedPasswordState = editableRenderer.spriteRegistry().getOrCreateDynamic(87);
+    recordedPasswordState->setDynamicMember(1, recordedPasswordShow->memberNum());
+    recordedPasswordState->setScriptInstanceList({Datum::scriptInstance("recorded-password-field")});
+
+    auto recordedButton = editableCast->createDynamicMember("bitmap");
+    recordedButton->setName("recorded_login_button_area");
+    auto recordedButtonState = editableRenderer.spriteRegistry().getOrCreateDynamic(90);
+    recordedButtonState->setDynamicMember(1, recordedButton->memberNum());
+    recordedButtonState->setScriptInstanceList({Datum::scriptInstance("recorded-login-button")});
+    recordedButtonState->setLocH(547);
+    recordedButtonState->setLocV(388);
+    recordedButtonState->setWidth(52);
+    recordedButtonState->setHeight(23);
+    std::vector<std::uint32_t> transparentRecordedButtonPixels(52 * 23, 0x00000000U);
+    auto transparentRecordedButtonBitmap = std::make_shared<Bitmap>(52, 23, 32, transparentRecordedButtonPixels);
+
+    editableRenderer.setLastBakedSprites({
+        RenderSprite(85, 462, 286, 159, 24, 6, true, SpriteType::Text, nullptr, recordedLoginName, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, nullptr, false),
+        RenderSprite(87, 462, 342, 159, 24, 7, true, SpriteType::Text, nullptr, recordedPasswordShow, 0, 0, false, false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT), 100, false, false, nullptr, false),
+        RenderSprite(90,
+                     547,
+                     388,
+                     52,
+                     23,
+                     8,
+                     true,
+                     SpriteType::Bitmap,
+                     nullptr,
+                     recordedButton,
+                     0,
+                     0,
+                     false,
+                     false,
+                     libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                     100,
+                     false,
+                     false,
+                     transparentRecordedButtonBitmap,
+                     false),
+    });
+    editableInput.onMouseDown(500, 298);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 85);
+    editableInput.onKeyDown(0, "a", false, false, false);
+    assert(editableInput.processInputEvents());
+    editableInput.onKeyDown(0, "b", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(recordedLoginName->textContent() == "ab");
+    editableInput.onKeyDown(51, "", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(recordedLoginName->textContent() == "a");
+
+    editableInput.onKeyDown(48, "\t", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 87);
+    editableInput.onKeyDown(0, "x", false, false, false);
+    assert(editableInput.processInputEvents());
+    editableInput.onKeyDown(0, "y", false, false, false);
+    assert(editableInput.processInputEvents());
+    assert(recordedPasswordShow->textContent() == "xy");
+
+    v1InputCalls.clear();
+    editableInput.onMouseDown(573, 399);
+    assert(editableInput.processInputEvents());
+    assert(editableState.keyboardFocusSprite() == 0);
+    editableInput.onMouseUp(573, 399);
+    assert(editableInput.processInputEvents());
+    assert((v1InputCalls == std::vector<std::string>{"90:mouseDown", "90:mouseUp"}));
+
     editableInput.onMouseDown(10, 10);
     assert(editableInput.processInputEvents());
     assert(editableState.keyboardFocusSprite() == 0);
@@ -16606,6 +16866,10 @@ void testFrameContextFoundation() {
             ScoreChunk::FrameIntervalSecondary{1, 11, 0}
         },
         ScoreChunk::FrameInterval{
+            ScoreChunk::FrameIntervalPrimary{1, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0},
+            ScoreChunk::FrameIntervalSecondary{1, 14, 0}
+        },
+        ScoreChunk::FrameInterval{
             ScoreChunk::FrameIntervalPrimary{1, 2, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0},
             ScoreChunk::FrameIntervalSecondary{1, 12, 0}
         },
@@ -16682,7 +16946,7 @@ void testFrameContextFoundation() {
     assert(context.currentFrame() == 1);
     assert(context.effectiveFrame() == 1);
     assert((context.activeChannels() == std::set<int>{3, 4}));
-    assert(behaviorManager.getInstancesForChannel(3).size() == 1);
+    assert(behaviorManager.getInstancesForChannel(3).size() == 2);
     assert(behaviorManager.getInstancesForChannel(4).size() == 1);
     assert(behaviorManager.frameScriptInstance() != nullptr);
     assert(registry.hasScoreBehaviorChannel(3));
@@ -16692,6 +16956,7 @@ void testFrameContextFoundation() {
     context.dispatchBeginSpriteEvents();
     assert((calls == std::vector<std::string>{
         "3:11:beginSprite",
+        "3:14:beginSprite",
         "4:12:beginSprite",
         "0:20:beginSprite"
     }));
@@ -16708,7 +16973,20 @@ void testFrameContextFoundation() {
         FrameEvent{PlayerEvent::EnterFrame, 1}
     }));
     assert(!context.inFrameScript());
-    assert(calls.size() == 9);
+    assert((calls == std::vector<std::string>{
+        "3:11:stepFrame",
+        "3:14:stepFrame",
+        "4:12:stepFrame",
+        "0:20:stepFrame",
+        "3:11:prepareFrame",
+        "3:14:prepareFrame",
+        "4:12:prepareFrame",
+        "0:20:prepareFrame",
+        "3:11:enterFrame",
+        "3:14:enterFrame",
+        "4:12:enterFrame",
+        "0:20:enterFrame"
+    }));
 
     context.goToFrame(3);
     calls.clear();
@@ -16720,6 +16998,7 @@ void testFrameContextFoundation() {
     assert(behaviorManager.getInstancesForChannel(5).size() == 1);
     assert(behaviorManager.frameScriptInstance() == nullptr);
     assert(std::find(calls.begin(), calls.end(), "3:11:endSprite") != calls.end());
+    assert(std::find(calls.begin(), calls.end(), "3:14:endSprite") != calls.end());
     assert(std::find(calls.begin(), calls.end(), "4:12:endSprite") != calls.end());
     assert(std::find(calls.begin(), calls.end(), "5:13:beginSprite") != calls.end());
 
@@ -16729,6 +17008,7 @@ void testFrameContextFoundation() {
     assert((context.activeChannels() == std::set<int>{3, 4}));
     assert(std::find(calls.begin(), calls.end(), "5:13:endSprite") != calls.end());
     assert(std::find(calls.begin(), calls.end(), "3:11:beginSprite") != calls.end());
+    assert(std::find(calls.begin(), calls.end(), "3:14:beginSprite") != calls.end());
     assert(std::find(calls.begin(), calls.end(), "4:12:beginSprite") != calls.end());
 
     auto puppet = registry.getOrCreateDynamic(4);
@@ -17867,6 +18147,112 @@ void testStageRendererFoundation() {
     assert(renderer.backgroundColor() == 0xABCDEF);
 }
 
+void testTransparentTextColorFoundation() {
+    class TransparentTextColorRenderer final : public TextRenderer {
+    public:
+        std::string lastText;
+        int lastTextColor = 0;
+        int lastBgColor = 0;
+
+        std::shared_ptr<Bitmap> renderText(std::string text,
+                                           int width,
+                                           int height,
+                                           std::string,
+                                           int,
+                                           std::string,
+                                           std::string,
+                                           int textColor,
+                                           int bgColor,
+                                           bool,
+                                           bool,
+                                           int,
+                                           int) override {
+            lastText = std::move(text);
+            lastTextColor = textColor;
+            lastBgColor = bgColor;
+            return std::make_shared<Bitmap>(width, height, 32,
+                                            std::vector<std::uint32_t>(
+                                                static_cast<std::size_t>(width * height), 0xFFABCDEFU));
+        }
+
+        std::vector<int> charPosToLoc(std::string, int, std::string, int, std::string, int, std::string, int) override {
+            return {0, 0};
+        }
+
+        int locToCharPos(std::string, int, int, std::string, int, std::string, int, std::string, int) override {
+            return 0;
+        }
+
+        int getLineHeight(std::string, int fontSize, std::string, int fixedLineSpace) override {
+            return fixedLineSpace > 0 ? fixedLineSpace : fontSize;
+        }
+    };
+
+    TransparentTextColorRenderer blackRenderer;
+    SpriteBaker blackBaker;
+    blackBaker.setTextRenderer(&blackRenderer);
+    auto blackMember = std::make_shared<CastMember>(1, 10052, MemberType::Text);
+    blackMember->setDynamicText("Transparent text");
+    blackMember->setTextColor(static_cast<int>(0xFF000000U));
+    RenderSprite blackSprite(16,
+                             0,
+                             0,
+                             20,
+                             9,
+                             0,
+                             true,
+                             SpriteType::Text,
+                             nullptr,
+                             blackMember,
+                             0,
+                             0xFFFFFF,
+                             true,
+                             false,
+                             libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                             100,
+                             false,
+                             false,
+                             nullptr,
+                             false);
+    auto bakedBlackText = blackBaker.bake(blackSprite);
+    assert(blackRenderer.lastText == "Transparent text");
+    assert(blackRenderer.lastTextColor == static_cast<int>(0xFF000000U));
+    assert(blackRenderer.lastBgColor == 0);
+    assert(bakedBlackText.bakedBitmap() != nullptr);
+
+    TransparentTextColorRenderer whiteRenderer;
+    SpriteBaker whiteBaker;
+    whiteBaker.setTextRenderer(&whiteRenderer);
+    auto whiteMember = std::make_shared<CastMember>(1, 10053, MemberType::Text);
+    whiteMember->setDynamicText("Loading Habbo Hotel...");
+    whiteMember->setTextColor(static_cast<int>(0xFFFFFFFFU));
+    RenderSprite whiteSprite(17,
+                             0,
+                             0,
+                             20,
+                             9,
+                             0,
+                             true,
+                             SpriteType::Text,
+                             nullptr,
+                             whiteMember,
+                             0,
+                             0xFFFFFF,
+                             true,
+                             false,
+                             libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                             100,
+                             false,
+                             false,
+                             nullptr,
+                             false);
+    auto bakedWhiteText = whiteBaker.bake(whiteSprite);
+    assert(whiteRenderer.lastText == "Loading Habbo Hotel...");
+    assert(whiteRenderer.lastTextColor == static_cast<int>(0xFFFFFFFFU));
+    assert(whiteRenderer.lastBgColor == 0);
+    assert(bakedWhiteText.bakedBitmap() != nullptr);
+}
+
 void testSpriteBakerFoundation() {
     BitmapCache cache;
     SpriteBaker baker(&cache);
@@ -18920,6 +19306,36 @@ void testSpriteBakerFoundation() {
     assert(bakedFileText.height() == 3);
     assert(bakedFileText.bakedBitmap()->getPixel(6, 2) == 0xFFABCDEFU);
 
+    RecordingSpriteBakerTextRenderer transparentFileTextRenderer;
+    SpriteBaker transparentFileTextBaker;
+    transparentFileTextBaker.setTextRenderer(&transparentFileTextRenderer);
+    RenderSprite transparentFileTextSprite(13,
+                                           0,
+                                           0,
+                                           20,
+                                           9,
+                                           0,
+                                           true,
+                                           SpriteType::Text,
+                                           fileTextMember,
+                                           nullptr,
+                                           0,
+                                           0xFFFFFF,
+                                           true,
+                                           false,
+                                           libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                           100,
+                                           false,
+                                           false,
+                                           nullptr,
+                                           false);
+    auto bakedTransparentFileText = transparentFileTextBaker.bake(transparentFileTextSprite);
+    assert(transparentFileTextRenderer.lastText == fileText);
+    assert(transparentFileTextRenderer.lastTextColor == static_cast<int>(0xFF000000U));
+    assert(transparentFileTextRenderer.lastBgColor == 0);
+    assert(bakedTransparentFileText.bakedBitmap() != nullptr);
+    assert(bakedTransparentFileText.bakedBitmap()->isNativeAlpha());
+
     RecordingSpriteBakerTextRenderer fileTextRuntimeImageRenderer;
     SpriteBaker fileTextRuntimeImageBaker;
     fileTextRuntimeImageBaker.setTextRenderer(&fileTextRuntimeImageRenderer);
@@ -18979,6 +19395,55 @@ void testSpriteBakerFoundation() {
         putI32At(data, 4, static_cast<std::uint32_t>(data.size() - 8));
         return data;
     };
+
+    std::vector<std::uint8_t> whiteStxtData = stxtData;
+    whiteStxtData[whiteStxtData.size() - 4] = 0xFF;
+    whiteStxtData[whiteStxtData.size() - 3] = 0xFF;
+    whiteStxtData[whiteStxtData.size() - 2] = 0xFF;
+    auto whiteTextFile = DirectorFile::load(makeTextRifx({
+        {"DRCF", textConfigData},
+        {"KEY*", textKeyData},
+        {"STXT", whiteStxtData}
+    }));
+    auto whiteTextMember = std::make_shared<CastMemberChunk>(whiteTextFile.get(),
+                                                             ChunkId(3),
+                                                             MemberType::Text,
+                                                             0,
+                                                             static_cast<int>(textSpecificData.size()),
+                                                             std::vector<std::uint8_t>{},
+                                                             textSpecificData,
+                                                             "white-file-text",
+                                                             0,
+                                                             0,
+                                                             0);
+    RecordingSpriteBakerTextRenderer transparentWhiteTextRenderer;
+    SpriteBaker transparentWhiteTextBaker;
+    transparentWhiteTextBaker.setTextRenderer(&transparentWhiteTextRenderer);
+    RenderSprite transparentWhiteTextSprite(13,
+                                            0,
+                                            0,
+                                            20,
+                                            9,
+                                            0,
+                                            true,
+                                            SpriteType::Text,
+                                            whiteTextMember,
+                                            nullptr,
+                                            0,
+                                            0xFFFFFF,
+                                            true,
+                                            false,
+                                            libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                            100,
+                                            false,
+                                            false,
+                                            nullptr,
+                                            false);
+    auto bakedTransparentWhiteText = transparentWhiteTextBaker.bake(transparentWhiteTextSprite);
+    assert(transparentWhiteTextRenderer.lastText == fileText);
+    assert(transparentWhiteTextRenderer.lastTextColor == static_cast<int>(0xFFFFFFFFU));
+    assert(transparentWhiteTextRenderer.lastBgColor == 0);
+    assert(bakedTransparentWhiteText.bakedBitmap() != nullptr);
 
     const std::string legacyText = "Legacy text";
     std::vector<std::uint8_t> legacyStxtData;
@@ -19100,6 +19565,70 @@ void testSpriteBakerFoundation() {
     assert(bakedDynamicText.height() == 4);
     assert(bakedDynamicText.bakedBitmap()->isNativeAlpha());
     assert(bakedDynamicText.bakedBitmap()->getPixel(8, 3) == 0xFFABCDEFU);
+
+    RecordingSpriteBakerTextRenderer dynamicTransparentTextRenderer;
+    SpriteBaker dynamicTransparentTextBaker;
+    dynamicTransparentTextBaker.setTextRenderer(&dynamicTransparentTextRenderer);
+    auto dynamicTransparentTextMember = std::make_shared<CastMember>(1, 10052, MemberType::Text);
+    dynamicTransparentTextMember->setDynamicText("Transparent text");
+    dynamicTransparentTextMember->setTextColor(static_cast<int>(0xFF000000U));
+    RenderSprite dynamicTransparentTextSprite(16,
+                                              0,
+                                              0,
+                                              20,
+                                              9,
+                                              0,
+                                              true,
+                                              SpriteType::Text,
+                                              nullptr,
+                                              dynamicTransparentTextMember,
+                                              0,
+                                              0xFFFFFF,
+                                              true,
+                                              false,
+                                              libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                              100,
+                                              false,
+                                              false,
+                                              nullptr,
+                                              false);
+    auto bakedDynamicTransparentText = dynamicTransparentTextBaker.bake(dynamicTransparentTextSprite);
+    assert(dynamicTransparentTextRenderer.lastText == "Transparent text");
+    assert(dynamicTransparentTextRenderer.lastTextColor == static_cast<int>(0xFF000000U));
+    assert(dynamicTransparentTextRenderer.lastBgColor == 0);
+    assert(bakedDynamicTransparentText.bakedBitmap() != nullptr);
+
+    RecordingSpriteBakerTextRenderer dynamicWhiteTransparentTextRenderer;
+    SpriteBaker dynamicWhiteTransparentTextBaker;
+    dynamicWhiteTransparentTextBaker.setTextRenderer(&dynamicWhiteTransparentTextRenderer);
+    auto dynamicWhiteTransparentTextMember = std::make_shared<CastMember>(1, 10053, MemberType::Text);
+    dynamicWhiteTransparentTextMember->setDynamicText("Loading Habbo Hotel...");
+    dynamicWhiteTransparentTextMember->setTextColor(static_cast<int>(0xFFFFFFFFU));
+    RenderSprite dynamicWhiteTransparentTextSprite(17,
+                                                   0,
+                                                   0,
+                                                   20,
+                                                   9,
+                                                   0,
+                                                   true,
+                                                   SpriteType::Text,
+                                                   nullptr,
+                                                   dynamicWhiteTransparentTextMember,
+                                                   0,
+                                                   0xFFFFFF,
+                                                   true,
+                                                   false,
+                                                   libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                                   100,
+                                                   false,
+                                                   false,
+                                                   nullptr,
+                                                   false);
+    auto bakedDynamicWhiteTransparentText = dynamicWhiteTransparentTextBaker.bake(dynamicWhiteTransparentTextSprite);
+    assert(dynamicWhiteTransparentTextRenderer.lastText == "Loading Habbo Hotel...");
+    assert(dynamicWhiteTransparentTextRenderer.lastTextColor == static_cast<int>(0xFFFFFFFFU));
+    assert(dynamicWhiteTransparentTextRenderer.lastBgColor == 0);
+    assert(bakedDynamicWhiteTransparentText.bakedBitmap() != nullptr);
 
     RecordingSpriteBakerTextRenderer dynamicTextRuntimeImageRenderer;
     SpriteBaker dynamicTextRuntimeImageBaker;
@@ -19318,6 +19847,112 @@ void testSpriteBakerFoundation() {
     assert(bakedFileXmed.width() == 11);
     assert(bakedFileXmed.height() == 4);
     assert(bakedFileXmed.bakedBitmap()->getPixel(10, 3) == 0xFFABCDEFU);
+
+    std::vector<std::uint8_t> whiteXmedData = xmedData;
+    bool removedXmedColorSection = false;
+    for (std::size_t i = 0; i + 5 < whiteXmedData.size(); ++i) {
+        if (whiteXmedData[i] == 0x03 && whiteXmedData[i + 1] == 0x03 &&
+            whiteXmedData[i + 2] == '0' && whiteXmedData[i + 3] == '0' &&
+            whiteXmedData[i + 4] == '0' && whiteXmedData[i + 5] == '3') {
+            whiteXmedData[i + 5] = 'X';
+            removedXmedColorSection = true;
+            break;
+        }
+    }
+    assert(removedXmedColorSection);
+    auto whiteXmedFile = DirectorFile::load(makeTextRifx({
+        {"DRCF", textConfigData},
+        {"CAS*", xmedCastData},
+        {"CASt", makeCastMemberData(MemberType::Xtra, xmedSpecificData)},
+        {"KEY*", xmedKeyData},
+        {"XMED", whiteXmedData}
+    }));
+    auto whiteXmedMember = whiteXmedFile->castMembers().front();
+    auto parsedWhiteXmed = whiteXmedFile->getXmedStyledTextForMember(whiteXmedMember);
+    assert(parsedWhiteXmed.has_value());
+    assert(parsedWhiteXmed->textColorARGB() == 0xFFFFFFFFU);
+
+    RecordingSpriteBakerTextRenderer transparentWhiteXmedRenderer;
+    SpriteBaker transparentWhiteXmedBaker;
+    transparentWhiteXmedBaker.setTextRenderer(&transparentWhiteXmedRenderer);
+    RenderSprite transparentWhiteXmedSprite(15,
+                                            0,
+                                            0,
+                                            20,
+                                            9,
+                                            0,
+                                            true,
+                                            SpriteType::Text,
+                                            whiteXmedMember,
+                                            nullptr,
+                                            0,
+                                            0xFFFFFF,
+                                            true,
+                                            false,
+                                            libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                            100,
+                                            false,
+                                            false,
+                                            nullptr,
+                                            false);
+    auto bakedTransparentWhiteXmed = transparentWhiteXmedBaker.bake(transparentWhiteXmedSprite);
+    assert(transparentWhiteXmedRenderer.lastText == "Xmed text");
+    assert(transparentWhiteXmedRenderer.lastTextColor == static_cast<int>(0xFFFFFFFFU));
+    assert(transparentWhiteXmedRenderer.lastBgColor == 0);
+    assert(bakedTransparentWhiteXmed.bakedBitmap() != nullptr);
+
+    const auto preferredPixelFont = FontRegistry::getPreferredDirectorPixelFont();
+    assert(preferredPixelFont.has_value());
+    assert(preferredPixelFont->size() == 6);
+    std::vector<std::uint8_t> pixelFontXmedData = whiteXmedData;
+    const std::string xmedGeneva = "Geneva";
+    const auto genevaIt = std::search(pixelFontXmedData.begin(),
+                                      pixelFontXmedData.end(),
+                                      xmedGeneva.begin(),
+                                      xmedGeneva.end());
+    assert(genevaIt != pixelFontXmedData.end());
+    std::copy(preferredPixelFont->begin(), preferredPixelFont->end(), genevaIt);
+    auto pixelFontXmedFile = DirectorFile::load(makeTextRifx({
+        {"DRCF", textConfigData},
+        {"CAS*", xmedCastData},
+        {"CASt", makeCastMemberData(MemberType::Xtra, xmedSpecificData)},
+        {"KEY*", xmedKeyData},
+        {"XMED", pixelFontXmedData}
+    }));
+    auto pixelFontXmedMember = pixelFontXmedFile->castMembers().front();
+    auto parsedPixelFontXmed = pixelFontXmedFile->getXmedStyledTextForMember(pixelFontXmedMember);
+    assert(parsedPixelFontXmed.has_value());
+    assert(parsedPixelFontXmed->textColorARGB() == 0xFFFFFFFFU);
+    assert(parsedPixelFontXmed->fontName == *preferredPixelFont);
+
+    RecordingSpriteBakerTextRenderer transparentPixelFontXmedRenderer;
+    SpriteBaker transparentPixelFontXmedBaker;
+    transparentPixelFontXmedBaker.setTextRenderer(&transparentPixelFontXmedRenderer);
+    RenderSprite transparentPixelFontXmedSprite(16,
+                                                0,
+                                                0,
+                                                20,
+                                                9,
+                                                0,
+                                                true,
+                                                SpriteType::Text,
+                                                pixelFontXmedMember,
+                                                nullptr,
+                                                0,
+                                                0xFFFFFF,
+                                                true,
+                                                false,
+                                                libreshockwave::id::code(InkMode::BACKGROUND_TRANSPARENT),
+                                                100,
+                                                false,
+                                                false,
+                                                nullptr,
+                                                false);
+    auto bakedTransparentPixelFontXmed = transparentPixelFontXmedBaker.bake(transparentPixelFontXmedSprite);
+    assert(transparentPixelFontXmedRenderer.lastText == "Xmed text");
+    assert(transparentPixelFontXmedRenderer.lastTextColor == static_cast<int>(0xFF000000U));
+    assert(transparentPixelFontXmedRenderer.lastBgColor == 0);
+    assert(bakedTransparentPixelFontXmed.bakedBitmap() != nullptr);
 
     CastLibManager xmedManager(xmedFile);
     assert(xmedManager.getMemberProp(1, 1, "text").stringValue() == "Xmed text");
@@ -20261,7 +20896,31 @@ void testSoftwareFrameRenderer() {
                              opaqueRed,
                              false);
     FrameSnapshot blendSnapshot{4, 1, 1, 0x00000000, {blendSprite}, "", nullptr, 0, RenderPipelineTrace::empty()};
-    assert(blendSnapshot.renderFrame().getPixel(0, 0) == 0xFF7E0000U);
+    assert(blendSnapshot.renderFrame().getPixel(0, 0) == 0xFF800000U);
+
+    auto discoBrown = std::make_shared<Bitmap>(1, 1, 32, std::vector<std::uint32_t>{0xFFCC9900U});
+    RenderSprite discoBlendSprite(2,
+                                  0,
+                                  0,
+                                  1,
+                                  1,
+                                  0,
+                                  true,
+                                  SpriteType::Bitmap,
+                                  nullptr,
+                                  nullptr,
+                                  0,
+                                  0,
+                                  false,
+                                  false,
+                                  0,
+                                  50,
+                                  false,
+                                  false,
+                                  discoBrown,
+                                  false);
+    FrameSnapshot discoBlendSnapshot{4, 1, 1, 0x00000000, {discoBlendSprite}, "", nullptr, 0, RenderPipelineTrace::empty()};
+    assert(discoBlendSnapshot.renderFrame().getPixel(0, 0) == 0xFF664C00U);
 
     auto redBlue = std::make_shared<Bitmap>(2, 1, 32, std::vector<std::uint32_t>{
         0xFFFF0000U,
@@ -21779,8 +22438,8 @@ void testBasicChunks() {
     assert(raw.length() == 4);
 
     BinaryReader paletteReader({
-        0x12, 0x00, 0x34, 0x00, 0x56, 0x00,
-        0xAA, 0x00, 0xBB, 0x00, 0xCC, 0x00
+        0x12, 0x12, 0x34, 0x34, 0x56, 0x56,
+        0xAA, 0xAA, 0xBB, 0xBB, 0xCC, 0xCC
     });
     PaletteChunk palette = PaletteChunk::read(nullptr, paletteReader, ChunkId(10), 12);
     assert(palette.type() == ChunkType::CLUT);
@@ -21789,8 +22448,16 @@ void testBasicChunks() {
     assert(palette.getColor(1) == 0xAABBCCU);
     assert(palette.getColor(2) == 0);
 
+    BinaryReader littleEndianPaletteReader({
+        0x43, 0xFF, 0x65, 0xFF, 0x21, 0xFF
+    }, ByteOrder::LittleEndian);
+    PaletteChunk littleEndianPalette = PaletteChunk::read(nullptr, littleEndianPaletteReader, ChunkId(12), 12);
+    assert(littleEndianPalette.colorCount() == 1);
+    assert(littleEndianPalette.getColor(0) == 0x446622U);
+    assert(littleEndianPaletteReader.order() == ByteOrder::LittleEndian);
+
     BinaryReader bitmapReader({0x01, 0x02, 0x03});
-    BitmapChunk bitmap = BitmapChunk::read(nullptr, bitmapReader, ChunkId(11), 12);
+    BitmapChunk bitmap = BitmapChunk::read(nullptr, bitmapReader, ChunkId(13), 12);
     assert(bitmap.type() == ChunkType::BITD);
     assert(bitmap.data().size() == 3);
     assert(bitmap.width() == 0);
@@ -22337,7 +23004,7 @@ void testCastMetadataTypes() {
     assert(!styledRuns->styledSpans[0].underline);
     assert(styledRuns->styledSpans[1].startOffset == 2);
     assert(styledRuns->styledSpans[1].endOffset == 4);
-    assert(styledRuns->styledSpans[1].underline);
+    assert(!styledRuns->styledSpans[1].underline);
 
     std::vector<std::uint8_t> referencedSizeBody;
     for (const auto& size : std::vector<std::string>{"C0000", "C0000", "A0000", "A0000", "90000"}) {
@@ -22434,7 +23101,7 @@ void testCastMetadataTypes() {
     assert(!styledRecords->styledSpans[0].underline);
     assert(styledRecords->styledSpans[1].fontName == "Verdana");
     assert(styledRecords->styledSpans[1].fontSize == 9);
-    assert(styledRecords->styledSpans[1].underline);
+    assert(!styledRecords->styledSpans[1].underline);
     assert(styledRecords->fontName == "Geneva");
     assert(styledRecords->fontSize == 12);
 
@@ -24109,6 +24776,71 @@ void testScoreChunkParser() {
     assert(highEntryScore.frameData().frameChannelData.size() == 2);
     assert(highEntryScore.frameIntervals().empty());
     assert(highEntryScoreReader.order() == ByteOrder::LittleEndian);
+
+    std::vector<std::uint8_t> d6FrameEntry;
+    appendI32(d6FrameEntry, 0);
+    appendI32(d6FrameEntry, 0);
+    appendI32(d6FrameEntry, 1);
+    appendI16(d6FrameEntry, 13);
+    appendI16(d6FrameEntry, 48);
+    appendI16(d6FrameEntry, 1006);
+    appendI16(d6FrameEntry, 0);
+
+    std::vector<std::uint8_t> d6ClearMarker(2, 0);
+    d6ClearMarker[0] = 0xFF;
+    d6ClearMarker[1] = 0xFE;
+    std::vector<std::uint8_t> d6Tempo(1, 24);
+    std::vector<std::uint8_t> d6Palette{0x00, 0x02, 0x00, 0x09};
+    std::vector<std::uint8_t> d6Sprite(48, 0);
+    d6Sprite[0] = 1;
+    d6Sprite[1] = 0x24;
+    d6Sprite[4] = 0x00;
+    d6Sprite[5] = 0x01;
+    d6Sprite[6] = 0x00;
+    d6Sprite[7] = 0x2A;
+    d6Sprite[12] = 0x00;
+    d6Sprite[13] = 0x59;
+    d6Sprite[14] = 0x01;
+    d6Sprite[15] = 0x70;
+    d6Sprite[16] = 0x00;
+    d6Sprite[17] = 0x52;
+    d6Sprite[18] = 0x01;
+    d6Sprite[19] = 0xF8;
+
+    std::vector<std::uint8_t> d6Frame0;
+    appendDelta(d6Frame0, 24 + 6, d6Tempo);
+    appendDelta(d6Frame0, 120, d6Palette);
+    appendDelta(d6Frame0, 144, d6ClearMarker);
+    appendDelta(d6Frame0, 144 + (80 - 3) * 48, d6Sprite);
+    appendI16(d6FrameEntry, static_cast<int>(d6Frame0.size()) + 2);
+    d6FrameEntry.insert(d6FrameEntry.end(), d6Frame0.begin(), d6Frame0.end());
+
+    std::vector<std::uint8_t> d6ScoreData;
+    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+    appendI32(d6ScoreData, 0);
+    appendI32(d6ScoreData, 0);
+    appendI32(d6ScoreData, 1);
+    appendI32(d6ScoreData, 0);
+    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+    appendI32(d6ScoreData, 0);
+    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+    d6ScoreData.insert(d6ScoreData.end(), d6FrameEntry.begin(), d6FrameEntry.end());
+
+    BinaryReader d6ScoreReader(d6ScoreData, ByteOrder::LittleEndian);
+    ScoreChunk d6Score = ScoreChunk::read(nullptr, d6ScoreReader, ChunkId(38), 0x4B1);
+    assert(d6Score.getFrameCount() == 1);
+    assert(d6Score.getChannelCount() == 1006);
+    assert(d6Score.getRawChannelData().size() == 144 + 120 * 48);
+    assert(d6Score.getFrameTempo(0) == 24);
+    assert(d6Score.getFramePalette(0).has_value());
+    assert(d6Score.getFramePalette(0)->castLib == 2);
+    assert(d6Score.getFramePalette(0)->castMember == 9);
+    assert(d6Score.frameData().frameChannelData.size() == 1);
+    assert(d6Score.frameData().frameChannelData[0].channelIndex.value() == 80);
+    assert(d6Score.frameData().frameChannelData[0].data.castMember == 42);
+    assert(d6Score.frameData().frameChannelData[0].data.posX == 368);
+    assert(d6Score.frameData().frameChannelData[0].data.width == 504);
+    assert(d6ScoreReader.order() == ByteOrder::LittleEndian);
 }
 
 void testDirectorFileRifxLoader() {
@@ -27207,6 +27939,62 @@ void testBitmapResolverFoundation() {
     assert(providerBitmap != nullptr);
     assert(providerBitmap->getPixel(1, 0) == 0xFF040506U);
 
+    std::vector<std::uint8_t> unrelatedPaletteData;
+    for (const auto color : std::vector<std::uint32_t>{0x010203U, 0x102030U}) {
+        const int red = static_cast<int>((color >> 16U) & 0xFFU);
+        const int green = static_cast<int>((color >> 8U) & 0xFFU);
+        const int blue = static_cast<int>(color & 0xFFU);
+        unrelatedPaletteData.insert(unrelatedPaletteData.end(), {
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(blue),
+            static_cast<std::uint8_t>(blue)
+        });
+    }
+    std::vector<std::uint8_t> macLikePaletteData;
+    for (const auto color : std::vector<std::uint32_t>{0xFFFFFFU, 0xFFFFAAU}) {
+        const int red = static_cast<int>((color >> 16U) & 0xFFU);
+        const int green = static_cast<int>((color >> 8U) & 0xFFU);
+        const int blue = static_cast<int>(color & 0xFFU);
+        macLikePaletteData.insert(macLikePaletteData.end(), {
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(blue),
+            static_cast<std::uint8_t>(blue)
+        });
+    }
+    auto fileWithUnrelatedPalette = DirectorFile::load(buildRifx({
+        {"DRCF", configData},
+        {"KEY*", keyData},
+        {"BITD", bitdData},
+        {"CLUT", unrelatedPaletteData},
+        {"CLUT", macLikePaletteData},
+    }));
+    std::vector<std::uint8_t> unresolvedPaletteSpecific = bitmapSpecific;
+    unresolvedPaletteSpecific[unresolvedPaletteSpecific.size() - 2] = 0x03;
+    unresolvedPaletteSpecific[unresolvedPaletteSpecific.size() - 1] = 0xE7;
+    auto unresolvedPaletteBitmapMember = std::make_shared<CastMemberChunk>(
+        fileWithUnrelatedPalette.get(),
+        ChunkId(9),
+        MemberType::Bitmap,
+        0,
+        static_cast<int>(unresolvedPaletteSpecific.size()),
+        std::vector<std::uint8_t>{},
+        unresolvedPaletteSpecific,
+        "Unresolved Palette Bitmap",
+        0,
+        0,
+        0);
+    auto unresolvedPaletteDecoded = fileWithUnrelatedPalette->decodeBitmap(unresolvedPaletteBitmapMember);
+    assert(unresolvedPaletteDecoded.has_value());
+    assert(unresolvedPaletteDecoded->getPixel(0, 0) == 0xFFFFFFFFU);
+    assert(unresolvedPaletteDecoded->getPixel(1, 0) == 0xFFFFFFAAU);
+    assert(unresolvedPaletteDecoded->imagePalette().get() != &Palette::systemMacPalette());
+
     std::vector<std::uint8_t> sidecarKeyData;
     appendI16(sidecarKeyData, 12);
     appendI16(sidecarKeyData, 12);
@@ -27450,7 +28238,12 @@ void testLookupHelpers() {
     assert(emptyFile.resolvePaletteByMemberNumber(42).get() == &Palette::systemMacPalette());
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view(argv[1]) == "TransparentTextColorFoundation") {
+        testTransparentTextColorFoundation();
+        return 0;
+    }
+
     testBinaryReaderEndianAndBounds();
     testBinaryReaderStringsAndFourCC();
     testBinaryReaderNumbers();
@@ -27490,6 +28283,7 @@ int main() {
     testDebugFoundation();
     testRenderPipelineFoundation();
     testStageRendererFoundation();
+    testTransparentTextColorFoundation();
     testSpriteBakerFoundation();
     testBitmapCacheAndInkProcessorFoundation();
     testInkProcessorJavaParityEdges();

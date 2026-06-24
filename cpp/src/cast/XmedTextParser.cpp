@@ -603,7 +603,7 @@ std::vector<StyledSpan> extractStyleSpans(const std::vector<std::uint8_t>& data,
             spanFontSize,
             bold,
             italic,
-            (run.style & 1) != 0,
+            false,
             color[0],
             color[1],
             color[2]

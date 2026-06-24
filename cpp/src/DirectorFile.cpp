@@ -1,10 +1,13 @@
 #include "libreshockwave/DirectorFile.hpp"
 
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <string>
 #include <utility>
 
 #include "libreshockwave/bitmap/BitmapDecoder.hpp"
+#include "libreshockwave/bitmap/Palette.hpp"
 #include "libreshockwave/cast/BitmapInfo.hpp"
 #include "libreshockwave/cast/XmedTextParser.hpp"
 #include "libreshockwave/chunks/BitmapChunk.hpp"
@@ -36,6 +39,79 @@ namespace {
 DirectorFile::JpegDecoder& jpegDecoder() {
     static DirectorFile::JpegDecoder decoder;
     return decoder;
+}
+
+std::shared_ptr<const bitmap::Palette> borrowedPalette(const bitmap::Palette* palette) {
+    if (palette == nullptr) {
+        return nullptr;
+    }
+    return std::shared_ptr<const bitmap::Palette>(palette, [](const bitmap::Palette*) {});
+}
+
+int colorDistance(std::uint32_t left, std::uint32_t right) {
+    const int leftRed = static_cast<int>((left >> 16U) & 0xFFU);
+    const int leftGreen = static_cast<int>((left >> 8U) & 0xFFU);
+    const int leftBlue = static_cast<int>(left & 0xFFU);
+    const int rightRed = static_cast<int>((right >> 16U) & 0xFFU);
+    const int rightGreen = static_cast<int>((right >> 8U) & 0xFFU);
+    const int rightBlue = static_cast<int>(right & 0xFFU);
+    const int redDelta = leftRed - rightRed;
+    const int greenDelta = leftGreen - rightGreen;
+    const int blueDelta = leftBlue - rightBlue;
+    return (redDelta * redDelta) + (greenDelta * greenDelta) + (blueDelta * blueDelta);
+}
+
+std::shared_ptr<const bitmap::Palette> closestMacLikePaletteForIndexedBitmap(
+    const bitmap::Bitmap& bitmap,
+    const std::vector<std::shared_ptr<chunks::PaletteChunk>>& paletteChunks) {
+    const auto indices = bitmap.paletteIndices();
+    if (!indices.has_value() || indices->empty()) {
+        return nullptr;
+    }
+
+    std::array<bool, 256> usedIndices{};
+    int usedCount = 0;
+    for (const auto rawIndex : *indices) {
+        const int index = rawIndex & 0xFF;
+        if (!usedIndices[static_cast<std::size_t>(index)]) {
+            usedIndices[static_cast<std::size_t>(index)] = true;
+            ++usedCount;
+        }
+    }
+    if (usedCount == 0) {
+        return nullptr;
+    }
+
+    const auto& macPalette = bitmap::Palette::systemMacPalette();
+    std::shared_ptr<const bitmap::Palette> bestPalette;
+    long long bestDistance = std::numeric_limits<long long>::max();
+    for (const auto& chunk : paletteChunks) {
+        if (!chunk || chunk->colorCount() <= 0) {
+            continue;
+        }
+        auto candidate = std::make_shared<bitmap::Palette>(
+            chunk->colors(),
+            "Custom Palette #" + std::to_string(chunk->id().value()));
+        long long totalDistance = 0;
+        for (int index = 0; index < 256; ++index) {
+            if (!usedIndices[static_cast<std::size_t>(index)]) {
+                continue;
+            }
+            if (index >= candidate->size() || index >= macPalette.size()) {
+                totalDistance += 255LL * 255LL * 3LL;
+                continue;
+            }
+            totalDistance += colorDistance(candidate->getColor(index), macPalette.getColor(index));
+        }
+        if (totalDistance < bestDistance) {
+            bestDistance = totalDistance;
+            bestPalette = std::move(candidate);
+        }
+    }
+
+    constexpr long long maxAverageChannelDistanceSquared = 64LL * 64LL;
+    const long long maxDistance = static_cast<long long>(usedCount) * maxAverageChannelDistanceSquared;
+    return bestDistance <= maxDistance ? bestPalette : nullptr;
 }
 
 bool& jpegDecodePending() {
@@ -77,13 +153,16 @@ bool shouldReplaceSelectedScore(const std::shared_ptr<chunks::ScoreChunk>& curre
     if (!current) {
         return true;
     }
+    if (candidate->frameIntervals().size() != current->frameIntervals().size()) {
+        return candidate->frameIntervals().size() > current->frameIntervals().size();
+    }
     if (candidate->getFrameCount() != current->getFrameCount()) {
         return candidate->getFrameCount() > current->getFrameCount();
     }
     if (candidate->frameData().frameChannelData.size() != current->frameData().frameChannelData.size()) {
         return candidate->frameData().frameChannelData.size() > current->frameData().frameChannelData.size();
     }
-    return candidate->frameIntervals().size() > current->frameIntervals().size();
+    return candidate->entries().size() > current->entries().size();
 }
 
 bool matchesLinkedChunkFourCC(const chunks::KeyTableChunk::KeyTableEntry& entry,
@@ -663,8 +742,13 @@ std::optional<bitmap::Bitmap> DirectorFile::decodeBitmap(const std::shared_ptr<c
 
         std::shared_ptr<const bitmap::Palette> resolvedPalette;
         const bitmap::Palette* palette = paletteOverride;
+        bool shouldResolveUnlinkedMacLikePalette = false;
         if (!palette) {
-            resolvedPalette = resolvePalette(info.paletteId);
+            resolvedPalette = info.paletteId >= 0 ? resolvePaletteExact(info.paletteId) : resolvePalette(info.paletteId);
+            if (resolvedPalette == nullptr && info.paletteId >= 0) {
+                resolvedPalette = borrowedPalette(&bitmap::Palette::systemMacPalette());
+                shouldResolveUnlinkedMacLikePalette = true;
+            }
             palette = resolvedPalette.get();
         }
 
@@ -676,6 +760,13 @@ std::optional<bitmap::Bitmap> DirectorFile::decodeBitmap(const std::shared_ptr<c
                                                     endian_ == io::ByteOrder::BigEndian,
                                                     directorVersion,
                                                     info.pitch);
+        if (shouldResolveUnlinkedMacLikePalette) {
+            if (auto closestPalette = closestMacLikePaletteForIndexedBitmap(bitmap, palettes_)) {
+                (void)bitmap.remapImagePalette(closestPalette);
+                resolvedPalette = std::move(closestPalette);
+                palette = resolvedPalette.get();
+            }
+        }
         bitmap.setNativeAlpha(info.useAlpha);
         if (palette) {
             bitmap.setImagePalette(palette);

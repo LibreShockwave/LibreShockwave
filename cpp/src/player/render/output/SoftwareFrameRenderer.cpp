@@ -376,7 +376,7 @@ void SoftwareFrameRenderer::alphaCompositePercent(std::vector<std::uint32_t>& ar
         return;
     }
 
-    const int opacity = (srcA * blendPercent) / 100;
+    const int opacity = std::clamp((srcA * blendPercent * 256) / (255 * 100), 0, 256);
     const int invOpacity = 256 - opacity;
     const int srcR = channel(src, 16);
     const int srcG = channel(src, 8);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <iterator>
@@ -258,6 +259,26 @@ bool usesLegacyEmbeddedTextFont(const DirectorFile& file, int fontId, int fontSt
     return fontId == 0 && (fontStyle & 0x80) != 0 && version > 0 && version <= 1600;
 }
 
+std::string lowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+bool usesDirectorPixelStyledFont(const ::libreshockwave::cast::XmedStyledText& styled) {
+    const auto fontName = lowerAscii(styled.fontName);
+    if (fontName.find("bold") != std::string::npos) {
+        return false;
+    }
+    if (fontName.find("volter") != std::string::npos) {
+        return true;
+    }
+    const auto preferred = ::libreshockwave::player::cast::FontRegistry::getPreferredDirectorPixelFont();
+    return preferred.has_value() && !preferred->empty() &&
+           fontName.find(lowerAscii(*preferred)) != std::string::npos;
+}
+
 std::string textAlignment(int textAlign) {
     switch (textAlign) {
         case 1: return "center";
@@ -298,23 +319,34 @@ bool shouldUseSpriteForeColorForFileText(const RenderSprite& sprite, int runColo
         return false;
     }
     const int spriteColor = argbRgb(sprite.foreColor());
+    if (sprite.inkMode() == id::InkMode::BACKGROUND_TRANSPARENT &&
+        (spriteColor & 0x00FFFFFF) == 0 &&
+        (runColor & 0x00FFFFFF) == 0x00FFFFFF) {
+        return false;
+    }
     if ((spriteColor & 0x00FFFFFF) != 0x00FFFFFF) {
         return true;
     }
     return (runColor & 0x00FFFFFF) == 0x00FFFFFF;
 }
 
-bool shouldUseSpriteForeColorForStyledText(const RenderSprite& sprite, std::uint32_t styledTextColor) {
+bool shouldUseSpriteForeColorForStyledText(const RenderSprite& sprite,
+                                           const ::libreshockwave::cast::XmedStyledText& styled) {
     if (sprite.inkMode() != id::InkMode::BACKGROUND_TRANSPARENT) {
         return false;
     }
+    const std::uint32_t styledTextColor = styled.textColorARGB();
     if ((styledTextColor & 0x00FFFFFFU) != 0x00FFFFFFU) {
         return false;
     }
-    if (!sprite.hasForeColor()) {
-        return true;
+    const int spriteColor = argbRgb(sprite.foreColor());
+    if ((spriteColor & 0x00FFFFFF) == 0) {
+        return usesDirectorPixelStyledFont(styled);
     }
-    return (argbRgb(sprite.foreColor()) & 0x00FFFFFF) != 0x00FFFFFF;
+    if (!sprite.hasForeColor()) {
+        return false;
+    }
+    return (spriteColor & 0x00FFFFFF) != 0x00FFFFFF;
 }
 
 bool isTransparentTextInk(const RenderSprite& sprite) {
@@ -930,6 +962,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeDynamicText(const RenderS
     const int width = sprite.width() > 0 ? sprite.width() : 200;
     const int height = sprite.height() > 0 ? sprite.height() : 20;
     const int bgColor = isTransparentTextInk(sprite) ? 0 : argbRgb(sprite.backColor());
+    const int textColor = member->textColor();
 
     auto textImage = textRenderer_->renderText(member->textContent(),
                                                width,
@@ -938,7 +971,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeDynamicText(const RenderS
                                                member->textFontSize(),
                                                member->textFontStyle(),
                                                member->textAlignment(),
-                                               member->textColor(),
+                                               textColor,
                                                bgColor,
                                                member->textWordWrap(),
                                                member->textAntialias(),
@@ -976,14 +1009,11 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
         const int width = styled->width > 0 ? styled->width : (sprite.width() > 0 ? sprite.width() : 200);
         const int height = styled->height > 0 ? styled->height : (sprite.height() > 0 ? sprite.height() : 20);
         const auto styledTextColor = styled->textColorARGB();
-        const int textColor = shouldUseSpriteForeColorForStyledText(sprite, styledTextColor)
+        int textColor = shouldUseSpriteForeColorForStyledText(sprite, *styled)
             ? argbRgb(sprite.foreColor())
             : static_cast<int>(styledTextColor);
         const int bgColor = isTransparentTextInk(sprite) ? 0 : argbRgb(sprite.backColor());
         auto textImage = textRenderer_->renderXmedText(&*styled, width, height, textColor, bgColor);
-        if (sprite.inkMode() == id::InkMode::BACKGROUND_TRANSPARENT) {
-            textImage = shiftBitmapDown(std::move(textImage), 2, bgColor);
-        }
         if (textImage == nullptr || isTransparentTextInk(sprite)) {
             return textImage;
         }
@@ -1028,7 +1058,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
     const int width = textInfo.width > 0 ? textInfo.width : (sprite.width() > 0 ? sprite.width() : 200);
     const int height = textInfo.height > 0 ? textInfo.height : (sprite.height() > 0 ? sprite.height() : 20);
     const int runColor = runTextColor(runR, runG, runB);
-    const int textColor = shouldUseSpriteForeColorForFileText(sprite, runColor) ? argbRgb(sprite.foreColor()) : runColor;
+    int textColor = shouldUseSpriteForeColorForFileText(sprite, runColor) ? argbRgb(sprite.foreColor()) : runColor;
     const int bgColor = isTransparentTextInk(sprite)
         ? 0
         : argbRgb((textInfo.bgRed << 16) | (textInfo.bgGreen << 8) | textInfo.bgBlue);

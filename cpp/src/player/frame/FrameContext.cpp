@@ -1,8 +1,10 @@
 #include "libreshockwave/player/frame/FrameContext.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "libreshockwave/DirectorFile.hpp"
@@ -25,6 +27,39 @@ T& requireDependency(T* value, const char* name) {
         throw std::runtime_error(std::string("FrameContext missing dependency: ") + name);
     }
     return *value;
+}
+
+std::string behaviorParameterMetadataKey(const lingo::Datum& key) {
+    std::string name;
+    if (const auto* symbol = key.asSymbol()) {
+        name = symbol->name;
+    } else {
+        name = key.stringValue();
+    }
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return "behaviorparam:" + name;
+}
+
+void applyBehaviorParameterMetadata(render::SpriteRegistry* registry,
+                                    int channel,
+                                    const score::ScoreBehaviorRef& behaviorRef) {
+    if (registry == nullptr || !behaviorRef.hasParameters()) {
+        return;
+    }
+    auto sprite = registry->get(channel);
+    if (sprite == nullptr) {
+        return;
+    }
+    for (const auto& param : behaviorRef.parameters()) {
+        if (!param.isPropList()) {
+            continue;
+        }
+        for (const auto& [key, value] : param.propListValue().properties()) {
+            sprite->setLegacyProperty(behaviorParameterMetadataKey(key), value);
+        }
+    }
 }
 
 } // namespace
@@ -186,6 +221,7 @@ void FrameContext::rebindBehaviorsForLoadedCast(int castLibNumber) {
             }
             if (spriteRegistry_ != nullptr) {
                 spriteRegistry_->markScoreBehaviorChannel(channel);
+                applyBehaviorParameterMetadata(spriteRegistry_, channel, behaviorRef);
             }
             auto instance = behaviorManager().createInstance(behaviorRef, channel);
             if (!instance) {
@@ -276,21 +312,27 @@ void FrameContext::beginSpritesForFrame(int frame) {
 
     for (const auto& span : spans) {
         const int channel = span.channel();
-        if (activeChannels_.contains(channel)) {
-            continue;
+        const bool newlyActive = !activeChannels_.contains(channel);
+        if (newlyActive) {
+            activeChannels_.insert(channel);
+            enteredChannels_.insert(channel);
+            ensureScoreSpriteState(frame, channel);
         }
-
-        activeChannels_.insert(channel);
-        enteredChannels_.insert(channel);
-        ensureScoreSpriteState(frame, channel);
 
         for (const auto& behaviorRef : span.behaviors()) {
+            if (behaviorManager().hasInstanceForChannel(channel, behaviorRef)) {
+                continue;
+            }
             if (spriteRegistry_ != nullptr) {
                 spriteRegistry_->markScoreBehaviorChannel(channel);
+                applyBehaviorParameterMetadata(spriteRegistry_, channel, behaviorRef);
             }
             (void)behaviorManager().createInstance(behaviorRef, channel);
+            enteredChannels_.insert(channel);
         }
-        logEvent("beginSprite");
+        if (newlyActive) {
+            logEvent("beginSprite");
+        }
     }
 }
 

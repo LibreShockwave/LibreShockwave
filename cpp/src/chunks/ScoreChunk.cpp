@@ -138,7 +138,10 @@ ScoreChunk::ScoreFrameData parseFrameData(const std::vector<std::uint8_t>& data)
     reader.skip(2);
 
     const ScoreChunk::FrameDataHeader header{frameCount, spriteRecordSize, numChannels, framesVersion};
-    const int frameSize = numChannels * spriteRecordSize;
+    const int mainChannelsSize = framesVersion <= 7 ? 48 : (framesVersion <= 13 ? 144 : 0);
+    const int displayedChannels = framesVersion <= 7 ? 48 : (framesVersion <= 13 ? 120 : numChannels);
+    const int spriteChannelBase = framesVersion <= 7 ? 6 : (framesVersion <= 13 ? 3 : 0);
+    const int frameSize = mainChannelsSize + displayedChannels * spriteRecordSize;
     const long long totalSizeLong = static_cast<long long>(frameCount) * static_cast<long long>(frameSize);
     if (frameCount <= 0 || frameSize <= 0 || totalSizeLong <= 0 || totalSizeLong > 50'000'000LL) {
         return ScoreChunk::ScoreFrameData::empty();
@@ -190,8 +193,9 @@ ScoreChunk::ScoreFrameData parseFrameData(const std::vector<std::uint8_t>& data)
         ++frameIndex;
     }
 
-    const int mainChannelsSize = framesVersion <= 7 ? 48 : 0;
-    const bool isD5 = mainChannelsSize > 0;
+    const bool hasLegacyMainChannels = mainChannelsSize > 0;
+    const bool isD5 = framesVersion <= 7;
+    const bool isD6 = framesVersion > 7 && framesVersion <= 13;
     std::vector<ScoreChunk::FrameChannelEntry> frameChannelEntries;
     std::vector<ScoreChunk::TempoChannelData> tempoChannelEntries;
     std::vector<ScoreChunk::PaletteChannelData> paletteChannelEntries;
@@ -199,15 +203,27 @@ ScoreChunk::ScoreFrameData parseFrameData(const std::vector<std::uint8_t>& data)
     for (int frame = 0; frame < frameCount; ++frame) {
         const auto frameStart = static_cast<std::size_t>(frame) * static_cast<std::size_t>(frameSize);
 
-        if (isD5) {
+        if (hasLegacyMainChannels) {
             if (frameStart + 22 <= channelData.size()) {
-                const int tempo = channelData[frameStart + 21] & 0xFF;
+                const int tempoOffset = isD6 ? 24 + 6 : 21;
+                const int tempo = channelData[frameStart + static_cast<std::size_t>(tempoOffset)] & 0xFF;
                 if (tempo > 0) {
                     tempoChannelEntries.push_back(ScoreChunk::TempoChannelData{frame, tempo});
                 }
             }
 
-            const int numSprites = frameSize > mainChannelsSize ? (frameSize - mainChannelsSize) / spriteRecordSize : 0;
+            if (isD6 && frameStart + 124 <= channelData.size()) {
+                const auto paletteOffset = frameStart + 120U;
+                const auto castLib = static_cast<std::int16_t>(
+                    (channelData[paletteOffset] << 8) | channelData[paletteOffset + 1]);
+                const auto member = static_cast<std::int16_t>(
+                    (channelData[paletteOffset + 2] << 8) | channelData[paletteOffset + 3]);
+                if (member != 0) {
+                    paletteChannelEntries.push_back(ScoreChunk::PaletteChannelData{frame, castLib, member});
+                }
+            }
+
+            const int numSprites = displayedChannels;
             for (int sprite = 0; sprite < numSprites; ++sprite) {
                 const auto pos = frameStart + static_cast<std::size_t>(mainChannelsSize + sprite * spriteRecordSize);
                 if (pos + 24 > channelData.size()) {
@@ -215,7 +231,10 @@ ScoreChunk::ScoreFrameData parseFrameData(const std::vector<std::uint8_t>& data)
                 }
                 auto channel = readChannelDataAt(channelData, pos, spriteRecordSize);
                 if (!channel.isEmpty()) {
-                    frameChannelEntries.push_back(ScoreChunk::FrameChannelEntry{id::FrameIndex(frame), id::ChannelId(sprite + 6), channel});
+                    frameChannelEntries.push_back(ScoreChunk::FrameChannelEntry{
+                        id::FrameIndex(frame),
+                        id::ChannelId(sprite + spriteChannelBase),
+                        channel});
                 }
             }
         } else {
@@ -392,6 +411,9 @@ ScoreChunk::ChannelData ScoreChunk::ChannelData::read(io::BinaryReader& reader, 
 }
 
 bool ScoreChunk::ChannelData::isEmpty() const {
+    if (width <= 0 || height <= 0) {
+        return true;
+    }
     return spriteType == 0 && ink == 0 && foreColor == 0 && backColor == 0 &&
            castLib == 0 && castMember == 0 && posY == 0 && posX == 0 &&
            height == 0 && width == 0;

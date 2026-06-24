@@ -109,6 +109,8 @@ private:
     [[nodiscard]] bool usesLegacyRoundedRegistrationScale() const;
     [[nodiscard]] int directorVersionForParsing() const;
 
+    [[nodiscard]] int scoreSpriteRasterY(int y) const;
+    [[nodiscard]] int scoreSpriteRasterYOffset() const;
     [[nodiscard]] static int rasterY(int y);
     [[nodiscard]] static int mirrorOffset(int reg, int span, bool flipped);
     [[nodiscard]] int scaleRegistrationOffset(int reg, int spriteSpan, int bitmapSpan) const;

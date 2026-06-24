@@ -137,6 +137,7 @@ private:
     [[nodiscard]] static std::pair<int, int> clampedSelection(int selStart, int selEnd, int textLength);
     [[nodiscard]] bool isMoveableSprite(int channel) const;
     [[nodiscard]] bool isEditableFieldSprite(int channel, const ::libreshockwave::cast::CastMember& member) const;
+    [[nodiscard]] bool canReceiveKeyboardTextInput(int channel, const ::libreshockwave::cast::CastMember& member) const;
     [[nodiscard]] bool setSpriteLoc(int channel, int locH, int locV) const;
     void bumpSpriteRevision();
     void beginMoveableSpriteDrag(int stageX, int stageY);

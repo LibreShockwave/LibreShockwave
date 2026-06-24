@@ -20,6 +20,7 @@ namespace libreshockwave::player::render::pipeline {
 namespace {
 
 constexpr int DIRECTOR_SPRITE_RASTER_Y_ORIGIN = 0;
+constexpr int DIRECTOR_D6_SCORE_SPRITE_RASTER_Y_ORIGIN = -6;
 
 std::uint32_t opaqueArgb(int rgb) {
     return 0xFF000000U | static_cast<std::uint32_t>(rgb & 0xFFFFFF);
@@ -286,7 +287,7 @@ std::optional<RenderSprite> StageRenderer::createRenderSprite(int channel,
         x -= reg.x;
         y -= reg.y;
     }
-    y = rasterY(y);
+    y = scoreSpriteRasterY(y);
 
     SpriteType type = dynamicMember != nullptr ? determineSpriteTypeFromMember(dynamicMember) :
         (member != nullptr ? determineSpriteTypeFromMember(member) : SpriteType::Unknown);
@@ -613,6 +614,22 @@ bool StageRenderer::usesLegacyRoundedRegistrationScale() const {
 
 int StageRenderer::directorVersionForParsing() const {
     return file_ != nullptr && file_->config() != nullptr ? file_->config()->directorVersion() : 1200;
+}
+
+int StageRenderer::scoreSpriteRasterY(int y) const {
+    return y + scoreSpriteRasterYOffset();
+}
+
+int StageRenderer::scoreSpriteRasterYOffset() const {
+    auto score = scoreChunk();
+    if (score == nullptr) {
+        return DIRECTOR_SPRITE_RASTER_Y_ORIGIN;
+    }
+    const int version = score->frameData().header.framesVersion;
+    if (version > 7 && version <= 13) {
+        return DIRECTOR_D6_SCORE_SPRITE_RASTER_Y_ORIGIN;
+    }
+    return DIRECTOR_SPRITE_RASTER_Y_ORIGIN;
 }
 
 int StageRenderer::rasterY(int y) {

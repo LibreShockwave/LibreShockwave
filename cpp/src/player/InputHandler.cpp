@@ -89,7 +89,7 @@ void InputHandler::onMouseMove(int stageX, int stageY) {
     if (!moveableDrag_.has_value() && inputState_->isMouseDown() && focusChannel > 0) {
         auto member = resolveSpriteMember(focusChannel);
         auto sprite = findHitSprite(focusChannel);
-        if (member != nullptr && sprite.has_value() && isEditableFieldSprite(focusChannel, *member)) {
+        if (member != nullptr && sprite.has_value() && canReceiveKeyboardTextInput(focusChannel, *member)) {
             const int localX = stageX - sprite->x();
             const int localY = stageY - sprite->y();
             const int charPos = castLibManager_->locToCharPos(
@@ -782,7 +782,7 @@ std::optional<InputHandler::FocusedField> InputHandler::focusedEditableField() c
         return std::nullopt;
     }
     auto member = resolveSpriteMember(focusChannel);
-    if (member == nullptr || !isEditableFieldSprite(focusChannel, *member)) {
+    if (member == nullptr || !canReceiveKeyboardTextInput(focusChannel, *member)) {
         return std::nullopt;
     }
     auto sprite = findHitSprite(focusChannel);
@@ -824,6 +824,9 @@ bool InputHandler::isEditableFieldSprite(int channel, const ::libreshockwave::ca
     if (member.editable()) {
         return true;
     }
+    if (member.rawChunk() != nullptr && member.memberType() == ::libreshockwave::cast::MemberType::Text) {
+        return true;
+    }
     if (stageRenderer_ == nullptr || channel <= 0) {
         return false;
     }
@@ -832,7 +835,26 @@ bool InputHandler::isEditableFieldSprite(int channel, const ::libreshockwave::ca
         return false;
     }
     const auto editable = sprite->legacyProperty("editabletext");
-    return editable.has_value() && editable->boolValue();
+    if (editable.has_value() && editable->boolValue()) {
+        return true;
+    }
+
+    auto* dispatcher = eventDispatcher();
+    if (dispatcher != nullptr && dispatcher->spriteHasHandler(channel, handlerName(PlayerEvent::KeyDown))) {
+        return true;
+    }
+
+    return false;
+}
+
+bool InputHandler::canReceiveKeyboardTextInput(int channel, const ::libreshockwave::cast::CastMember& member) const {
+    if (!member.isTextLike()) {
+        return false;
+    }
+    if (isEditableFieldSprite(channel, member)) {
+        return true;
+    }
+    return inputState_ != nullptr && inputState_->keyboardFocusSprite() == channel;
 }
 
 bool InputHandler::setSpriteLoc(int channel, int locH, int locV) const {
@@ -929,7 +951,7 @@ void InputHandler::handleEditableFieldInput(int channel, const std::string& keyC
     }
 
     auto member = resolveSpriteMember(channel);
-    if (member == nullptr || !isEditableFieldSprite(channel, *member)) {
+    if (member == nullptr || !canReceiveKeyboardTextInput(channel, *member)) {
         return;
     }
 

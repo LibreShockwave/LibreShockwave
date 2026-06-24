@@ -30,6 +30,7 @@
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/PlayerState.hpp"
 #include "libreshockwave/player/audio/QueuedAudioBackend.hpp"
+#include "libreshockwave/player/event/EventDispatcher.hpp"
 #include "libreshockwave/player/input/DirectorKeyCodes.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
 #include "libreshockwave/player/net/QueuedNetProvider.hpp"
@@ -42,7 +43,9 @@ using libreshockwave::DirectorFile;
 using libreshockwave::bitmap::Bitmap;
 using libreshockwave::player::InputHandler;
 using libreshockwave::player::Player;
+using libreshockwave::player::PlayerEvent;
 using libreshockwave::player::PlayerState;
+using libreshockwave::player::handlerName;
 using libreshockwave::player::audio::QueuedAudioBackend;
 using libreshockwave::player::input::DirectorKeyCodes;
 using libreshockwave::player::net::QueuedNetProvider;
@@ -614,7 +617,15 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                 << ",\"skew\":" << sprite.skew()
                 << ",\"directorMirrorH\":" << (sprite.hasDirectorHorizontalMirror() ? "true" : "false")
                 << ",\"foreColor\":" << sprite.foreColor()
-                << ",\"backColor\":" << sprite.backColor()
+                << ",\"backColor\":" << sprite.backColor();
+            const auto spriteState = ctx.player->stageRenderer().spriteRegistry().get(sprite.channel());
+            out << ",\"scriptInstanceCount\":" << (spriteState != nullptr ? spriteState->scriptInstanceList().size() : 0)
+                << ",\"hasKeyDownHandler\":"
+                << (ctx.player->eventDispatcher().spriteHasHandler(sprite.channel(), handlerName(PlayerEvent::KeyDown)) ? "true" : "false")
+                << ",\"hasMouseDownHandler\":"
+                << (ctx.player->eventDispatcher().spriteHasHandler(sprite.channel(), handlerName(PlayerEvent::MouseDown)) ? "true" : "false")
+                << ",\"hasMouseUpHandler\":"
+                << (ctx.player->eventDispatcher().spriteHasHandler(sprite.channel(), handlerName(PlayerEvent::MouseUp)) ? "true" : "false")
                 << ",\"hasBakedBitmap\":" << (baked != nullptr ? "true" : "false");
             if (baked != nullptr) {
                 int minX = baked->width();
@@ -731,6 +742,38 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                 out << ']';
                 out << '}';
             }
+            if (auto authoredMember = sprite.castMember(); authoredMember != nullptr && authoredMember->isTextXtra()) {
+                out << ",\"authoredXmed\":";
+                auto* file = authoredMember->file();
+                if (file != nullptr) {
+                    auto styled = const_cast<DirectorFile*>(file)->getXmedStyledTextForMember(
+                        std::const_pointer_cast<libreshockwave::chunks::CastMemberChunk>(authoredMember));
+                    if (styled.has_value()) {
+                        out << "{\"alignment\":";
+                        appendJsonString(out, styled->alignment);
+                        out << ",\"paragraphStyleIndex\":" << styled->primaryParagraphStyleIndex
+                            << ",\"paragraphAlignmentCode\":" << styled->primaryParagraphAlignmentCode
+                            << ",\"paragraphStyleCount\":" << styled->paragraphStyleCount
+                            << ",\"fontName\":";
+                        appendJsonString(out, styled->fontName);
+                        out << ",\"fontSize\":" << styled->fontSize
+                            << ",\"fontStyle\":";
+                        appendJsonString(out, styled->fontStyleString());
+                        out << ",\"width\":" << styled->width
+                            << ",\"height\":" << styled->height
+                            << ",\"wordWrap\":" << (styled->wordWrap ? "true" : "false")
+                            << ",\"antialias\":" << (styled->antialias ? "true" : "false")
+                            << ",\"fixedLineSpace\":" << styled->fixedLineSpace
+                            << ",\"text\":";
+                        appendJsonString(out, styled->text);
+                        out << '}';
+                    } else {
+                        out << "null";
+                    }
+                } else {
+                    out << "null";
+                }
+            }
             if (auto dynamicMember = sprite.dynamicMember(); dynamicMember != nullptr) {
                 out << ",\"dynamicMember\":{\"id\":" << dynamicMember->id()
                     << ",\"castLib\":" << dynamicMember->castLib()
@@ -742,8 +785,32 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                     << ",\"regX\":" << dynamicMember->regX()
                     << ",\"regY\":" << dynamicMember->regY()
                     << ",\"runtimeDynamic\":" << (dynamicMember->isRuntimeDynamic() ? "true" : "false")
-                    << ",\"hasRuntimeBitmap\":" << (dynamicMember->runtimeBitmap() != nullptr ? "true" : "false")
-                    << '}';
+                    << ",\"hasRuntimeBitmap\":" << (dynamicMember->runtimeBitmap() != nullptr ? "true" : "false");
+                if (dynamicMember->isTextLike()) {
+                    out << ",\"text\":";
+                    appendJsonString(out,
+                                     ctx.player->castLibManager()
+                                         .getMemberProp(dynamicMember->castLib(), dynamicMember->memberNum(), "text")
+                                         .stringValue());
+                    out << ",\"textFont\":";
+                    appendJsonString(out, dynamicMember->textFont());
+                    out << ",\"textFontSize\":" << dynamicMember->textFontSize()
+                        << ",\"textFontStyle\":";
+                    appendJsonString(out, dynamicMember->textFontStyle());
+                    out << ",\"textAlignment\":";
+                    appendJsonString(out, dynamicMember->textAlignment());
+                    out << ",\"textRect\":{\"left\":" << dynamicMember->textRectLeft()
+                        << ",\"top\":" << dynamicMember->textRectTop()
+                        << ",\"right\":" << dynamicMember->textRectRight()
+                        << ",\"bottom\":" << dynamicMember->textRectBottom()
+                        << "},\"textWordWrap\":" << (dynamicMember->textWordWrap() ? "true" : "false")
+                        << ",\"textAntialias\":" << (dynamicMember->textAntialias() ? "true" : "false")
+                        << ",\"textFixedLineSpace\":" << dynamicMember->textFixedLineSpace()
+                        << ",\"textTopSpacing\":" << dynamicMember->textTopSpacing();
+                }
+                out << ",\"memberType\":";
+                appendJsonString(out, std::string(::libreshockwave::cast::name(dynamicMember->memberType())));
+                out << '}';
                 if (auto live = dynamicMember->runtimeBitmap(); live != nullptr) {
                     appendBitmapSummary(out, "liveBitmap", *live);
                 }
