@@ -1709,17 +1709,17 @@ std::shared_ptr<libreshockwave::cast::CastMember> CastLibManager::resolveFieldMe
     }
 
     if (castLibNumber > 0) {
-        auto castLib = getCastLib(castLibNumber);
-        return castLib ? castLib->getMemberByName(memberName) : nullptr;
+        auto found = getMemberByNameInCast(getCastLib(castLibNumber), memberName);
+        if (const auto* memberRef = found.asCastMemberRef()) {
+            return resolveMember(memberRef->castLib, memberRef->memberNum());
+        }
+        return nullptr;
     }
 
     for (const auto& [_, castLib] : castLibs_) {
-        auto loadedCast = getCastLib(castLib->number());
-        if (!loadedCast) {
-            continue;
-        }
-        if (auto member = loadedCast->getMemberByName(memberName)) {
-            return member;
+        auto found = getMemberByNameInCast(getCastLib(castLib->number()), memberName);
+        if (const auto* memberRef = found.asCastMemberRef()) {
+            return resolveMember(memberRef->castLib, memberRef->memberNum());
         }
     }
     return nullptr;
