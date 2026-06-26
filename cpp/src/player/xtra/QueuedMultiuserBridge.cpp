@@ -10,7 +10,9 @@ namespace libreshockwave::player::xtra {
 namespace {
 
 constexpr int smusMode = 0;
+constexpr int textMode = 1;
 constexpr int smusHeaderSize = 6;
+constexpr std::string_view legacyTextHandshake = "#HELLO##";
 
 constexpr std::uint8_t smusLogonFrame[] = {
     114, 0, 0, 0, 0, 74, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -433,6 +435,16 @@ void QueuedMultiuserBridge::notifyConnected(int instanceId) {
         request.subject = "Logon";
         request.wireBytesOverride = packSmusLogon();
         pendingRequests_.push_back(std::move(request));
+    } else {
+        const auto found = modes_.find(instanceId);
+        if (found != modes_.end() && found->second == textMode) {
+            PendingRequest request;
+            request.type = REQ_SEND;
+            request.instanceId = instanceId;
+            request.content = std::string(legacyTextHandshake);
+            request.wireBytesOverride = bytesFromString(legacyTextHandshake);
+            pendingRequests_.push_back(std::move(request));
+        }
     }
 }
 

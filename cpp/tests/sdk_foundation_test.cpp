@@ -7865,11 +7865,14 @@ void testSocketMultiuserBridgeFoundation() {
                 while (running_.load()) {
                     const ssize_t read = ::recv(accepted, buffer.data(), buffer.size(), 0);
                     if (read > 0) {
+                        const std::string chunk(buffer.data(), static_cast<std::size_t>(read));
                         {
                             std::lock_guard lock(mutex_);
-                            received_.append(buffer.data(), static_cast<std::size_t>(read));
+                            received_.append(chunk);
                         }
-                        const std::string reply = "server-payload";
+                        const std::string reply = chunk.find("#HELLO##") != std::string::npos
+                            ? "handshake-payload"
+                            : "server-payload";
                         (void)::send(accepted, reply.data(), reply.size(), 0);
                         continue;
                     }
@@ -7941,10 +7944,16 @@ void testSocketMultiuserBridgeFoundation() {
         messages = bridge.pollMessages(instanceId);
         return !messages.empty();
     }));
-    assert(messages.size() == 1);
-    assert(messages[0].errorCode == 0);
-    assert(messages[0].senderID == "System");
-    assert(messages[0].subject == "ConnectToNetServer");
+    const auto connected = std::find_if(messages.begin(), messages.end(), [](const auto& message) {
+        return message.errorCode == 0 &&
+               message.senderID == "System" &&
+               message.subject == "ConnectToNetServer";
+    });
+    assert(connected != messages.end());
+    assert(waitUntil([&] {
+        return server.received().find("#HELLO##") != std::string::npos;
+    }));
+    (void)bridge.pollMessages(instanceId);
 
     bridge.requestSend(instanceId,
                        Datum::of(std::string("*")),
@@ -7956,13 +7965,17 @@ void testSocketMultiuserBridgeFoundation() {
 
     assert(waitUntil([&] {
         messages = bridge.pollMessages(instanceId);
-        return !messages.empty();
+        return std::any_of(messages.begin(), messages.end(), [](const auto& message) {
+            return message.content.stringValue() == "server-payload";
+        });
     }));
-    assert(messages.size() == 1);
-    assert(messages[0].errorCode == 0);
-    assert(messages[0].senderID.empty());
-    assert(messages[0].subject.empty());
-    assert(messages[0].content.stringValue() == "server-payload");
+    const auto payload = std::find_if(messages.begin(), messages.end(), [](const auto& message) {
+        return message.content.stringValue() == "server-payload";
+    });
+    assert(payload != messages.end());
+    assert(payload->errorCode == 0);
+    assert(payload->senderID.empty());
+    assert(payload->subject.empty());
 
     bridge.requestDisconnect(instanceId);
     assert(!bridge.isConnected(instanceId));
@@ -8001,10 +8014,18 @@ void testQueuedMultiuserBridgeFoundation() {
     assert(messages[0].subject == "ConnectToNetServer");
     assert(messages[0].content.stringValue().empty());
     assert(bridge.pollMessages(7).empty());
+    assert(bridge.pendingRequests().size() == 2);
+    const auto* handshake = bridge.getRequest(1);
+    assert(handshake != nullptr);
+    assert(handshake->type == QueuedMultiuserBridge::REQ_SEND);
+    assert(handshake->subject.empty());
+    assert(handshake->content == "#HELLO##");
+    assert(handshake->wireContent() == "#HELLO##");
+    assert((handshake->wireBytes() == std::vector<std::uint8_t>{'#', 'H', 'E', 'L', 'L', 'O', '#', '#'}));
 
     bridge.requestSend(7, Datum::of(std::string("room")), "CHAT", Datum::of(std::string("hello")));
-    assert(bridge.pendingRequests().size() == 2);
-    const auto* send = bridge.getRequest(1);
+    assert(bridge.pendingRequests().size() == 3);
+    const auto* send = bridge.getRequest(2);
     assert(send != nullptr);
     assert(send->type == QueuedMultiuserBridge::REQ_SEND);
     assert(send->senderID == "me");

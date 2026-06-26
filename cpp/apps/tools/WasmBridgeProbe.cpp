@@ -119,10 +119,18 @@ void probeQueuedMultiuserBridge() {
     auto messages = bridge.pollMessages(7);
     require(messages.size() == 1 && messages[0].subject == "ConnectToNetServer",
             "multiuser connect callback message missing");
+    require(bridge.pendingRequests().size() == 2, "multiuser text handshake was not queued after connect");
+    const auto* handshake = bridge.getRequest(1);
+    require(handshake != nullptr && handshake->type == QueuedMultiuserBridge::REQ_SEND,
+            "multiuser text handshake request missing");
+    require(handshake->subject.empty(), "multiuser text handshake subject should be empty");
+    require(handshake->wireContent() == "#HELLO##", "multiuser text handshake content mismatch");
+    require((handshake->wireBytes() == std::vector<std::uint8_t>{'#', 'H', 'E', 'L', 'L', 'O', '#', '#'}),
+            "multiuser text handshake bytes mismatch");
 
     bridge.requestSend(7, Datum::of(std::string("room")), "CHAT", Datum::of(std::string("hello")));
-    require(bridge.pendingRequests().size() == 2, "multiuser send was not queued");
-    const auto* send = bridge.getRequest(1);
+    require(bridge.pendingRequests().size() == 3, "multiuser send was not queued");
+    const auto* send = bridge.getRequest(2);
     require(send != nullptr && send->type == QueuedMultiuserBridge::REQ_SEND, "multiuser send request missing");
     require(send->wireContent() == "CHAT hello", "multiuser send wire content mismatch");
     require((send->wireBytes() == std::vector<std::uint8_t>{'C', 'H', 'A', 'T', ' ', 'h', 'e', 'l', 'l', 'o'}),
