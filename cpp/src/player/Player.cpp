@@ -872,7 +872,28 @@ void Player::wireComponents() {
         }
     });
     frameContext_.setScriptNameResolver([this](const std::shared_ptr<chunks::ScriptChunk>& script) {
+        if (!script) {
+            return std::string();
+        }
+        if (auto* owner = const_cast<DirectorFile*>(script->file())) {
+            return owner->getScriptName(script);
+        }
         return file_ != nullptr ? file_->getScriptName(script) : std::string();
+    });
+    behaviorManager().setFrameScriptResolver([this](const score::ScoreBehaviorRef& behaviorRef)
+        -> std::shared_ptr<chunks::ScriptChunk> {
+        const int castLib = behaviorRef.castLib() > 0 ? behaviorRef.castLib() : 1;
+        const int member = behaviorRef.castMember();
+        if (member <= 0) {
+            return nullptr;
+        }
+        auto library = castLibManager_.getCastLib(castLib);
+        if (library && library->isLoaded()) {
+            if (auto script = library->getScript(member)) {
+                return script;
+            }
+        }
+        return nullptr;
     });
     castLibManager_.setMemberSlotRetiredCallback([this](int castLib, int memberNum) {
         (void)stageRenderer_.spriteRegistry().clearDynamicMemberBindings(castLib, memberNum);
@@ -1272,6 +1293,20 @@ void Player::wireComponents() {
         const event::EventTarget& target,
         std::string_view handlerName)
         -> std::optional<lingo::vm::HandlerRef> {
+        if (target.behavior) {
+            const auto& behaviorRef = target.behavior->behaviorRef();
+            if (auto resolved = resolveScriptRef(behaviorRef.castLib(), behaviorRef.castMember());
+                resolved && resolved->script == target.script) {
+                if (auto handler = findHandlerInScript(resolved->script,
+                                                       resolved->scriptNames,
+                                                       resolved->scriptOwner,
+                                                       resolved->scriptType,
+                                                       handlerName)) {
+                    return handler;
+                }
+            }
+        }
+
         if (auto handler = findHandlerInScript(target.script,
                                                target.scriptNames,
                                                target.scriptOwner,
@@ -1362,7 +1397,6 @@ void Player::wireComponents() {
         if (!handler || handler->script == nullptr) {
             return std::nullopt;
         }
-
         lingo::Datum receiver = lingo::Datum::voidValue();
         if (target.behavior) {
             receiver = target.behavior->toDatum();
@@ -1690,6 +1724,11 @@ void Player::wireComponents() {
     });
 
     eventDispatcher().setScriptNamesResolver([this](const std::shared_ptr<chunks::ScriptChunk>& script) {
+        if (script) {
+            if (auto* owner = const_cast<DirectorFile*>(script->file())) {
+                return owner->getScriptNamesForScript(script);
+            }
+        }
         return file_ != nullptr ? file_->getScriptNamesForScript(script) : nullptr;
     });
     eventDispatcher().setMovieScriptSupplier(collectMovieScriptTargets);

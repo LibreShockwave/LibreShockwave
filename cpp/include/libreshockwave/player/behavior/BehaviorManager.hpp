@@ -19,6 +19,7 @@ public:
     void setDebugEnabled(bool enabled);
     [[nodiscard]] bool debugEnabled() const;
     void setScriptResolver(ScriptResolver resolver);
+    void setFrameScriptResolver(ScriptResolver resolver);
 
     [[nodiscard]] std::shared_ptr<BehaviorInstance> createInstance(
         const score::ScoreBehaviorRef& behaviorRef,
@@ -58,6 +59,7 @@ private:
 
     DirectorFile* file_{nullptr};
     ScriptResolver scriptResolver_;
+    ScriptResolver frameScriptResolver_;
     std::map<int, std::shared_ptr<BehaviorInstance>> instancesById_;
     std::map<int, std::vector<std::shared_ptr<BehaviorInstance>>> instancesByChannel_;
     std::shared_ptr<BehaviorInstance> frameScriptInstance_;

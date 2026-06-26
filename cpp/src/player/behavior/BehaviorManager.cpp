@@ -32,6 +32,10 @@ void BehaviorManager::setScriptResolver(ScriptResolver resolver) {
     scriptResolver_ = std::move(resolver);
 }
 
+void BehaviorManager::setFrameScriptResolver(ScriptResolver resolver) {
+    frameScriptResolver_ = std::move(resolver);
+}
+
 std::shared_ptr<BehaviorInstance> BehaviorManager::createInstance(const score::ScoreBehaviorRef& behaviorRef,
                                                                   int channel) {
     return createInstanceForScript(findScript(behaviorRef), behaviorRef, channel);
@@ -55,7 +59,8 @@ std::shared_ptr<BehaviorInstance> BehaviorManager::createInstanceForScript(
 std::shared_ptr<BehaviorInstance> BehaviorManager::getOrCreateFrameScript(
     const score::ScoreBehaviorRef& behaviorRef,
     int frame) {
-    return getOrCreateFrameScriptForScript(findScript(behaviorRef), behaviorRef, frame);
+    auto script = frameScriptResolver_ ? frameScriptResolver_(behaviorRef) : nullptr;
+    return getOrCreateFrameScriptForScript(script ? std::move(script) : findScript(behaviorRef), behaviorRef, frame);
 }
 
 std::shared_ptr<BehaviorInstance> BehaviorManager::getOrCreateFrameScriptForScript(
