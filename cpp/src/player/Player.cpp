@@ -1444,6 +1444,22 @@ void Player::wireComponents() {
         }
         return lastResult;
     };
+    context.sendAllSpritesHandler = [this](const std::string& handlerName,
+                                           const std::vector<lingo::Datum>& args) {
+        std::vector<int> channels;
+        channels.reserve(stageRenderer_.spriteRegistry().getAll().size());
+        for (const auto& [channel, sprite] : stageRenderer_.spriteRegistry().getAll()) {
+            if (sprite != nullptr) {
+                channels.push_back(channel);
+            }
+        }
+        std::ranges::sort(channels);
+
+        for (const int channel : channels) {
+            eventDispatcher().dispatchSpriteEvent(channel, handlerName, args);
+        }
+        return lingo::Datum::voidValue();
+    };
     context.alertHookHandler = [this, executeTarget](const std::string& alertType, const std::string& text) {
         const auto& hook = movieProperties_.alertHook();
         if (hook.type() != lingo::DatumType::ScriptInstanceRef) {

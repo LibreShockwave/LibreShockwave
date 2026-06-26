@@ -2468,6 +2468,7 @@ void ControlFlowBuiltins::registerBuiltins(BuiltinRegistry& registry) {
     registry.registerBuiltin("param", ControlFlowBuiltins::param);
     registry.registerBuiltin("go", ControlFlowBuiltins::go);
     registry.registerBuiltin("call", ControlFlowBuiltins::call);
+    registry.registerBuiltin("sendallsprites", ControlFlowBuiltins::sendAllSprites);
 }
 
 Datum ControlFlowBuiltins::returnValue(BuiltinContext& context, const std::vector<Datum>& args) {
@@ -2581,6 +2582,22 @@ Datum ControlFlowBuiltins::call(BuiltinContext& context, const std::vector<Datum
     }
 
     return context.callTargetHandler(target, handlerName, singleTargetCallArgsRef);
+}
+
+Datum ControlFlowBuiltins::sendAllSprites(BuiltinContext& context, const std::vector<Datum>& args) {
+    if (args.empty() || !context.sendAllSpritesHandler) {
+        return Datum::voidValue();
+    }
+
+    std::string handlerNameStorage;
+    const std::string& handlerName = stringRefLikeJava(args[0], handlerNameStorage);
+    if (handlerName.empty()) {
+        return Datum::voidValue();
+    }
+
+    const std::span<const Datum> extraArgs(args.data() + 1, args.size() - 1);
+    const std::vector<Datum> callArgs = snapshotStructArgsForCall(extraArgs);
+    return context.sendAllSpritesHandler(handlerName, callArgs);
 }
 
 void ConstructorBuiltins::registerBuiltins(BuiltinRegistry& registry) {

@@ -6381,6 +6381,26 @@ void testBuiltinRegistryFoundation() {
     context.callTargetHandler = nullptr;
     assert(registry.invoke("call", context, {Datum::symbol("noop"), Datum::of(1)}).isVoid());
 
+    std::string sendAllSpritesHandler;
+    std::vector<Datum> sendAllSpritesArgs;
+    auto sendAllSpritesStruct = Datum::propList();
+    sendAllSpritesStruct.propListValue().put(Datum::symbol("ilk"), Datum::symbol("struct"));
+    sendAllSpritesStruct.propListValue().put(Datum::symbol("content"), Datum::list({Datum::of(std::string("payload"))}));
+    context.sendAllSpritesHandler = [&sendAllSpritesHandler, &sendAllSpritesArgs](
+                                        const std::string& handlerName,
+                                        const std::vector<Datum>& args) {
+        sendAllSpritesHandler = handlerName;
+        sendAllSpritesArgs = args;
+        return Datum::of(42);
+    };
+    assert(registry.invoke("sendAllSprites", context).isVoid());
+    assert(registry.invoke("sendAllSprites", context, {Datum::symbol("getMyFigureData"), sendAllSpritesStruct}).intValue() == 42);
+    assert(sendAllSpritesHandler == "getMyFigureData");
+    assert(sendAllSpritesArgs.size() == 1);
+    assert(sendAllSpritesArgs[0].propListValue().get(Datum::symbol("content")).listValue().count() == 1);
+    context.sendAllSpritesHandler = nullptr;
+    assert(registry.invoke("sendAllSprites", context, {Datum::symbol("noop")}).isVoid());
+
     assert(registry.contains("count"));
     assert(registry.contains("getAt"));
     assert(registry.contains("setAt"));

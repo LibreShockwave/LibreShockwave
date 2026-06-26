@@ -115,6 +115,8 @@ struct BuiltinContext {
     using CallTargetHandler = std::function<Datum(const Datum& target,
                                                   const std::string& handlerName,
                                                   const std::vector<Datum>& args)>;
+    using SendAllSpritesHandler = std::function<Datum(const std::string& handlerName,
+                                                      const std::vector<Datum>& args)>;
     using ScriptInstanceMethodDeferrer = std::function<bool(const Datum& instance,
                                                             const std::string& methodName,
                                                             const std::vector<Datum>& args)>;
@@ -178,6 +180,7 @@ struct BuiltinContext {
     XtraPropertyGetter xtraPropertyGetter;
     XtraPropertySetter xtraPropertySetter;
     CallTargetHandler callTargetHandler;
+    SendAllSpritesHandler sendAllSpritesHandler;
     ScriptInstanceMethodDeferrer scriptInstanceMethodDeferrer;
     NewInstanceHandler newInstanceHandler;
     ValueEvaluator valueEvaluator;
@@ -409,6 +412,7 @@ public:
     [[nodiscard]] static Datum param(BuiltinContext& context, const std::vector<Datum>& args);
     [[nodiscard]] static Datum go(BuiltinContext& context, const std::vector<Datum>& args);
     [[nodiscard]] static Datum call(BuiltinContext& context, const std::vector<Datum>& args);
+    [[nodiscard]] static Datum sendAllSprites(BuiltinContext& context, const std::vector<Datum>& args);
 };
 
 class ConstructorBuiltins {
