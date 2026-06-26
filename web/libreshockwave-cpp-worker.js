@@ -305,15 +305,7 @@ function bytesFromWebSocketText(value) {
 }
 
 function socketSendPayload(bytes) {
-  let text = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    const value = bytes[index] & 0xff;
-    if (value === 0 || value > 0x7f) {
-      return { payload: bytes, frameType: "binary" };
-    }
-    text += String.fromCharCode(value);
-  }
-  return { payload: text, frameType: "text" };
+  return { payload: bytes, frameType: "binary" };
 }
 
 function socketUrlFor(host, port) {
