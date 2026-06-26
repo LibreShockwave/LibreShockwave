@@ -856,10 +856,50 @@ std::string fetchRequestsJson(const std::vector<QueuedNetProvider::PendingReques
     return out.str();
 }
 
-std::string multiuserRequestsJson(const std::vector<QueuedMultiuserBridge::PendingRequest>& requests) {
+std::optional<std::pair<std::string, int>> parseHostPort(std::string_view value) {
+    const std::string trimmedValue = trim(value);
+    const std::size_t separator = trimmedValue.rfind(':');
+    if (separator == std::string::npos || separator == 0 || separator + 1 >= trimmedValue.size()) {
+        return std::nullopt;
+    }
+    const std::string host(trim(std::string_view(trimmedValue).substr(0, separator)));
+    const std::string portText(trim(std::string_view(trimmedValue).substr(separator + 1)));
+    if (host.empty() || portText.empty()) {
+        return std::nullopt;
+    }
+    int port = 0;
+    for (const unsigned char ch : portText) {
+        if (!std::isdigit(ch)) {
+            return std::nullopt;
+        }
+        port = port * 10 + static_cast<int>(ch - '0');
+        if (port > 65535) {
+            return std::nullopt;
+        }
+    }
+    if (port <= 0) {
+        return std::nullopt;
+    }
+    return std::pair{host, port};
+}
+
+std::optional<std::pair<std::string, int>> externalParamHostPort(
+    const std::vector<std::pair<std::string, std::string>>& params) {
+    for (const auto& [name, value] : params) {
+        (void)name;
+        if (const auto endpoint = parseHostPort(value)) {
+            return endpoint;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string multiuserRequestsJson(const std::vector<QueuedMultiuserBridge::PendingRequest>& requests,
+                                  const std::vector<std::pair<std::string, std::string>>& externalParams) {
     std::ostringstream out;
     out << '[';
     bool first = true;
+    const auto fallbackEndpoint = externalParamHostPort(externalParams);
     for (const auto& request : requests) {
         if (!first) {
             out << ',';
@@ -867,9 +907,15 @@ std::string multiuserRequestsJson(const std::vector<QueuedMultiuserBridge::Pendi
         first = false;
         out << "{\"type\":" << request.type << ",\"instanceId\":" << request.instanceId;
         if (request.type == QueuedMultiuserBridge::REQ_CONNECT) {
+            std::string host = request.host;
+            int port = request.port;
+            if ((host.empty() || equalsIgnoreCase(host, "VOID")) && port <= 0 && fallbackEndpoint) {
+                host = fallbackEndpoint->first;
+                port = fallbackEndpoint->second;
+            }
             out << ",\"host\":";
-            appendJsonString(out, request.host);
-            out << ",\"port\":" << request.port;
+            appendJsonString(out, host);
+            out << ",\"port\":" << port;
         } else if (request.type == QueuedMultiuserBridge::REQ_SEND) {
             out << ",\"senderID\":";
             appendJsonString(out, request.senderID);
@@ -1461,7 +1507,7 @@ EMSCRIPTEN_KEEPALIVE const char* lsw_poll_multiuser_requests(int handle) {
         return "[]";
     }
     try {
-        return scratch(*ctx, multiuserRequestsJson(ctx->multiuserBridge->pendingRequests()));
+        return scratch(*ctx, multiuserRequestsJson(ctx->multiuserBridge->pendingRequests(), ctx->externalParams));
     } catch (const std::exception& error) {
         setError(*ctx, error.what());
         return "[]";
