@@ -413,7 +413,7 @@
 
     const player = LibreShockwavePlayer.create("stage", {
       url: movieUrl.value,
-      params: textToParams(paramsBox.value),
+      params: paramsBox.value,
       autoload: searchParams.get("autoload") === "1",
       autoplay: true,
       debugPlaybackEnabled,
@@ -476,7 +476,7 @@
       if (!ensureBetaClientSsoTicket()) {
         return;
       }
-      player.load(movieUrl.value, { params: textToParams(paramsBox.value), autoplay: false, debugPlaybackEnabled, slowHandlerWarningMs })
+      player.load(movieUrl.value, { params: paramsBox.value, autoplay: false, debugPlaybackEnabled, slowHandlerWarningMs })
         .then(() => player.play())
         .catch(() => {
           loadButton.disabled = false;
@@ -496,7 +496,7 @@
     clearDebugLog.addEventListener("click", () => {
       debugLog.value = "";
     });
-    paramsBox.addEventListener("change", () => player.setParams(textToParams(paramsBox.value)));
+    paramsBox.addEventListener("input", () => player.setParams(paramsBox.value));
     document.getElementById("preset-habbo").addEventListener("click", () => {
       movieUrl.value = habboUrl;
       paramsBox.value = paramsToText(LibreShockwavePlayer.defaultHabboParams);

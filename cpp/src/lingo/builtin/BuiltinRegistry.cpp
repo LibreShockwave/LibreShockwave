@@ -1884,18 +1884,18 @@ Datum ExternalParamBuiltins::externalParamValue(BuiltinContext& context, const s
     if (args.empty()) {
         return Datum::voidValue();
     }
-    if (const auto* str = args[0].asString()) {
-        for (const auto& [name, value] : context.externalParams) {
-            if (equalsIgnoreCase(name, str->value)) {
-                return Datum::of(value);
-            }
-        }
-        return Datum::voidValue();
-    }
     if (const auto* value = args[0].asInt()) {
         const int index = value->value;
         if (index >= 1 && index <= static_cast<int>(context.externalParams.size())) {
             return Datum::of(context.externalParams[static_cast<std::size_t>(index - 1)].second);
+        }
+        return Datum::voidValue();
+    }
+    if (const auto key = directStringViewLikeJava(args[0]); key && !key->empty()) {
+        for (const auto& [name, value] : context.externalParams) {
+            if (equalsIgnoreCase(name, *key)) {
+                return Datum::of(value);
+            }
         }
     }
     return Datum::voidValue();
@@ -1905,19 +1905,19 @@ Datum ExternalParamBuiltins::externalParamName(BuiltinContext& context, const st
     if (args.empty()) {
         return Datum::voidValue();
     }
-    if (const auto* str = args[0].asString()) {
-        for (const auto& [name, value] : context.externalParams) {
-            (void)value;
-            if (equalsIgnoreCase(name, str->value)) {
-                return Datum::of(name);
-            }
-        }
-        return Datum::voidValue();
-    }
     if (const auto* value = args[0].asInt()) {
         const int index = value->value;
         if (index >= 1 && index <= static_cast<int>(context.externalParams.size())) {
             return Datum::of(context.externalParams[static_cast<std::size_t>(index - 1)].first);
+        }
+        return Datum::voidValue();
+    }
+    if (const auto key = directStringViewLikeJava(args[0]); key && !key->empty()) {
+        for (const auto& [name, value] : context.externalParams) {
+            (void)value;
+            if (equalsIgnoreCase(name, *key)) {
+                return Datum::of(name);
+            }
         }
     }
     return Datum::voidValue();

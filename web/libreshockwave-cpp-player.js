@@ -792,7 +792,7 @@
       url: options.url || "",
       autoload: Boolean(options.autoload && options.url),
       autoplay: options.autoplay !== false,
-      params: options.params || {},
+      params: options.params ?? {},
       tempoOverride: options.tempoOverride || 0,
       preloadCasts: options.preloadCasts !== false,
       debugPlaybackEnabled: Boolean(options.debugPlaybackEnabled),
@@ -809,7 +809,7 @@
         void unlockAudio();
         return request("load", {
           url,
-          params: loadOptions.params || options.params || {},
+          params: loadOptions.params ?? options.params ?? {},
           autoplay: loadOptions.autoplay !== false,
           debugPlaybackEnabled: typeof loadOptions.debugPlaybackEnabled === "boolean"
             ? loadOptions.debugPlaybackEnabled

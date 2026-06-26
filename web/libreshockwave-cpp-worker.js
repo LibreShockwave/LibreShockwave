@@ -558,11 +558,17 @@ function sendFrameInfo() {
 
 function paramsObjectToText(params) {
   if (!params) return "";
-  if (typeof params === "string") return params;
-  return Object.entries(params)
+  const text = typeof params === "string"
+    ? params
+    : Object.entries(params)
     .filter(([key]) => key)
     .map(([key, value]) => `${key}=${value == null ? "" : String(value)}`)
     .join("\n");
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\\n/g, "\n");
 }
 
 async function loadMovie(url, keepPlaying = false, requestId = 0) {

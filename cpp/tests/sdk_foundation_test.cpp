@@ -4498,14 +4498,17 @@ void testPlayerFacadeFoundation() {
     assert(player.builtinRegistry().contains("puppetTempo"));
     assert(player.builtinRegistry().contains("preloadNetThing"));
     assert(player.builtinRegistry().invoke("externalParamCount", player.builtinContext()).intValue() == 0);
-    player.setExternalParams({{"sw1", "alpha"}, {"CaseKey", "Beta"}});
-    assert(player.externalParams().size() == 2);
+    player.setExternalParams({{"sw1", "alpha"}, {"CaseKey", "Beta"}, {"swText", "text payload"}});
+    assert(player.externalParams().size() == 3);
     assert(player.externalParams()[0].first == "sw1");
     assert(player.externalParams()[1].second == "Beta");
-    assert(player.builtinRegistry().invoke("externalParamCount", player.builtinContext()).intValue() == 2);
+    assert(player.builtinRegistry().invoke("externalParamCount", player.builtinContext()).intValue() == 3);
     assert(player.builtinRegistry()
                .invoke("externalParamValue", player.builtinContext(), {Datum::of(std::string("casekey"))})
                .stringValue() == "Beta");
+    assert(player.builtinRegistry()
+               .invoke("externalParamValue", player.builtinContext(), {Datum::symbol("swText")})
+               .stringValue() == "text payload");
     assert(player.builtinRegistry()
                .invoke("externalParamValue", player.builtinContext(), {Datum::of(1)})
                .stringValue() == "alpha");
@@ -6665,13 +6668,15 @@ void testBuiltinRegistryFoundation() {
     assert(registry.contains("externalParamCount"));
     assert(registry.invoke("externalParamCount", context).intValue() == 0);
     assert(registry.invoke("externalParamValue", context).isVoid());
-    context.externalParams = {{"sw1", "alpha"}, {"CaseKey", "Beta"}};
-    assert(registry.invoke("externalParamCount", context).intValue() == 2);
+    context.externalParams = {{"sw1", "alpha"}, {"CaseKey", "Beta"}, {"swText", "text payload"}};
+    assert(registry.invoke("externalParamCount", context).intValue() == 3);
     assert(registry.invoke("externalParamValue", context, {Datum::of(std::string("casekey"))}).stringValue() == "Beta");
     assert(registry.invoke("externalParamValue", context, {Datum::of(1)}).stringValue() == "alpha");
     assert(registry.invoke("externalParamValue", context, {Datum::of(0)}).isVoid());
-    assert(registry.invoke("externalParamValue", context, {Datum::symbol("sw1")}).isVoid());
+    assert(registry.invoke("externalParamValue", context, {Datum::symbol("sw1")}).stringValue() == "alpha");
+    assert(registry.invoke("externalParamValue", context, {Datum::symbol("swText")}).stringValue() == "text payload");
     assert(registry.invoke("externalParamName", context, {Datum::of(std::string("CASEKEY"))}).stringValue() == "CaseKey");
+    assert(registry.invoke("externalParamName", context, {Datum::symbol("swtext")}).stringValue() == "swText");
     assert(registry.invoke("externalParamName", context, {Datum::of(2)}).stringValue() == "CaseKey");
     assert(registry.invoke("externalParamName", context, {Datum::of(9)}).isVoid());
 
