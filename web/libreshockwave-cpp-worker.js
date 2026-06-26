@@ -304,6 +304,18 @@ function bytesFromWebSocketText(value) {
   return bytes;
 }
 
+function socketSendPayload(bytes) {
+  let text = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    const value = bytes[index] & 0xff;
+    if (value === 0 || value > 0x7f) {
+      return { payload: bytes, frameType: "binary" };
+    }
+    text += String.fromCharCode(value);
+  }
+  return { payload: text, frameType: "text" };
+}
+
 function socketUrlFor(host, port) {
   const secure = websocketSsl === null ? self.location.protocol === "https:" : Boolean(websocketSsl);
   const scheme = secure ? "wss" : "ws";
@@ -379,17 +391,18 @@ function connectSocket(request) {
 
 function sendSocketBytes(request) {
   const bytes = decodeBase64(request.bytes);
+  const sendPayload = socketSendPayload(bytes);
   const entry = sockets.get(request.instanceId);
   if (!entry) {
     bridgeCall("socket missing", () => api.socketError(handle, request.instanceId, -5));
     return;
   }
   if (entry.ws.readyState === WebSocket.OPEN) {
-    post("socket", { phase: "send", instanceId: request.instanceId, byteLength: bytes.byteLength || bytes.length || 0, preview: bytePreview(bytes) });
-    entry.ws.send(bytes);
+    post("socket", { phase: "send", instanceId: request.instanceId, byteLength: bytes.byteLength || bytes.length || 0, frameType: sendPayload.frameType, preview: bytePreview(bytes) });
+    entry.ws.send(sendPayload.payload);
   } else if (entry.ws.readyState === WebSocket.CONNECTING) {
-    post("socket", { phase: "queue-send", instanceId: request.instanceId, byteLength: bytes.byteLength || bytes.length || 0, preview: bytePreview(bytes) });
-    entry.pending.push(bytes);
+    post("socket", { phase: "queue-send", instanceId: request.instanceId, byteLength: bytes.byteLength || bytes.length || 0, frameType: sendPayload.frameType, preview: bytePreview(bytes) });
+    entry.pending.push(sendPayload.payload);
   } else {
     bridgeCall("socket closed", () => api.socketError(handle, request.instanceId, -5));
   }
