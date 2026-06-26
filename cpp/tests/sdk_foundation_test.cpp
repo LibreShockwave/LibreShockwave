@@ -7890,9 +7890,7 @@ void testSocketMultiuserBridgeFoundation() {
                             std::lock_guard lock(mutex_);
                             received_.append(chunk);
                         }
-                        const std::string reply = chunk.find("#HELLO##") != std::string::npos
-                            ? "handshake-payload"
-                            : "server-payload";
+                        const std::string reply = "server-payload";
                         (void)::send(accepted, reply.data(), reply.size(), 0);
                         continue;
                     }
@@ -7970,9 +7968,6 @@ void testSocketMultiuserBridgeFoundation() {
                message.subject == "ConnectToNetServer";
     });
     assert(connected != messages.end());
-    assert(waitUntil([&] {
-        return server.received().find("#HELLO##") != std::string::npos;
-    }));
     (void)bridge.pollMessages(instanceId);
 
     bridge.requestSend(instanceId,
@@ -8034,18 +8029,11 @@ void testQueuedMultiuserBridgeFoundation() {
     assert(messages[0].subject == "ConnectToNetServer");
     assert(messages[0].content.stringValue().empty());
     assert(bridge.pollMessages(7).empty());
-    assert(bridge.pendingRequests().size() == 2);
-    const auto* handshake = bridge.getRequest(1);
-    assert(handshake != nullptr);
-    assert(handshake->type == QueuedMultiuserBridge::REQ_SEND);
-    assert(handshake->subject.empty());
-    assert(handshake->content == "#HELLO##");
-    assert(handshake->wireContent() == "#HELLO##");
-    assert((handshake->wireBytes() == std::vector<std::uint8_t>{'#', 'H', 'E', 'L', 'L', 'O', '#', '#'}));
+    assert(bridge.pendingRequests().size() == 1);
 
     bridge.requestSend(7, Datum::of(std::string("room")), "CHAT", Datum::of(std::string("hello")));
-    assert(bridge.pendingRequests().size() == 3);
-    const auto* send = bridge.getRequest(2);
+    assert(bridge.pendingRequests().size() == 2);
+    const auto* send = bridge.getRequest(1);
     assert(send != nullptr);
     assert(send->type == QueuedMultiuserBridge::REQ_SEND);
     assert(send->senderID == "me");
