@@ -6,137 +6,34 @@
 #include <queue>
 #include <vector>
 
+#include "../../../bitmap/BitmapProcessing.hpp"
+
 namespace libreshockwave::player::render::pipeline {
 namespace {
 
-std::uint32_t packArgb(int alpha, int r, int g, int b) {
-    return (static_cast<std::uint32_t>(alpha & 0xFF) << 24) |
-           (static_cast<std::uint32_t>(r & 0xFF) << 16) |
-           (static_cast<std::uint32_t>(g & 0xFF) << 8) |
-           static_cast<std::uint32_t>(b & 0xFF);
-}
-
-bool isOpaqueColor(std::uint32_t argb, int colorRgb) {
-    return ((argb >> 24) & 0xFFU) == 0xFFU && static_cast<int>(argb & 0x00FFFFFFU) == colorRgb;
-}
+using bitmap::detail::derivedBitmap;
+using bitmap::detail::interpolateChannel;
+using bitmap::detail::isNearWhiteGrayscale;
+using bitmap::detail::isOpaqueColor;
+using bitmap::detail::isUniformPaletteIndex;
+using bitmap::detail::maskAlphaFromPixel;
+using bitmap::detail::matchesRgb;
+using bitmap::detail::packArgb;
 
 bool hasOpaqueBorderColor(const bitmap::Bitmap& src, int colorRgb) {
-    const int w = src.width();
-    const int h = src.height();
-    if (w <= 0 || h <= 0) {
+    const int width = src.width();
+    const int height = src.height();
+    if (width <= 0 || height <= 0) {
         return false;
     }
 
-    for (int x = 0; x < w; ++x) {
-        if (isOpaqueColor(src.getPixel(x, 0), colorRgb)) return true;
-        if (isOpaqueColor(src.getPixel(x, h - 1), colorRgb)) return true;
-    }
-    for (int y = 1; y < h - 1; ++y) {
-        if (isOpaqueColor(src.getPixel(0, y), colorRgb)) return true;
-        if (isOpaqueColor(src.getPixel(w - 1, y), colorRgb)) return true;
-    }
-    return false;
-}
-
-bitmap::Bitmap derivedBitmap(const bitmap::Bitmap& src, std::vector<std::uint32_t> pixels) {
-    bitmap::Bitmap derived(src.width(), src.height(), src.bitDepth(), std::move(pixels));
-    derived.copyPaletteMetadataFrom(&src);
-    return derived;
-}
-
-int interpolate(float t, int fore, int back) {
-    return static_cast<int>(std::lround((1.0F - t) * static_cast<float>(fore) +
-                                        t * static_cast<float>(back)));
-}
-
-int maskAlphaFromPixel(std::uint32_t pixel) {
-    const int r = static_cast<int>((pixel >> 16) & 0xFFU);
-    const int g = static_cast<int>((pixel >> 8) & 0xFFU);
-    const int b = static_cast<int>(pixel & 0xFFU);
-    return ((77 * r) + (150 * g) + (29 * b) + 128) >> 8;
-}
-
-bool matchesRgb(std::uint32_t pixel, int matteRgb, int tolerance) {
-    const int pr = static_cast<int>((pixel >> 16) & 0xFFU);
-    const int pg = static_cast<int>((pixel >> 8) & 0xFFU);
-    const int pb = static_cast<int>(pixel & 0xFFU);
-    const int mr = (matteRgb >> 16) & 0xFF;
-    const int mg = (matteRgb >> 8) & 0xFF;
-    const int mb = matteRgb & 0xFF;
-    return std::abs(pr - mr) <= tolerance &&
-           std::abs(pg - mg) <= tolerance &&
-           std::abs(pb - mb) <= tolerance;
-}
-
-bool isUniformPaletteIndex(const std::vector<std::uint8_t>& paletteIndices, int paletteIndex) {
-    return std::all_of(paletteIndices.begin(), paletteIndices.end(), [&](std::uint8_t entry) {
-        return static_cast<int>(entry & 0xFFU) == paletteIndex;
-    });
-}
-
-bool edgeContainsOpaquePaletteIndex(const bitmap::Bitmap& src,
-                                    const std::vector<std::uint8_t>& paletteIndices,
-                                    int paletteIndex) {
-    const int w = src.width();
-    const int h = src.height();
-    if (w <= 0 || h <= 0) {
-        return false;
-    }
-
-    const auto isEdgeIndex = [&](int x, int y) {
-        const auto index = static_cast<std::size_t>(y * w + x);
-        return index < src.pixels().size() &&
-               index < paletteIndices.size() &&
-               ((src.pixels()[index] >> 24) & 0xFFU) != 0 &&
-               static_cast<int>(paletteIndices[index] & 0xFFU) == paletteIndex;
-    };
-
-    for (int x = 0; x < w; ++x) {
-        if (isEdgeIndex(x, 0) || isEdgeIndex(x, h - 1)) {
-            return true;
-        }
-    }
-    for (int y = 1; y < h - 1; ++y) {
-        if (isEdgeIndex(0, y) || isEdgeIndex(w - 1, y)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-int resolvePaletteIndexRgb(const bitmap::Bitmap& src,
-                           const std::vector<std::uint8_t>& paletteIndices,
-                           int paletteIndex) {
     const auto& pixels = src.pixels();
-    for (std::size_t index = 0; index < pixels.size() && index < paletteIndices.size(); ++index) {
-        if (static_cast<int>(paletteIndices[index] & 0xFFU) == paletteIndex) {
-            return static_cast<int>(pixels[index] & 0x00FFFFFFU);
-        }
-    }
-    return 0xFFFFFF;
-}
-
-bool hasOpaqueNonPaletteIndexContent(const bitmap::Bitmap& src,
-                                     const std::vector<std::uint8_t>& paletteIndices,
-                                     int paletteIndex) {
-    const auto& pixels = src.pixels();
-    for (std::size_t index = 0; index < pixels.size() && index < paletteIndices.size(); ++index) {
-        if (((pixels[index] >> 24) & 0xFFU) != 0 &&
-            static_cast<int>(paletteIndices[index] & 0xFFU) != paletteIndex) {
+    for (const int index : bitmap::detail::edgeIndices(width, height)) {
+        if (static_cast<std::size_t>(index) < pixels.size() && isOpaqueColor(pixels[index], colorRgb)) {
             return true;
         }
     }
     return false;
-}
-
-bool isNearWhiteGrayscale(int rgb, int minChannel, int maxDelta) {
-    const int r = (rgb >> 16) & 0xFF;
-    const int g = (rgb >> 8) & 0xFF;
-    const int b = rgb & 0xFF;
-    return r >= minChannel && g >= minChannel && b >= minChannel &&
-           std::abs(r - g) <= maxDelta &&
-           std::abs(g - b) <= maxDelta &&
-           std::abs(r - b) <= maxDelta;
 }
 
 bool shouldKeyDefaultIndexedMatte(const bitmap::Bitmap& src,
@@ -149,13 +46,13 @@ bool shouldKeyDefaultIndexedMatte(const bitmap::Bitmap& src,
     if (isUniformPaletteIndex(*paletteIndices, 0)) {
         return false;
     }
-    if (!edgeContainsOpaquePaletteIndex(src, *paletteIndices, 0)) {
+    if (!bitmap::detail::edgeContainsOpaquePaletteIndex(src.pixels(), *paletteIndices, src.width(), src.height(), 0)) {
         return false;
     }
 
-    const int indexZeroRgb = resolvePaletteIndexRgb(src, *paletteIndices, 0);
+    const int indexZeroRgb = bitmap::detail::resolvePaletteIndexRgb(src.pixels(), *paletteIndices, 0);
     return isNearWhiteGrayscale(indexZeroRgb, 232, 16) &&
-           hasOpaqueNonPaletteIndexContent(src, *paletteIndices, 0);
+           bitmap::detail::hasOpaqueNonPaletteIndexContent(src.pixels(), *paletteIndices, 0);
 }
 
 int multiplyDirectorChannel(int src, int tint) {
@@ -168,42 +65,15 @@ int multiplyDirectorChannel(int src, int tint) {
     return (src * tint) >> 8;
 }
 
-bool cornerContainsPaletteIndex(const std::vector<std::uint8_t>& paletteIndices,
-                                int width,
-                                int height,
-                                int paletteIndex) {
-    if (width <= 0 || height <= 0 || paletteIndices.empty()) {
-        return false;
-    }
-    const std::size_t corners[] = {
-        0U,
-        static_cast<std::size_t>(std::max(0, width - 1)),
-        static_cast<std::size_t>(std::max(0, height - 1) * width),
-        static_cast<std::size_t>(std::max(0, height - 1) * width + std::max(0, width - 1))
-    };
-    for (const auto index : corners) {
-        if (index < paletteIndices.size() &&
-            static_cast<int>(paletteIndices[index] & 0xFFU) == paletteIndex) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool cornerContainsOpaqueRgb(const bitmap::Bitmap& src, int rgb) {
     const int width = src.width();
     const int height = src.height();
     if (width <= 0 || height <= 0) {
         return false;
     }
-    const std::size_t corners[] = {
-        0U,
-        static_cast<std::size_t>(std::max(0, width - 1)),
-        static_cast<std::size_t>(std::max(0, height - 1) * width),
-        static_cast<std::size_t>(std::max(0, height - 1) * width + std::max(0, width - 1))
-    };
-    for (const auto index : corners) {
-        if (index < src.pixels().size() && isOpaqueColor(src.pixels()[index], rgb & 0x00FFFFFF)) {
+    const auto& pixels = src.pixels();
+    for (const int index : bitmap::detail::cornerIndices(width, height)) {
+        if (static_cast<std::size_t>(index) < pixels.size() && isOpaqueColor(pixels[index], rgb & 0x00FFFFFF)) {
             return true;
         }
     }
@@ -221,7 +91,7 @@ bool indexMatchesRgb(const bitmap::Bitmap& src,
                      int rgb) {
     const int indexRgb = palette != nullptr && paletteIndex >= 0 && paletteIndex < palette->size()
         ? static_cast<int>(palette->getColor(paletteIndex) & 0x00FFFFFFU)
-        : resolvePaletteIndexRgb(src, paletteIndices, paletteIndex);
+        : bitmap::detail::resolvePaletteIndexRgb(src.pixels(), paletteIndices, paletteIndex);
     return indexRgb == (rgb & 0x00FFFFFF);
 }
 
@@ -230,7 +100,7 @@ std::optional<int> explicitIndexedMatteIndex(const bitmap::Bitmap& src,
                                              int matteRgb,
                                              const bitmap::Palette* palette) {
     if (indexMatchesRgb(src, paletteIndices, palette, 0, matteRgb) &&
-        edgeContainsOpaquePaletteIndex(src, paletteIndices, 0)) {
+        bitmap::detail::edgeContainsOpaquePaletteIndex(src.pixels(), paletteIndices, src.width(), src.height(), 0)) {
         return 0;
     }
 
@@ -293,7 +163,7 @@ std::optional<int> resolveExplicitIndexedMatteIndex(const bitmap::Bitmap& src,
     if (!matteIndex.has_value() || isUniformPaletteIndex(*paletteIndices, *matteIndex)) {
         return std::nullopt;
     }
-    if (!hasOpaqueNonPaletteIndexContent(src, *paletteIndices, *matteIndex)) {
+    if (!bitmap::detail::hasOpaqueNonPaletteIndexContent(src.pixels(), *paletteIndices, *matteIndex)) {
         return std::nullopt;
     }
     return matteIndex;
@@ -304,12 +174,12 @@ std::optional<int> resolveDefaultIndexedFloodFillMatteIndex(const bitmap::Bitmap
     if (paletteIndices.size() < src.pixels().size()) {
         return std::nullopt;
     }
-    const int indexZeroRgb = resolvePaletteIndexRgb(src, paletteIndices, 0);
+    const int indexZeroRgb = bitmap::detail::resolvePaletteIndexRgb(src.pixels(), paletteIndices, 0);
     if (!isDefaultIndexedMatteRgb(indexZeroRgb)) {
         return std::nullopt;
     }
-    if (edgeContainsOpaquePaletteIndex(src, paletteIndices, 0) ||
-        cornerContainsPaletteIndex(paletteIndices, src.width(), src.height(), 0)) {
+    if (bitmap::detail::edgeContainsOpaquePaletteIndex(src.pixels(), paletteIndices, src.width(), src.height(), 0) ||
+        bitmap::detail::cornerContainsPaletteIndex(paletteIndices, src.width(), src.height(), 0)) {
         return 0;
     }
     return std::nullopt;
@@ -325,7 +195,8 @@ bool shouldPreferDefaultWhiteIndexedMatte(const bitmap::Bitmap& src,
     if (defaultMatteIndex != 0 || paletteIndices.size() < src.pixels().size()) {
         return false;
     }
-    return (resolvePaletteIndexRgb(src, paletteIndices, defaultMatteIndex) & 0x00FFFFFF) == 0xFFFFFF;
+    return (bitmap::detail::resolvePaletteIndexRgb(src.pixels(), paletteIndices, defaultMatteIndex) & 0x00FFFFFF) ==
+           0xFFFFFF;
 }
 
 bitmap::Bitmap applyIndexedMatteInternal(const bitmap::Bitmap& src, int matteIndex, bool clearTransparentRgb) {
@@ -337,43 +208,15 @@ bitmap::Bitmap applyIndexedMatteInternal(const bitmap::Bitmap& src, int matteInd
         return src.copy();
     }
 
-    std::vector<bool> transparent(static_cast<std::size_t>(width * height), false);
-    std::queue<int> queue;
-    const auto seed = [&](int x, int y) {
-        const int index = y * width + x;
-        const auto sizeIndex = static_cast<std::size_t>(index);
-        if (transparent[sizeIndex]) {
-            return;
-        }
-        const auto pixel = src.pixels()[sizeIndex];
-        if (((pixel >> 24) & 0xFFU) == 0 ||
-            static_cast<int>((*paletteIndices)[sizeIndex] & 0xFFU) == matteIndex) {
-            transparent[sizeIndex] = true;
-            queue.push(index);
-        }
-    };
+    const auto& pixels = src.pixels();
+    const auto transparent = bitmap::detail::computeEdgeConnectedMask(width, height, [&](int index) {
+        const auto offset = static_cast<std::size_t>(index);
+        const auto pixel = pixels[offset];
+        return ((pixel >> 24) & 0xFFU) == 0 ||
+               static_cast<int>((*paletteIndices)[offset] & 0xFFU) == matteIndex;
+    });
 
-    for (int x = 0; x < width; ++x) {
-        seed(x, 0);
-        seed(x, height - 1);
-    }
-    for (int y = 1; y < height - 1; ++y) {
-        seed(0, y);
-        seed(width - 1, y);
-    }
-
-    while (!queue.empty()) {
-        const int index = queue.front();
-        queue.pop();
-        const int x = index % width;
-        const int y = index / width;
-        if (x > 0) seed(x - 1, y);
-        if (x < width - 1) seed(x + 1, y);
-        if (y > 0) seed(x, y - 1);
-        if (y < height - 1) seed(x, y + 1);
-    }
-
-    std::vector<std::uint32_t> result = src.pixels();
+    std::vector<std::uint32_t> result = pixels;
     for (std::size_t index = 0; index < result.size() && index < transparent.size(); ++index) {
         if (transparent[index]) {
             result[index] = clearTransparentRgb ? 0x00000000U : (result[index] & 0x00FFFFFFU);
@@ -620,7 +463,7 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
                 ? fallbackMatteIndex
                 : (explicitMatteIndex.has_value() ? explicitMatteIndex : defaultMatteIndex);
         const int matteColor = mattePaletteIndex.has_value() && paletteIndices.has_value()
-            ? resolvePaletteIndexRgb(input, *paletteIndices, *mattePaletteIndex)
+            ? bitmap::detail::resolvePaletteIndexRgb(input.pixels(), *paletteIndices, *mattePaletteIndex)
             : resolveMatteColorForInk(input, ink, backColor, useAlpha, palette, preserveScriptOutlinedWhiteBody);
         if (matteColor < 0) {
             return input.copy();
@@ -801,7 +644,10 @@ bitmap::Bitmap InkProcessor::applyForeColorRemap(const bitmap::Bitmap& src,
         const int g = static_cast<int>((pixel >> 8) & 0xFFU);
         const int b = static_cast<int>(pixel & 0xFFU);
         const float t = static_cast<float>((r + g + b) / 3) / 255.0F;
-        result.push_back(packArgb(alpha, interpolate(t, fr, br), interpolate(t, fg, bg), interpolate(t, fb, bb)));
+        result.push_back(packArgb(alpha,
+                                  interpolateChannel(t, fr, br),
+                                  interpolateChannel(t, fg, bg),
+                                  interpolateChannel(t, fb, bb)));
     }
 
     return derivedBitmap(src, std::move(result));
@@ -838,7 +684,10 @@ bitmap::Bitmap InkProcessor::applyIndexedColorRemap(const bitmap::Bitmap& indexe
 
         const int paletteIndex = static_cast<int>((*paletteIndices)[i] & 0xFFU);
         const float t = static_cast<float>(255 - paletteIndex) / 255.0F;
-        result.push_back(packArgb(alpha, interpolate(t, fr, br), interpolate(t, fg, bg), interpolate(t, fb, bb)));
+        result.push_back(packArgb(alpha,
+                                  interpolateChannel(t, fr, br),
+                                  interpolateChannel(t, fg, bg),
+                                  interpolateChannel(t, fb, bb)));
     }
 
     return derivedBitmap(maskedSource, std::move(result));
@@ -940,41 +789,13 @@ bitmap::Bitmap InkProcessor::applyMatte(const bitmap::Bitmap& src, int matteColo
         return src.copy();
     }
 
-    std::vector<bool> transparent(static_cast<std::size_t>(width * height), false);
-    std::queue<int> queue;
-    const auto seed = [&](int x, int y) {
-        const int index = y * width + x;
-        if (transparent[static_cast<std::size_t>(index)]) {
-            return;
-        }
-        const auto pixel = src.pixels()[static_cast<std::size_t>(index)];
-        if (((pixel >> 24) & 0xFFU) == 0 || matchesRgb(pixel, matteColorRgb, tolerance)) {
-            transparent[static_cast<std::size_t>(index)] = true;
-            queue.push(index);
-        }
-    };
+    const auto& pixels = src.pixels();
+    const auto transparent = bitmap::detail::computeEdgeConnectedMask(width, height, [&](int index) {
+        const auto pixel = pixels[static_cast<std::size_t>(index)];
+        return ((pixel >> 24) & 0xFFU) == 0 || matchesRgb(pixel, matteColorRgb, tolerance);
+    });
 
-    for (int x = 0; x < width; ++x) {
-        seed(x, 0);
-        seed(x, height - 1);
-    }
-    for (int y = 1; y < height - 1; ++y) {
-        seed(0, y);
-        seed(width - 1, y);
-    }
-
-    while (!queue.empty()) {
-        const int index = queue.front();
-        queue.pop();
-        const int x = index % width;
-        const int y = index / width;
-        if (x > 0) seed(x - 1, y);
-        if (x < width - 1) seed(x + 1, y);
-        if (y > 0) seed(x, y - 1);
-        if (y < height - 1) seed(x, y + 1);
-    }
-
-    std::vector<std::uint32_t> result = src.pixels();
+    std::vector<std::uint32_t> result = pixels;
     for (std::size_t index = 0; index < result.size() && index < transparent.size(); ++index) {
         if (transparent[index]) {
             result[index] = 0;

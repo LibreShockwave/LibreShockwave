@@ -4,20 +4,13 @@
 #include <cmath>
 #include <optional>
 
+#include "BitmapProcessing.hpp"
+
 namespace libreshockwave::bitmap {
 namespace {
 
-int interpolateChannel(float t, int foreground, int background) {
-    return static_cast<int>(std::lround((1.0F - t) * static_cast<float>(foreground) +
-                                        t * static_cast<float>(background)));
-}
-
-std::uint32_t packArgb(int alpha, int r, int g, int b) {
-    return (static_cast<std::uint32_t>(alpha & 0xFF) << 24) |
-           (static_cast<std::uint32_t>(r & 0xFF) << 16) |
-           (static_cast<std::uint32_t>(g & 0xFF) << 8) |
-           static_cast<std::uint32_t>(b & 0xFF);
-}
+using detail::interpolateChannel;
+using detail::packArgb;
 
 } // namespace
 
