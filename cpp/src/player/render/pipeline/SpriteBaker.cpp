@@ -1102,6 +1102,10 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
                                              topSpacing);
     }
     auto textImage = insetTextBitmap(std::move(rendered), width, height, horizontalInset, bgColor);
+    if (textImage != nullptr &&
+        (((static_cast<std::uint32_t>(bgColor) >> 24U) & 0xFFU) < 0xFFU || textImage->hasTransparentPixels())) {
+        textImage->setNativeAlpha(true);
+    }
     if (textImage == nullptr || isTransparentTextInk(sprite)) {
         return textImage;
     }

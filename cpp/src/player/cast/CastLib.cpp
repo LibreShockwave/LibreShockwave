@@ -958,7 +958,9 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
                 }
             }
             if (bitmap) {
-                return lingo::Datum::media(encodeDirectorBitmapMedia(*bitmap, member->regX(), member->regY()));
+                auto mediaBitmap = bitmap->copy();
+                applyRuntimePaletteMetadata(mediaBitmap, member);
+                return lingo::Datum::media(encodeDirectorBitmapMedia(mediaBitmap, member->regX(), member->regY()));
             }
         }
         return lingo::Datum::castMemberRef(castLibId_, id::MemberId(memberNumber));

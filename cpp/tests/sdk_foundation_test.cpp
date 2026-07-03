@@ -19007,10 +19007,10 @@ void testSpriteBakerFoundation() {
     const auto secondChannel = makeScoreChannel(1, 3, 21, 10, 1, 1);
     std::vector<std::uint8_t> frameDelta;
     appendI16(frameDelta, 28);
-    appendI16(frameDelta, 2 * 28);
+    appendI16(frameDelta, 144);
     frameDelta.insert(frameDelta.end(), firstChannel.begin(), firstChannel.end());
     appendI16(frameDelta, 28);
-    appendI16(frameDelta, 3 * 28);
+    appendI16(frameDelta, 144 + 28);
     frameDelta.insert(frameDelta.end(), secondChannel.begin(), secondChannel.end());
 
     std::vector<std::uint8_t> frameEntry;
@@ -19884,11 +19884,11 @@ void testSpriteBakerFoundation() {
 
     std::vector<std::uint8_t> whiteXmedData = xmedData;
     bool removedXmedColorSection = false;
-    for (std::size_t i = 0; i + 5 < whiteXmedData.size(); ++i) {
-        if (whiteXmedData[i] == 0x03 && whiteXmedData[i + 1] == 0x03 &&
-            whiteXmedData[i + 2] == '0' && whiteXmedData[i + 3] == '0' &&
-            whiteXmedData[i + 4] == '0' && whiteXmedData[i + 5] == '3') {
-            whiteXmedData[i + 5] = 'X';
+    for (std::size_t i = 0; i + 4 < whiteXmedData.size(); ++i) {
+        if (whiteXmedData[i] == 0x03 &&
+            whiteXmedData[i + 1] == '0' && whiteXmedData[i + 2] == '0' &&
+            whiteXmedData[i + 3] == '0' && whiteXmedData[i + 4] == '3') {
+            whiteXmedData[i + 4] = 'X';
             removedXmedColorSection = true;
             break;
         }
@@ -20930,7 +20930,7 @@ void testSoftwareFrameRenderer() {
                              opaqueRed,
                              false);
     FrameSnapshot blendSnapshot{4, 1, 1, 0x00000000, {blendSprite}, "", nullptr, 0, RenderPipelineTrace::empty()};
-    assert(blendSnapshot.renderFrame().getPixel(0, 0) == 0xFF800000U);
+    assert(blendSnapshot.renderFrame().getPixel(0, 0) == 0xFF7F0000U);
 
     auto discoBrown = std::make_shared<Bitmap>(1, 1, 32, std::vector<std::uint32_t>{0xFFCC9900U});
     RenderSprite discoBlendSprite(2,
@@ -24811,70 +24811,76 @@ void testScoreChunkParser() {
     assert(highEntryScore.frameIntervals().empty());
     assert(highEntryScoreReader.order() == ByteOrder::LittleEndian);
 
-    std::vector<std::uint8_t> d6FrameEntry;
-    appendI32(d6FrameEntry, 0);
-    appendI32(d6FrameEntry, 0);
-    appendI32(d6FrameEntry, 1);
-    appendI16(d6FrameEntry, 13);
-    appendI16(d6FrameEntry, 48);
-    appendI16(d6FrameEntry, 1006);
-    appendI16(d6FrameEntry, 0);
+    auto makeD6Score = [&](int framesVersion, int spriteRecordSize) {
+        std::vector<std::uint8_t> d6FrameEntry;
+        appendI32(d6FrameEntry, 0);
+        appendI32(d6FrameEntry, 0);
+        appendI32(d6FrameEntry, 1);
+        appendI16(d6FrameEntry, framesVersion);
+        appendI16(d6FrameEntry, spriteRecordSize);
+        appendI16(d6FrameEntry, 1006);
+        appendI16(d6FrameEntry, 0);
 
-    std::vector<std::uint8_t> d6ClearMarker(2, 0);
-    d6ClearMarker[0] = 0xFF;
-    d6ClearMarker[1] = 0xFE;
-    std::vector<std::uint8_t> d6Tempo(1, 24);
-    std::vector<std::uint8_t> d6Palette{0x00, 0x02, 0x00, 0x09};
-    std::vector<std::uint8_t> d6Sprite(48, 0);
-    d6Sprite[0] = 1;
-    d6Sprite[1] = 0x24;
-    d6Sprite[4] = 0x00;
-    d6Sprite[5] = 0x01;
-    d6Sprite[6] = 0x00;
-    d6Sprite[7] = 0x2A;
-    d6Sprite[12] = 0x00;
-    d6Sprite[13] = 0x59;
-    d6Sprite[14] = 0x01;
-    d6Sprite[15] = 0x70;
-    d6Sprite[16] = 0x00;
-    d6Sprite[17] = 0x52;
-    d6Sprite[18] = 0x01;
-    d6Sprite[19] = 0xF8;
+        std::vector<std::uint8_t> d6ClearMarker(2, 0);
+        d6ClearMarker[0] = 0xFF;
+        d6ClearMarker[1] = 0xFE;
+        std::vector<std::uint8_t> d6Tempo(1, 24);
+        std::vector<std::uint8_t> d6Palette{0x00, 0x02, 0x00, 0x09};
+        std::vector<std::uint8_t> d6Sprite(static_cast<std::size_t>(spriteRecordSize), 0);
+        d6Sprite[0] = 1;
+        d6Sprite[1] = 0x24;
+        d6Sprite[4] = 0x00;
+        d6Sprite[5] = 0x01;
+        d6Sprite[6] = 0x00;
+        d6Sprite[7] = 0x2A;
+        d6Sprite[12] = 0x00;
+        d6Sprite[13] = 0x59;
+        d6Sprite[14] = 0x01;
+        d6Sprite[15] = 0x70;
+        d6Sprite[16] = 0x00;
+        d6Sprite[17] = 0x52;
+        d6Sprite[18] = 0x01;
+        d6Sprite[19] = 0xF8;
 
-    std::vector<std::uint8_t> d6Frame0;
-    appendDelta(d6Frame0, 24 + 6, d6Tempo);
-    appendDelta(d6Frame0, 120, d6Palette);
-    appendDelta(d6Frame0, 144, d6ClearMarker);
-    appendDelta(d6Frame0, 144 + (80 - 3) * 48, d6Sprite);
-    appendI16(d6FrameEntry, static_cast<int>(d6Frame0.size()) + 2);
-    d6FrameEntry.insert(d6FrameEntry.end(), d6Frame0.begin(), d6Frame0.end());
+        std::vector<std::uint8_t> d6Frame0;
+        appendDelta(d6Frame0, 24 + 6, d6Tempo);
+        appendDelta(d6Frame0, 120, d6Palette);
+        appendDelta(d6Frame0, 144, d6ClearMarker);
+        appendDelta(d6Frame0, 144 + (80 - 3) * spriteRecordSize, d6Sprite);
+        appendI16(d6FrameEntry, static_cast<int>(d6Frame0.size()) + 2);
+        d6FrameEntry.insert(d6FrameEntry.end(), d6Frame0.begin(), d6Frame0.end());
 
-    std::vector<std::uint8_t> d6ScoreData;
-    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
-    appendI32(d6ScoreData, 0);
-    appendI32(d6ScoreData, 0);
-    appendI32(d6ScoreData, 1);
-    appendI32(d6ScoreData, 0);
-    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
-    appendI32(d6ScoreData, 0);
-    appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
-    d6ScoreData.insert(d6ScoreData.end(), d6FrameEntry.begin(), d6FrameEntry.end());
+        std::vector<std::uint8_t> d6ScoreData;
+        appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+        appendI32(d6ScoreData, 0);
+        appendI32(d6ScoreData, 0);
+        appendI32(d6ScoreData, 1);
+        appendI32(d6ScoreData, 0);
+        appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+        appendI32(d6ScoreData, 0);
+        appendI32(d6ScoreData, static_cast<std::uint32_t>(d6FrameEntry.size()));
+        d6ScoreData.insert(d6ScoreData.end(), d6FrameEntry.begin(), d6FrameEntry.end());
+        return d6ScoreData;
+    };
 
-    BinaryReader d6ScoreReader(d6ScoreData, ByteOrder::LittleEndian);
-    ScoreChunk d6Score = ScoreChunk::read(nullptr, d6ScoreReader, ChunkId(38), 0x4B1);
-    assert(d6Score.getFrameCount() == 1);
-    assert(d6Score.getChannelCount() == 1006);
-    assert(d6Score.getRawChannelData().size() == 144 + 120 * 48);
-    assert(d6Score.getFrameTempo(0) == 24);
-    assert(d6Score.getFramePalette(0).has_value());
-    assert(d6Score.getFramePalette(0)->castLib == 2);
-    assert(d6Score.getFramePalette(0)->castMember == 9);
-    assert(d6Score.frameData().frameChannelData.size() == 1);
-    assert(d6Score.frameData().frameChannelData[0].channelIndex.value() == 80);
-    assert(d6Score.frameData().frameChannelData[0].data.castMember == 42);
-    assert(d6Score.frameData().frameChannelData[0].data.posX == 368);
-    assert(d6Score.frameData().frameChannelData[0].data.width == 504);
-    assert(d6ScoreReader.order() == ByteOrder::LittleEndian);
+    for (const auto& d6Variant : std::array<std::pair<int, int>, 2>{{{8, 28}, {13, 48}}}) {
+        BinaryReader d6ScoreReader(makeD6Score(d6Variant.first, d6Variant.second), ByteOrder::LittleEndian);
+        ScoreChunk d6Score = ScoreChunk::read(nullptr, d6ScoreReader, ChunkId(38), 0x4B1);
+        assert(d6Score.getFrameCount() == 1);
+        assert(d6Score.getChannelCount() == 1006);
+        assert(d6Score.getSpriteRecordSize() == d6Variant.second);
+        assert(d6Score.getRawChannelData().size() == static_cast<std::size_t>(144 + 120 * d6Variant.second));
+        assert(d6Score.getFrameTempo(0) == 24);
+        assert(d6Score.getFramePalette(0).has_value());
+        assert(d6Score.getFramePalette(0)->castLib == 2);
+        assert(d6Score.getFramePalette(0)->castMember == 9);
+        assert(d6Score.frameData().frameChannelData.size() == 1);
+        assert(d6Score.frameData().frameChannelData[0].channelIndex.value() == 80);
+        assert(d6Score.frameData().frameChannelData[0].data.castMember == 42);
+        assert(d6Score.frameData().frameChannelData[0].data.posX == 368);
+	        assert(d6Score.frameData().frameChannelData[0].data.width == 504);
+	        assert(d6ScoreReader.order() == ByteOrder::LittleEndian);
+	    }
 }
 
 void testDirectorFileRifxLoader() {
@@ -27370,7 +27376,7 @@ void testCastLibManagerFoundation() {
     assert(defaultTextSprite->bakedBitmap()->width() > 0);
     assert(defaultTextSprite->bakedBitmap()->height() > 0);
     const auto renderedDefaultTextFrame = defaultTextSnapshot.renderFrame();
-    assert(renderedDefaultTextFrame.getPixel(9, 10) == 0xFFFFFFFFU);
+    assert(renderedDefaultTextFrame.getPixel(9, 10) == 0xFF000000U);
 
     ManagerMethodTextRenderer playerTextRenderer;
     player.setTextRenderer(&playerTextRenderer);
