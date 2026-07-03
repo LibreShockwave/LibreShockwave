@@ -22,7 +22,7 @@ jobs:
         run: cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
-        run: cmake --build cmake-build-debug --target libreshockwave_tests libreshockwave_probe libreshockwave_render_probe libreshockwave_wasm_bridge_probe -j 2
+        run: cmake --build cmake-build-debug --target libreshockwave_tests libreshockwave_editor_model_tests libreshockwave_probe libreshockwave_render_probe libreshockwave_wasm_bridge_probe -j 2
 
       - name: Test
         run: ctest --test-dir cmake-build-debug --output-on-failure
