@@ -28,7 +28,9 @@ The player can be used in two ways:
 - Native C++: link against `LibreShockwave::libreshockwave` and drive `libreshockwave::player::Player` directly.
 - Browser/WASM: build the Emscripten target and use the assets in `web/`.
 
-<img width="1420" height="962" alt="image" src="https://github.com/user-attachments/assets/6c9e68a9-753a-4491-9757-4704098de06e" />
+Or go to: https://libreshockwave.net/player.html (it isn't updated frequently, however)
+
+<img width="1326" height="1218" alt="image" src="https://github.com/user-attachments/assets/875ca872-e855-4176-9b23-082e2a33d314" />
 
 ## Editor
 
