@@ -3,7 +3,7 @@ name: Nightly WASM Build
 on:
   schedule:
     # Run every day at 04:00 UTC.
-    - cron: '0 4 * * *'
+    - cron: '0 0 * * 1'
   workflow_dispatch:
 
 permissions:
