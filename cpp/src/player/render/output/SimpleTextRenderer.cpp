@@ -178,14 +178,15 @@ bool isPlatformFontRequest(const std::string& fontName) {
 std::shared_ptr<BitmapFont> preferredDirectorFontAtSize(const std::string& fontName,
                                                         int fontSize,
                                                         bool bold,
-                                                        bool* usedRealBold) {
-    if (auto font = FontRegistry::getEmbeddedBitmapFont(fontName, fontSize, bold, false); font != nullptr) {
+                                                        bool* usedRealBold,
+                                                        bool cache) {
+    if (auto font = FontRegistry::getEmbeddedBitmapFont(fontName, fontSize, bold, false, cache); font != nullptr) {
         if (usedRealBold != nullptr) {
             *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(fontName);
         }
         return font;
     }
-    if (auto font = FontRegistry::getPfrBitmapFont(fontName, fontSize); font != nullptr) {
+    if (auto font = FontRegistry::getPfrBitmapFont(fontName, fontSize, cache); font != nullptr) {
         if (usedRealBold != nullptr) {
             *usedRealBold = false;
         }
@@ -267,6 +268,19 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFallback(int fontSize,
         return nullptr;
     }
 
+    // The probe below rasterizes the preferred pixel font at every candidate size 1..fontSize+2
+    // to find the closest ink-height match. For a large requested size (e.g. a corrupt 256) that
+    // is hundreds of rasterizations; caching each would retain ~15GB of atlases. Memoize the
+    // selected font per (preferred, fontSize, bold) so the probe runs once per distinct size, and
+    // run the probe itself with caching disabled so only the single selected atlas is retained.
+    if (auto memoized = FontRegistry::getFallbackSelection(*preferred, fontSize, bold);
+        memoized != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+        }
+        return memoized;
+    }
+
     std::shared_ptr<BitmapFont> bestFit;
     int bestFitSize = -1;
     int bestFitInkHeight = -1;
@@ -275,7 +289,9 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFallback(int fontSize,
     int nearestSize = -1;
     const int maxCandidateSize = std::max(1, fontSize + 2);
     for (int candidateSize = 1; candidateSize <= maxCandidateSize; ++candidateSize) {
-        auto candidate = preferredDirectorFontAtSize(*preferred, candidateSize, bold, nullptr);
+        // cache=false: probe rasterizations must not pollute the persistent font cache. Each
+        // candidate is freed the next iteration unless it is the one finally selected (memoized).
+        auto candidate = preferredDirectorFontAtSize(*preferred, candidateSize, bold, nullptr, /*cache=*/false);
         if (candidate == nullptr) {
             continue;
         }
@@ -296,8 +312,11 @@ std::shared_ptr<BitmapFont> resolvePreferredDirectorPixelFallback(int fontSize,
     }
 
     auto selected = bestFit != nullptr ? bestFit : nearest;
-    if (selected != nullptr && usedRealBold != nullptr) {
-        *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+    if (selected != nullptr) {
+        if (usedRealBold != nullptr) {
+            *usedRealBold = bold && FontRegistry::hasEmbeddedBoldVariant(*preferred);
+        }
+        FontRegistry::setFallbackSelection(*preferred, fontSize, bold, selected);
     }
     return selected;
 }

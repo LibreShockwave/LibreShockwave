@@ -94,6 +94,7 @@ add_library(libreshockwave
     src/lingo/builtin/BuiltinRegistry.cpp
     src/lingo/decompiler/LingoDecompiler.cpp
     src/lingo/decompiler/LingoNode.cpp
+    src/lingo/decompiler/LingoNodeTypeScript.cpp
     src/lingo/decompiler/LingoProperties.cpp
     src/lingo/vm/AlertHookHandler.cpp
     src/lingo/vm/DebugConfig.cpp
@@ -215,6 +216,24 @@ add_executable(libreshockwave_wasm_bridge_probe
 )
 target_link_libraries(libreshockwave_wasm_bridge_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_wasm_bridge_probe PRIVATE cxx_std_20)
+
+# Director movie -> self-contained TypeScript / PixiJS project exporter.
+# A read-only probe over the parsed model; links only the library, so it builds
+# by default alongside the other probes. The hand-written runtime + project skeleton
+# it copies into each export live beside it under apps/tools/ts/ (runtime-template and
+# export-template).
+add_executable(libreshockwave_export_ts
+    apps/tools/ts/ExportTsProbe.cpp
+)
+target_link_libraries(libreshockwave_export_ts PRIVATE LibreShockwave::libreshockwave)
+target_compile_features(libreshockwave_export_ts PRIVATE cxx_std_20)
+# The exporter copies the TS project skeleton + hand-written runtime into each export.
+# Point it at the in-repo source-of-truth template dirs (resolved at configure time from
+# this source tree, so dev builds always find them; this is a dev tool, not an installed one).
+target_compile_definitions(libreshockwave_export_ts PRIVATE
+    LIBRESHOCKWAVE_TS_EXPORT_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/apps/tools/ts/export-template"
+    LIBRESHOCKWAVE_TS_RUNTIME_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/apps/tools/ts/runtime-template/src"
+)
 
 add_library(libreshockwave_editor_model
     apps/editor/EditorModels.cpp

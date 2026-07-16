@@ -36,6 +36,11 @@ public:
     [[nodiscard]] std::string formatHandlerBytecodeOnly(const chunks::ScriptChunk::Handler& handler,
                                                         const chunks::ScriptNamesChunk* names = nullptr) const;
 
+    /** Translate a single handler to runnable TypeScript via the LingoNode AST. */
+    [[nodiscard]] std::string emitTypeScriptHandler(const chunks::ScriptChunk::Handler& handler,
+                                                    const chunks::ScriptChunk& script,
+                                                    const chunks::ScriptNamesChunk* names = nullptr);
+
     [[nodiscard]] static DecompiledHandler buildLineMapping(const HandlerNode& handler, bool dotSyntax);
 
 private:

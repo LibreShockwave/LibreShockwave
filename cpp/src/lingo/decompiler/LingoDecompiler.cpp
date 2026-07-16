@@ -276,6 +276,22 @@ LingoDecompiler::DecompiledHandler LingoDecompiler::decompileHandlerWithMapping(
     return buildLineMapping(*translateHandler(handler), dotSyntax_);
 }
 
+std::string LingoDecompiler::emitTypeScriptHandler(const chunks::ScriptChunk::Handler& handler,
+                                                   const chunks::ScriptChunk& script,
+                                                   const chunks::ScriptNamesChunk* names) {
+    script_ = &script;
+    names_ = names;
+    initFileInfo(script);
+    auto root = translateHandler(handler);
+    // Per-handler globals override script-wide globals; if the handler has its own global
+    // declaration list (e.g. "global gFoo" inside a handler), use it. Otherwise fall back to
+    // the script's global list so all globals used in the handler get runtime backing.
+    if (root->globalNames().empty() && script.hasGlobals()) {
+        root->setGlobalNames(script.getGlobalNames(names));
+    }
+    return root->toTypeScript();
+}
+
 std::string LingoDecompiler::formatHandlerBytecodeOnly(const chunks::ScriptChunk::Handler& handler,
                                                        const chunks::ScriptNamesChunk* names) const {
     const auto resolve = [names](int nameId) {
@@ -536,6 +552,16 @@ std::unique_ptr<HandlerNode> LingoDecompiler::translateHandler(const chunks::Scr
     }
 
     auto root = std::make_unique<HandlerNode>(resolveName(handler.nameId), std::move(argumentNames), std::vector<std::string>{});
+    if (script_ != nullptr) {
+        std::vector<std::string> propertyNames;
+        for (const auto& prop : script_->properties()) {
+            const std::string name = resolveName(prop.nameId);
+            if (!name.empty()) {
+                propertyNames.push_back(name);
+            }
+        }
+        root->setPropertyNames(std::move(propertyNames));
+    }
     currentBlock_ = &root->block();
     for (std::size_t index = 0; index < handler.instructions.size();) {
         const auto& instruction = handler.instructions[index];

@@ -661,6 +661,10 @@ int SpriteBaker::tickCounter() const {
     return tickCounter_;
 }
 
+void SpriteBaker::setTickCounter(int tick) {
+    tickCounter_ = tick;
+}
+
 RenderSprite SpriteBaker::bake(const RenderSprite& sprite) {
     std::shared_ptr<const bitmap::Bitmap> baked;
     for (const auto& step : bakeSteps_) {

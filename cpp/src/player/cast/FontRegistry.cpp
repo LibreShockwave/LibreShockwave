@@ -51,6 +51,7 @@ struct RegistryState {
     std::unordered_map<std::string, std::shared_ptr<font::Pfr1Font>> parsedFonts;
     std::unordered_map<std::string, std::vector<std::uint8_t>> ttfCache;
     std::unordered_map<std::string, std::shared_ptr<font::BitmapFont>> rasterizedCache;
+    std::unordered_map<std::string, std::shared_ptr<font::BitmapFont>> fallbackSelectionCache;
     std::unordered_map<std::string, std::map<int, EmbeddedTtfVariants>> embeddedTtfFonts;
     std::unordered_map<std::string, std::string> canonicalIndex;
     std::unordered_map<std::string, FontRegistry::FontAlias> aliases;
@@ -380,7 +381,8 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
 std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string& fontName,
                                                               int fontSize,
                                                               bool bold,
-                                                              bool italic) {
+                                                              bool italic,
+                                                              bool cache) {
     if (fontName.empty()) {
         return nullptr;
     }
@@ -394,7 +396,9 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
     if (const auto parsed = registry.parsedFonts.find(key); parsed != registry.parsedFonts.end()) {
         auto rasterized = font::BitmapFont::fromPfr1(*parsed->second, fontSize);
         if (rasterized != nullptr) {
-            registry.rasterizedCache[fontCacheKey(fontName, fontSize, bold, italic)] = rasterized;
+            if (cache) {
+                registry.rasterizedCache[fontCacheKey(fontName, fontSize, bold, italic)] = rasterized;
+            }
             return rasterized;
         }
     }
@@ -402,7 +406,9 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
         if (const auto ttf = registry.ttfCache.find(key); ttf != registry.ttfCache.end()) {
             auto rasterized = font::TtfBitmapRasterizer::rasterize(ttf->second, fontSize, fontName);
             if (rasterized != nullptr) {
-                registry.rasterizedCache[fontCacheKey(fontName, fontSize, bold, italic)] = rasterized;
+                if (cache) {
+                    registry.rasterizedCache[fontCacheKey(fontName, fontSize, bold, italic)] = rasterized;
+                }
                 return rasterized;
             }
         }
@@ -430,7 +436,9 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
         if (ttfBytes != nullptr) {
             auto rasterized = font::TtfBitmapRasterizer::rasterize(*ttfBytes, selected->fontSize, fontName);
             if (rasterized != nullptr) {
-                registry.rasterizedCache[cacheKey] = rasterized;
+                if (cache) {
+                    registry.rasterizedCache[cacheKey] = rasterized;
+                }
                 return rasterized;
             }
         }
@@ -447,7 +455,8 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getBitmapFont(const std::string&
 std::shared_ptr<font::BitmapFont> FontRegistry::getEmbeddedBitmapFont(const std::string& fontName,
                                                                       int fontSize,
                                                                       bool bold,
-                                                                      bool italic) {
+                                                                      bool italic,
+                                                                      bool cache) {
     if (fontName.empty()) {
         return nullptr;
     }
@@ -481,13 +490,16 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getEmbeddedBitmapFont(const std:
     }
     auto rasterized = font::TtfBitmapRasterizer::rasterize(*ttfBytes, selected->fontSize, fontName);
     if (rasterized != nullptr) {
-        registry.rasterizedCache[cacheKey] = rasterized;
+        if (cache) {
+            registry.rasterizedCache[cacheKey] = rasterized;
+        }
     }
     return rasterized;
 }
 
 std::shared_ptr<font::BitmapFont> FontRegistry::getPfrBitmapFont(const std::string& fontName,
-                                                                 int fontSize) {
+                                                                 int fontSize,
+                                                                 bool cache) {
     if (fontName.empty() || fontSize <= 0) {
         return nullptr;
     }
@@ -511,10 +523,31 @@ std::shared_ptr<font::BitmapFont> FontRegistry::getPfrBitmapFont(const std::stri
         return cached->second;
     }
     auto rasterized = font::BitmapFont::fromPfr1(*parsed->second, fontSize);
-    if (rasterized != nullptr) {
+    if (rasterized != nullptr && cache) {
         registry.rasterizedCache[cacheKey] = rasterized;
     }
     return rasterized;
+}
+
+std::shared_ptr<font::BitmapFont> FontRegistry::getFallbackSelection(const std::string& fontName,
+                                                                     int fontSize,
+                                                                     bool bold) {
+    auto& registry = state();
+    std::lock_guard lock(registry.mutex);
+    const auto it = registry.fallbackSelectionCache.find(fontCacheKey(fontName, fontSize, bold, false));
+    return it == registry.fallbackSelectionCache.end() ? nullptr : it->second;
+}
+
+void FontRegistry::setFallbackSelection(const std::string& fontName,
+                                        int fontSize,
+                                        bool bold,
+                                        std::shared_ptr<font::BitmapFont> font) {
+    if (fontName.empty() || font == nullptr) {
+        return;
+    }
+    auto& registry = state();
+    std::lock_guard lock(registry.mutex);
+    registry.fallbackSelectionCache[fontCacheKey(fontName, fontSize, bold, false)] = std::move(font);
 }
 
 void FontRegistry::registerEmbeddedTtfFont(const std::string& fontName,
@@ -667,6 +700,7 @@ void FontRegistry::clear() {
     registry.parsedFonts.clear();
     registry.ttfCache.clear();
     registry.rasterizedCache.clear();
+    registry.fallbackSelectionCache.clear();
     registry.embeddedTtfFonts.clear();
     registry.canonicalIndex.clear();
     registry.aliases.clear();

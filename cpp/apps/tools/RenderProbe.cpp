@@ -24,6 +24,10 @@
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/PlayerState.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
+#include "libreshockwave/player/score/ScoreNavigator.hpp"
+#include "libreshockwave/player/score/ScoreBehaviorRef.hpp"
+#include "libreshockwave/player/behavior/BehaviorManager.hpp"
+#include "libreshockwave/player/cast/CastLibManager.hpp"
 #include "ProbeFixtureRoots.hpp"
 
 namespace {
@@ -49,6 +53,7 @@ struct RenderProbeOptions {
     int scriptTimeoutMs = 1000;
     std::size_t maxFailures = 25;
     std::size_t progressInterval = 250;
+    std::string dumpRgba;   // if set, write the post-play frame as raw RGBA to this path
     std::vector<fs::path> roots;
 };
 
@@ -251,6 +256,13 @@ RenderProbeOptions parseOptions(int argc, char** argv) {
         if (arg.starts_with(scriptTimeoutPrefix)) {
             options.scriptTimeoutMs = parseNonNegativeInt(arg.substr(scriptTimeoutPrefix.size()),
                                                           "--script-timeout-ms");
+            continue;
+        }
+        if (arg == "--dump-rgba") {
+            if (index + 1 >= argc) {
+                throw std::runtime_error("--dump-rgba requires a value");
+            }
+            options.dumpRgba = argv[++index];
             continue;
         }
         if (arg.starts_with("-")) {
@@ -474,9 +486,84 @@ RenderProbeSummary probeFile(const fs::path& path, const RenderProbeOptions& opt
     }
 
     const auto snapshot = player.frameSnapshot();
+    std::cerr << "snapshot backgroundColor=" << (snapshot.backgroundColor & 0xFFFFFF) << "\n";
+    std::cerr << "snapshot bakeTick=" << snapshot.bakeTick << "\n";
+    std::cerr << "sprite count=" << snapshot.sprites.size() << "\n";
+    std::cerr << "currentFrame=" << player.currentFrame() << "\n";
+    {
+        const auto& nav = player.navigator();
+        const int cf = player.currentFrame();
+        const auto active = nav.getActiveChannels(cf);
+        std::cerr << "active channels on frame " << cf << ":";
+        for (int ch : active) std::cerr << " " << ch;
+        std::cerr << "\n";
+        for (int ch : active) {
+            auto bh = nav.getSpriteBehaviors(cf, ch);
+            if (!bh.empty()) {
+                std::cerr << "behaviors for ch" << ch << ":";
+                for (const auto& b : bh) {
+                    std::cerr << " castLib=" << b.castLib() << " member=" << b.castMember();
+                }
+                std::cerr << "\n";
+            }
+        }
+        if (const auto* fs = nav.getFrameScript(cf); fs) {
+            std::cerr << "frame script on frame " << cf << ": castLib=" << fs->castLib() << " member=" << fs->castMember() << "\n";
+        }
+        std::cerr << "behavior instances for ch10:";
+        for (const auto& inst : player.behaviorManager().getInstancesForChannel(10)) {
+            std::cerr << " id=" << inst->id();
+            if (inst->script()) std::cerr << " script=" << inst->script()->scriptName();
+        }
+        std::cerr << "\n";
+    }
+    for (const auto& s : snapshot.sprites) {
+        const int ch = s.channel();
+        if (ch >= 1 && ch <= 12) {
+            std::cerr << "sprite ch=" << ch << " x=" << s.x() << " y=" << s.y()
+                      << " w=" << s.width() << " h=" << s.height()
+                      << " ink=" << static_cast<int>(libreshockwave::id::code(s.inkMode()))
+                      << " blend=" << s.blend() << " visible=" << s.isVisible()
+                      << " type=" << libreshockwave::player::render::pipeline::name(s.type())
+                      << " baked=" << (s.bakedBitmap() != nullptr) << "\n";
+        }
+        if (ch == 81 || ch == 33 || ch == 34 || ch == 35) {
+            std::cerr << "sprite ch=" << ch << " x=" << s.x() << " y=" << s.y()
+                      << " w=" << s.width() << " h=" << s.height()
+                      << " ink=" << static_cast<int>(libreshockwave::id::code(s.inkMode()))
+                      << " blend=" << s.blend() << " visible=" << s.isVisible()
+                      << " type=" << libreshockwave::player::render::pipeline::name(s.type())
+                      << " baked=" << (s.bakedBitmap() != nullptr) << "\n";
+        }
+        if (ch == 10) {
+            std::cerr << "sprite ch=10 memberId=" << s.castMemberId();
+            if (auto mn = s.memberName(); mn && !mn->empty()) std::cerr << " name=" << *mn;
+            if (s.castMember()) {
+                std::cerr << " memberType=" << static_cast<int>(s.castMember()->type());
+            }
+            std::cerr << "\n";
+        }
+    }
     const auto bitmap = snapshot.renderFrame();
     if (bitmap.width() != snapshot.stageWidth || bitmap.height() != snapshot.stageHeight) {
         throw std::runtime_error("Rendered bitmap dimensions do not match frame snapshot");
+    }
+
+    if (!options.dumpRgba.empty()) {
+        std::ofstream out(options.dumpRgba, std::ios::binary);
+        if (!out) {
+            throw std::runtime_error("Failed to open --dump-rgba output: " + options.dumpRgba);
+        }
+        const auto& px = bitmap.pixels();
+        std::string rgba;
+        rgba.reserve(px.size() * 4);
+        for (const auto argb : px) {
+            rgba.push_back(static_cast<char>((argb >> 16) & 0xFF));  // R
+            rgba.push_back(static_cast<char>((argb >> 8) & 0xFF));   // G
+            rgba.push_back(static_cast<char>(argb & 0xFF));          // B
+            rgba.push_back(static_cast<char>((argb >> 24) & 0xFF));  // A
+        }
+        out.write(rgba.data(), static_cast<std::streamsize>(rgba.size()));
     }
 
     const auto initialBitmapStats = measureBitmap(snapshot, bitmap);

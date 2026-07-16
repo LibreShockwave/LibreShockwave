@@ -21,3 +21,8 @@ Thumbs.db
 *.log
 /artifacts
 /tools/render/old_director/xmed
+
+# Node / TypeScript tooling (cpp/apps/tools/ts/ runtime-template, export-template, and exported projects)
+node_modules/
+cpp/apps/tools/ts/**/dist/
+cpp/apps/tools/ts/**/*.tsbuildinfo

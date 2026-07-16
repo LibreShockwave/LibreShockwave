@@ -52,6 +52,7 @@ public:
     explicit SpriteBaker(BitmapCache* bitmapCache = nullptr);
 
     [[nodiscard]] int tickCounter() const;
+    void setTickCounter(int tick);
     [[nodiscard]] RenderSprite bake(const RenderSprite& sprite);
     [[nodiscard]] std::vector<RenderSprite> bakeSprites(const std::vector<RenderSprite>& sprites);
 
