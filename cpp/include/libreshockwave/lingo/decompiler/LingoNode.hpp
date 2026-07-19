@@ -217,6 +217,10 @@ public:
     ObjPropIndexExprNode(NodePtr object, std::string prop, NodePtr index, NodePtr index2 = nullptr);
     [[nodiscard]] std::string toLingo(bool dot) const override;
     [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const LingoNode& object() const { return *object_; }
+    [[nodiscard]] const std::string& prop() const { return prop_; }
+    [[nodiscard]] const LingoNode& index() const { return *index_; }
+    [[nodiscard]] const LingoNode* index2() const { return index2_.get(); }
 
 private:
     NodePtr object_;
@@ -243,6 +247,10 @@ public:
     ChunkExprNode(int chunkType, NodePtr first, NodePtr last, NodePtr string);
     [[nodiscard]] std::string toLingo(bool dot) const override;
     [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] int chunkType() const { return chunkType_; }
+    [[nodiscard]] const LingoNode& first() const { return *first_; }
+    [[nodiscard]] const LingoNode* last() const { return last_.get(); }
+    [[nodiscard]] const LingoNode& string() const { return *string_; }
 
 private:
     int chunkType_;
@@ -356,6 +364,26 @@ public:
     ExitStmtNode();
     [[nodiscard]] std::string toLingo(bool dot) const override;
     [[nodiscard]] std::string toTypeScript() const override;
+};
+
+// Lingo `return <value>` (a value-returning return statement). Distinct from
+// ExitStmtNode (bare `return;`) so the TypeScript emitter can produce
+// `return <value>;` directly. Lingo's bytecode emits this as
+// PUSH_ARG_LIST_NO_RET <arity>; <value-args...>; EXT_CALL return,
+// which the decompiler would otherwise lower to a CallNode("return", ...)
+// statement — that emits as a sanitized `_return(value)` function call in
+// TypeScript (the call's return value is discarded and the handler exits
+// with `undefined`). Materializing the value here lets the TS emitter
+// emit an actual `return` statement.
+class ReturnStmtNode final : public LingoNode {
+public:
+    explicit ReturnStmtNode(NodePtr value);
+    [[nodiscard]] const LingoNode& value() const { return *value_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr value_;
 };
 
 class ExitRepeatStmtNode final : public LingoNode {
@@ -646,5 +674,10 @@ private:
 };
 
 [[nodiscard]] std::string maybeParenDot(const LingoNode& node, bool dot);
+
+// Whether `node` is a LiteralNode with int value 0. Used by the Lingo and
+// TypeScript emitters for `MemberExprNode` to detect `field(tField)` (no
+// explicit castlib, i.e. castlib = 0 means "use the current castlib stack").
+[[nodiscard]] bool isIntLiteralZero(const LingoNode* node);
 
 } // namespace libreshockwave::lingo::decompiler

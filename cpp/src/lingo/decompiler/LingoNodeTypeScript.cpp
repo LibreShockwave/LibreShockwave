@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace libreshockwave::lingo::decompiler {
@@ -100,6 +101,29 @@ std::string binaryOperatorTs(Opcode opcode) {
     }
 }
 
+std::string binaryOperationName(Opcode opcode) {
+    switch (opcode) {
+        case Opcode::ADD: return "add";
+        case Opcode::SUB: return "sub";
+        case Opcode::MUL: return "mul";
+        case Opcode::DIV: return "div";
+        case Opcode::MOD: return "mod";
+        case Opcode::JOIN_STR: return "join";
+        case Opcode::JOIN_PAD_STR: return "joinPad";
+        case Opcode::LT: return "lt";
+        case Opcode::LT_EQ: return "lte";
+        case Opcode::GT: return "gt";
+        case Opcode::GT_EQ: return "gte";
+        case Opcode::EQ: return "eq";
+        case Opcode::NT_EQ: return "neq";
+        case Opcode::AND: return "and";
+        case Opcode::OR: return "or";
+        case Opcode::CONTAINS_STR: return "contains";
+        case Opcode::CONTAINS_0_STR: return "starts";
+        default: return "unknown";
+    }
+}
+
 bool needsParens(const LingoNode& node, Opcode parentOp) {
     const auto* binary = dynamic_cast<const BinaryOpNode*>(&node);
     if (!binary) {
@@ -125,6 +149,10 @@ std::string chunkTypeString(int chunkType) {
         case 4: return "line";
         default: return "chunk";
     }
+}
+
+bool isChunkPropertyName(std::string_view name) {
+    return name == "char" || name == "word" || name == "item" || name == "line";
 }
 
 std::string sanitizeTsIdentifier(std::string_view name) {
@@ -162,6 +190,37 @@ std::string sanitizeTsIdentifier(std::string_view name) {
         result = "_" + result;
     }
     return result;
+}
+
+// Lingo `case` labels do not fall through to the next case. Emit an explicit
+// `break;` after each case block unless the block already exits via a terminal
+// statement (return, break, continue, throw), so the generated TypeScript switch
+// behaves like the original Lingo `case` statement.
+bool blockEndsWithTerminal(const std::string& blockText) {
+    // Find the last non-empty, non-comment line.
+    std::size_t end = blockText.find_last_not_of(" \t\n\r");
+    if (end == std::string::npos) {
+        return false;
+    }
+    std::size_t lineStart = blockText.find_last_of("\n\r", end);
+    if (lineStart == std::string::npos) {
+        lineStart = 0;
+    } else {
+        lineStart = lineStart + 1;
+    }
+    std::string line = blockText.substr(lineStart, end - lineStart + 1);
+    // Strip leading indent.
+    std::size_t first = line.find_first_not_of(" \t");
+    if (first != std::string::npos) {
+        line = line.substr(first);
+    }
+    static const char* terminals[] = {"return", "break;", "continue;", "throw"};
+    for (const char* term : terminals) {
+        if (line.rfind(term, 0) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -204,7 +263,17 @@ std::string LiteralNode::toTypeScript() const {
         }
         case ValueType::PropList: {
             std::ostringstream out;
-            out << "new LingoPropList(/* propList */)";
+            out << "new LingoPropList([";
+            for (std::size_t i = 0; i < items_.size(); i += 2) {
+                if (i > 0) {
+                    out << ", ";
+                }
+                out << items_[i]->toTypeScript();
+                if (i + 1 < items_.size()) {
+                    out << ", " << items_[i + 1]->toTypeScript();
+                }
+            }
+            out << "])";
             return out.str();
         }
         case ValueType::Void:
@@ -243,6 +312,15 @@ bool isHandlerGlobal(const LingoNode* node, const std::string& name) {
     return std::find(globals.begin(), globals.end(), name) != globals.end();
 }
 
+bool isHandlerArgument(const LingoNode* node, const std::string& name) {
+    const auto* handler = findHandlerAncestor(node);
+    if (!handler) {
+        return false;
+    }
+    const auto& args = handler->argumentNames();
+    return std::find(args.begin(), args.end(), name) != args.end();
+}
+
 std::string VarNode::toTypeScript() const {
     if (isHandlerProperty(this, name_)) {
         return "meProp(_me, " + escapeString(name_) + ")";
@@ -253,27 +331,48 @@ std::string VarNode::toTypeScript() const {
     return sanitizeTsIdentifier(name_);
 }
 
+// Track which local-variable names have already been declared with `var` in the
+// currently-emitting handler. The transpiler emits `var X = ...;` on every
+// AssignmentStmtNode that targets a VarNode — but Lingo locals are function-scoped
+// (declaration hoists to the top of the handler), so emitting `var` more than once
+// for the same name in nested blocks trips TypeScript's strict-mode "already
+// declared" error. We keep a per-handler set; the first assignment emits `var`,
+// subsequent ones emit a plain `name = value;`.
+//
+// State is keyed by the HandlerNode pointer (stable for the duration of the
+// toTypeScript() call) and is stored in a thread-local so the emitter remains
+// re-entrant for nested handlers. The set is added to during the recursive walk,
+// so duplicates are detected in source order — the first visit wins.
+struct HandlerDeclaredLocals {
+    std::unordered_map<const HandlerNode*, std::unordered_set<std::string>> byHandler;
+};
+
+static thread_local HandlerDeclaredLocals tlsDeclaredLocals;
+
+bool isLocalAlreadyDeclared(const HandlerNode* handler, const std::string& name) {
+    if (!handler) return false;
+    auto it = tlsDeclaredLocals.byHandler.find(handler);
+    if (it == tlsDeclaredLocals.byHandler.end()) return false;
+    return it->second.count(name) > 0;
+}
+
+void markLocalDeclared(const HandlerNode* handler, const std::string& name) {
+    if (!handler) return;
+    tlsDeclaredLocals.byHandler[handler].insert(name);
+}
+
 std::string InverseOpNode::toTypeScript() const {
-    return "-" + operand_->toTypeScript();
+    return "-float(" + operand_->toTypeScript() + ")";
 }
 
 std::string NotOpNode::toTypeScript() const {
-    return "!" + operand_->toTypeScript();
+    return "!lingoTruthy(" + operand_->toTypeScript() + ")";
 }
 
 std::string BinaryOpNode::toTypeScript() const {
     const std::string left = left_->toTypeScript();
     const std::string right = right_->toTypeScript();
-    if (opcode_ == Opcode::JOIN_STR || opcode_ == Opcode::JOIN_PAD_STR) {
-        return "(" + maybeWrap(*left_, left, opcode_) + " + " + maybeWrap(*right_, right, opcode_) + ")";
-    }
-    if (opcode_ == Opcode::CONTAINS_STR) {
-        return "contains(" + left + ", " + right + ")";
-    }
-    if (opcode_ == Opcode::CONTAINS_0_STR) {
-        return "starts(" + left + ", " + right + ")";
-    }
-    return maybeWrap(*left_, left, opcode_) + binaryOperatorTs(opcode_) + maybeWrap(*right_, right, opcode_);
+    return "lingoBinary(" + escapeString(binaryOperationName(opcode_)) + ", " + left + ", " + right + ")";
 }
 
 std::string TheExprNode::toTypeScript() const {
@@ -281,9 +380,20 @@ std::string TheExprNode::toTypeScript() const {
 }
 
 std::string MemberExprNode::toTypeScript() const {
+    // When the Lingo source is `field(tField)` (no castlib arg, or castlib = 0
+    // meaning "use the current castlib stack"), emit the equivalent `field(tField)`
+    // instead of `member(tField, 0)`. The latter would override the runtime's
+    // castlib stack push from a preceding `member(name, castlib)` and break
+    // Lingo code like `pVarMngrObj.dump(member(tThreadField, tCastNum).number)`
+    // in Thread Manager::initThread — `dump` would resolve `member(13, 0)` in
+    // the main movie's castlib instead of the castlib 202 context that the
+    // `member(tThreadField, tCastNum)` had pushed onto the stack, and the
+    // `thread.index` for hh_entry / hh_ig_gamesys / etc. would be silently
+    // ignored. Mirrors the `noCast` branch in MemberExprNode::toLingo.
+    const bool noCast = castId_ == nullptr || isIntLiteralZero(castId_.get());
     std::ostringstream out;
     out << "member(" << memberId_->toTypeScript();
-    if (castId_) {
+    if (!noCast) {
         out << ", " << castId_->toTypeScript();
     }
     out << ")";
@@ -301,11 +411,18 @@ std::string ObjBracketExprNode::toTypeScript() const {
 
 std::string ObjPropIndexExprNode::toTypeScript() const {
     std::ostringstream out;
-    out << object_->toTypeScript() << "." << sanitizeTsIdentifier(prop_) << "[" << index_->toTypeScript();
-    if (index2_) {
-        out << ", " << index2_->toTypeScript();
+    out << object_->toTypeScript() << "." << sanitizeTsIdentifier(prop_);
+    if (index2_ && isChunkPropertyName(prop_)) {
+        // Director chunk ranges (char 1..N of s) are distinct from comma indexing.
+        // The runtime StringChunkAccessor exposes .range(first, last).
+        out << ".range(" << index_->toTypeScript() << ", " << index2_->toTypeScript() << ")";
+    } else {
+        out << "[" << index_->toTypeScript();
+        if (index2_) {
+            out << ", " << index2_->toTypeScript();
+        }
+        out << "]";
     }
-    out << "]";
     return out.str();
 }
 
@@ -370,6 +487,10 @@ std::string NewObjNode::toTypeScript() const {
 
 std::string ExitStmtNode::toTypeScript() const {
     return "return;";
+}
+
+std::string ReturnStmtNode::toTypeScript() const {
+    return "return " + value_->toTypeScript() + ";";
 }
 
 std::string ExitRepeatStmtNode::toTypeScript() const {
@@ -445,9 +566,21 @@ std::string AssignmentStmtNode::toTypeScript() const {
     const std::string lhs = variable_->toTypeScript();
     const std::string rhs = value_->toTypeScript();
     // In strict-mode ES modules, assignments to undeclared identifiers are runtime errors.
-    // Lingo locals are created on first assignment; emit `var` so the TS local is declared.
+    // Lingo locals are created on first assignment; emit `var` on the first assignment and
+    // a plain `name = value;` on subsequent ones (Lingo locals are function-scoped, so the
+    // `var` only needs to appear once even if the variable is reassigned in nested blocks).
+    // Arguments and globals/properties already have a binding from the function signature or
+    // handler prelude, so they should never get `var` even on first assignment.
     if (var) {
-        return "var " + lhs + " = " + rhs + ";";
+        if (isHandlerArgument(this, var->name())) {
+            return lhs + " = " + rhs + ";";
+        }
+        const HandlerNode* handler = findHandlerAncestor(this);
+        if (!isLocalAlreadyDeclared(handler, var->name())) {
+            markLocalDeclared(handler, var->name());
+            return "var " + lhs + " = " + rhs + ";";
+        }
+        return lhs + " = " + rhs + ";";
     }
     return lhs + " = " + rhs + ";";
 }
@@ -507,7 +640,34 @@ std::string ChunkHiliteStmtNode::toTypeScript() const {
 }
 
 std::string ChunkDeleteStmtNode::toTypeScript() const {
-    return "deleteChunk(" + chunk_->toTypeScript() + ");";
+    // Director `delete chunk first..last of source` mutates the source string.
+    // Emit an assignment that removes the chunk and stores the result back.
+    // We support the two chunk forms the decompiler produces:
+    //   - `char 1..N of tStr`    -> ChunkExprNode
+    //   - `tStr.char[1..N]`      -> ObjPropIndexExprNode with a chunk property
+    const auto* chunkExpr = dynamic_cast<const ChunkExprNode*>(chunk_.get());
+    const auto* propIdx = dynamic_cast<const ObjPropIndexExprNode*>(chunk_.get());
+
+    std::string source;
+    std::string type;
+    std::string first;
+    std::string last;
+
+    if (chunkExpr) {
+        source = chunkExpr->string().toTypeScript();
+        type = escapeString(chunkTypeString(chunkExpr->chunkType()));
+        first = chunkExpr->first().toTypeScript();
+        last = chunkExpr->last() ? chunkExpr->last()->toTypeScript() : first;
+    } else if (propIdx && isChunkPropertyName(propIdx->prop())) {
+        source = propIdx->object().toTypeScript();
+        type = escapeString(propIdx->prop());
+        first = propIdx->index().toTypeScript();
+        last = propIdx->index2() ? propIdx->index2()->toTypeScript() : first;
+    } else {
+        return "deleteChunk(" + chunk_->toTypeScript() + ");";
+    }
+
+    return source + " = deleteStringChunk(" + source + ", " + type + ", " + first + ", " + last + ");";
 }
 
 std::string WhenStmtNode::toTypeScript() const {
@@ -530,21 +690,15 @@ std::string emitArgList(const LingoNode& argList) {
 
 std::string CallNode::toTypeScript() const {
     const std::string args = emitArgList(*argList_);
-    const std::string safeName = sanitizeTsIdentifier(name_);
     // Director's VOID keyword is sometimes emitted by the decompiler as a zero-argument call.
     if ((name_ == "VOID" || name_ == "void") && argList_->argNodes().empty()) {
         return "undefined";
     }
-    // Global builtins that need runtime dispatch rather than direct JS functions.
-    static const std::unordered_set<std::string> kRuntimeBuiltins = {
-        "random", "go", "marker", "point", "sendAllSprites", "sendFuseMsg",
-        "updateStage", "preload", "play", "puppetSprite", "puppetTempo", "puppetPalette",
-        "hilite", "dontPassEvent", "pass", "beep", "alert",
-    };
-    if (kRuntimeBuiltins.count(safeName) > 0) {
-        return "callBuiltin(" + escapeString(safeName) + ", " + args + ")";
-    }
-    return safeName + "(" + args + ")";
+    // Bare calls are resolved by Director as MovieScript/global handlers before builtins.
+    // Route through the host rather than ambient JavaScript globals so names such as
+    // `performance` cannot shadow browser APIs and parent-script methods cannot be bound
+    // to the wrong receiver.
+    return "callNamed(" + escapeString(name_) + (args.empty() ? "" : ", " + args) + ")";
 }
 
 std::string ObjCallNode::toTypeScript() const {
@@ -567,6 +721,9 @@ std::string BlockNode::toTypeScript() const {
 
 std::string HandlerNode::toTypeScript() const {
     std::ostringstream out;
+    // Reset per-handler local-declaration tracker. The tracker is thread-local so
+    // it persists across the entire export; each handler starts with an empty set.
+    tlsDeclaredLocals.byHandler.erase(this);
     out << "export function " << sanitizeTsIdentifier(handlerName_) << "(";
     // Director behavior handlers receive `me` as the first argument. The Lingo source may
     // declare it explicitly ("on foo me, bar") or not ("on foo"). Emit a typed `_me` only
@@ -623,7 +780,12 @@ std::string RepeatWhileStmtNode::toTypeScript() const {
 std::string RepeatWithInStmtNode::toTypeScript() const {
     (void)startIndex();
     std::ostringstream out;
-    out << "for (const " << sanitizeTsIdentifier(variableName_) << " of "
+    // Lingo loop variables are function-scoped locals. Emit `for (var tVar of ...)`
+    // and mark the variable declared so the body emits plain assignments rather
+    // than duplicate `let`/`var` declarations.
+    const HandlerNode* handler = findHandlerAncestor(this);
+    markLocalDeclared(handler, variableName_);
+    out << "for (var " << sanitizeTsIdentifier(variableName_) << " of "
         << list_->toTypeScript() << ".toArray()) {\n";
     out << block_->toTypeScript();
     out << tsIndent(1) << "}\n";
@@ -635,12 +797,16 @@ std::string RepeatWithToStmtNode::toTypeScript() const {
     const std::string var = sanitizeTsIdentifier(variableName_);
     const std::string start = start_->toTypeScript();
     const std::string end = end_->toTypeScript();
+    // Same rationale as RepeatWithInStmtNode: the for-var declaration hoists to
+    // the function scope (matching Lingo locals), so the body must not duplicate it.
+    const HandlerNode* handler = findHandlerAncestor(this);
+    markLocalDeclared(handler, variableName_);
     std::ostringstream out;
     if (up_) {
-        out << "for (let " << var << " = " << start << "; " << var << " <= " << end
+        out << "for (var " << var << " = " << start << "; " << var << " <= " << end
             << "; ++" << var << ") {\n";
     } else {
-        out << "for (let " << var << " = " << start << "; " << var << " >= " << end
+        out << "for (var " << var << " = " << start << "; " << var << " >= " << end
             << "; --" << var << ") {\n";
     }
     out << block_->toTypeScript();
@@ -656,11 +822,18 @@ std::string CaseNode::toTypeScript() const {
     (void)expect_;
     std::ostringstream out;
     out << "case " << value_->toTypeScript() << ":\n";
+    std::string blockStr;
     if (block_) {
-        out << block_->toTypeScript();
+        blockStr = block_->toTypeScript();
+        out << blockStr;
     }
     if (nextOr_) {
         out << nextOr_->toTypeScript();
+    }
+    // Lingo cases never fall through; terminate with break unless the block already
+    // exits via return/break/continue/throw.
+    if (!block_ || !blockEndsWithTerminal(blockStr)) {
+        out << tsIndent(1) << "break;\n";
     }
     if (nextCase_) {
         out << nextCase_->toTypeScript();

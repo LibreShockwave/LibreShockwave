@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "libreshockwave/io/BinaryReader.hpp"
+#include <iostream>
 
 namespace libreshockwave::chunks {
 namespace {

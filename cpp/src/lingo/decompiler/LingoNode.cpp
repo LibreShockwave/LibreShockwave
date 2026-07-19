@@ -25,12 +25,6 @@ std::string joinStrings(const std::vector<std::string>& values, std::string_view
     return result;
 }
 
-bool isIntLiteralZero(const LingoNode* node) {
-    return node != nullptr &&
-           node->valueType() == ValueType::Int &&
-           node->intValue() == 0;
-}
-
 std::string formatFloat(double value) {
     std::ostringstream stream;
     stream << std::setprecision(15) << value;
@@ -57,6 +51,12 @@ std::string toString(std::string_view value) {
 }
 
 } // namespace
+
+bool isIntLiteralZero(const LingoNode* node) {
+    return node != nullptr &&
+           node->valueType() == ValueType::Int &&
+           node->intValue() == 0;
+}
 
 ValueType LingoNode::valueType() const {
     return ValueType::Void;
@@ -540,6 +540,15 @@ ExitStmtNode::ExitStmtNode() {
 
 std::string ExitStmtNode::toLingo(bool /*dot*/) const {
     return "exit";
+}
+
+ReturnStmtNode::ReturnStmtNode(NodePtr value) : value_(std::move(value)) {
+    markStatement();
+    adopt(value_);
+}
+
+std::string ReturnStmtNode::toLingo(bool /*dot*/) const {
+    return "return " + value_->toLingo(false);
 }
 
 ExitRepeatStmtNode::ExitRepeatStmtNode() {

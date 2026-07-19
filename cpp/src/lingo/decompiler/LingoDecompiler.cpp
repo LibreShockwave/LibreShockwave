@@ -859,9 +859,33 @@ void LingoDecompiler::translateInstruction(const chunks::ScriptChunk::Instructio
         }
 
         case Opcode::EXT_CALL:
-        case Opcode::TELL_CALL:
-            translation = std::make_unique<CallNode>(resolveName(instruction.argument), popNode());
+        case Opcode::TELL_CALL: {
+            auto callName = resolveName(instruction.argument);
+            auto argList = popNode();
+            // Lingo's `return <value>` lowers to EXT_CALL "return" with the value
+            // wrapped in an ArgList (PUSH_ARG_LIST_NO_RET or PUSH_ARG_LIST with
+            // arity 1). Materialize it as a ReturnStmtNode so the TypeScript
+            // emitter produces `return <value>;` (an actual `return` statement)
+            // instead of `_return(<value>)` (a sanitized function call whose
+            // return value is discarded and the handler exits with `undefined`).
+            // Bare `return` (no args) becomes an ExitStmtNode (`return;`),
+            // not `_return()`.
+            if (callName == "return" &&
+                (argList->valueType() == ValueType::ArgList ||
+                 argList->valueType() == ValueType::ArgListNoRet)) {
+                if (argList->argNodes().empty()) {
+                    translation = std::make_unique<ExitStmtNode>();
+                    break;
+                }
+                if (argList->argNodes().size() == 1) {
+                    auto args = takeArgNodes(std::move(argList));
+                    translation = std::make_unique<ReturnStmtNode>(std::move(args.front()));
+                    break;
+                }
+            }
+            translation = std::make_unique<CallNode>(std::move(callName), std::move(argList));
             break;
+        }
 
         case Opcode::OBJ_CALL_V4: {
             auto object = readVar(instruction.argument);
