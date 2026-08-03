@@ -35,6 +35,7 @@ using detail::isUniformPaletteIndex;
 using detail::maskAlphaFromPixel;
 using detail::matchesRgb;
 using detail::packArgb;
+using detail::paletteIndicesMatchPixels;
 using detail::resolvePaletteIndexRgb;
 
 bool defaultIndexedMatteRgb(int rgb) {
@@ -229,7 +230,8 @@ std::optional<FloodFillMatte> resolveFloodFillMatte(
     const std::optional<std::vector<std::uint8_t>>& paletteIndices,
     int width,
     int height) {
-    if (hasPaletteIndices(paletteIndices, width, height)) {
+    if (hasPaletteIndices(paletteIndices, width, height) &&
+        paletteIndicesMatchPixels(pixels, *paletteIndices)) {
         return resolveIndexedFloodFillMatte(pixels, *paletteIndices, width, height);
     }
     return resolveRgbFloodFillMatte(pixels, width, height);

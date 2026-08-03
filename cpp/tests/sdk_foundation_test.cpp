@@ -13101,6 +13101,46 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(whiteBackedTextDest->getPixel(1, 1) == 0xFF000000U);
     assert(whiteBackedTextDest->getPixel(2, 1) == 0xFF000000U);
     assert(whiteBackedTextDest->getPixel(3, 2) == 0xFF88ADBDU);
+    auto staleIndexedSource = std::make_shared<Bitmap>(3, 1, 8, std::vector<std::uint32_t>{
+        0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU});
+    auto staleIndexedPalette = std::make_shared<Palette>(
+        std::vector<std::uint32_t>{0xFFFFFFU, 0xEFEFEFU, 0x000000U}, "stale-indexed-source");
+    staleIndexedSource->setImagePalette(staleIndexedPalette);
+    staleIndexedSource->setPaletteIndices(std::vector<std::uint8_t>{0, 0, 0});
+    auto staleIndexedDest = std::make_shared<Bitmap>(3, 1, 8);
+    staleIndexedDest->setImagePalette(staleIndexedPalette);
+    staleIndexedDest->fillRectPaletteIndex(0, 0, 3, 1, 1, 0xFFEFEFEFU);
+    assert(runObjCall(110, {Datum::imageRef(staleIndexedDest),
+                            Datum::imageRef(staleIndexedSource),
+                            Datum::intRect(0, 0, 3, 1),
+                            Datum::intRect(0, 0, 3, 1)}).isVoid());
+    assert(staleIndexedDest->paletteIndex(0, 0) == std::optional<int>(0));
+    assert(staleIndexedDest->paletteIndex(1, 0) == std::optional<int>(2));
+    assert(staleIndexedDest->paletteIndex(2, 0) == std::optional<int>(0));
+    auto unboundIndexedSource = std::make_shared<Bitmap>(3, 1, 8, std::vector<std::uint32_t>{
+        0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU});
+    unboundIndexedSource->setPaletteIndices(std::vector<std::uint8_t>{0, 0, 0});
+    auto unboundIndexedDest = std::make_shared<Bitmap>(3, 1, 8);
+    unboundIndexedDest->setImagePalette(staleIndexedPalette);
+    unboundIndexedDest->fillRectPaletteIndex(0, 0, 3, 1, 1, 0xFFEFEFEFU);
+    assert(runObjCall(110, {Datum::imageRef(unboundIndexedDest),
+                            Datum::imageRef(unboundIndexedSource),
+                            Datum::intRect(0, 0, 3, 1),
+                            Datum::intRect(0, 0, 3, 1)}).isVoid());
+    assert(unboundIndexedDest->paletteIndex(0, 0) == std::optional<int>(1));
+    assert(unboundIndexedDest->paletteIndex(1, 0) == std::optional<int>(2));
+    assert(unboundIndexedDest->paletteIndex(2, 0) == std::optional<int>(1));
+    auto unboundIndexedMatteDest = std::make_shared<Bitmap>(3, 1, 8);
+    unboundIndexedMatteDest->setImagePalette(staleIndexedPalette);
+    unboundIndexedMatteDest->fillRectPaletteIndex(0, 0, 3, 1, 1, 0xFFEFEFEFU);
+    auto matteProps = Datum::propList();
+    matteProps.propListValue().put(Datum::symbol("ink"), Datum::of(8));
+    assert(runObjCall(110, {Datum::imageRef(unboundIndexedMatteDest),
+                            Datum::imageRef(unboundIndexedSource),
+                            Datum::intRect(0, 0, 3, 1),
+                            Datum::intRect(0, 0, 3, 1),
+                            matteProps}).isVoid());
+    assert(unboundIndexedMatteDest->getPixel(1, 0) == 0xFF000000U);
     auto coloredWhiteBackedDest = std::make_shared<Bitmap>(
         3, 1, 32, std::vector<std::uint32_t>{0xFF111111U, 0xFF111111U, 0xFF111111U});
     auto coloredWhiteBackedSource = std::make_shared<Bitmap>(

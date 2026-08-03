@@ -4,6 +4,7 @@
 #include "libreshockwave/bitmap/ColorRef.hpp"
 #include "libreshockwave/bitmap/Drawing.hpp"
 #include "libreshockwave/bitmap/Palette.hpp"
+#include "../../bitmap/BitmapProcessing.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ImageMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/ListMethodDispatcher.hpp"
 #include "libreshockwave/lingo/vm/dispatch/PropListMethodDispatcher.hpp"
@@ -2935,7 +2936,8 @@ std::optional<ImageFloodFillMatte> imageResolveFloodFillMatte(
     const std::optional<std::vector<std::uint8_t>>& paletteIndices,
     int width,
     int height) {
-    if (imageHasPaletteIndices(paletteIndices, width, height)) {
+    if (imageHasPaletteIndices(paletteIndices, width, height) &&
+        bitmap::detail::paletteIndicesMatchPixels(pixels, *paletteIndices)) {
         return imageResolveIndexedFloodFillMatte(pixels, *paletteIndices, width, height);
     }
     return imageResolveRgbFloodFillMatte(pixels, width, height);
@@ -3481,7 +3483,11 @@ bool imageShouldKeyDefaultIndexedMatte(const bitmap::Bitmap& src,
 bool imagePalettesCompatibleForIndexPreserve(const bitmap::Bitmap& dest, const bitmap::Bitmap& src) {
     const auto destPalette = dest.imagePalette();
     const auto srcPalette = src.imagePalette();
-    return destPalette == nullptr || srcPalette == nullptr || destPalette.get() == srcPalette.get();
+    // Palette indices without an attached source palette are not portable
+    // into a paletted destination.  Refresh them from the source RGB values
+    // instead of treating stale index zero as the destination's white matte.
+    return destPalette == nullptr ||
+           (srcPalette != nullptr && destPalette.get() == srcPalette.get());
 }
 
 bool imageCanPreservePaletteIndices(const bitmap::Bitmap& dest,
@@ -3561,6 +3567,26 @@ int imageNearestCopiedRgbPaletteIndex(const bitmap::Palette& palette, std::uint3
         }
     }
     return bestIndex;
+}
+
+int imageConsistentSourcePaletteIndex(const bitmap::Bitmap& src,
+                                      const std::vector<std::uint8_t>& paletteIndices,
+                                      std::size_t offset,
+                                      std::uint32_t pixel) {
+    if (offset >= paletteIndices.size()) {
+        return 0;
+    }
+    const int sourceIndex = static_cast<int>(paletteIndices[offset]);
+    const auto palette = src.imagePalette();
+    if (palette == nullptr || sourceIndex < 0 || sourceIndex >= palette->size() ||
+        (palette->getColor(sourceIndex) & 0x00FFFFFFU) == (pixel & 0x00FFFFFFU)) {
+        return sourceIndex;
+    }
+    // Some authored indexed members carry stale indices after a palette
+    // override.  Preserve the actual pixel colour when copying into another
+    // indexed surface; otherwise a later matte operation can mistake real
+    // icon/text pixels for palette index zero (the white matte slot).
+    return imageNearestCopiedRgbPaletteIndex(*palette, pixel);
 }
 
 bool imageRegionIsMostlyGrayscale(const bitmap::Bitmap& src, const Datum::IntRect& rect) {
@@ -4054,7 +4080,9 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
             if (preservePaletteIndices && destPaletteIndices.has_value() && srcPaletteIndices.has_value()) {
                 if (!skipSource && !imageShouldSkipPaletteIndexPreserve(sourcePixel, effectiveInk, backgroundKeyRgb)) {
                     if (srcOffset < srcPaletteIndices->size() && destOffset < destPaletteIndices->size()) {
-                        (*destPaletteIndices)[destOffset] = (*srcPaletteIndices)[srcOffset];
+                        const int paletteIndex = imageConsistentSourcePaletteIndex(
+                            copySrc, *srcPaletteIndices, srcOffset, sourcePixel);
+                        (*destPaletteIndices)[destOffset] = static_cast<std::uint8_t>(paletteIndex & 0xFF);
                     }
                 }
                 if (refreshPreservedBackgroundTransparentIndices && destOffset < destPaletteIndices->size()) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -118,6 +119,23 @@ inline int resolvePaletteIndexRgb(const std::vector<std::uint32_t>& pixels,
         }
     }
     return 0xFFFFFF;
+}
+
+inline bool paletteIndicesMatchPixels(const std::vector<std::uint32_t>& pixels,
+                                      const std::vector<std::uint8_t>& paletteIndices) {
+    std::array<std::optional<std::uint32_t>, 256> colors{};
+    for (std::size_t index = 0; index < pixels.size() && index < paletteIndices.size(); ++index) {
+        if (channel(pixels[index], 24) == 0) {
+            continue;
+        }
+        const auto paletteIndex = static_cast<std::size_t>(paletteIndices[index] & 0xFFU);
+        const auto rgb = pixels[index] & 0x00FFFFFFU;
+        if (colors[paletteIndex].has_value() && *colors[paletteIndex] != rgb) {
+            return false;
+        }
+        colors[paletteIndex] = rgb;
+    }
+    return true;
 }
 
 inline bool cornerContainsPaletteIndex(const std::vector<std::uint8_t>& paletteIndices,
