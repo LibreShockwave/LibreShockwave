@@ -1167,7 +1167,6 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         if (ctx->preloadCasts) {
             (void)ctx->player->preloadAllCasts();
         }
-        ctx->player->play();
         ctx->lastStatus = "Loaded " + ctx->movieSource;
         (void)renderCurrentFrame(*ctx);
         return 1;

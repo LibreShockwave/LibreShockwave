@@ -17,6 +17,7 @@ let websocketPath = "";
 let websocketSsl = null;
 let fetchCache = new Map();
 const sockets = new Map();
+const pendingSocketEvents = [];
 
 function post(type, payload = {}, transfer) {
   self.postMessage({ type, ...payload }, transfer || []);
@@ -322,9 +323,40 @@ function flushSocket(instanceId) {
   }
 }
 
+function queueSocketEvent(event) {
+  if (event.kind === "message") {
+    event.bytes = new Uint8Array(event.bytes);
+  }
+  pendingSocketEvents.push(event);
+}
+
+function drainSocketEvents() {
+  if (!handle || !api) return;
+  while (pendingSocketEvents.length > 0) {
+    const event = pendingSocketEvents.shift();
+    if (event.kind === "connected") {
+      bridgeCall("socket connected", () => api.socketConnected(handle, event.instanceId));
+      flushSocket(event.instanceId);
+    } else if (event.kind === "message") {
+      withBytes(event.bytes, (ptr, length) => bridgeCall(
+        "socket message",
+        () => api.socketMessageBytes(handle, event.instanceId, ptr, length)
+      ));
+    } else if (event.kind === "error") {
+      bridgeCall("socket error", () => api.socketError(handle, event.instanceId, event.code));
+    } else if (event.kind === "disconnected") {
+      bridgeCall("socket disconnected", () => api.socketDisconnected(handle, event.instanceId));
+    }
+  }
+  emitDebugMessages();
+}
+
 function connectSocket(request) {
   const previous = sockets.get(request.instanceId);
-  if (previous) previous.ws.close();
+  if (previous) {
+    sockets.delete(request.instanceId);
+    previous.ws.close();
+  }
 
   const url = socketUrlFor(request.host, request.port);
   post("socket", {
@@ -341,18 +373,16 @@ function connectSocket(request) {
   sockets.set(request.instanceId, entry);
 
   ws.addEventListener("open", () => {
+    if (sockets.get(request.instanceId) !== entry) return;
     post("socket", { phase: "open", instanceId: request.instanceId, url });
-    bridgeCall("socket connected", () => api.socketConnected(handle, request.instanceId));
-    emitDebugMessages();
-    flushSocket(request.instanceId);
-    void pumpHostQueues().then(sendFrame).catch((error) => post("error", { message: errorMessage(error) }));
+    queueSocketEvent({ kind: "connected", instanceId: request.instanceId });
   });
   ws.addEventListener("message", (event) => {
+    if (sockets.get(request.instanceId) !== entry) return;
     const deliver = (bytes) => {
+      if (sockets.get(request.instanceId) !== entry) return;
       post("socket", { phase: "message", instanceId: request.instanceId, byteLength: bytes.byteLength || bytes.length || 0, preview: bytePreview(bytes), url });
-      withBytes(bytes, (ptr, length) => bridgeCall("socket message", () => api.socketMessageBytes(handle, request.instanceId, ptr, length)));
-      emitDebugMessages();
-      void pumpHostQueues().then(sendFrame).catch((error) => post("error", { message: errorMessage(error) }));
+      queueSocketEvent({ kind: "message", instanceId: request.instanceId, bytes });
     };
     if (event.data instanceof ArrayBuffer) {
       deliver(new Uint8Array(event.data));
@@ -365,18 +395,18 @@ function connectSocket(request) {
     }
   });
   ws.addEventListener("error", () => {
+    if (sockets.get(request.instanceId) !== entry) return;
     post("socket", { phase: "error", instanceId: request.instanceId, url });
-    bridgeCall("socket error", () => api.socketError(handle, request.instanceId, -2));
-    emitDebugMessages();
+    queueSocketEvent({ kind: "error", instanceId: request.instanceId, code: -2 });
     post("warning", { message: `WebSocket error for ${request.host}:${request.port}` });
   });
   ws.addEventListener("close", (event) => {
+    if (sockets.get(request.instanceId) !== entry) return;
     post("socket", { phase: "close", instanceId: request.instanceId, code: event.code || 0, url });
-    bridgeCall("socket disconnected", () => api.socketDisconnected(handle, request.instanceId));
+    queueSocketEvent({ kind: "disconnected", instanceId: request.instanceId });
     if (event.code && event.code !== 1000) {
-      bridgeCall("socket close error", () => api.socketError(handle, request.instanceId, event.code));
+      queueSocketEvent({ kind: "error", instanceId: request.instanceId, code: event.code });
     }
-    emitDebugMessages();
     sockets.delete(request.instanceId);
   });
 }
@@ -408,10 +438,10 @@ function handleSocketRequest(request) {
   } else if (request.type === 2) {
     const entry = sockets.get(request.instanceId);
     if (entry) {
-      entry.ws.close();
       sockets.delete(request.instanceId);
+      entry.ws.close();
+      queueSocketEvent({ kind: "disconnected", instanceId: request.instanceId });
     }
-    bridgeCall("socket disconnected", () => api.socketDisconnected(handle, request.instanceId));
   }
 }
 
@@ -431,6 +461,7 @@ function emitAudioCommands() {
 
 async function pumpHostQueues() {
   if (!handle) return;
+  drainSocketEvents();
   for (let round = 0; round < 64; round += 1) {
     const fetches = parseJsonArray(bridgeCall("poll fetches", () => api.pollFetches(handle), "[]"));
     if (fetches.length > 0) {
@@ -503,6 +534,7 @@ function scheduleTick() {
     timer = 0;
     if (!playing || !handle) return;
     try {
+      drainSocketEvents();
       const delay = currentDelayMs();
       nextTickAt += delay;
       if (nextTickAt < performance.now() - delay) {
@@ -597,11 +629,14 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
     await pumpHostQueues();
     emitDebugMessages();
     applyDetectedTempoOverride();
+    bridgeCall("play", () => api.play(handle));
+    if (!wasPlaying) {
+      bridgeCall("pause", () => api.pause(handle));
+    }
     bridgeCall("render", () => api.render(handle), 0);
     emitDebugMessages();
     sendFrame();
     playing = wasPlaying;
-    if (playing) bridgeCall("play", () => api.play(handle));
     post("load", {
       url: movieUrl,
       info: JSON.parse(bridgeCall("frame info", () => api.frameInfoJson(handle), "{}") || "{}"),
@@ -659,6 +694,7 @@ self.addEventListener("message", (event) => {
         await loadMovie(message.url, playing, message.requestId || 0);
         break;
       case "play":
+        drainSocketEvents();
         playing = true;
         bridgeCall("play", () => api.play(handle));
         await pumpHostQueues();
