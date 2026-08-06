@@ -1281,19 +1281,31 @@ int countLines(std::string_view value);
 
 Datum getStringProp(std::string_view value, std::string_view propName) {
     if (equalsIgnoreCase(propName, "length")) {
-        return Datum::of(static_cast<int>(value.size()));
+        // `the length of string` counts CHARACTERS, not bytes.
+        return Datum::of(charCountOf(value));
     }
     if (equalsIgnoreCase(propName, "linecount")) {
         return Datum::of(countLines(value));
     }
-    if (equalsIgnoreCase(propName, "line")) {
-        auto chunks = splitLines(value);
-        std::vector<Datum> lines;
-        lines.reserve(chunks.size());
-        for (auto& line : chunks) {
-            lines.emplace_back(Datum::of(std::move(line)));
+    if (equalsIgnoreCase(propName, "char") || equalsIgnoreCase(propName, "word") ||
+        equalsIgnoreCase(propName, "item") || equalsIgnoreCase(propName, "line")) {
+        // `string.char` / `.word` / `.item` / `.line` (no index) returns the
+        // collection of chunks of that kind (count / indexing work on it).
+        const char itemDelimiter = ',';
+        const StringChunkType chunkType = equalsIgnoreCase(propName, "char")
+                                              ? StringChunkType::Char
+                                              : (equalsIgnoreCase(propName, "word")
+                                                     ? StringChunkType::Word
+                                                     : (equalsIgnoreCase(propName, "item")
+                                                            ? StringChunkType::Item
+                                                            : StringChunkType::Line));
+        auto chunks = splitChunks(value, chunkType, itemDelimiter);
+        std::vector<Datum> chunkDatums;
+        chunkDatums.reserve(chunks.size());
+        for (auto& chunk : chunks) {
+            chunkDatums.emplace_back(Datum::of(std::move(chunk)));
         }
-        return Datum::list(std::move(lines));
+        return Datum::list(std::move(chunkDatums));
     }
     if (equalsIgnoreCase(propName, "ilk")) {
         return Datum::symbol("string");
@@ -1525,10 +1537,23 @@ Datum getChainedObjectProperty(ExecutionContext& context, const Datum& object, s
         return getPropListProp(object.propListValue(), propName);
     }
     if (const auto* str = object.asString()) {
-        return propName == "length" ? Datum::of(static_cast<int>(str->value.size())) : Datum::voidValue();
+        if (equalsIgnoreCase(propName, "length")) {
+            // `the length of string` counts CHARACTERS, not bytes.
+            return Datum::of(charCountOf(str->value));
+        }
+        return getObjectProperty(context, object, propName);
     }
-    if (object.asFieldText() != nullptr) {
-        return Datum::voidValue();
+    if (const auto* field = object.asFieldText()) {
+        if (equalsIgnoreCase(propName, "length")) {
+            return Datum::of(charCountOf(field->value));
+        }
+        return getObjectProperty(context, object, propName);
+    }
+    if (const auto* chunk = object.asStringChunk()) {
+        if (equalsIgnoreCase(propName, "length")) {
+            return Datum::of(charCountOf(chunk->value));
+        }
+        return getObjectProperty(context, object, propName);
     }
     if (const auto* point = object.asIntPoint()) {
         return equalsIgnoreCase(propName, "ilk") ? Datum::voidValue() : getPointProp(*point, propName);
@@ -1875,6 +1900,26 @@ std::string sourceChunkDelimiter(std::string_view value, StringChunkType type, c
 
 int countChunks(std::string_view value, StringChunkType type, char itemDelimiter = ',') {
     return util::countChunks(value, type, itemDelimiter);
+}
+
+// UTF-8 code-point count — `the length of string` counts CHARACTERS, not
+// bytes (the reference VM uses char counts; byte counts break multi-byte
+// text such as accented characters).
+int charCountOf(std::string_view value) {
+    int count = 0;
+    for (std::size_t index = 0; index < value.size(); ++count) {
+        const unsigned char lead = static_cast<unsigned char>(value[index]);
+        if ((lead & 0x80) == 0) {
+            index += 1;
+        } else if ((lead & 0xE0) == 0xC0) {
+            index += 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            index += 3;
+        } else {
+            index += 4;
+        }
+    }
+    return count;
 }
 
 void appendInt(std::string& output, int value) {
@@ -6571,10 +6616,16 @@ bool getChainedProp(ExecutionContext& context) {
 
 bool getTopLevelProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    if (equalsIgnoreCase(propName, "_player")) {
+    if (equalsIgnoreCase(propName, "_player") || equalsIgnoreCase(propName, "_key")) {
+        // _key properties (keyCode etc.) are player-level in the reference.
         context.push(Datum::playerRef());
-    } else if (equalsIgnoreCase(propName, "_movie")) {
+    } else if (equalsIgnoreCase(propName, "_movie") || equalsIgnoreCase(propName, "_system")) {
+        // _system properties (randomSeed etc.) are movie-level.
         context.push(Datum::movieRef());
+    } else if (equalsIgnoreCase(propName, "_mouse")) {
+        // Mouse properties (mouseH/mouseV/mouseLoc/...) resolve via the
+        // player's movie properties.
+        context.push(Datum::playerRef());
     } else if (equalsIgnoreCase(propName, "_sound")) {
         context.push(Datum::soundRef());
     } else {
@@ -6793,9 +6844,17 @@ bool getLegacyProperty(ExecutionContext& context) {
 }
 
 bool getField(ExecutionContext& context) {
-    const Datum castIdDatum = context.pop();
+    // A castLib ref sits on the stack below the field identifier only in
+    // D5+ movies (matches the reference VM's dir_version >= 500 gate).
+    const auto* script = context.scope().script();
+    const bool dirVersionAtLeast500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
+    std::optional<Datum> castIdDatum;
+    if (dirVersionAtLeast500) {
+        castIdDatum = context.pop();
+    }
     Datum fieldNameOrNum = context.pop();
-    const int castId = toIntLikeJava(castIdDatum);
+    const int castId = castIdDatum ? toIntLikeJava(*castIdDatum) : 0;
 
     std::vector<Datum> args;
     args.reserve(2);
