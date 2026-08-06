@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <functional>
 #include <memory>
@@ -82,6 +82,8 @@ public:
     using VariableSetListener = std::function<void(std::string_view type,
                                                    std::string_view name,
                                                    const Datum& value)>;
+    // Access to the player-level `tell` target stack (starttell/telltell/endtell).
+    using TellTargetStackGetter = std::function<std::vector<Datum>&()>;
 
     struct Callbacks {
         HandlerExecutor handlerExecutor;
@@ -95,6 +97,7 @@ public:
         ErrorStateSetter errorStateSetter;
         CallStackFormatter callStackFormatter;
         VariableSetListener variableSetListener;
+        TellTargetStackGetter tellTargetStackGetter;
     };
 
     ExecutionContext(Scope& scope,
@@ -148,6 +151,10 @@ public:
     void setErrorState(bool errorState);
     [[nodiscard]] bool hasVariableSetListener() const { return static_cast<bool>(callbacks_.variableSetListener); }
     void tracePropertySet(std::string_view propName, const Datum& value) const;
+    /// Player-level `tell` target stack (starttell pushes, endtell pops,
+    /// tellcall reads the top). Nested tell blocks keep their own entries.
+    [[nodiscard]] std::vector<Datum>& tellTargetStack();
+    [[nodiscard]] bool hasTellTargetStack() const { return static_cast<bool>(callbacks_.tellTargetStackGetter); }
 
     void jumpTo(int targetOffset);
     [[nodiscard]] const chunks::ScriptChunk::Handler* findLocalHandler(int index) const;

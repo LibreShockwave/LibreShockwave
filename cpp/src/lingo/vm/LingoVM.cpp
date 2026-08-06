@@ -1,4 +1,4 @@
-#include "libreshockwave/lingo/vm/LingoVM.hpp"
+﻿#include "libreshockwave/lingo/vm/LingoVM.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -1021,6 +1021,9 @@ ExecutionContext::Callbacks LingoVM::callbacksFor(
     };
     callbacks.builtinInvoker = [this](std::string_view name, const std::vector<Datum>& args) {
         return callBuiltin(name, args);
+    };
+    callbacks.tellTargetStackGetter = [this]() -> std::vector<Datum>& {
+        return tellTargetStack_;
     };
     callbacks.errorStateSetter = [this](bool errorState) {
         setErrorState(errorState);

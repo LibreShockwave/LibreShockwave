@@ -1,4 +1,4 @@
-#include "libreshockwave/lingo/vm/OpcodeRegistry.hpp"
+﻿#include "libreshockwave/lingo/vm/OpcodeRegistry.hpp"
 
 #include "libreshockwave/bitmap/Bitmap.hpp"
 #include "libreshockwave/bitmap/ColorRef.hpp"
@@ -698,15 +698,19 @@ Datum subtractListFromScalar(const Datum& scalarDatum, const Datum::List& list) 
     return Datum::list(std::move(result));
 }
 
+// A zero divisor is coerced to 1 (ScummVM
+// LC::divData) instead of erroring; Int/Int yields truncated Int, mixed
+// int/float yields Float.
 Datum divideList(const Datum::List& list, const Datum& divisor) {
     const double scalar = toDoubleLikeJava(divisor);
     const bool divisorIsFloat = isFloatLike(divisor);
-    const int intDivisor = divisorIsFloat ? 0 : toIntLikeJava(divisor);
+    const int intDivisor = divisorIsFloat ? 1 : (toIntLikeJava(divisor) == 0 ? 1 : toIntLikeJava(divisor));
+    const double floatDivisor = scalar == 0.0 ? 1.0 : scalar;
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
         if (isFloatLike(item) || divisorIsFloat) {
-            result.emplace_back(Datum::of(toDoubleLikeJava(item) / scalar));
+            result.emplace_back(Datum::of(toDoubleLikeJava(item) / floatDivisor));
         } else {
             result.emplace_back(Datum::of(toIntLikeJava(item) / intDivisor));
         }
@@ -714,11 +718,39 @@ Datum divideList(const Datum::List& list, const Datum& divisor) {
     return Datum::list(std::move(result));
 }
 
-Datum modList(const Datum::List& list, int divisor) {
+// Mod: division by zero yields 0 (not an error); mixed int/float
+// operands yield a Float result. List elements always produce truncated Ints.
+double lingoModFloat(double left, double right) {
+    if (right == 0.0) {
+        return 0.0;
+    }
+    return std::fmod(left, right);
+}
+
+Datum modList(const Datum::List& list, const Datum& divisorDatum, ExecutionContext& context) {
     std::vector<Datum> result;
     result.reserve(list.items().size());
+    if (const auto* divisorInt = divisorDatum.asInt()) {
+        for (const auto& item : list.items()) {
+            if (const auto* itemInt = item.asInt()) {
+                result.emplace_back(Datum::of(divisorInt->value == 0 ? 0 : itemInt->value % divisorInt->value));
+            } else if (const auto* itemFloat = item.asFloat()) {
+                result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(itemFloat->value, divisorInt->value))));
+            } else {
+                throw context.error("Modulus operator in list only works with ints and floats");
+            }
+        }
+        return Datum::list(std::move(result));
+    }
+    const double divisor = toDoubleLikeJava(divisorDatum);
     for (const auto& item : list.items()) {
-        result.emplace_back(Datum::of(toIntLikeJava(item) % divisor));
+        if (const auto* itemInt = item.asInt()) {
+            result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(itemInt->value, divisor))));
+        } else if (const auto* itemFloat = item.asFloat()) {
+            result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(itemFloat->value, divisor))));
+        } else {
+            throw context.error("Modulus operator in list only works with ints and floats");
+        }
     }
     return Datum::list(std::move(result));
 }
@@ -741,6 +773,34 @@ bool lingoEquals(const Datum& a, const Datum& b) {
             }
         }
     }
+    // Director treats 2-element lists and points / 4-element lists and rects
+    // interchangeably (points are 2-element lists, rects are 4-element lists).
+    if (a.isList() && b.asIntPoint() != nullptr) {
+        const auto& items = a.listValue().items();
+        return items.size() == 2 && lingoEquals(items[0], Datum::of(b.asIntPoint()->x)) &&
+               lingoEquals(items[1], Datum::of(b.asIntPoint()->y));
+    }
+    if (b.isList() && a.asIntPoint() != nullptr) {
+        const auto& items = b.listValue().items();
+        return items.size() == 2 && lingoEquals(items[0], Datum::of(a.asIntPoint()->x)) &&
+               lingoEquals(items[1], Datum::of(a.asIntPoint()->y));
+    }
+    if (a.isList() && b.asIntRect() != nullptr) {
+        const auto& items = a.listValue().items();
+        const auto* rect = b.asIntRect();
+        return items.size() == 4 && lingoEquals(items[0], Datum::of(rect->left)) &&
+               lingoEquals(items[1], Datum::of(rect->top)) &&
+               lingoEquals(items[2], Datum::of(rect->right)) &&
+               lingoEquals(items[3], Datum::of(rect->bottom));
+    }
+    if (b.isList() && a.asIntRect() != nullptr) {
+        const auto& items = b.listValue().items();
+        const auto* rect = a.asIntRect();
+        return items.size() == 4 && lingoEquals(items[0], Datum::of(rect->left)) &&
+               lingoEquals(items[1], Datum::of(rect->top)) &&
+               lingoEquals(items[2], Datum::of(rect->right)) &&
+               lingoEquals(items[3], Datum::of(rect->bottom));
+    }
     if ((a.isString() || a.isSymbol()) && (b.isString() || b.isSymbol())) {
         const auto lhs = directStringViewLikeJava(a);
         const auto rhs = directStringViewLikeJava(b);
@@ -750,6 +810,296 @@ bool lingoEquals(const Datum& a, const Datum& b) {
                  (equalsIgnoreCase(*lhs, "text") && equalsIgnoreCase(*rhs, "field"))));
     }
     return a == b;
+}
+
+// Ordered comparison with the Director type matrix (less-than):
+// (vm-rust/src/player/compare.rs). Key rules:
+//   - StringChunk / FieldText compare as their resolved text
+//   - SpriteRef compares as its channel number
+//   - Symbol compares as its string name (case-insensitive lexicographic)
+//   - Void is < any number; numbers vs Void compare against 0
+//   - String vs number: numeric parse, fallback 0 (empty string = 0)
+//   - String vs String / Symbol vs Symbol: case-insensitive lexicographic
+//   - Point vs Point: BOTH components must satisfy
+//   - Point vs scalar: ANY component satisfying makes it true
+//   - List vs List: every corresponding element must satisfy (empty → false)
+//   - PropList vs PropList: compare first values recursively
+//   - ScriptInstanceRef: stable ordering by instance pointer
+bool lingoLessThan(const Datum& a, const Datum& b) {
+    // Pre-conversions (StringChunk → String text; SpriteRef →
+    // Int channel; Symbol → String name).
+    if (const auto* chunk = a.asStringChunk()) {
+        return lingoLessThan(Datum::of(chunk->value), b);
+    }
+    if (const auto* chunk = b.asStringChunk()) {
+        return lingoLessThan(a, Datum::of(chunk->value));
+    }
+    if (const auto* field = a.asFieldText()) {
+        return lingoLessThan(Datum::of(field->value), b);
+    }
+    if (const auto* field = b.asFieldText()) {
+        return lingoLessThan(a, Datum::of(field->value));
+    }
+    if (const auto* sprite = a.asSpriteRef()) {
+        return lingoLessThan(Datum::of(sprite->channel), b);
+    }
+    if (const auto* sprite = b.asSpriteRef()) {
+        return lingoLessThan(a, Datum::of(sprite->channel));
+    }
+    if (const auto* symbol = a.asSymbol()) {
+        return lingoLessThan(Datum::of(symbol->name), b);
+    }
+    if (const auto* symbol = b.asSymbol()) {
+        return lingoLessThan(a, Datum::of(symbol->name));
+    }
+
+    // Int comparisons
+    if (const auto* left = a.asInt()) {
+        if (const auto* right = b.asInt()) {
+            return left->value < right->value;
+        }
+        if (const auto* right = b.asFloat()) {
+            return static_cast<double>(left->value) < right->value;
+        }
+        if (b.isVoid()) {
+            return left->value < 0;
+        }
+        if (const auto rightString = directStringViewLikeJava(b)) {
+            if (const auto rightNumber = parseDoubleStrict(*rightString)) {
+                return static_cast<double>(left->value) < *rightNumber;
+            }
+            return !rightString->empty();
+        }
+    }
+
+    // Float comparisons
+    if (const auto* left = a.asFloat()) {
+        if (const auto* right = b.asInt()) {
+            return left->value < static_cast<double>(right->value);
+        }
+        if (const auto* right = b.asFloat()) {
+            return left->value < right->value;
+        }
+        if (b.isVoid()) {
+            return left->value < 0.0;
+        }
+        if (const auto rightString = directStringViewLikeJava(b)) {
+            if (const auto rightNumber = parseDoubleStrict(*rightString)) {
+                return left->value < *rightNumber;
+            }
+            return !rightString->empty();
+        }
+    }
+
+    // Void comparisons — Void is always < any number
+    if (a.isVoid() && (b.isNumber())) {
+        return true;
+    }
+
+    // Point comparisons
+    if (const auto* left = a.asIntPoint()) {
+        if (const auto* right = b.asIntPoint()) {
+            return left->x < right->x && left->y < right->y;
+        }
+        if (const auto* right = b.asInt()) {
+            return left->x < right->value || left->y < right->value;
+        }
+    }
+    if (const auto* right = b.asIntPoint()) {
+        if (const auto* left = a.asInt()) {
+            return left->value < right->x || left->value < right->y;
+        }
+    }
+
+    // String vs number: Director coerces strings to numbers (empty string = 0).
+    // NOTE: directStringViewLikeJava returns an EMPTY VIEW (not nullopt) for
+    // Void/Null, so guard those out — the catch-all yields false.
+    if (!a.isVoid() && !a.isNull()) {
+        if (const auto leftString = directStringViewLikeJava(a)) {
+            if (const auto* right = b.asInt()) {
+                const double leftNumber = parseDoubleStrict(*leftString).value_or(0.0);
+                return leftNumber < static_cast<double>(right->value);
+            }
+            if (const auto* right = b.asFloat()) {
+                const double leftNumber = parseDoubleStrict(*leftString).value_or(0.0);
+                return leftNumber < right->value;
+            }
+            if (!b.isVoid() && !b.isNull()) {
+                if (const auto rightString = directStringViewLikeJava(b)) {
+                    return lowerAscii(*leftString) < lowerAscii(*rightString);
+                }
+            }
+        }
+    }
+
+    // PropList comparisons — Director compares property lists by their first
+    // value (sorted lists used as priority queues, e.g. A* pathfinding).
+    if (a.isPropList() && b.isPropList()) {
+        const auto& leftPairs = a.propListValue().properties();
+        const auto& rightPairs = b.propListValue().properties();
+        if (!leftPairs.empty() && !rightPairs.empty()) {
+            return lingoLessThan(leftPairs.front().second, rightPairs.front().second);
+        }
+        return false;
+    }
+
+    // Linear list comparison — every corresponding element of the left must be
+    // < the right's (11.5 dictionary `<` entry for rects/points/lists).
+    if (a.isList() && b.isList()) {
+        const auto& leftItems = a.listValue().items();
+        const auto& rightItems = b.listValue().items();
+        if (leftItems.empty() || rightItems.empty()) {
+            return false;
+        }
+        const auto count = std::min(leftItems.size(), rightItems.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!lingoLessThan(leftItems[index], rightItems[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Script instances have no meaningful ordering in Director, but a movie
+    // that sorts or compares them needs a stable result — compare by pointer.
+    if (a.type() == DatumType::ScriptInstanceRef && b.type() == DatumType::ScriptInstanceRef) {
+        return std::less<const void*>{}(&a.scriptInstanceValue(), &b.scriptInstanceValue());
+    }
+
+    return false;
+}
+
+// Ordered comparison with the Director type matrix (greater-than):
+// (vm-rust/src/player/compare.rs). Same pre-conversions as `lingoLessThan`;
+// the numeric/string/point/list matrices mirror it.
+bool lingoGreaterThan(const Datum& a, const Datum& b) {
+    if (const auto* chunk = a.asStringChunk()) {
+        return lingoGreaterThan(Datum::of(chunk->value), b);
+    }
+    if (const auto* chunk = b.asStringChunk()) {
+        return lingoGreaterThan(a, Datum::of(chunk->value));
+    }
+    if (const auto* field = a.asFieldText()) {
+        return lingoGreaterThan(Datum::of(field->value), b);
+    }
+    if (const auto* field = b.asFieldText()) {
+        return lingoGreaterThan(a, Datum::of(field->value));
+    }
+    if (const auto* sprite = a.asSpriteRef()) {
+        return lingoGreaterThan(Datum::of(sprite->channel), b);
+    }
+    if (const auto* sprite = b.asSpriteRef()) {
+        return lingoGreaterThan(a, Datum::of(sprite->channel));
+    }
+    if (const auto* symbol = a.asSymbol()) {
+        return lingoGreaterThan(Datum::of(symbol->name), b);
+    }
+    if (const auto* symbol = b.asSymbol()) {
+        return lingoGreaterThan(a, Datum::of(symbol->name));
+    }
+
+    // Int comparisons
+    if (const auto* left = a.asInt()) {
+        if (const auto* right = b.asInt()) {
+            return left->value > right->value;
+        }
+        if (const auto* right = b.asFloat()) {
+            return static_cast<double>(left->value) > right->value;
+        }
+        if (b.isVoid()) {
+            return left->value > 0;
+        }
+        if (const auto rightString = directStringViewLikeJava(b)) {
+            if (const auto rightNumber = parseDoubleStrict(*rightString)) {
+                return static_cast<double>(left->value) > *rightNumber;
+            }
+            return rightString->empty();
+        }
+    }
+
+    // Float comparisons
+    if (const auto* left = a.asFloat()) {
+        if (const auto* right = b.asInt()) {
+            return left->value > static_cast<double>(right->value);
+        }
+        if (const auto* right = b.asFloat()) {
+            return left->value > right->value;
+        }
+        if (b.isVoid()) {
+            return left->value > 0.0;
+        }
+        if (const auto rightString = directStringViewLikeJava(b)) {
+            if (const auto rightNumber = parseDoubleStrict(*rightString)) {
+                return left->value > *rightNumber;
+            }
+            return rightString->empty();
+        }
+    }
+
+    // Void comparisons — Void is never > any number
+    if (a.isVoid() && (b.isNumber())) {
+        return false;
+    }
+
+    // Point comparisons
+    if (const auto* left = a.asIntPoint()) {
+        if (const auto* right = b.asIntPoint()) {
+            return left->x > right->x && left->y > right->y;
+        }
+        if (const auto* right = b.asInt()) {
+            return left->x > right->value || left->y > right->value;
+        }
+    }
+    if (const auto* right = b.asIntPoint()) {
+        if (const auto* left = a.asInt()) {
+            return left->value > right->x || left->value > right->y;
+        }
+    }
+
+    // String vs number: Director coerces strings to numbers (empty string = 0).
+    // NOTE: directStringViewLikeJava returns an EMPTY VIEW (not nullopt) for
+    // Void/Null, so guard those out — the catch-all yields false.
+    if (!a.isVoid() && !a.isNull()) {
+        if (const auto leftString = directStringViewLikeJava(a)) {
+            if (const auto* right = b.asInt()) {
+                const double leftNumber = parseDoubleStrict(*leftString).value_or(0.0);
+                return leftNumber > static_cast<double>(right->value);
+            }
+            if (const auto* right = b.asFloat()) {
+                const double leftNumber = parseDoubleStrict(*leftString).value_or(0.0);
+                return leftNumber > right->value;
+            }
+            if (!b.isVoid() && !b.isNull()) {
+                if (const auto rightString = directStringViewLikeJava(b)) {
+                    return lowerAscii(*leftString) > lowerAscii(*rightString);
+                }
+            }
+        }
+    }
+
+    // Linear list comparison — every corresponding element of the left must be
+    // > the right's.
+    if (a.isList() && b.isList()) {
+        const auto& leftItems = a.listValue().items();
+        const auto& rightItems = b.listValue().items();
+        if (leftItems.empty() || rightItems.empty()) {
+            return false;
+        }
+        const auto count = std::min(leftItems.size(), rightItems.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!lingoGreaterThan(leftItems[index], rightItems[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Script instances compare by pointer.
+    if (a.type() == DatumType::ScriptInstanceRef && b.type() == DatumType::ScriptInstanceRef) {
+        return std::less<const void*>{}(&b.scriptInstanceValue(), &a.scriptInstanceValue());
+    }
+
+    return false;
 }
 
 std::vector<Datum> argListItems(const Datum& datum) {
@@ -4669,6 +5019,13 @@ bool pushSymb(ExecutionContext& context) {
     return true;
 }
 
+// PushVarRef (0x46) — identical to PushSymb: both push a
+// Datum::Symbol named by the name-table operand.
+bool pushVarRef(ExecutionContext& context) {
+    context.push(Datum::symbol(context.resolveNameRef(context.argument())));
+    return true;
+}
+
 bool pushChunkVarRef(ExecutionContext& context) {
     const int rawIndex = toIntLikeJava(context.peekRef());
     context.scope().replaceTop(Datum::varRef(id::varTypeFromCode(context.argument()), rawIndex));
@@ -4922,6 +5279,39 @@ bool endRepeat(ExecutionContext& context) {
     return false;
 }
 
+// starttell (0x1c) — pop the tell target and record it so enclosed tellcalls
+// know their dispatch target. Nested `tell` blocks stack. This player has no
+// nested sub-players, so the target is kept for balance; tellcall below
+// matches the no-nested-target path (ext_call behavior).
+bool startTell(ExecutionContext& context) {
+    if (context.hasTellTargetStack()) {
+        context.tellTargetStack().push_back(context.pop());
+    } else {
+        context.pop();
+    }
+    return true;
+}
+
+// endtell (0x1d) — pop the current tell target.
+bool endTell(ExecutionContext& context) {
+    if (context.hasTellTargetStack()) {
+        auto& stack = context.tellTargetStack();
+        if (!stack.empty()) {
+            stack.pop_back();
+        }
+    }
+    return true;
+}
+
+// calljavascript (0x26) — stub: pops the two arguments and
+// advances. No bridge to JS is implemented there either (it only logs a TODO
+// warning); the observable behavior is "consume operands and advance".
+bool callJavaScript(ExecutionContext& context) {
+    context.pop();
+    context.pop();
+    return true;
+}
+
 bool add(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const auto* bi = context.peekRef(0).asInt();
@@ -5166,42 +5556,47 @@ bool div(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            if (bi->value == 0) {
-                throw context.error("Division by zero");
-            }
-            context.scope().replaceTopTwo(Datum::of(ai->value / bi->value));
+
+        // Void / X → Int(0), X / Void → Int(0).
+        if (a.isVoid() || b.isVoid()) {
+            context.scope().replaceTopTwo(Datum::of(0));
             return true;
+        }
+
+        // A zero divisor is coerced to 1 (ScummVM LC::divData).
+        if (const auto* bi = b.asInt()) {
+            if (const auto* ai = a.asInt()) {
+                const int divisor = bi->value == 0 ? 1 : bi->value;
+                context.scope().replaceTopTwo(Datum::of(ai->value / divisor));
+                return true;
+            }
         }
 
         if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
             const double divisor = toDoubleLikeJava(b);
-            if (divisor == 0.0) {
-                throw context.error("Division by zero");
-            }
-            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) / divisor));
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) / (divisor == 0.0 ? 1.0 : divisor)));
             return true;
         }
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    const double divisor = toDoubleLikeJava(b);
-    if (divisor == 0.0) {
-        throw context.error("Division by zero");
+    if (a.isVoid() || b.isVoid()) {
+        context.push(Datum::of(0));
+        return true;
     }
+    const double divisor = toDoubleLikeJava(b);
+    const double safeDivisor = divisor == 0.0 ? 1.0 : divisor;
 
     if (const auto* point = a.asIntPoint()) {
-        context.push(Datum::intPoint(static_cast<int>(point->x / divisor), static_cast<int>(point->y / divisor)));
+        context.push(Datum::intPoint(static_cast<int>(point->x / safeDivisor), static_cast<int>(point->y / safeDivisor)));
         return true;
     }
     if (const auto* rect = a.asIntRect()) {
-        context.push(Datum::intRect(static_cast<int>(rect->left / divisor),
-                                    static_cast<int>(rect->top / divisor),
-                                    static_cast<int>(rect->right / divisor),
-                                    static_cast<int>(rect->bottom / divisor)));
+        context.push(Datum::intRect(static_cast<int>(rect->left / safeDivisor),
+                                    static_cast<int>(rect->top / safeDivisor),
+                                    static_cast<int>(rect->right / safeDivisor),
+                                    static_cast<int>(rect->bottom / safeDivisor)));
         return true;
     }
     if (a.isList()) {
@@ -5209,7 +5604,7 @@ bool div(ExecutionContext& context) {
         return true;
     }
 
-    context.push(numericResult(a, b, toDoubleLikeJava(a) / divisor));
+    context.push(numericResult(a, b, toDoubleLikeJava(a) / safeDivisor));
     return true;
 }
 
@@ -5217,38 +5612,60 @@ bool mod(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            if (bi->value == 0) {
-                throw context.error("Modulo by zero");
+
+        // Void is treated as 0 (Director behavior).
+        // Void is converted to Int(0) first, so `Void % Float` stays a
+        // Float(0.0) while `Void % Int` is Int(0).
+        if (a.isVoid() || b.isVoid()) {
+            if (a.asFloat() != nullptr || b.asFloat() != nullptr) {
+                context.scope().replaceTopTwo(Datum::of(0.0));
+            } else {
+                context.scope().replaceTopTwo(Datum::of(0));
             }
-            context.scope().replaceTopTwo(Datum::of(ai->value % bi->value));
             return true;
         }
 
-        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
-            const int divisor = toIntLikeJava(b);
-            if (divisor == 0) {
-                throw context.error("Modulo by zero");
-            }
-            context.scope().replaceTopTwo(Datum::of(toIntLikeJava(a) % divisor));
+        // List % scalar — element-wise, truncated Int results.
+        if (a.isList()) {
+            context.scope().replaceTopTwo(modList(a.listValue(), b, context));
             return true;
         }
+
+        if (const auto* bi = b.asInt()) {
+            if (const auto* ai = a.asInt()) {
+                context.scope().replaceTopTwo(Datum::of(bi->value == 0 ? 0 : ai->value % bi->value));
+                return true;
+            }
+        }
+
+        // Mixed int/float and float/float produce Float results.
+        if (a.isNumber() && b.isNumber()) {
+            context.scope().replaceTopTwo(Datum::of(lingoModFloat(toDoubleLikeJava(a), toDoubleLikeJava(b))));
+            return true;
+        }
+
+        throw context.error("Modulus operator only works with ints and floats");
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    const int divisor = toIntLikeJava(b);
-    if (divisor == 0) {
-        throw context.error("Modulo by zero");
-    }
-    if (a.isList()) {
-        context.push(modList(a.listValue(), divisor));
+    if (a.isVoid() || b.isVoid()) {
+        if (a.asFloat() != nullptr || b.asFloat() != nullptr) {
+            context.push(Datum::of(0.0));
+        } else {
+            context.push(Datum::of(0));
+        }
         return true;
     }
-    context.push(Datum::of(toIntLikeJava(a) % divisor));
-    return true;
+    if (a.isList()) {
+        context.push(modList(a.listValue(), b, context));
+        return true;
+    }
+    if (a.isNumber() && b.isNumber()) {
+        context.push(Datum::of(lingoModFloat(toDoubleLikeJava(a), toDoubleLikeJava(b))));
+        return true;
+    }
+    throw context.error("Modulus operator only works with ints and floats");
 }
 
 bool inv(ExecutionContext& context) {
@@ -5274,19 +5691,13 @@ bool lt(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value < bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) < toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoLessThan(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) < toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoLessThan(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5294,19 +5705,13 @@ bool ltEq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value <= bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) <= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoLessThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) <= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoLessThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5314,19 +5719,13 @@ bool gt(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value > bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) > toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoGreaterThan(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) > toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoGreaterThan(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5334,19 +5733,13 @@ bool gtEq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value >= bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) >= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoGreaterThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) >= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoGreaterThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5529,6 +5922,13 @@ bool contains0Str(ExecutionContext& context) {
                                              stringViewLikeJava(needle, needleStorage));
     context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
     return true;
+}
+
+// hilitechunk (0x18) — no VM handler for this opcode; hitting
+// it raises "No handler for opcode hilitechunk (0x18)". Match that observable
+// behavior (a script error) rather than silently skipping.
+bool hiliteChunk(ExecutionContext& context) {
+    throw context.error("No handler for opcode hilitechunk (0x18)");
 }
 
 bool getChunk(ExecutionContext& context) {
@@ -8327,6 +8727,80 @@ bool objCall(ExecutionContext& context) {
     return executeObjCallWithArgs(context, methodName, args, noReturn);
 }
 
+// objcallv4 (0x58) — Director 4 calling convention. Unlike ObjCall, the
+// handler name comes from the STACK (a symbol pushed by pushvarref) instead
+// of the bytecode operand.
+//   Stack: [..., ArgList([receiver, args...]), Symbol(handlerName)]
+// Reference behavior:
+//   1. Pop the handler-name symbol, then the arg list.
+//   2. First arg = receiver; remaining args are the call args.
+//   3. If the receiver is a Symbol, resolve it through globals (a D4 object
+//      variable like #oTrackControl) when a global with that name exists.
+//   4. If the receiver is NOT a script instance/script ref AND a global
+//      (movie) handler with that name exists, route as a movie-handler call
+//      with the receiver prepended as the first argument (e.g. hackey's
+//      `vector(HERE, there)` where `vector` is `on vector HERE, there`).
+//   5. Otherwise dispatch as an object method call.
+bool objCallV4(ExecutionContext& context) {
+    const Datum handlerNameDatum = context.pop();
+    const Datum argListDatum = context.pop();
+    const bool noReturn = isNoReturnArgList(argListDatum);
+    std::vector<Datum> argStorage;
+    const std::vector<Datum>& args = argListItemsRef(argListDatum, argStorage);
+    if (args.empty()) {
+        if (!noReturn) {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+    const std::string handlerName = handlerNameDatum.asSymbol() != nullptr
+                                        ? handlerNameDatum.asSymbol()->name
+                                        : toStringLikeJava(handlerNameDatum);
+    Datum receiver = args.front();
+    if (receiver.asSymbol() != nullptr) {
+        const Datum resolved = context.getGlobal(receiver.asSymbol()->name);
+        if (!resolved.isVoid()) {
+            receiver = resolved;
+        }
+    }
+    const bool isObjectReceiver = receiver.type() == DatumType::ScriptInstanceRef ||
+                                  receiver.asScriptRef() != nullptr;
+    if (!isObjectReceiver && context.findHandler(handlerName).has_value()) {
+        // Movie-handler call: pass the receiver as the first argument so
+        // `on vector HERE, there` receives (HERE, there).
+        std::vector<Datum> fullArgs;
+        fullArgs.reserve(args.size());
+        fullArgs.push_back(std::move(receiver));
+        fullArgs.insert(fullArgs.end(), args.begin() + 1, args.end());
+        Datum result = Datum::voidValue();
+        if (const auto handler = context.findHandler(handlerName)) {
+            result = safeExecuteHandler(context, *handler, fullArgs, Datum::voidValue());
+        }
+        if (!noReturn) {
+            context.push(std::move(result));
+        }
+        return true;
+    }
+    // Object-method call: rebuild the arg list with the resolved receiver.
+    std::vector<Datum> resolvedArgs;
+    resolvedArgs.reserve(args.size());
+    resolvedArgs.push_back(std::move(receiver));
+    resolvedArgs.insert(resolvedArgs.end(), args.begin() + 1, args.end());
+    return executeObjCallWithArgs(context, handlerName, resolvedArgs, noReturn);
+}
+
+// tellcall (0x63) — like extcall but dispatched into the current `tell`
+// target. Without nested sub-players this falls back to plain ext_call
+// semantics. Match that fallback exactly.
+bool tellCall(ExecutionContext& context) {
+    const std::string& handlerName = context.resolveNameRef(context.argument());
+    const Datum argListDatum = context.pop();
+    const bool noReturn = isNoReturnArgList(argListDatum);
+    std::vector<Datum> argStorage;
+    const std::vector<Datum>& args = argListItemsRef(argListDatum, argStorage);
+    return executeExtCallWithArgs(context, handlerName, args, noReturn);
+}
+
 } // namespace
 
 std::string imageOperationTraceJson() {
@@ -8461,6 +8935,7 @@ void StackOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::PUSH_FLOAT32, pushFloat);
     registry.registerHandler(Opcode::PUSH_CONS, pushCons);
     registry.registerHandler(Opcode::PUSH_SYMB, pushSymb);
+    registry.registerHandler(Opcode::PUSH_VAR_REF, pushVarRef);
     registry.registerHandler(Opcode::PUSH_CHUNK_VAR_REF, pushChunkVarRef);
     registry.registerHandler(Opcode::SWAP, swap);
     registry.registerHandler(Opcode::POP, pop);
@@ -8474,6 +8949,9 @@ void ControlFlowOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::JMP, jmp);
     registry.registerHandler(Opcode::JMP_IF_Z, jmpIfZero);
     registry.registerHandler(Opcode::END_REPEAT, endRepeat);
+    registry.registerHandler(Opcode::START_TELL, startTell);
+    registry.registerHandler(Opcode::END_TELL, endTell);
+    registry.registerHandler(Opcode::CALL_JAVASCRIPT, callJavaScript);
 }
 
 void ArithmeticOpcodes::registerHandlers(OpcodeRegistry& registry) {
@@ -8504,6 +8982,7 @@ void LogicalOpcodes::registerHandlers(OpcodeRegistry& registry) {
 
 void StringOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::GET_CHUNK, getChunk);
+    registry.registerHandler(Opcode::HILITE_CHUNK, hiliteChunk);
     registry.registerHandler(Opcode::JOIN_STR, joinStr);
     registry.registerHandler(Opcode::JOIN_PAD_STR, joinPadStr);
     registry.registerHandler(Opcode::CONTAINS_STR, containsStr);
@@ -8550,6 +9029,8 @@ void CallOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::LOCAL_CALL, localCall);
     registry.registerHandler(Opcode::EXT_CALL, extCall);
     registry.registerHandler(Opcode::OBJ_CALL, objCall);
+    registry.registerHandler(Opcode::OBJ_CALL_V4, objCallV4);
+    registry.registerHandler(Opcode::TELL_CALL, tellCall);
 }
 
 } // namespace libreshockwave::lingo::vm

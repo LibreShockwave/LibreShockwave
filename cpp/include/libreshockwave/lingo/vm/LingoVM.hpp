@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <deque>
@@ -279,6 +279,8 @@ private:
     std::deque<Scope> callStack_;
     std::deque<DeferredScriptInstanceCall> deferredScriptInstanceCalls_;
     std::deque<std::function<void()>> deferredTasks_;
+    // Stack of `tell` targets (starttell/endtell); tellcall reads the top.
+    std::vector<Datum> tellTargetStack_;
     builtin::BuiltinRegistry builtinRegistry_;
     builtin::BuiltinContext builtinContext_;
     OpcodeRegistry opcodeRegistry_;

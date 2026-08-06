@@ -1,4 +1,4 @@
-#include "libreshockwave/lingo/vm/ExecutionContext.hpp"
+﻿#include "libreshockwave/lingo/vm/ExecutionContext.hpp"
 
 #include <limits>
 #include <string>
@@ -259,6 +259,14 @@ std::string ExecutionContext::formatCallStack() const {
 
 LingoException ExecutionContext::error(const std::string& message) const {
     return LingoException(message);
+}
+
+std::vector<Datum>& ExecutionContext::tellTargetStack() {
+    static std::vector<Datum> emptyTellTargetStack;
+    if (callbacks_.tellTargetStackGetter) {
+        return callbacks_.tellTargetStackGetter();
+    }
+    return emptyTellTargetStack;
 }
 
 } // namespace libreshockwave::lingo::vm
