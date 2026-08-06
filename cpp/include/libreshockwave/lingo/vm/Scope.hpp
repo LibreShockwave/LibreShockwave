@@ -49,6 +49,17 @@ public:
     [[nodiscard]] Datum displayArgument(int index) const;
     [[nodiscard]] const Datum& receiver() const;
 
+    // Cached handler-level instance for get_prop/set_prop (avoids ancestor chain walk per access).
+    // When a handler from an ancestor script runs with a child instance as receiver,
+    // bare property access must resolve against the handler's own instance level.
+    // Cached to avoid walking the ancestor chain on every property access.
+    [[nodiscard]] const std::shared_ptr<Datum::ScriptInstanceRef>& cachedHandlerInstance() const {
+        return cachedHandlerInstance_;
+    }
+    void setCachedHandlerInstance(std::shared_ptr<Datum::ScriptInstanceRef> instance) {
+        cachedHandlerInstance_ = std::move(instance);
+    }
+
     [[nodiscard]] int bytecodeIndex() const { return bytecodeIndex_; }
     void setBytecodeIndex(int index) { bytecodeIndex_ = index; }
     void advanceBytecodeIndex() { ++bytecodeIndex_; }
@@ -211,6 +222,8 @@ private:
     std::vector<Datum> arguments_;
     Datum receiver_;
     bool firstParamDeclaredMe_;
+    std::shared_ptr<Datum::ScriptInstanceRef> cachedHandlerInstance_;
+
     mutable int cachedParamOffset_ = -1;
 
     std::vector<Datum> locals_;

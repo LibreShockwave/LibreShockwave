@@ -133,10 +133,13 @@ std::shared_ptr<Datum::ScriptInstanceRef> getAncestorAtDepth(const Datum::Script
 
 void setProperty(Datum::ScriptInstanceRef& instance, std::string_view propName, Datum value) {
     if (equalsIgnoreCase(propName, "ancestor")) {
+        // Coerce to ScriptInstanceRef,
+        // error on non-instance values (including Void).
         if (value.type() == DatumType::ScriptInstanceRef) {
             instance.setAncestor(value.scriptInstancePtr());
+            return;
         }
-        return;
+        throw LingoException("Cannot set ancestor to non-ScriptInstanceRef value");
     }
 
     auto* current = &instance;
@@ -163,6 +166,62 @@ int getAncestorDepth(const Datum::ScriptInstanceRef& instance) {
         ++depth;
     }
     return depth;
+}
+
+std::shared_ptr<Datum::ScriptInstanceRef> findHandlerLevelInstance(
+    std::shared_ptr<Datum::ScriptInstanceRef> receiver,
+    const int handlerScriptChunkId,
+    const std::function<int(int, int)>& scriptChunkIdResolver) {
+    // Walk the receiver's ancestor chain. The receiver parameter is a
+    // shared_ptr that shares ownership with the Datum holding it, so the
+    // returned shared_ptr at any depth shares ownership with the chain.
+    std::shared_ptr<Datum::ScriptInstanceRef> current = std::move(receiver);
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        if (const auto& scriptRef = current->scriptRef(); scriptRef.has_value()) {
+            const int castLib = scriptRef->castLib > 0 ? scriptRef->castLib : 1;
+            const int scriptChunkId = scriptChunkIdResolver(castLib, scriptRef->memberNum());
+            if (scriptChunkId == handlerScriptChunkId) {
+                return current;
+            }
+        }
+        auto ancestor = current->ancestor();
+        current = std::move(ancestor);
+    }
+
+    // Fallback: return a copy of the receiver.
+    // Note: the caller must have a fallback shared_ptr for this case.
+    return nullptr;
+}
+
+const Datum* findNonScriptAncestor(const Datum::ScriptInstanceRef& instance) {
+    const auto* current = &instance;
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        // Check if this instance has a non-ScriptInstanceRef ancestor in properties
+        const int propIndex = current->findPropertyIndex("ancestor");
+        if (propIndex >= 0) {
+            const auto& ancestorProp = current->properties()[static_cast<std::size_t>(propIndex)].second;
+            if (ancestorProp.type() == DatumType::ScriptInstanceRef) {
+                // ScriptInstanceRef ancestor in properties: keep walking
+                // (this was set via setAt with non-instance followed by setAt with instance,
+                //  or it's a legacy artifact — treat the properties entry as the chain link)
+                const auto* next = ancestorProp.scriptInstancePtr().get();
+                current = next;
+                continue;
+            }
+            if (ancestorProp.isVoid() || (ancestorProp.isInt() && ancestorProp.intValue() == 0)) {
+                // Void or Int(0) in properties: fall through to check struct field
+            } else {
+                // Non-ScriptInstanceRef ancestor found (e.g., TimeoutInstance)
+                return &ancestorProp;
+            }
+        }
+
+        // Check the struct ancestor field for ScriptInstanceRef ancestors
+        auto ancestor = current->ancestor();
+        current = ancestor ? ancestor.get() : nullptr;
+    }
+
+    return nullptr;
 }
 
 } // namespace libreshockwave::lingo::vm::util

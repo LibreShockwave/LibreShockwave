@@ -1013,11 +1013,19 @@ Datum Datum::ScriptInstanceRef::getProperty(const std::string& name) const {
 
 void Datum::ScriptInstanceRef::setProperty(const std::string& name, Datum value) {
     if (equalsIgnoreCase(name, "ancestor")) {
+        // set_at semantics for "ancestor":
+        // Void → no-op, ScriptInstanceRef → set field,
+        // other → store in properties map for delegation (e.g., TimeoutInstance)
+        if (value.isVoid()) {
+            // FIXME: no-op (matches reference VM behavior)
+            return;
+        }
         if (const auto* ancestor = std::get_if<ScriptInstancePtr>(&value.value_)) {
             ancestor_ = *ancestor;
-        } else if (value.isVoid()) {
-            ancestor_.reset();
+            return;
         }
+        // Non-ScriptInstanceRef: store in properties map for delegation
+        appendLocalProperty("ancestor", std::move(value));
         return;
     }
 

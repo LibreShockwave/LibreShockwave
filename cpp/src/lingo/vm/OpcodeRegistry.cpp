@@ -2290,14 +2290,40 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
     if (method == ImmediateObjectMethod::SetAt || method == ImmediateObjectMethod::SetAProp) {
         if (args.size() >= 2) {
             std::string propNameStorage;
-            util::setProperty(instance, keyNameLikeJavaView(args[0], propNameStorage), args[1]);
+            const std::string_view propName = keyNameLikeJavaView(args[0], propNameStorage);
+            if (equalsIgnoreCase(propName, "ancestor")) {
+                // set_at semantics for "ancestor":
+                // Void → no-op, ScriptInstanceRef → set field,
+                // other → store in properties map for delegation
+                if (args[1].isVoid()) {
+                    // FIXME: no-op (matches reference VM behavior)
+                } else if (args[1].type() == DatumType::ScriptInstanceRef) {
+                    instance.setAncestor(args[1].scriptInstancePtr());
+                } else {
+                    scriptInstancePutLocalProperty(instance, "ancestor", args[1]);
+                }
+            } else {
+                util::setProperty(instance, propName, args[1]);
+            }
         }
         return Datum::voidValue();
     }
     if (method == ImmediateObjectMethod::SetProp) {
         if (args.size() == 2) {
             std::string propNameStorage;
-            util::setProperty(instance, keyNameLikeJavaView(args[0], propNameStorage), args[1]);
+            const std::string_view propName = keyNameLikeJavaView(args[0], propNameStorage);
+            if (equalsIgnoreCase(propName, "ancestor")) {
+                // Same handling as SetAt/SetAProp above
+                if (args[1].isVoid()) {
+                    // FIXME: no-op
+                } else if (args[1].type() == DatumType::ScriptInstanceRef) {
+                    instance.setAncestor(args[1].scriptInstancePtr());
+                } else {
+                    scriptInstancePutLocalProperty(instance, "ancestor", args[1]);
+                }
+            } else {
+                util::setProperty(instance, propName, args[1]);
+            }
         } else if (args.size() >= 3) {
             std::string propNameStorage;
             const std::string_view propName = keyNameLikeJavaView(args[0], propNameStorage);
@@ -5971,29 +5997,78 @@ bool pushArgListNoRet(ExecutionContext& context) {
 
 bool getProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    const Datum& receiver = context.scope().receiver();
-    if (receiver.type() == DatumType::ScriptInstanceRef) {
-        context.push(util::getProperty(receiver.scriptInstanceValue(), propName));
-    } else {
+    const Datum& receiverDatum = context.scope().receiver();
+    if (receiverDatum.type() != DatumType::ScriptInstanceRef) {
         context.push(Datum::voidValue());
+        return true;
     }
+
+    // In Director, bare property access (getProp) resolves on the
+    // handler's owning instance in the ancestor chain, not on the
+    // top-level receiver. This matters when a handler from an ancestor
+    // script runs with a child instance as receiver — e.g., when
+    // `ancestor.getMember()` is called, `ancestor` should resolve to
+    // the handler's own instance's ancestor, not the receiver's.
+    // Matches the reference VM's handler-level instance resolution.
+    auto& scope = context.scope();
+    const Datum::ScriptInstanceRef& target = [&]() -> const Datum::ScriptInstanceRef& {
+        if (const auto& cached = scope.cachedHandlerInstance()) {
+            return *cached;
+        }
+        auto* builtinContext = context.builtinContext();
+        if (builtinContext && builtinContext->scriptChunkIdResolver && scope.script()) {
+            auto receiverPtr = receiverDatum.scriptInstancePtr();
+            const int handlerScriptId = scope.script()->id().value();
+            auto handlerInstance = util::findHandlerLevelInstance(
+                std::move(receiverPtr), handlerScriptId, builtinContext->scriptChunkIdResolver);
+            if (handlerInstance) {
+                scope.setCachedHandlerInstance(std::move(handlerInstance));
+                return *scope.cachedHandlerInstance();
+            }
+        }
+        return receiverDatum.scriptInstanceValue();
+    }();
+
+    context.push(util::getProperty(target, propName));
     return true;
 }
 
 bool setProp(ExecutionContext& context) {
     const std::string& propName = context.resolveNameRef(context.argument());
-    const Datum& receiver = context.scope().receiver();
+    const Datum& receiverDatum = context.scope().receiver();
     Datum value = context.pop();
-    if (receiver.type() == DatumType::ScriptInstanceRef) {
-        auto instance = receiver.scriptInstancePtr();
-        if (!context.hasVariableSetListener()) {
-            util::setProperty(*instance, propName, std::move(value));
-            return true;
-        }
-        const Datum tracedValue = value;
-        util::setProperty(*instance, propName, std::move(value));
-        context.tracePropertySet(propName, tracedValue);
+    if (receiverDatum.type() != DatumType::ScriptInstanceRef) {
+        return true;
     }
+
+    // Resolve on handler's owning instance level (see getProp comment above).
+    // Matches the reference VM's handler-level instance resolution.
+    auto& scope = context.scope();
+    std::shared_ptr<Datum::ScriptInstanceRef> target = [&]() -> std::shared_ptr<Datum::ScriptInstanceRef> {
+        if (const auto& cached = scope.cachedHandlerInstance()) {
+            return cached;
+        }
+        auto* builtinContext = context.builtinContext();
+        if (builtinContext && builtinContext->scriptChunkIdResolver && scope.script()) {
+            auto receiverPtr = receiverDatum.scriptInstancePtr();
+            const int handlerScriptId = scope.script()->id().value();
+            auto handlerInstance = util::findHandlerLevelInstance(
+                std::move(receiverPtr), handlerScriptId, builtinContext->scriptChunkIdResolver);
+            if (handlerInstance) {
+                scope.setCachedHandlerInstance(handlerInstance);
+                return handlerInstance;
+            }
+        }
+        return receiverDatum.scriptInstancePtr();
+    }();
+
+    if (!context.hasVariableSetListener()) {
+        util::setProperty(*target, propName, std::move(value));
+        return true;
+    }
+    const Datum tracedValue = value;
+    util::setProperty(*target, propName, std::move(value));
+    context.tracePropertySet(propName, tracedValue);
     return true;
 }
 
@@ -7896,7 +7971,18 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             if (argCount == 3) {
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                util::setProperty(*instance, propName, std::move(value));
+                if (equalsIgnoreCase(propName, "ancestor")) {
+                    // set_at semantics for "ancestor"
+                    if (value.isVoid()) {
+                        // FIXME: no-op
+                    } else if (value.type() == DatumType::ScriptInstanceRef) {
+                        instance->setAncestor(value.scriptInstancePtr());
+                    } else {
+                        scriptInstancePutLocalProperty(*instance, "ancestor", std::move(value));
+                    }
+                } else {
+                    util::setProperty(*instance, propName, std::move(value));
+                }
                 context.scope().drop(2);
             } else {
                 Datum subKey = context.pop();
@@ -7923,7 +8009,18 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
             if (argCount == 3) {
                 std::string propNameStorage;
                 const std::string_view propName = keyNameLikeJavaView(context.peekRef(0), propNameStorage);
-                util::setProperty(*instance, propName, std::move(value));
+                if (equalsIgnoreCase(propName, "ancestor")) {
+                    // Same handling as SetAt/SetAProp above
+                    if (value.isVoid()) {
+                        // FIXME: no-op
+                    } else if (value.type() == DatumType::ScriptInstanceRef) {
+                        instance->setAncestor(value.scriptInstancePtr());
+                    } else {
+                        scriptInstancePutLocalProperty(*instance, "ancestor", std::move(value));
+                    }
+                } else {
+                    util::setProperty(*instance, propName, std::move(value));
+                }
                 context.scope().drop(2);
             } else {
                 Datum subKey = context.pop();

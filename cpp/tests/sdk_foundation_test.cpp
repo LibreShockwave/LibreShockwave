@@ -1626,9 +1626,10 @@ void testLingoDatumTypes() {
     assert(instance.scriptInstanceValue().getProperty("localValue").intValue() == 4);
     assert(instance.scriptInstanceValue().getProperty("baseValue").intValue() == 3);
     assert(instance.scriptInstanceValue().getProperty("missing").isVoid());
+    // setProperty("ancestor", Void) is a no-op (matches reference VM set_at behavior)
     instance.scriptInstanceValue().setProperty("ancestor", Datum::voidValue());
-    assert(instance.scriptInstanceValue().getProperty("ancestor").isVoid());
-    assert(instance.scriptInstanceValue().getProperty("baseValue").isVoid());
+    assert(!instance.scriptInstanceValue().getProperty("ancestor").isVoid()); // no-op, ancestor still set
+    assert(instance.scriptInstanceValue().getProperty("baseValue").intValue() == 3); // ancestor still present
     instance.scriptInstanceValue().putLocalPropertyExact("ExactLocal", Datum::of(11));
     assert(instance.scriptInstanceValue().findExactPropertyIndex("ExactLocal") >= 0);
     assert(instance.scriptInstanceValue().findCaseInsensitivePropertyIndex("exactlocal") >= 0);
@@ -1646,7 +1647,8 @@ void testLingoDatumTypes() {
     assert(!cyclicInstance.scriptInstanceValue().hasProperty("missingCycleProperty"));
     cyclicInstance.scriptInstanceValue().setProperty("createdAfterCycle", Datum::of(8));
     assert(cyclicInstance.scriptInstanceValue().getProperty("createdAfterCycle").intValue() == 8);
-    cyclicInstance.scriptInstanceValue().setProperty("ancestor", Datum::voidValue());
+    // setProperty("ancestor", Void) is a no-op (matches reference VM set_at behavior)
+    cyclicInstance.scriptInstanceValue().setProperty("ancestor", Datum::voidValue()); // no-op
     auto cycleParent = Datum::scriptInstance("cycleParent");
     auto cycleChild = Datum::scriptInstance("cycleChild");
     cycleParent.scriptInstanceValue().setProperty("sharedCycleValue", Datum::of(12));
@@ -1655,8 +1657,9 @@ void testLingoDatumTypes() {
     cycleChild.scriptInstanceValue().setProperty("sharedCycleValue", Datum::of(14));
     assert(cycleParent.scriptInstanceValue().getProperty("sharedCycleValue").intValue() == 14);
     assert(cycleChild.scriptInstanceValue().getProperty("missingCycleProperty").isVoid());
-    cycleParent.scriptInstanceValue().setProperty("ancestor", Datum::voidValue());
-    cycleChild.scriptInstanceValue().setProperty("ancestor", Datum::voidValue());
+    // setProperty("ancestor", Void) is a no-op (matches reference VM set_at behavior)
+    cycleParent.scriptInstanceValue().setProperty("ancestor", Datum::voidValue()); // no-op
+    cycleChild.scriptInstanceValue().setProperty("ancestor", Datum::voidValue()); // no-op
 
     auto walkerParent = Datum::scriptInstance("walkerParent");
     walkerParent.scriptInstanceValue().setProperty("SharedValue", Datum::of(10));
@@ -1694,9 +1697,18 @@ void testLingoDatumTypes() {
     assert(libreshockwave::lingo::vm::util::hasProperty(walkerChild.scriptInstanceValue(), "ancestor"));
     assert(libreshockwave::lingo::vm::util::findOwner(walkerChild.scriptInstanceValue(), "ancestor") ==
            &walkerChild.scriptInstanceValue());
-    libreshockwave::lingo::vm::util::setProperty(walkerChild.scriptInstanceValue(),
-                                                 "ancestor",
-                                                 Datum::voidValue());
+    // util::setProperty("ancestor", Void) throws (matches reference VM script_set_prop)
+    {
+        bool threw = false;
+        try {
+            libreshockwave::lingo::vm::util::setProperty(walkerChild.scriptInstanceValue(),
+                                                         "ancestor",
+                                                         Datum::voidValue());
+        } catch (const LingoException&) {
+            threw = true;
+        }
+        assert(threw);
+    }
     assert(libreshockwave::lingo::vm::util::getAncestorDepth(walkerChild.scriptInstanceValue()) == 1);
     auto walkerReplacement = Datum::scriptInstance("walkerReplacement");
     walkerReplacement.scriptInstanceValue().setProperty("SharedValue", Datum::of(50));
