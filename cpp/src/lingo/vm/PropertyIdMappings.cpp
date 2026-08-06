@@ -137,4 +137,29 @@ std::string PropertyIdMappings::getSoundPropName(int id) {
     }
 }
 
+std::string_view PropertyIdMappings::getCastMemberPropName(int id) {
+    switch (id) {
+        case 0x01: return "name";
+        case 0x02: return "text";
+        case 0x03: return "textStyle";
+        case 0x04: return "textFont";
+        case 0x05: return "textHeight";
+        case 0x06: return "textAlign";
+        case 0x07: return "textSize";
+        case 0x08: return "picture";
+        case 0x09: return "hilite";
+        case 0x0a: return "number";
+        case 0x0b: return "size";
+        case 0x0c: return "loop";
+        case 0x0d: return "duration";
+        case 0x0e: return "controller";
+        case 0x0f: return "directToStage";
+        case 0x10: return "sound";
+        case 0x11: return "foreColor";
+        case 0x12: return "backColor";
+        case 0x13: return "type";
+        default: return "ERROR";
+    }
+}
+
 } // namespace libreshockwave::lingo::vm

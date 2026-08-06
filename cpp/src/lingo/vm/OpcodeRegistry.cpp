@@ -5902,9 +5902,31 @@ bool containsStr(ExecutionContext& context) {
     const Datum& needle = context.peekRef(0);
     const Datum& haystack = context.peekRef(1);
     std::string needleStorage;
-    std::string haystackStorage;
-    const bool result = containsIgnoreCase(stringViewLikeJava(haystack, haystackStorage),
-                                           stringViewLikeJava(needle, needleStorage));
+    const std::string_view needleString = stringViewLikeJava(needle, needleStorage);
+
+    bool result = false;
+    if (haystack.isList()) {
+        // For a list haystack, only STRING elements are searched; a match on
+        // any element's (case-insensitive) substring wins.
+        for (const auto& item : haystack.listValue().items()) {
+            if (!item.isString() && item.asStringChunk() == nullptr && item.asFieldText() == nullptr) {
+                continue;
+            }
+            std::string itemStorage;
+            if (containsIgnoreCase(stringViewLikeJava(item, itemStorage), needleString)) {
+                result = true;
+                break;
+            }
+        }
+    } else if (haystack.isString() || haystack.asStringChunk() != nullptr || haystack.asFieldText() != nullptr) {
+        std::string haystackStorage;
+        result = containsIgnoreCase(stringViewLikeJava(haystack, haystackStorage), needleString);
+    } else if (haystack.asSymbol() != nullptr || haystack.isNumber() || haystack.isVoid()) {
+        result = false;
+    } else {
+        std::string haystackStorage;
+        result = containsIgnoreCase(stringViewLikeJava(haystack, haystackStorage), needleString);
+    }
     context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
@@ -6016,17 +6038,41 @@ Datum getContextVar(ExecutionContext& context,
                     const Datum& idDatum,
                     const std::optional<Datum>& fieldCastIdDatum) {
     switch (varType) {
-        case id::VarType::LOCAL:
+        case id::VarType::LOCAL: {
+            // A symbol id (PUSH_VAR_REF) carries the local's name; resolve it
+            // against the handler's local name ids (case-insensitive).
+            if (const auto* symbol = idDatum.asSymbol()) {
+                const auto& handler = context.scope().handler();
+                for (std::size_t index = 0; index < handler.localNameIds.size(); ++index) {
+                    if (equalsIgnoreCase(context.resolveNameRef(handler.localNameIds[index]), symbol->name)) {
+                        return context.getLocal(static_cast<int>(index));
+                    }
+                }
+                return Datum::voidValue();
+            }
             return context.getLocal(toIntLikeJava(idDatum) / context.variableMultiplier());
+        }
         case id::VarType::PARAM:
             return context.getParam(toIntLikeJava(idDatum) / context.variableMultiplier());
         case id::VarType::GLOBAL:
         case id::VarType::GLOBAL2:
+            // The id pushed for a global varref is a Symbol carrying the name
+            // (PUSH_VAR_REF). Using toIntLikeJava on a symbol would resolve
+            // name index 0 — use the symbol name directly.
+            if (const auto* symbol = idDatum.asSymbol()) {
+                return context.getGlobal(symbol->name);
+            }
             return context.getGlobal(context.resolveNameRef(toIntLikeJava(idDatum)));
         case id::VarType::PROPERTY: {
             const Datum& receiver = context.scope().receiver();
             if (receiver.type() == DatumType::ScriptInstanceRef) {
-                return util::getProperty(receiver.scriptInstanceValue(), context.resolveNameRef(toIntLikeJava(idDatum)));
+                std::string propName;
+                if (const auto* symbol = idDatum.asSymbol()) {
+                    propName = symbol->name;
+                } else {
+                    propName = context.resolveNameRef(toIntLikeJava(idDatum));
+                }
+                return util::getProperty(receiver.scriptInstanceValue(), propName);
             }
             return Datum::voidValue();
         }
@@ -6048,20 +6094,43 @@ void setContextVar(ExecutionContext& context,
                    Datum value,
                    const std::optional<Datum>& fieldCastIdDatum) {
     switch (varType) {
-        case id::VarType::LOCAL:
+        case id::VarType::LOCAL: {
+            // See getContextVar: a symbol id carries the local's name.
+            if (const auto* symbol = idDatum.asSymbol()) {
+                const auto& handler = context.scope().handler();
+                for (std::size_t index = 0; index < handler.localNameIds.size(); ++index) {
+                    if (equalsIgnoreCase(context.resolveNameRef(handler.localNameIds[index]), symbol->name)) {
+                        context.setLocal(static_cast<int>(index), std::move(value));
+                        return;
+                    }
+                }
+                return;
+            }
             context.setLocal(toIntLikeJava(idDatum) / context.variableMultiplier(), std::move(value));
             return;
+        }
         case id::VarType::PARAM:
             context.setParam(toIntLikeJava(idDatum) / context.variableMultiplier(), std::move(value));
             return;
         case id::VarType::GLOBAL:
-        case id::VarType::GLOBAL2:
-            context.setGlobal(context.resolveNameRef(toIntLikeJava(idDatum)), std::move(value));
+        case id::VarType::GLOBAL2: {
+            // See getContextVar: a symbol id carries the global name directly.
+            if (const auto* symbol = idDatum.asSymbol()) {
+                context.setGlobal(symbol->name, std::move(value));
+            } else {
+                context.setGlobal(context.resolveNameRef(toIntLikeJava(idDatum)), std::move(value));
+            }
             return;
+        }
         case id::VarType::PROPERTY: {
             const Datum& receiver = context.scope().receiver();
             if (receiver.type() == DatumType::ScriptInstanceRef) {
-                const std::string& propName = context.resolveNameRef(toIntLikeJava(idDatum));
+                std::string propName;
+                if (const auto* symbol = idDatum.asSymbol()) {
+                    propName = symbol->name;
+                } else {
+                    propName = context.resolveNameRef(toIntLikeJava(idDatum));
+                }
                 auto instance = receiver.scriptInstancePtr();
                 if (!context.hasVariableSetListener()) {
                     util::setProperty(*instance, propName, std::move(value));
@@ -6198,8 +6267,10 @@ bool putChunk(ExecutionContext& context) {
         fieldCastIdDatum = context.pop();
     }
     const Datum idDatum = context.pop();
-    const Datum value = context.pop();
 
+    // Stack layout (verified against real-movie bytecode): the value is pushed
+    // FIRST (bottom), then the 8 chunk-range params, then the variable id on
+    // top. Pop order: id, 8 chunk params, then the value.
     const int lastLine = toIntLikeJava(context.pop());
     const int firstLine = toIntLikeJava(context.pop());
     const int lastItem = toIntLikeJava(context.pop());
@@ -6208,6 +6279,7 @@ bool putChunk(ExecutionContext& context) {
     const int firstWord = toIntLikeJava(context.pop());
     const int lastChar = toIntLikeJava(context.pop());
     const int firstChar = toIntLikeJava(context.pop());
+    const Datum value = context.pop();
 
     ChunkSpec chunk = chooseSingleChunkSpec(firstChar,
                                             lastChar,
@@ -6334,6 +6406,9 @@ bool pushPropList(ExecutionContext& context) {
     const Datum argListDatum = context.pop();
     std::vector<Datum> itemStorage;
     const std::vector<Datum>& items = argListItemsRef(argListDatum, itemStorage);
+    if (items.size() % 2 != 0) {
+        throw context.error("argList length must be even");
+    }
     Datum propList = Datum::propList();
     auto& properties = propList.propListValue().properties();
     properties.reserve(items.size() / 2);
@@ -6516,11 +6591,50 @@ bool setObjProp(ExecutionContext& context) {
     return true;
 }
 
+// Resolve a member-id datum (int member number or string/symbol name) plus
+// an optional castLib to a (castLib, memberNum) pair through the engine's
+// cast member resolvers. Returns false when unresolvable.
+bool resolveMemberIdForProperty(ExecutionContext& context,
+                                const Datum& memberIdDatum,
+                                const std::optional<Datum>& castLibDatum,
+                                int& outCastLib,
+                                int& outMemberNum) {
+    auto* builtinContext = context.builtinContext();
+    if (builtinContext == nullptr) {
+        return false;
+    }
+    const int castLib = castLibDatum ? toIntLikeJava(*castLibDatum) : 0;
+    Datum resolved;
+    if (const auto* num = memberIdDatum.asInt()) {
+        if (builtinContext->castMemberResolver == nullptr) {
+            return false;
+        }
+        resolved = builtinContext->castMemberResolver(castLib, num->value);
+    } else {
+        if (builtinContext->castMemberNameResolver == nullptr) {
+            return false;
+        }
+        resolved = builtinContext->castMemberNameResolver(castLib, keyNameLikeJava(memberIdDatum));
+    }
+    if (const auto* memberRef = resolved.asCastMemberRef()) {
+        outCastLib = memberRef->castLib;
+        outMemberNum = memberRef->castMember;
+        return true;
+    }
+    return false;
+}
+
 bool getLegacyProperty(ExecutionContext& context) {
     const int propertyId = toIntLikeJava(context.pop());
     const int propertyType = context.argument();
     const char itemDelimiter = currentItemDelimiter(context);
     auto* builtinContext = context.builtinContext();
+
+    // For member/field props (0x09/0x0a/0x0b/0x0c) a castLib
+    // ref sits on the stack below the member id in D5+ movies.
+    const auto* script = context.scope().script();
+    const bool dirVersionAtLeast500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
 
     if (propertyType == 0x00) {
         if (propertyId <= 0x0B) {
@@ -6564,7 +6678,7 @@ bool getLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
-    if (propertyType == 0x07 || propertyType == 0x09) {
+    if (propertyType == 0x07) {
         if (const auto propName = PropertyIdMappings::getAnimPropName(propertyId);
             propName && builtinContext != nullptr && builtinContext->movieProperties != nullptr) {
             context.push(builtinContext->movieProperties->getMovieProp(*propName));
@@ -6593,11 +6707,81 @@ bool getLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
-    if (propertyType == 0x0B) {
+    if (propertyType == 0x04) {
+        // Sound channel property (matches the decompiler's readV4Property).
         const int channelNum = toIntLikeJava(context.pop());
         const std::string propName = PropertyIdMappings::getSoundPropName(propertyId);
-        if (channelNum >= 1 && channelNum <= 8) {
+        if (builtinContext != nullptr && channelNum >= 1 && channelNum <= 8) {
             context.push(dispatch::SoundChannelMethodDispatcher::getProperty(builtinContext, Datum::SoundChannel{channelNum}, propName));
+        } else {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+
+    if (propertyType == 0x09 || propertyType == 0x0B) {
+        // Cast member / field property (`the name of member X`, `the
+        // foreColor of field X`). Stack: castLib (D5+), member id.
+        std::optional<Datum> castLibDatum;
+        if (dirVersionAtLeast500) {
+            castLibDatum = context.pop();
+        }
+        const Datum memberIdDatum = context.pop();
+        int castLib = 0;
+        int memberNum = 0;
+        if (builtinContext != nullptr && builtinContext->castMemberPropertyGetter != nullptr &&
+            resolveMemberIdForProperty(context, memberIdDatum, castLibDatum, castLib, memberNum)) {
+            context.push(builtinContext->castMemberPropertyGetter(
+                castLib, memberNum, std::string(PropertyIdMappings::getCastMemberPropName(propertyId))));
+        } else {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+
+    if (propertyType == 0x0A || propertyType == 0x0C) {
+        // Chunked cast member / field property (`the textStyle of char N of
+        // member X`). Stack: castLib (D5+), member id, then the 8 chunk-range
+        // values (last_line .. first_char, top first).
+        std::optional<Datum> castLibDatum;
+        if (dirVersionAtLeast500) {
+            castLibDatum = context.pop();
+        }
+        const Datum memberIdDatum = context.pop();
+        const int lastLine = toIntLikeJava(context.pop());
+        const int firstLine = toIntLikeJava(context.pop());
+        const int lastItem = toIntLikeJava(context.pop());
+        const int firstItem = toIntLikeJava(context.pop());
+        const int lastWord = toIntLikeJava(context.pop());
+        const int firstWord = toIntLikeJava(context.pop());
+        const int lastChar = toIntLikeJava(context.pop());
+        const int firstChar = toIntLikeJava(context.pop());
+        const ChunkSpec chunk = chooseSingleChunkSpec(firstChar,
+                                                      lastChar,
+                                                      firstWord,
+                                                      lastWord,
+                                                      firstItem,
+                                                      lastItem,
+                                                      firstLine,
+                                                      lastLine);
+        const std::string_view propName = PropertyIdMappings::getCastMemberPropName(propertyId);
+        int castLib = 0;
+        int memberNum = 0;
+        if (builtinContext != nullptr && builtinContext->castMemberPropertyGetter != nullptr &&
+            resolveMemberIdForProperty(context, memberIdDatum, castLibDatum, castLib, memberNum)) {
+            if (lowerAscii(propName) == "text") {
+                // `the text of char N of member` — resolve the chunk against
+                // the member's text.
+                const Datum text = builtinContext->castMemberPropertyGetter(castLib, memberNum, "text");
+                std::string storage;
+                const std::string_view textView = stringViewLikeJava(text, storage);
+                context.push(Datum::of(resolveChunkRange(textView, chunk.type, chunk.first, chunk.last, itemDelimiter)));
+            } else {
+                // textStyle/fontStyle chunked reads need the member's STXT
+                // formatting runs (engine-level) — fall back to the
+                // member-wide getter.
+                context.push(builtinContext->castMemberPropertyGetter(castLib, memberNum, std::string(propName)));
+            }
         } else {
             context.push(Datum::voidValue());
         }
@@ -6672,6 +6856,60 @@ bool setLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
+    // For member/field props (0x09/0x0a/0x0b/0x0c) a castLib
+    // ref sits on the stack below the member id in D5+ movies.
+    const auto* script = context.scope().script();
+    const bool dirVersionAtLeast500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
+
+    if (propertyType == 0x09 || propertyType == 0x0B) {
+        // Cast member / field property. Stack (top first): prop id, value,
+        // castLib (D5+), member id.
+        std::optional<Datum> castLibDatum;
+        if (dirVersionAtLeast500) {
+            castLibDatum = context.pop();
+        }
+        const Datum memberIdDatum = context.pop();
+        int castLib = 0;
+        int memberNum = 0;
+        if (builtinContext != nullptr && builtinContext->castMemberPropertySetter != nullptr &&
+            resolveMemberIdForProperty(context, memberIdDatum, castLibDatum, castLib, memberNum)) {
+            (void)builtinContext->castMemberPropertySetter(
+                castLib, memberNum, std::string(PropertyIdMappings::getCastMemberPropName(propertyId)), value);
+        }
+        return true;
+    }
+
+    if (propertyType == 0x0A || propertyType == 0x0C) {
+        // Chunked cast member / field property. Stack: prop id, value,
+        // castLib (D5+), member id, then the 8 chunk-range values.
+        std::optional<Datum> castLibDatum;
+        if (dirVersionAtLeast500) {
+            castLibDatum = context.pop();
+        }
+        const Datum memberIdDatum = context.pop();
+        const int lastLine = toIntLikeJava(context.pop());
+        const int firstLine = toIntLikeJava(context.pop());
+        const int lastItem = toIntLikeJava(context.pop());
+        const int firstItem = toIntLikeJava(context.pop());
+        const int lastWord = toIntLikeJava(context.pop());
+        const int firstWord = toIntLikeJava(context.pop());
+        const int lastChar = toIntLikeJava(context.pop());
+        const int firstChar = toIntLikeJava(context.pop());
+        (void)chooseSingleChunkSpec(firstChar, lastChar, firstWord, lastWord, firstItem, lastItem, firstLine, lastLine);
+        int castLib = 0;
+        int memberNum = 0;
+        if (builtinContext != nullptr && builtinContext->castMemberPropertySetter != nullptr &&
+            resolveMemberIdForProperty(context, memberIdDatum, castLibDatum, castLib, memberNum)) {
+            // Per-character style writes (textStyle/fontStyle) need STXT
+            // formatting-run access (engine-level); non-style props ignore
+            // the chunk and set member-wide, matching the reference.
+            (void)builtinContext->castMemberPropertySetter(
+                castLib, memberNum, std::string(PropertyIdMappings::getCastMemberPropName(propertyId)), value);
+        }
+        return true;
+    }
+
     return true;
 }
 
@@ -6681,7 +6919,11 @@ bool theBuiltin(ExecutionContext& context) {
     if (equalsIgnoreCase(propName, "paramcount")) {
         result = Datum::of(static_cast<int>(context.scope().arguments().size()));
     } else if (equalsIgnoreCase(propName, "result")) {
-        result = context.scope().returnValue();
+        // `the result` = the most recently completed handler call's return
+        // value (set in LingoVM::executeHandler).
+        if (auto* builtinContext = context.builtinContext(); builtinContext != nullptr) {
+            result = builtinContext->lastHandlerResult;
+        }
     } else if (auto* builtinContext = context.builtinContext(); builtinContext != nullptr && builtinContext->movieProperties != nullptr) {
         result = builtinContext->movieProperties->getMovieProp(propName);
         if (result.isVoid()) {
