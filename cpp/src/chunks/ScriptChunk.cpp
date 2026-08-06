@@ -1,10 +1,12 @@
 #include "libreshockwave/chunks/ScriptChunk.hpp"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <sstream>
 #include <utility>
@@ -46,6 +48,58 @@ std::string floatingToString(double value) {
     std::ostringstream out;
     out << value;
     return out.str();
+}
+
+/// Convert an Apple 80-bit extended-precision float (SANE Extended type,
+/// x87 format) to f64. This is the format Director D4 uses for float
+/// literals. The ten bytes are big-endian on disk:
+///   bytes 0-1: sign (bit 15 of u16) + 15-bit exponent (bias 16383)
+///   bytes 2-9: 64-bit mantissa with explicit integer bit
+double appleFloat80ToDouble(const uint8_t* data) {
+    const uint16_t exponentWord = static_cast<uint16_t>((data[0] << 8) | data[1]);
+    const uint64_t sign = (static_cast<uint64_t>(exponentWord & 0x8000) << 48);
+    const int exponent = static_cast<int>(exponentWord & 0x7fff);
+
+    uint64_t fraction = 0;
+    for (int i = 0; i < 8; ++i) {
+        fraction = (fraction << 8) | data[2 + i];
+    }
+    // Clear the explicit integer bit — we only keep the 63-bit fraction.
+    fraction &= 0x7fffffffffffffffULL;
+
+    uint64_t f64exp;
+    if (exponent == 0) {
+        // Zero / denormal → f64 zero
+        f64exp = 0;
+    } else if (exponent == 0x7fff) {
+        // Inf / NaN → f64 Inf / NaN
+        f64exp = 0x7ff;
+    } else {
+        // Normalized: rebias from 16383 to 1023
+        const int64_t normexp = static_cast<int64_t>(exponent) - 0x3fff;
+        if (normexp < -0x3fe || normexp >= 0x3ff) {
+            // Out of f64 range — clamp to zero (matches the reference handling).
+            return 0.0;
+        }
+        f64exp = static_cast<uint64_t>(normexp + 0x3ff);
+    }
+    f64exp <<= 52;
+    const uint64_t f64fract = fraction >> 11;
+    const uint64_t f64bin_be = sign | f64exp | f64fract;
+
+    // Convert big-endian uint64 to native double.
+    const uint64_t f64bin_native =
+        ((f64bin_be & 0xFF00000000000000ULL) >> 56) |
+        ((f64bin_be & 0x00FF000000000000ULL) >> 40) |
+        ((f64bin_be & 0x0000FF0000000000ULL) >> 24) |
+        ((f64bin_be & 0x000000FF00000000ULL) >> 8)  |
+        ((f64bin_be & 0x00000000FF000000ULL) << 8)  |
+        ((f64bin_be & 0x0000000000FF0000ULL) << 24) |
+        ((f64bin_be & 0x000000000000FF00ULL) << 40) |
+        ((f64bin_be & 0x00000000000000FFULL) << 56);
+    double result;
+    std::memcpy(&result, &f64bin_native, sizeof(result));
+    return result;
 }
 
 std::vector<int> readNameIds(io::BinaryReader& reader, int count, int offset) {
@@ -418,11 +472,39 @@ ScriptChunk ScriptChunk::read(const DirectorFile* file,
                             break;
                         }
                         case 9: {
-                            if (reader.bytesLeft() >= 4) {
+                            // Float literal. Director encodes the float in
+                            // the literal data; the length tag tells us the
+                            // precision:
+                            //   4 bytes → IEEE 754 single (f32)
+                            //   8 bytes → IEEE 754 double (f64), big-endian (D8.5+)
+                            //  10 bytes → Apple 80-bit extended (D4)
+                            if (dataLen == 4 && reader.bytesLeft() >= 4) {
                                 const auto bits = static_cast<std::uint32_t>(reader.readI32());
                                 numericValue = static_cast<double>(std::bit_cast<float>(bits));
-                                value = floatingToString(numericValue);
+                            } else if (dataLen == 8 && reader.bytesLeft() >= 8) {
+                                const auto hi = static_cast<std::uint64_t>(reader.readI32()) << 32;
+                                const auto lo = static_cast<std::uint64_t>(static_cast<std::uint32_t>(reader.readI32()));
+                                const std::uint64_t be = hi | lo;
+                                const std::uint64_t native =
+                                    ((be & 0xFF00000000000000ULL) >> 56) |
+                                    ((be & 0x00FF000000000000ULL) >> 40) |
+                                    ((be & 0x0000FF0000000000ULL) >> 24) |
+                                    ((be & 0x000000FF00000000ULL) >> 8)  |
+                                    ((be & 0x00000000FF000000ULL) << 8)  |
+                                    ((be & 0x0000000000FF0000ULL) << 24) |
+                                    ((be & 0x000000000000FF00ULL) << 40) |
+                                    ((be & 0x00000000000000FFULL) << 56);
+                                std::memcpy(&numericValue, &native, sizeof(numericValue));
+                            } else if (dataLen == 10 && reader.bytesLeft() >= 10) {
+                                const auto extBytes = reader.readBytes(10);
+                                numericValue = appleFloat80ToDouble(extBytes.data());
+                            } else {
+                                // Unsupported float length or not enough data;
+                                // leave numericValue as 0.0 (matches reference
+                                // VM which returns 0.0 for unknown lengths).
+                                reader.skip(static_cast<std::size_t>(std::max(0, std::min(dataLen, 10))));
                             }
+                            value = floatingToString(numericValue);
                             break;
                         }
                         default:

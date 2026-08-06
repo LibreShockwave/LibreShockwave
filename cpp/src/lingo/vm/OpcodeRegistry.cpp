@@ -150,6 +150,10 @@ void pushImageOperationTrace(std::string entry) {
     imageOperationTrace.push_back(std::move(entry));
 }
 
+// Forward declarations for helpers defined later in this file.
+std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char itemDelimiter = ',');
+int charCountOf(std::string_view value);
+
 Datum literalToDatum(const chunks::ScriptChunk::LiteralEntry& literal) {
     switch (literal.type) {
         case 1:
@@ -188,6 +192,17 @@ bool truthy(const Datum& datum) {
     }
     if (const auto* value = datum.asStringChunk()) {
         return !value->value.empty();
+    }
+    // Match reference: Symbol("false") is falsy (case-insensitive).
+    if (const auto* value = datum.asSymbol()) {
+        if (value->name.size() == 5) {
+            return !(std::tolower(value->name[0]) == 'f' &&
+                     std::tolower(value->name[1]) == 'a' &&
+                     std::tolower(value->name[2]) == 'l' &&
+                     std::tolower(value->name[3]) == 's' &&
+                     std::tolower(value->name[4]) == 'e');
+        }
+        return true;
     }
     return true;
 }
@@ -589,6 +604,35 @@ int toIntLikeJava(const Datum& datum) {
         return packedColor(*color);
     }
     return 0;
+}
+
+// Match reference datum_is_zero semantics exactly.
+// Used by JMP_IF_Z for the conditional-jump-if-false test.
+bool datumIsZero(const Datum& datum) {
+    if (const auto* value = datum.asInt()) {
+        return value->value == 0;
+    }
+    if (const auto* value = datum.asFloat()) {
+        return value->value == 0.0F;
+    }
+    if (datum.isVoid()) {
+        return true;
+    }
+    if (datum.isNull()) {
+        return true;
+    }
+    if (datum.type() == DatumType::ScriptInstanceRef) {
+        return false;
+    }
+    if (const auto* point = datum.asIntPoint()) {
+        return point->x == 0 && point->y == 0;
+    }
+    if (const auto* rect = datum.asIntRect()) {
+        return rect->left == 0 && rect->top == 0 && rect->right == 0 && rect->bottom == 0;
+    }
+    // Fallback for all other types (String, Symbol, etc.):
+    // the reference calls int_value() which parses numeric strings or returns 0.
+    return toIntLikeJava(datum) == 0;
 }
 
 double toDoubleLikeJava(const Datum& datum) {
@@ -1886,7 +1930,7 @@ int countLines(std::string_view value) {
     return util::countChunks(value, StringChunkType::Line);
 }
 
-std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char itemDelimiter = ',') {
+std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char itemDelimiter) {
     return util::splitIntoChunks(value, type, itemDelimiter);
 }
 
@@ -1903,7 +1947,7 @@ int countChunks(std::string_view value, StringChunkType type, char itemDelimiter
 }
 
 // UTF-8 code-point count — `the length of string` counts CHARACTERS, not
-// bytes (the reference VM uses char counts; byte counts break multi-byte
+// bytes (the reference uses char counts; byte counts break multi-byte
 // text such as accented characters).
 int charCountOf(std::string_view value) {
     int count = 0;
@@ -5262,8 +5306,8 @@ Datum executeScriptNewHandler(ExecutionContext& context, std::span<const Datum> 
 bool newObj(ExecutionContext& context) {
     const std::string& objectType = context.resolveNameRef(context.argument());
     if (!equalsIgnoreCase(objectType, "script")) {
-        context.push(Datum::voidValue());
-        return true;
+        // Match reference: raise ScriptError for non-script new().
+        throw context.error("Unknown new object type: " + objectType);
     }
 
     const Datum argListDatum = context.pop();
@@ -5309,9 +5353,9 @@ bool jmp(ExecutionContext& context) {
 }
 
 bool jmpIfZero(ExecutionContext& context) {
-    const bool condition = truthy(context.peekRef());
+    const bool condition = datumIsZero(context.peekRef());
     context.scope().drop(1);
-    if (!condition) {
+    if (condition) {
         context.scope().clearIndexedCollectionSnapshots(context.scope().bytecodeIndex());
         context.jumpTo(context.instructionOffset() + context.argument());
         return false;
@@ -5444,6 +5488,14 @@ bool add(ExecutionContext& context) {
                                          std::min(255, lhs->b + rhs->b)));
             return true;
         }
+    }
+
+    // Match reference: String + anything → string concatenation.
+    if (a.asString() != nullptr) {
+        std::string aStorage;
+        std::string bStorage;
+        context.push(Datum::of(std::string(stringViewLikeJava(a, aStorage)) + std::string(stringViewLikeJava(b, bStorage))));
+        return true;
     }
 
     context.push(numericResult(a, b, toDoubleLikeJava(a) + toDoubleLikeJava(b)));
@@ -5722,13 +5774,45 @@ bool inv(ExecutionContext& context) {
 
     if (const auto* floatValue = value.asFloat()) {
         context.scope().replaceTop(Datum::of(-floatValue->value));
-    } else if (const auto* point = value.asIntPoint()) {
-        context.scope().replaceTop(Datum::intPoint(-point->x, -point->y));
-    } else if (const auto* rect = value.asIntRect()) {
-        context.scope().replaceTop(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
-    } else {
-        context.scope().replaceTop(Datum::of(-toIntLikeJava(value)));
+        return true;
     }
+
+    if (const auto* point = value.asIntPoint()) {
+        context.scope().replaceTop(Datum::intPoint(-point->x, -point->y));
+        return true;
+    }
+
+    if (const auto* rect = value.asIntRect()) {
+        context.scope().replaceTop(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
+        return true;
+    }
+
+    // Director: negating a list negates each element (elements must be numeric).
+    if (value.isList()) {
+        const auto& items = value.listValue().items();
+        std::vector<Datum> result;
+        result.reserve(items.size());
+        for (const auto& item : items) {
+            if (const auto* iv = item.asInt()) {
+                result.emplace_back(Datum::of(-iv->value));
+            } else if (const auto* fv = item.asFloat()) {
+                result.emplace_back(Datum::of(-fv->value));
+            } else {
+                throw context.error("Cannot negate list element of type: " + std::string(typeName(item.type())));
+            }
+        }
+        context.scope().replaceTop(Datum::list(std::move(result)));
+        return true;
+    }
+
+    // Void → Int(0) (Director convention).
+    if (value.isVoid()) {
+        context.scope().replaceTop(Datum::of(0));
+        return true;
+    }
+
+    // Fallback for unsupported types: coerce to int and negate.
+    context.scope().replaceTop(Datum::of(-toIntLikeJava(value)));
     return true;
 }
 
@@ -5891,8 +5975,26 @@ bool logicalOr(ExecutionContext& context) {
 }
 
 bool logicalNot(ExecutionContext& context) {
-    const bool result = truthy(context.peekRef());
-    context.scope().replaceTop(result ? Datum::FALSE : Datum::TRUE);
+    // Match reference not semantics exactly:
+    //   Void → true
+    //   Int(n) → n == 0
+    //   Float(n) → bits_as_u64 == 0
+    //   everything else → false
+    const Datum& value = context.peekRef();
+    bool result;
+    if (value.isVoid()) {
+        result = true;
+    } else if (const auto* iv = value.asInt()) {
+        result = iv->value == 0;
+    } else if (const auto* fv = value.asFloat()) {
+        // the reference: num.to_u64().unwrap() == 0
+        // Reinterpret f32 bits as u32 — NaN/negative-zero bits become non-zero → false
+        const std::uint32_t bits = std::bit_cast<std::uint32_t>(fv->value);
+        result = bits == 0;
+    } else {
+        result = false;
+    }
+    context.scope().replaceTop(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -6845,7 +6947,7 @@ bool getLegacyProperty(ExecutionContext& context) {
 
 bool getField(ExecutionContext& context) {
     // A castLib ref sits on the stack below the field identifier only in
-    // D5+ movies (matches the reference VM's dir_version >= 500 gate).
+    // D5+ movies (matches the reference's dir_version >= 500 gate).
     const auto* script = context.scope().script();
     const bool dirVersionAtLeast500 =
         script != nullptr && script->file() != nullptr && script->file()->version() >= 500;

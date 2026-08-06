@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.16)
 set(LIBRESHOCKWAVE_VOLTER_DATA_CPP "${CMAKE_CURRENT_BINARY_DIR}/generated/src/fonts/volter/VolterData.cpp")
 set(LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/volter")
 add_custom_command(
