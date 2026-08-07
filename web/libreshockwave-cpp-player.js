@@ -707,6 +707,11 @@
       } else if (message.type === "ready" && typeof options.onReady === "function") {
         options.onReady();
       }
+      // Forward all unhandled messages to the generic onMessage callback
+      // (used by the debugger UI to receive debug-specific events)
+      if (typeof options.onMessage === "function") {
+        options.onMessage(message);
+      }
     });
 
     canvas.addEventListener("mousemove", (event) => {
@@ -790,7 +795,7 @@
 
     send("init", {
       url: options.url || "",
-      autoload: Boolean(options.autoload && options.url),
+      autoload: options.autoload !== false && Boolean(options.url),
       autoplay: options.autoplay !== false,
       params: options.params ?? {},
       tempoOverride: options.tempoOverride || 0,
@@ -860,6 +865,7 @@
         }
       },
       get lastInfo() { return lastInfo; },
+      post(type, payload = {}) { send(type, payload); },
       worker
     };
   }

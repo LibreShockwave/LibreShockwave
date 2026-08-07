@@ -49,6 +49,13 @@ public:
     virtual void onVariableSet(std::string_view, std::string_view, const Datum&) {}
     virtual void onError(std::string_view, std::string_view) {}
     virtual void onDebugMessage(std::string_view) {}
+
+    /// Returns true when the listener has suspended execution (e.g. debugger
+    /// paused at a breakpoint).  The VM's instruction loop checks this after
+    /// every traced instruction and unwinds the handler when set.  This
+    /// enables cooperative (non-blocking) pause in single-threaded
+    /// environments like WASM.
+    [[nodiscard]] virtual bool isExecutionSuspended() const { return false; }
 };
 
 } // namespace libreshockwave::lingo::vm

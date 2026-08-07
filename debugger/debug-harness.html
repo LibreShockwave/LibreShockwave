@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LibreShockwave Debugger — ClassicHabbo</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg:#141514; --panel:#1a1d1a; --panel2:#222622; --line:#333833;
+  --text:#e2e6df; --muted:#8a9488; --accent:#4da86d; --danger:#d95555;
+  --warn:#c9a53b; --bp:#d95555; --cur:#3a5040; --gutter-bg:#1e261e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.4 system-ui,sans-serif;height:100vh;overflow:hidden}
+
+/* ---- Layout ---- */
+.app{display:flex;flex-direction:column;height:100vh}
+.topbar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
+.topbar button{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap}
+.topbar button:hover{background:var(--line)}
+.topbar button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.topbar .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+.topbar .grow{flex:1}
+.topbar .status{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.topbar .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.topbar .dot.paused{background:var(--warn);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.4}}
+.main{display:flex;flex:1;min-height:0}
+.panel{background:var(--panel);overflow:hidden;display:flex;flex-direction:column;flex-shrink:0}
+.panel.left{width:260px;border-right:1px solid var(--line);position:relative}
+.panel.left::after{content:'';position:absolute;top:0;right:0;width:4px;height:100%;cursor:col-resize;background:transparent;z-index:10}
+.panel.left::after:hover{background:var(--accent)}
+.panel.right{width:260px;border-left:1px solid var(--line)}
+.panel-hdr{padding:7px 10px;font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--line);cursor:pointer;display:flex;align-items:center;gap:5px;user-select:none}
+.panel-hdr .arrow{font-size:10px;transition:transform .15s}
+.panel-hdr.collapsed .arrow{transform:rotate(-90deg)}
+.panel-body{flex:1;overflow-y:auto;padding:2px 0}
+.panel-body.collapsed{display:none}
+.center{flex:1;display:flex;align-items:center;justify-content:center;background:#000;min-width:0;overflow:hidden}
+.center canvas{image-rendering:pixelated;max-width:100%;max-height:100%;object-fit:contain;outline:none}
+
+/* ---- Tree ---- */
+.tree-item{padding:3px 8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none;display:flex;align-items:center;gap:4px;font-size:12px}
+.tree-item:hover{background:var(--panel2)}
+.tree-item.selected{background:var(--accent);color:#fff}
+.tree-item .ico{font-size:11px;width:14px;text-align:center;flex-shrink:0}
+.tree-item.lvl1{padding-left:6px;font-weight:600}
+.tree-item.lvl2{padding-left:20px}
+.tree-item.lvl3{padding-left:34px;color:var(--muted);font-size:11px}
+.tree-item.lvl3:hover{color:var(--text)}
+
+/* ---- Inspector tables ---- */
+.insp-table{width:100%;border-collapse:collapse;font-size:11px}
+.insp-table td{padding:1px 8px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+.insp-table .nm{color:var(--muted);width:40%}
+.insp-table .vl{color:var(--text);word-break:break-all;font-family:monospace;font-size:11px}
+.insp-table .vl .expandable{cursor:pointer;color:var(--accent)}
+.insp-table .vl .expandable:hover{text-decoration:underline}
+.insp-tree{margin-left:12px;border-left:1px solid var(--line);padding-left:8px}
+.insp-tree .key{color:var(--muted)}
+.insp-tree .val{color:var(--text);font-family:monospace;font-size:11px}
+.watch-row{display:flex;gap:4px;padding:4px 6px}
+.watch-row input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:3px 6px;border-radius:3px;font:12px monospace;outline:none}
+.watch-row button{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px}
+
+/* ---- Bottom code panel ---- */
+.bottom{background:var(--panel);border-top:2px solid var(--line);display:flex;flex-direction:column;flex-shrink:0;position:relative}
+.bottom::before{content:'';position:absolute;top:-5px;left:0;right:0;height:8px;cursor:ns-resize;z-index:10}
+.bottom::before:hover{background:var(--accent);opacity:.3}
+.bottom.collapsed{display:none}
+.code-tabs{display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid var(--line);gap:0;font-size:12px;flex-shrink:0}
+.code-tab{padding:4px 12px;cursor:pointer;border-radius:4px 4px 0 0;color:var(--muted);user-select:none}
+.code-tab:hover{color:var(--text)}
+.code-tab.active{background:var(--panel2);color:var(--text);font-weight:600}
+.code-tabs .handler-info{margin-left:auto;color:var(--muted);font-size:11px}
+.code-body{overflow:auto;font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace;font-size:12px;line-height:1.55;max-height:240px}
+.code-line{display:flex;min-height:19px;white-space:pre}
+.code-line:hover{background:rgba(255,255,255,.03)}
+.code-line.current{background:#3a5a20;border-left:3px solid #7dcc4a}
+.code-line .gutter{width:26px;flex-shrink:0;text-align:center;cursor:pointer;color:var(--muted);user-select:none;padding-top:1px;font-size:11px;font-weight:bold}
+.code-line .gutter:hover{color:var(--danger)}
+.code-line .gutter.bp{color:var(--bp);font-weight:bold;font-size:13px}
+.code-line .gutter.cur{color:#f0d050;font-weight:bold;font-size:13px;animation:blink .6s infinite}
+@keyframes blink{50%{opacity:.3}}
+.bottom.paused{border-top:2px solid #d95555}
+.bottom.paused .code-header{background:#2a1a1a}
+.code-line .content{padding-left:6px;flex:1;overflow:hidden;text-overflow:ellipsis}
+.code-line .off{color:var(--muted);margin-right:6px;min-width:34px}
+.code-line .op{color:var(--accent);min-width:80px}
+.code-line .arg{color:var(--warn)}
+
+/* ---- Empty state ---- */
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;padding:20px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar" id="toolbar">
+    <button id="btnPause" title="Pause (Esc)">⏸ Pause</button>
+    <button id="btnContinue" title="Continue (F5)">▶ Continue</button>
+    <span class="sep"></span>
+    <button id="btnStepInto" title="Step Into (F11)">⬇ Into</button>
+    <button id="btnStepOver" title="Step Over (F10)">⬈ Over</button>
+    <button id="btnStepOut" title="Step Out (Shift+F11)">⬉ Out</button>
+    <span class="sep"></span>
+    <button id="btnClearBps" title="Clear all breakpoints">✕ Clear BPs</button>
+    <span class="grow"></span>
+    <span class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusLabel">Initializing...</span>
+    </span>
+  </div>
+  <div class="main">
+    <div class="panel left">
+      <div class="panel-hdr" data-panel="movies"><span class="arrow">▾</span> 🎬 Movies</div>
+      <div class="panel-body" id="movieTree"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="center">
+      <canvas id="stage" tabindex="0"></canvas>
+    </div>
+    <div class="panel right">
+      <div class="panel-hdr" data-panel="callstack"><span class="arrow">▾</span> 📚 Call Stack</div>
+      <div class="panel-body" id="callStackBody"><div class="empty">Running</div></div>
+      <div class="panel-hdr" data-panel="properties"><span class="arrow">▾</span> 🏷 Properties</div>
+      <div class="panel-body" id="propsBody"><div class="empty">Running</div></div>
+      <div class="panel-hdr" data-panel="locals"><span class="arrow">▾</span> 📦 Locals</div>
+      <div class="panel-body" id="localsBody"><div class="empty">Running</div></div>
+      <div class="panel-hdr" data-panel="globals"><span class="arrow">▾</span> 🌐 Globals</div>
+      <div class="panel-body" id="globalsBody"><div class="empty">Running</div></div>
+      <div class="panel-hdr" data-panel="watches"><span class="arrow">▾</span> 👁 Watches</div>
+      <div class="panel-body" id="watchesBody">
+        <div class="watch-row"><input id="watchInput" placeholder="Expression..." /><button id="btnAddWatch">+</button></div>
+        <div class="empty" id="watchesEmpty">No watches</div>
+        <table class="insp-table" id="watchesTable" style="display:none"></table>
+      </div>
+    </div>
+  </div>
+  <div class="bottom" id="bottomPanel">
+    <div class="code-tabs">
+      <div class="code-tab active" data-tab="bytecode">Bytecode</div>
+      <div class="code-tab" data-tab="decompiled">Decompiled</div>
+      <select id="handlerSelect" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:2px 6px;border-radius:3px;font-size:11px;margin:0 6px;max-width:200px">
+        <option value="">— Overview —</option>
+      </select>
+      <span class="handler-info" id="codeHandlerInfo"></span>
+    </div>
+    <div class="code-body" id="codeBody"><div class="empty">Select a handler to view code</div></div>
+  </div>
+</div>
+
+<script src="libreshockwave-cpp-player.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+const MOVIE_SRC = "https://images.classichabbo.com/dcr/r31_20090312_0433_13751_b40895fb6101dbe96dc7b9d6477eeeb4/habbo.dcr?";
+const MOVIE_PARAMS = {
+  sw1:"client.allow.cross.domain=1;client.notify.cross.domain=0",
+  sw2:"connection.info.host=verysecret.classichabbo.com;connection.info.port=30100",
+  sw3:"connection.mus.host=verysecret.classichabbo.com;connection.mus.port=38201",
+  sw4:"site.url=;url.prefix=",
+  sw5:"client.reload.url=/client/beta?x=reauthenticate;client.fatal.error.url=/clientutils?key=error",
+  sw6:"client.connection.failed.url=/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?",
+  sw7:"external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?",
+  sw8:"use.sso.ticket=1;sso.ticket=venus-sso-Quackster-a1b87c15-14c9-4f0a-95c7-8a00775cb715"
+};
+
+// ---------------------------------------------------------------------------
+// DOM
+// ---------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const stage = $("#stage");
+const movieTree = $("#movieTree");
+const codeBody = $("#codeBody");
+const codeHandlerInfo = $("#codeHandlerInfo");
+const callStackBody = $("#callStackBody");
+const propsBody = $("#propsBody");
+const localsBody = $("#localsBody");
+const globalsBody = $("#globalsBody");
+const watchesTable = $("#watchesTable");
+const watchesEmpty = $("#watchesEmpty");
+const watchInput = $("#watchInput");
+const statusDot = $("#statusDot");
+const statusLabel = $("#statusLabel");
+const bottomPanel = $("#bottomPanel");
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let player = null;
+let paused = false;
+let currentSnapshot = null;
+let currentScriptId = null;
+let currentHandlerName = null;
+let currentHandlerCode = null;
+let breakpoints = [];
+let movies = [];
+let expandedMovies = new Set();
+let moviesRevision = "";
+let activeTab = "bytecode";
+let scriptHandlerCache = {};  // scriptId -> {handlers: [], globals: [], literals: []}
+let pending = {};
+
+// ---------------------------------------------------------------------------
+// Player init
+// ---------------------------------------------------------------------------
+function initPlayer() {
+  player = LibreShockwavePlayer.create(stage, {
+    url: MOVIE_SRC,
+    params: MOVIE_PARAMS,
+    preloadCasts: true,
+    debugPlaybackEnabled: true,
+    autoload: true,
+    autoplay: true,
+    onReady() { setStatus("Loading movie..."); },
+    onFrame(info) {
+      if (!paused) refreshMovies();
+    },
+    onLoad(data) {
+      setStatus("Playing");
+      refreshMovies();
+    },
+    onError(err) {
+      setStatus("Error: " + (err.message || err));
+    },
+    onDebug(msg) {
+      if (msg.level === "error") console.error("[lsw]", msg.message);
+    },
+    onMessage(msg) {
+      handleDebugMessage(msg);
+    }
+  });
+}
+
+function setStatus(text) {
+  statusLabel.textContent = text;
+}
+
+function setPaused(p) {
+  paused = p;
+  statusDot.className = p ? "dot paused" : "dot";
+  if (p) {
+    bottomPanel.classList.add("paused");
+  } else {
+    bottomPanel.classList.remove("paused");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Debug message dispatch
+// ---------------------------------------------------------------------------
+function handleDebugMessage(msg) {
+  switch (msg.type) {
+    case "debugPaused":
+      setPaused(true);
+      setStatus("Paused");
+      handleSnapshot(msg.snapshot);
+      refreshWatches();
+      break;
+    case "debugListMoviesResult":
+      movies = msg.movies || [];
+      renderMovieTree();
+      break;
+    case "debugListScriptsResult":
+      renderScriptList(msg.castLibNumber, msg.scripts || []);
+      break;
+    case "debugGetHandlerCodeResult":
+      handleHandlerCode(msg.code, msg.scriptId, msg.handlerName);
+      break;
+    case "debugToggleBreakpointResult":
+      refreshBreakpoints();
+      break;
+    case "debugSnapshot":
+      handleSnapshot(msg.snapshot);
+      break;
+    case "debugListBreakpointsResult":
+      breakpoints = msg.breakpoints || [];
+      renderCodeView();
+      break;
+    case "debugGetWatchesResult":
+      renderWatches(msg.watches || []);
+      break;
+    case "debugAddWatchResult":
+      refreshWatches();
+      break;
+  }
+}
+
+function postDebug(type, payload = {}) {
+  if (player && player.post) {
+    player.post(type, payload);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Movie / script tree
+// ---------------------------------------------------------------------------
+function refreshMovies() {
+  postDebug("debugListMovies");
+}
+
+function renderMovieTree() {
+  if (!movies.length) {
+    movieTree.innerHTML = '<div class="empty">No movies loaded</div>';
+    moviesRevision = "";
+    return;
+  }
+  // Skip re-render if nothing changed
+  const rev = movies.map(m => `${m.number}:${m.scriptCount}:${m.isLoaded}`).join(",");
+  if (rev === moviesRevision) return;
+  moviesRevision = rev;
+
+  let html = "";
+  for (const m of movies) {
+    const wasExpanded = expandedMovies.has(m.number);
+    html += `<div class="tree-item lvl1" data-action="toggle-movie" data-movie="${m.number}">
+      <span class="ico">${m.isExternal ? '📦' : '🎞'}</span>${m.name || m.fileName || 'Cast '+m.number}
+      <span style="color:var(--muted);font-size:10px;margin-left:auto">${m.scriptCount}s</span>
+    </div>`;
+    html += `<div id="scripts-${m.number}" style="display:${wasExpanded ? 'block' : 'none'}"></div>`;
+  }
+  movieTree.innerHTML = html;
+
+  // Re-request scripts for expanded movies
+  for (const num of expandedMovies) {
+    postDebug("debugListScripts", { castLibNumber: num });
+  }
+}
+
+function renderScriptList(castLibNumber, scripts) {
+  const container = document.getElementById("scripts-" + castLibNumber);
+  if (!container) return;
+  if (!scripts.length) {
+    container.innerHTML = '<div class="tree-item lvl2" style="color:var(--muted)">No scripts</div>';
+    return;
+  }
+  let html = "";
+  for (const s of scripts) {
+    html += `<div class="tree-item lvl2" data-action="toggle-script" data-script="${s.scriptId}" data-cast="${castLibNumber}">
+      <span class="ico">📄</span>${s.name || 'Script '+s.scriptId}
+      <span style="color:var(--muted);font-size:10px;margin-left:auto">${s.type}</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Handler code display
+// ---------------------------------------------------------------------------
+function handleHandlerCode(code, scriptId, handlerName) {
+  currentHandlerCode = code;
+  currentScriptId = scriptId;
+
+  if (code.error) {
+    codeHandlerInfo.textContent = code.error;
+    codeBody.innerHTML = '<div class="empty">' + esc(code.error) + '</div>';
+    updateHandlerDropdown(code);
+    return;
+  }
+
+  // Populate handler dropdown from the returned handler name
+  // (when handlerName="" we get back the first handler's info, but we want the overview)
+  updateHandlerDropdown(code);
+
+  if (!handlerName || handlerName === "") {
+    // Overview mode — show full script info
+    currentHandlerName = "";
+    renderScriptOverview(code);
+  } else {
+    currentHandlerName = handlerName;
+    codeHandlerInfo.textContent = `${code.scriptName} → ${code.handlerName}  (args:${code.argCount} locals:${code.localCount} len:${code.bytecodeLength}B)`;
+    renderCodeView();
+    // If we don't have the full handler list, fetch it in the background
+    ensureHandlerCache(scriptId);
+  }
+}
+
+function updateHandlerDropdown(code) {
+  const sel = $("#handlerSelect");
+  if (!sel) return;
+
+  // Cache handler list from overview responses
+  if (code.handlers && code.handlers.length > 0) {
+    scriptHandlerCache[currentScriptId] = {
+      handlers: code.handlers,
+      globals: code.globals || [],
+      literals: code.literals || [],
+      scriptName: code.scriptName
+    };
+  }
+
+  // Always rebuild from cache if available, otherwise from code
+  const cached = scriptHandlerCache[currentScriptId];
+  const handlers = cached ? cached.handlers : (code.handlers || (code.handlerName ? [code.handlerName] : []));
+
+  while (sel.options.length > 1) sel.remove(1);
+  for (const h of handlers) {
+    const opt = document.createElement("option");
+    opt.value = h;
+    opt.textContent = h;
+    sel.appendChild(opt);
+  }
+  sel.value = code.handlerName || "";
+}
+
+function ensureHandlerCache(scriptId) {
+  // If we don't have the handler list cached for this script, fetch the overview
+  if (!scriptHandlerCache[scriptId]) {
+    postDebug("debugGetHandlerCode", { scriptId: scriptId, handlerName: "" });
+  }
+}
+
+function renderScriptOverview(code) {
+  codeHandlerInfo.textContent = `${code.scriptName || 'Script ' + currentScriptId} — Overview`;
+  let html = "";
+  html += `<div style="padding:8px 12px;color:var(--muted);font-size:12px">`;
+  html += `Script: <b style="color:var(--text)">${esc(code.scriptName || 'Unknown')}</b> &nbsp; `;
+  html += `Globals: <b style="color:var(--text)">${(code.globals || []).length}</b> &nbsp; `;
+  html += `Literals: <b style="color:var(--text)">${(code.literals || []).length}</b>`;
+  html += `</div>`;
+
+  if (code.globals && code.globals.length) {
+    html += `<div style="padding:4px 12px;font-size:11px;color:var(--accent);font-weight:600">Globals</div>`;
+    for (const g of code.globals) {
+      html += `<div style="padding:1px 20px;font-size:11px;font-family:monospace;color:var(--text)">${esc(g)}</div>`;
+    }
+  }
+  if (code.literals && code.literals.length) {
+    html += `<div style="padding:4px 12px;font-size:11px;color:var(--accent);font-weight:600">Literals</div>`;
+    for (const lit of code.literals) {
+      html += `<div style="padding:1px 20px;font-size:11px;font-family:monospace;color:var(--text)">[${lit.offset}] type=${lit.type} ${esc(String(lit.value))}</div>`;
+    }
+  }
+
+  const hcount = (code.handlers || []).length;
+  html += `<div style="padding:4px 12px;font-size:11px;color:var(--accent);font-weight:600">Handlers (${hcount})</div>`;
+  if (hcount > 0) {
+    html += `<div style="padding:2px 20px;font-size:11px;font-family:monospace;color:var(--text)">`;
+    for (const h of code.handlers) {
+      html += `<span style="cursor:pointer;color:var(--accent)" data-action="select-handler" data-handler="${esc(h)}">⚡ ${esc(h)}</span><br>`;
+    }
+    html += `</div>`;
+  }
+  html += `<div style="padding:4px 12px;color:var(--muted);font-size:11px">Select a handler from the dropdown above or click one above to view bytecode + decompiled code.</div>`;
+
+  codeBody.innerHTML = html;
+}
+
+function renderCodeView() {
+  if (!currentHandlerCode || !currentHandlerCode.handlerName) {
+    codeBody.innerHTML = '<div class="empty">Select a handler to view code</div>';
+    return;
+  }
+
+  const code = currentHandlerCode;
+  const curOff = currentSnapshot ? currentSnapshot.instructionOffset : -1;
+  const hname = code.handlerName;
+
+  if (activeTab === "bytecode") {
+    let html = "";
+    for (const instr of (code.bytecode || [])) {
+      const isCur = instr.offset === curOff;
+      const hasBp = breakpoints.some(b => b.scriptId === currentScriptId && b.handlerName === hname && b.offset === instr.offset && b.enabled);
+      html += `<div class="code-line${isCur?' current':''}" data-offset="${instr.offset}">
+        <div class="gutter${hasBp?' bp':''}${isCur?' cur':''}" data-offset="${instr.offset}">${hasBp?'●':isCur?'▶':''}</div>
+        <div class="content"><span class="off">${instr.offset}</span><span class="op">${instr.opcode}</span><span class="arg">${instr.argument||''}</span>${instr.annotation?' <span style="color:var(--muted)">; '+instr.annotation+'</span>':''}</div>
+      </div>`;
+    }
+    codeBody.innerHTML = html || '<div class="empty">No bytecode</div>';
+  } else {
+    let html = "";
+    for (const line of (code.decompiled || [])) {
+      const isCur = curOff >= 0 && line.bytecodeOffset >= 0 && line.bytecodeOffset === curOff;
+      const hasBp = line.bytecodeOffset >= 0 && breakpoints.some(b => b.scriptId === currentScriptId && b.handlerName === hname && b.offset === line.bytecodeOffset && b.enabled);
+      html += `<div class="code-line${isCur?' current':''}" data-offset="${line.bytecodeOffset}">
+        <div class="gutter${hasBp?' bp':''}${isCur?' cur':''}" data-offset="${line.bytecodeOffset}">${hasBp?'●':isCur?'▶':''}</div>
+        <div class="content">${esc(line.text)}</div>
+      </div>`;
+    }
+    codeBody.innerHTML = html || '<div class="empty">No decompiled code</div>';
+  }
+
+  // Gutter clicks → toggle breakpoint
+  codeBody.querySelectorAll(".gutter").forEach(g => {
+    g.addEventListener("click", () => toggleBreakpoint(parseInt(g.dataset.offset)));
+  });
+
+  // Scroll to current instruction
+  const curEl = codeBody.querySelector(".code-line.current");
+  if (curEl) curEl.scrollIntoView({ block: "center" });
+}
+
+function toggleBreakpoint(offset) {
+  // Always use the dropdown's selected handler, not the state variable
+  const sel = $("#handlerSelect");
+  const hname = sel ? sel.value : currentHandlerName;
+  if (!currentScriptId || !hname) return;
+  postDebug("debugToggleBreakpoint", { scriptId: currentScriptId, handlerName: hname, offset });
+}
+
+function refreshBreakpoints() {
+  postDebug("debugListBreakpoints");
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot → inspector panels
+// ---------------------------------------------------------------------------
+function handleSnapshot(snap) {
+  if (!snap || snap.instructionOffset < 0) return;
+  currentSnapshot = snap;
+
+  // Auto-fetch handler code and switch to the paused-at handler
+  if (snap.scriptId > 0 && snap.handlerName) {
+    if (snap.scriptId !== currentScriptId || snap.handlerName !== currentHandlerName) {
+      currentScriptId = snap.scriptId;
+      currentHandlerName = snap.handlerName;
+      $("#handlerSelect").value = snap.handlerName;
+      postDebug("debugGetHandlerCode", { scriptId: snap.scriptId, handlerName: snap.handlerName });
+    }
+  }
+
+  // Call stack
+  if (snap.callStack && snap.callStack.length) {
+    let h = '<table class="insp-table">';
+    for (let i = snap.callStack.length - 1; i >= 0; i--) {
+      const f = snap.callStack[i];
+      h += `<tr><td class="nm">${esc(f.handlerName)}</td><td class="vl">${esc(f.scriptName)}</td></tr>`;
+    }
+    h += '</table>';
+    callStackBody.innerHTML = h;
+  } else {
+    callStackBody.innerHTML = '<div class="empty">Empty</div>';
+  }
+
+  // Locals
+  if (snap.locals && Object.keys(snap.locals).length) {
+    let h = '<table class="insp-table">';
+    for (const [k, v] of Object.entries(snap.locals)) {
+      h += `<tr><td class="nm">${esc(k)}</td><td class="vl">${renderValue(v)}</td></tr>`;
+    }
+    h += '</table>';
+    localsBody.innerHTML = h;
+    bindExpandables(localsBody);
+  } else {
+    localsBody.innerHTML = '<div class="empty">No locals</div>';
+  }
+
+  // Instance properties
+  if (snap.properties && Object.keys(snap.properties).length) {
+    let h = '<table class="insp-table">';
+    for (const [k, v] of Object.entries(snap.properties)) {
+      h += `<tr><td class="nm">${esc(k)}</td><td class="vl">${renderValue(v)}</td></tr>`;
+    }
+    h += '</table>';
+    propsBody.innerHTML = h;
+    bindExpandables(propsBody);
+  } else {
+    propsBody.innerHTML = '<div class="empty">No properties</div>';
+  }
+
+  // Globals
+  if (snap.globals && Object.keys(snap.globals).length) {
+    let h = '<table class="insp-table">';
+    for (const [k, v] of Object.entries(snap.globals)) {
+      h += `<tr><td class="nm">${esc(k)}</td><td class="vl">${renderValue(v)}</td></tr>`;
+    }
+    h += '</table>';
+    globalsBody.innerHTML = h;
+    bindExpandables(globalsBody);
+  } else {
+    globalsBody.innerHTML = '<div class="empty">No globals</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Watches
+// ---------------------------------------------------------------------------
+function refreshWatches() {
+  postDebug("debugGetWatches");
+}
+
+function renderWatches(watches) {
+  if (!watches.length) {
+    watchesTable.style.display = "none";
+    watchesEmpty.style.display = "flex";
+    return;
+  }
+  watchesEmpty.style.display = "none";
+  watchesTable.style.display = "";
+  let h = "";
+  for (const w of watches) {
+    const val = w.error ? `<span style="color:var(--danger)">${esc(w.error)}</span>`
+      : (w.value != null ? renderValue(w.value) : '<span style="color:var(--muted)">-</span>');
+    h += `<tr><td class="nm">${esc(w.expression)}</td><td class="vl">${val}</td>
+      <td><button data-remove-watch="${esc(w.id)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:10px">✕</button></td></tr>`;
+  }
+  watchesTable.innerHTML = h;
+  bindExpandables(watchesTable);
+  watchesTable.querySelectorAll("[data-remove-watch]").forEach(btn => {
+    btn.addEventListener("click", () => postDebug("debugRemoveWatch", { watchId: btn.dataset.removeWatch }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+$("#btnPause").addEventListener("click", () => {
+  postDebug("debugPause");
+  player.pause();
+});
+
+function resumeExecution(action) {
+  setPaused(false);
+  postDebug(action);
+}
+
+$("#btnContinue").addEventListener("click", () => {
+  setStatus("Running");
+  currentSnapshot = null;
+  renderCodeView();
+  resumeExecution("debugContinue");
+});
+
+$("#btnStepInto").addEventListener("click", () => {
+  setStatus("Stepping");
+  resumeExecution("debugStepInto");
+});
+
+$("#btnStepOver").addEventListener("click", () => {
+  setStatus("Stepping");
+  resumeExecution("debugStepOver");
+});
+
+$("#btnStepOut").addEventListener("click", () => {
+  setStatus("Stepping");
+  resumeExecution("debugStepOut");
+});
+
+$("#btnClearBps").addEventListener("click", () => {
+  postDebug("debugClearBreakpoints");
+  breakpoints = [];
+  currentSnapshot = null;
+  renderCodeView();
+});
+
+// Event delegation for handler links in the code overview
+codeBody.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-action=select-handler]");
+  if (!el) return;
+  const hname = el.dataset.handler;
+  if (!hname || !currentScriptId) return;
+  currentHandlerName = hname;
+  $("#handlerSelect").value = hname;
+  postDebug("debugGetHandlerCode", { scriptId: currentScriptId, handlerName: hname });
+});
+
+// Event delegation for movie tree — survives re-renders
+movieTree.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === "toggle-movie") {
+    const num = parseInt(el.dataset.movie);
+    const div = document.getElementById("scripts-" + num);
+    if (!div) return;
+    if (div.style.display === "none") {
+      div.style.display = "block";
+      expandedMovies.add(num);
+      postDebug("debugListScripts", { castLibNumber: num });
+    } else {
+      div.style.display = "none";
+      expandedMovies.delete(num);
+    }
+  } else if (action === "toggle-script") {
+    const sid = parseInt(el.dataset.script);
+    currentScriptId = sid;
+    currentHandlerName = "";
+    currentHandlerCode = null;
+    // Fetch the script overview (all handlers listed)
+    postDebug("debugGetHandlerCode", { scriptId: sid, handlerName: "" });
+    // Highlight the clicked script
+    movieTree.querySelectorAll(".tree-item.selected").forEach(s => s.classList.remove("selected"));
+    el.classList.add("selected");
+  }
+});
+
+$("#handlerSelect").addEventListener("change", () => {
+  const hname = $("#handlerSelect").value;
+  if (!hname || !currentScriptId) {
+    // Overview mode — re-fetch overview
+    if (currentScriptId) postDebug("debugGetHandlerCode", { scriptId: currentScriptId, handlerName: "" });
+    return;
+  }
+  currentHandlerName = hname;
+  postDebug("debugGetHandlerCode", { scriptId: currentScriptId, handlerName: hname });
+});
+
+// Left panel resize
+(function() {
+  const panel = document.querySelector(".panel.left");
+  if (!panel) return;
+  let resizing = false, startX = 0, startW = 0;
+  panel.addEventListener("mousedown", (e) => {
+    if (e.offsetX < panel.offsetWidth - 5) return;
+    resizing = true; startX = e.clientX; startW = panel.offsetWidth;
+    document.body.style.userSelect = "none"; document.body.style.cursor = "col-resize";
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!resizing) return;
+    panel.style.width = Math.max(180, Math.min(500, startW + e.clientX - startX)) + "px";
+  });
+  document.addEventListener("mouseup", () => {
+    resizing = false; document.body.style.userSelect = ""; document.body.style.cursor = "";
+  });
+})();
+
+// Bottom panel resize
+(function() {
+  const panel = document.querySelector(".bottom");
+  if (!panel) return;
+  let resizing = false, startY = 0, startH = 0;
+  panel.addEventListener("mousedown", (e) => {
+    if (e.offsetY > 8) return; // only the top 8px handle
+    resizing = true; startY = e.clientY; startH = panel.offsetHeight;
+    document.body.style.userSelect = "none"; document.body.style.cursor = "ns-resize";
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!resizing) return;
+    const newH = startH + startY - e.clientY;
+    panel.style.maxHeight = Math.max(60, Math.min(600, newH)) + "px";
+    // Also update code-body max-height
+    const body = document.querySelector(".code-body");
+    if (body) body.style.maxHeight = Math.max(40, newH - 40) + "px";
+  });
+  document.addEventListener("mouseup", () => {
+    resizing = false; document.body.style.userSelect = ""; document.body.style.cursor = "";
+  });
+})();
+
+$("#btnAddWatch").addEventListener("click", () => {
+  const expr = watchInput.value.trim();
+  if (!expr) return;
+  postDebug("debugAddWatch", { expression: expr });
+  watchInput.value = "";
+});
+
+watchInput.addEventListener("keydown", e => { if (e.key === "Enter") $("#btnAddWatch").click(); });
+
+// ---------------------------------------------------------------------------
+// Panel collapse
+// ---------------------------------------------------------------------------
+$$(".panel-hdr").forEach(hdr => {
+  hdr.addEventListener("click", () => {
+    hdr.classList.toggle("collapsed");
+    const body = hdr.nextElementSibling;
+    if (body) body.classList.toggle("collapsed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code tabs
+// ---------------------------------------------------------------------------
+$$(".code-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    $$(".code-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    activeTab = tab.dataset.tab;
+    renderCodeView();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  switch (e.key) {
+    case "F5": e.preventDefault(); $("#btnContinue").click(); break;
+    case "F10": e.preventDefault(); $("#btnStepOver").click(); break;
+    case "F11": e.preventDefault(); if (e.shiftKey) $("#btnStepOut").click(); else $("#btnStepInto").click(); break;
+    case "F9": e.preventDefault();
+      if (currentSnapshot && currentSnapshot.instructionOffset >= 0) {
+        const hn = $("#handlerSelect")?.value;
+        if (hn) toggleBreakpoint(currentSnapshot.instructionOffset);
+      }
+      break;
+    case "Escape": e.preventDefault(); $("#btnPause").click(); break;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function esc(s) {
+  if (!s) return "";
+  const d = document.createElement("div");
+  d.appendChild(document.createTextNode(String(s)));
+  return d.innerHTML;
+}
+
+// Recursive value inspector — expands objects/arrays on click
+function renderValue(val, depth = 0) {
+  if (val === null || val === undefined) return '<span style="color:var(--muted)">null</span>';
+  if (typeof val === "string") return '<span style="color:#e0c070">"' + esc(val) + '"</span>';
+  if (typeof val === "number") return '<span style="color:#8ec8f0">' + String(val) + '</span>';
+  if (typeof val === "boolean") return '<span style="color:#c080e0">' + String(val) + '</span>';
+
+  if (Array.isArray(val)) {
+    const id = "v_" + Math.random().toString(36).slice(2, 8);
+    if (depth > 4) return '<span style="color:var(--muted)">[' + val.length + ' items]</span>';
+    return `<span class="expandable" data-toggle="${id}" style="color:var(--accent);cursor:pointer">[${val.length}] ▸</span>
+      <div id="${id}" style="display:none" class="insp-tree">${val.map((v, i) =>
+        '<div><span class="key">' + i + ':</span> <span class="val">' + renderValue(v, depth + 1) + '</span></div>'
+      ).join("")}</div>`;
+  }
+
+  if (typeof val === "object") {
+    const keys = Object.keys(val);
+    const id = "v_" + Math.random().toString(36).slice(2, 8);
+    if (depth > 4) return '<span style="color:var(--muted)">{' + keys.length + ' keys}</span>';
+    if (keys.length === 0) return '<span style="color:var(--muted)">{}</span>';
+    return `<span class="expandable" data-toggle="${id}" style="color:var(--accent);cursor:pointer">{${keys.length}} ▸</span>
+      <div id="${id}" style="display:none" class="insp-tree">${keys.map(k =>
+        '<div><span class="key">' + esc(k) + ':</span> <span class="val">' + renderValue(val[k], depth + 1) + '</span></div>'
+      ).join("")}</div>`;
+  }
+
+  return '<span style="color:var(--muted)">' + esc(String(val)) + '</span>';
+}
+
+// Attach expand/collapse handlers after injecting HTML
+function bindExpandables(container) {
+  container.querySelectorAll(".expandable[data-toggle]").forEach(el => {
+    el.addEventListener("click", () => {
+      const target = document.getElementById(el.dataset.toggle);
+      if (!target) return;
+      if (target.style.display === "none") {
+        target.style.display = "block";
+        el.textContent = el.textContent.replace("▸", "▾");
+        bindExpandables(target); // wire nested expandables
+      } else {
+        target.style.display = "none";
+        el.textContent = el.textContent.replace("▾", "▸");
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+setStatus("Initializing...");
+initPlayer();
+stage.focus();
+stage.addEventListener("click", () => stage.focus());
+
+// Poll for new movie loads (external .cct casts)
+setInterval(() => {
+  if (!paused) refreshMovies();
+}, 2000);
+</script>
+</body>
+</html>

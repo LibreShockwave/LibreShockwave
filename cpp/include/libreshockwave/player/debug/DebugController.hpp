@@ -53,6 +53,14 @@ public:
     [[nodiscard]] std::optional<std::string> currentHandlerName() const;
     [[nodiscard]] std::optional<DebugSnapshot> currentSnapshot() const override;
 
+    /// Enable non-blocking mode for single-threaded environments (WASM).
+    /// When enabled, onInstruction sets the paused state but returns
+    /// immediately instead of blocking on a condition variable.  The VM
+    /// checks isExecutionSuspended() after every traced instruction and
+    /// unwinds the handler cooperatively.
+    void setNonBlockingMode(bool enabled);
+    [[nodiscard]] bool isNonBlockingMode() const;
+
     void stepInto() override;
     void stepOver() override;
     void stepOut() override;
@@ -132,6 +140,7 @@ private:
     int callDepth_{0};
     int targetCallDepth_{0};
     bool pauseRequested_{false};
+    bool nonBlockingMode_{false};
 };
 
 } // namespace libreshockwave::player::debug

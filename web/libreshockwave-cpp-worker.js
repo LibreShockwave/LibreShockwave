@@ -125,7 +125,25 @@ function ensureModule() {
       pasteText: Module.cwrap("lsw_paste_text", null, ["number", "string"]),
       selectedText: Module.cwrap("lsw_selected_text", "string", ["number"]),
       selectAll: Module.cwrap("lsw_select_all", null, ["number"]),
-      cutSelectedText: Module.cwrap("lsw_cut_selected_text", "string", ["number"])
+      cutSelectedText: Module.cwrap("lsw_cut_selected_text", "string", ["number"]),
+
+      // --- Debugger bridge ---
+      debugListMovies: Module.cwrap("lsw_debug_list_movies_json", "string", ["number"]),
+      debugListScripts: Module.cwrap("lsw_debug_list_scripts_json", "string", ["number", "number"]),
+      debugGetHandlerCode: Module.cwrap("lsw_debug_get_handler_code_json", "string", ["number", "number", "string"]),
+      debugPause: Module.cwrap("lsw_debug_pause", null, ["number"]),
+      debugContinue: Module.cwrap("lsw_debug_continue", null, ["number"]),
+      debugStepInto: Module.cwrap("lsw_debug_step_into", null, ["number"]),
+      debugStepOver: Module.cwrap("lsw_debug_step_over", null, ["number"]),
+      debugStepOut: Module.cwrap("lsw_debug_step_out", null, ["number"]),
+      debugIsPaused: Module.cwrap("lsw_debug_is_paused", "number", ["number"]),
+      debugToggleBreakpoint: Module.cwrap("lsw_debug_toggle_breakpoint", "string", ["number", "number", "string", "number"]),
+      debugClearBreakpoints: Module.cwrap("lsw_debug_clear_breakpoints", null, ["number"]),
+      debugListBreakpoints: Module.cwrap("lsw_debug_list_breakpoints_json", "string", ["number"]),
+      debugGetSnapshot: Module.cwrap("lsw_debug_get_snapshot_json", "string", ["number"]),
+      debugAddWatch: Module.cwrap("lsw_debug_add_watch", "string", ["number", "string"]),
+      debugRemoveWatch: Module.cwrap("lsw_debug_remove_watch", "number", ["number", "string"]),
+      debugGetWatches: Module.cwrap("lsw_debug_get_watches_json", "string", ["number"])
     };
     handle = api.create();
     post("ready");
@@ -543,6 +561,15 @@ function scheduleTick() {
       bridgeCall("play", () => api.play(handle));
       const tickResult = bridgeCall("tick", () => api.tick(handle), 0);
       emitDebugMessages();
+      if (tickResult === 2) {
+        // Debugger paused execution — stop ticking, send current frame + snapshot
+        playing = false;
+        sendFrame();
+        let snapshot = { instructionOffset: -1 };
+        try { snapshot = JSON.parse(bridgeCall("debugGetSnapshot", () => api.debugGetSnapshot(handle), "{}")); } catch {}
+        post("debugPaused", { snapshot });
+        return;
+      }
       if (!tickResult) {
         const message = bridgeCall("last error", () => api.lastError(handle), "");
         playing = false;
@@ -827,6 +854,102 @@ self.addEventListener("message", (event) => {
         if (handle) bridgeCall("destroy", () => api.destroy(handle));
         handle = 0;
         break;
+
+      // --- Debugger messages ---
+      case "debugListMovies": {
+        let movies = [];
+        try { movies = JSON.parse(bridgeCall("debugListMovies", () => api.debugListMovies(handle), "[]")); } catch {}
+        post("debugListMoviesResult", { requestId: message.requestId, movies });
+        break;
+      }
+      case "debugListScripts": {
+        let scripts = [];
+        try { scripts = JSON.parse(bridgeCall("debugListScripts", () => api.debugListScripts(handle, message.castLibNumber || 0), "[]")); } catch {}
+        post("debugListScriptsResult", { requestId: message.requestId, castLibNumber: message.castLibNumber, scripts });
+        break;
+      }
+      case "debugGetHandlerCode": {
+        let code = {};
+        try { code = JSON.parse(bridgeCall("debugGetHandlerCode", () => api.debugGetHandlerCode(handle, message.scriptId || 0, message.handlerName || ""), "{}")); } catch {}
+        post("debugGetHandlerCodeResult", { requestId: message.requestId, scriptId: message.scriptId, handlerName: message.handlerName, code });
+        break;
+      }
+      case "debugPause":
+        bridgeCall("debugPause", () => api.debugPause(handle));
+        break;
+      case "debugContinue":
+        bridgeCall("debugContinue", () => api.debugContinue(handle));
+        if (!playing) {
+          bridgeCall("play after debug continue", () => api.play(handle));
+          playing = true;
+        }
+        nextTickAt = performance.now() + currentDelayMs();
+        scheduleTick();
+        break;
+      case "debugStepInto":
+        bridgeCall("debugStepInto", () => api.debugStepInto(handle));
+        if (!playing) {
+          bridgeCall("play after debug step", () => api.play(handle));
+          playing = true;
+        }
+        nextTickAt = performance.now() + currentDelayMs();
+        scheduleTick();
+        break;
+      case "debugStepOver":
+        bridgeCall("debugStepOver", () => api.debugStepOver(handle));
+        if (!playing) {
+          bridgeCall("play after debug step", () => api.play(handle));
+          playing = true;
+        }
+        nextTickAt = performance.now() + currentDelayMs();
+        scheduleTick();
+        break;
+      case "debugStepOut":
+        bridgeCall("debugStepOut", () => api.debugStepOut(handle));
+        if (!playing) {
+          bridgeCall("play after debug step", () => api.play(handle));
+          playing = true;
+        }
+        nextTickAt = performance.now() + currentDelayMs();
+        scheduleTick();
+        break;
+      case "debugToggleBreakpoint": {
+        let result = { active: false };
+        try { result = JSON.parse(bridgeCall("debugToggleBreakpoint", () => api.debugToggleBreakpoint(handle, message.scriptId || 0, message.handlerName || "", message.offset || 0), '{"active":false}')); } catch {}
+        post("debugToggleBreakpointResult", { requestId: message.requestId, scriptId: message.scriptId, handlerName: message.handlerName, offset: message.offset, result });
+        break;
+      }
+      case "debugClearBreakpoints":
+        bridgeCall("debugClearBreakpoints", () => api.debugClearBreakpoints(handle));
+        break;
+      case "debugListBreakpoints": {
+        let breakpoints = [];
+        try { breakpoints = JSON.parse(bridgeCall("debugListBreakpoints", () => api.debugListBreakpoints(handle), "[]")); } catch {}
+        post("debugListBreakpointsResult", { requestId: message.requestId, breakpoints });
+        break;
+      }
+      case "debugGetSnapshot": {
+        let snapshot = { instructionOffset: -1 };
+        try { snapshot = JSON.parse(bridgeCall("debugGetSnapshot", () => api.debugGetSnapshot(handle), "{}")); } catch {}
+        post("debugSnapshot", { requestId: message.requestId, snapshot });
+        break;
+      }
+      case "debugAddWatch": {
+        let watch = {};
+        try { watch = JSON.parse(bridgeCall("debugAddWatch", () => api.debugAddWatch(handle, message.expression || ""), "{}")); } catch {}
+        post("debugAddWatchResult", { requestId: message.requestId, watch });
+        break;
+      }
+      case "debugRemoveWatch":
+        bridgeCall("debugRemoveWatch", () => api.debugRemoveWatch(handle, message.watchId || ""));
+        break;
+      case "debugGetWatches": {
+        let watches = [];
+        try { watches = JSON.parse(bridgeCall("debugGetWatches", () => api.debugGetWatches(handle), "[]")); } catch {}
+        post("debugGetWatchesResult", { requestId: message.requestId, watches });
+        break;
+      }
+
       default:
         break;
     }

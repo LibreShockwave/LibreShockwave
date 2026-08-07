@@ -383,6 +383,22 @@ if(EMSCRIPTEN)
         "_lsw_selected_text"
         "_lsw_select_all"
         "_lsw_cut_selected_text"
+        "_lsw_debug_list_movies_json"
+        "_lsw_debug_list_scripts_json"
+        "_lsw_debug_get_handler_code_json"
+        "_lsw_debug_pause"
+        "_lsw_debug_continue"
+        "_lsw_debug_step_into"
+        "_lsw_debug_step_over"
+        "_lsw_debug_step_out"
+        "_lsw_debug_is_paused"
+        "_lsw_debug_toggle_breakpoint"
+        "_lsw_debug_clear_breakpoints"
+        "_lsw_debug_list_breakpoints_json"
+        "_lsw_debug_get_snapshot_json"
+        "_lsw_debug_add_watch"
+        "_lsw_debug_remove_watch"
+        "_lsw_debug_get_watches_json"
     )
     string(REPLACE ";" "','" LIBRESHOCKWAVE_WASM_EXPORTS_JOINED "${LIBRESHOCKWAVE_WASM_EXPORTS}")
     set(LIBRESHOCKWAVE_WASM_EXPORTS_FLAG "['${LIBRESHOCKWAVE_WASM_EXPORTS_JOINED}']")
@@ -399,6 +415,7 @@ if(EMSCRIPTEN)
 
     add_executable(libreshockwave_cpp_wasm
         apps/wasm/WasmBridge.cpp
+        ../debugger/cpp/DebuggerBridge.cpp
     )
     target_link_libraries(libreshockwave_cpp_wasm PRIVATE LibreShockwave::libreshockwave)
     target_compile_features(libreshockwave_cpp_wasm PRIVATE cxx_std_20)
@@ -429,6 +446,24 @@ if(EMSCRIPTEN)
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/../web"
                 "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger"
+        # Debugger HTML page
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/../debugger/debug-harness.html"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/debug-harness.html"
+        # Copy dist WASM/JS files into debugger/ so it's self-contained
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-wasm.js"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-wasm.js"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-wasm.wasm"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-wasm.wasm"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-player.js"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-player.js"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-worker.js"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-worker.js"
         DEPENDS libreshockwave_cpp_wasm
         VERBATIM
     )

@@ -705,6 +705,16 @@ void Player::executeFrameCycle(bool processUpdates) {
     refreshDebugControllerGlobals();
     (void)inputHandler_.processInputEvents();
     (void)frameContext_.executeFrame();
+
+    // If the debug controller paused execution during this frame (breakpoint
+    // hit, manual pause, or step completed), don't advance the frame or run
+    // any more handlers.  This is essential for cooperative (non-blocking)
+    // pause in WASM where we can't block the VM thread.
+    if (debugController_ && debugController_->isPaused()) {
+        vm_.flushDeferredTasks();
+        return;
+    }
+
     if (timeoutProcessor_) {
         timeoutProcessor_();
     }

@@ -1296,6 +1296,14 @@ void LingoVM::executeInstruction(Scope& scope, ExecutionContext& context, bool t
         }
     }
 
+    // Cooperative pause: if the trace listener (debugger) suspended execution,
+    // unwind the handler BEFORE executing this instruction so the breakpoint
+    // lands on the correct offset.
+    if (traceListener_ && traceListener_->isExecutionSuspended()) {
+        scope.setReturned(true);
+        return;
+    }
+
     context.setInstruction(*instruction);
     if (opcodeRegistry_.isDefaultRawHandler(instruction->opcode)) {
         const int variableMultiplier = context.variableMultiplier();

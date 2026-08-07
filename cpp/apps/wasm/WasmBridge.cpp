@@ -30,6 +30,7 @@
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/PlayerState.hpp"
 #include "libreshockwave/player/audio/QueuedAudioBackend.hpp"
+#include "libreshockwave/player/debug/DebugControllerApi.hpp"
 #include "libreshockwave/player/event/EventDispatcher.hpp"
 #include "libreshockwave/player/input/DirectorKeyCodes.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
@@ -1063,6 +1064,29 @@ Result guardedResult(WasmPlayerContext& ctx,
 
 } // namespace
 
+// Internal accessors for the debugger bridge (debugger/cpp/DebuggerBridge.cpp).
+// They are compiled into the same .wasm module so they resolve at link time.
+
+libreshockwave::player::Player* lsw_internal_get_player(int handle) {
+    const auto found = contexts.find(handle);
+    return found == contexts.end() ? nullptr : found->second->player.get();
+}
+
+std::shared_ptr<libreshockwave::DirectorFile> lsw_internal_get_file(int handle) {
+    const auto found = contexts.find(handle);
+    return found == contexts.end() ? nullptr : found->second->file;
+}
+
+const char* lsw_internal_json_scratch(int handle, std::string value) {
+    const auto found = contexts.find(handle);
+    if (found == contexts.end()) {
+        return "";
+    }
+    auto& ctx = *found->second;
+    ctx.scratch = std::move(value);
+    return ctx.scratch.c_str();
+}
+
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE int lsw_create() {
@@ -1284,6 +1308,13 @@ EMSCRIPTEN_KEEPALIVE int lsw_tick(int handle) {
         clearError(*ctx);
         const bool keepGoing = ctx->player->tick();
         (void)renderCurrentFrame(*ctx);
+
+        // Return 2 when the debug controller paused execution so the worker
+        // can stop the tick loop until the user resumes.
+        auto debugCtrl = ctx->player->getDebugController();
+        if (debugCtrl != nullptr && debugCtrl->isPaused()) {
+            return 2;
+        }
         return keepGoing ? 1 : 0;
     } catch (const std::exception& error) {
         setError(*ctx, error.what());

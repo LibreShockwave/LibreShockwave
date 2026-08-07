@@ -29,6 +29,7 @@ public:
     [[nodiscard]] virtual bool isAwaitingStepContinuation() const = 0;
     virtual void reset() = 0;
 
+    [[nodiscard]] bool isExecutionSuspended() const override { return isPaused(); }
     [[nodiscard]] virtual bool isPaused() const = 0;
     [[nodiscard]] virtual DebugState state() const = 0;
     [[nodiscard]] virtual std::optional<DebugSnapshot> currentSnapshot() const = 0;

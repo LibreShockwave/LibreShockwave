@@ -99,10 +99,12 @@ void DebugController::onInstruction(const InstructionInfo& info) {
 
     notifyPaused(*pausedSnapshot);
 
-    std::unique_lock lock(mutex_);
-    pauseCv_.wait(lock, [this] {
-        return state_ != DebugState::Paused;
-    });
+    if (!nonBlockingMode_) {
+        std::unique_lock lock(mutex_);
+        pauseCv_.wait(lock, [this] {
+            return state_ != DebugState::Paused;
+        });
+    }
 }
 
 bool DebugController::needsInstructionTrace() const {
@@ -281,6 +283,18 @@ void DebugController::pause() {
     if (state_ == DebugState::Running || state_ == DebugState::Stepping) {
         pauseRequested_ = true;
     }
+    // In non-blocking mode we must also wake anyone waiting on step
+    // completion — there is no one, but keep symmetry with the blocking path.
+}
+
+void DebugController::setNonBlockingMode(bool enabled) {
+    std::lock_guard lock(mutex_);
+    nonBlockingMode_ = enabled;
+}
+
+bool DebugController::isNonBlockingMode() const {
+    std::lock_guard lock(mutex_);
+    return nonBlockingMode_;
 }
 
 bool DebugController::toggleBreakpoint(int scriptId, std::string handlerName, int offset) {
