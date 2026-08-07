@@ -198,7 +198,8 @@ public:
         : player_(player) {}
 
     [[nodiscard]] bool needsHandlerTrace() const override {
-        return debug::LifecycleDiagnostics::isEnabled() || player_.debugController_ != nullptr;
+        return debug::LifecycleDiagnostics::isEnabled() ||
+               (player_.debugController_ != nullptr && player_.debugController_->tracingEnabled());
     }
 
     void onHandlerEnter(const HandlerInfo& info) override {
@@ -220,7 +221,7 @@ public:
     }
 
     [[nodiscard]] bool needsVariableTrace() const override {
-        return player_.debugController_ != nullptr;
+        return player_.debugController_ != nullptr && player_.debugController_->tracingEnabled();
     }
 
     void onInstruction(const InstructionInfo& info) override {
@@ -752,6 +753,7 @@ void Player::onNetFetchComplete(std::string_view url, const std::vector<std::uin
 
 int Player::preloadAllCasts() {
     int count = 0;
+    std::set<std::string> requestedFiles;
     for (const auto& [_, castLib] : castLibManager_.castLibs()) {
         if (!castLib || !castLib->isExternal() || castLib->isLoaded() || castLib->isFetching()) {
             continue;
@@ -761,7 +763,14 @@ int Player::preloadAllCasts() {
             continue;
         }
         castLib->markFetching();
-        (void)activeNetProvider().preloadNetThing(fileName);
+        // Director movies commonly bind a large number of placeholder cast
+        // slots to the same empty.cct/empty.cst file.  They are one network
+        // resource, not one request per slot; loading each duplicate causes
+        // the VM to spend startup processing the same cast repeatedly and
+        // can starve the movie's own initialization and login requests.
+        if (requestedFiles.insert(lowerAscii(fileName)).second) {
+            (void)activeNetProvider().preloadNetThing(fileName);
+        }
         ++count;
     }
     return count;

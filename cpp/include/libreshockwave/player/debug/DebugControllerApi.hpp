@@ -24,6 +24,12 @@ class DebugControllerApi : public lingo::vm::TraceListener {
 public:
     ~DebugControllerApi() override = default;
 
+    /// Debugger clients can leave tracing off during ordinary playback.  A
+    /// controller remains attached so breakpoints and stepping can be enabled
+    /// without replacing the VM's listener.
+    virtual void setTracingEnabled(bool enabled) { (void)enabled; }
+    [[nodiscard]] virtual bool tracingEnabled() const { return true; }
+
     virtual void setGlobalsSnapshot(std::map<std::string, lingo::Datum> globals) = 0;
     virtual void setLocalsSnapshot(std::map<std::string, lingo::Datum> locals) = 0;
     [[nodiscard]] virtual bool isAwaitingStepContinuation() const = 0;

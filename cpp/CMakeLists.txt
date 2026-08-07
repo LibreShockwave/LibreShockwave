@@ -391,3 +391,23 @@ if(EMSCRIPTEN)
         VERBATIM
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# Qt6 Debugger application
+# ---------------------------------------------------------------------------
+
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    set(LIBRESHOCKWAVE_QT_WIDGETS_TARGET Qt6::Widgets)
+else()
+    find_package(Qt5 QUIET COMPONENTS Widgets)
+    if(Qt5_FOUND)
+        set(LIBRESHOCKWAVE_QT_WIDGETS_TARGET Qt5::Widgets)
+    endif()
+endif()
+
+if(DEFINED LIBRESHOCKWAVE_QT_WIDGETS_TARGET)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../debugger/cpp" libreshockwave_debugger_app)
+else()
+    message(STATUS "Qt Widgets not found; libreshockwave_debugger target disabled. Install Qt6 Widgets or Qt5 Widgets development packages to build it.")
+endif()

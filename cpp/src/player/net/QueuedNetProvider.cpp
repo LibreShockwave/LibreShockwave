@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <iomanip>
 #include <sstream>
 #include <utility>
 
@@ -581,6 +580,19 @@ std::string QueuedNetProvider::resolveUrl(std::string_view url) const {
         return "";
     }
     if (isAbsoluteHttpUrl(url)) {
+        // Director's browser/plugin loader represents a movie-relative cast
+        // as `movie.dcr?/cast.cct`.  The part after `?` is a virtual path,
+        // not an HTTP query; sending it literally makes the server return
+        // the movie's empty-cast fallback for every dynamic cast.
+        const auto query = url.find('?');
+        if (query != std::string_view::npos && query + 1 < url.size() && url[query + 1] == '/') {
+            const auto moviePath = url.substr(0, query);
+            const auto slash = moviePath.find_last_of('/');
+            if (slash != std::string_view::npos) {
+                return std::string(moviePath.substr(0, slash + 1)) +
+                       std::string(url.substr(query + 2));
+            }
+        }
         return std::string(url);
     }
     if (startsWith(url, "/") && !basePath_.empty()) {

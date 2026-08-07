@@ -67,7 +67,15 @@ std::string getFileName(std::string_view path) {
             : path.find('/', schemeEnd + 3);
         if (pathStart != std::string_view::npos) {
             auto uriPath = path.substr(pathStart);
-            if (const auto query = uriPath.find_first_of("?#"); query != std::string_view::npos) {
+            // Director uses `movie.dcr?/cast.cct` for a cast that is served
+            // beside the movie.  The part after `?/` is a virtual path, not
+            // an HTTP query, and must be treated as the requested filename
+            // by cache and cast-library matching code as well as by HTTP.
+            if (const auto virtualPath = uriPath.find("?/");
+                virtualPath != std::string_view::npos) {
+                uriPath = uriPath.substr(virtualPath + 2);
+            } else if (const auto query = uriPath.find_first_of("?#");
+                       query != std::string_view::npos) {
                 uriPath = uriPath.substr(0, query);
             }
             if (!uriPath.empty()) {

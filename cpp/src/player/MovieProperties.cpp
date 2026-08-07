@@ -318,6 +318,12 @@ lingo::Datum MovieProperties::getMovieProp(std::string_view propName) const {
     if (prop == "number of xtras") return lingo::Datum::of(static_cast<int>(registeredXtraNames().size()));
     if (prop == "xtralist") return xtraList();
     if (prop == "activewindow" || prop == "stage") return lingo::Datum::stageRef();
+    if (prop == "windowlist") {
+        // The standalone player has one host window: the stage.  Director
+        // movies use this property to distinguish a real player window from
+        // an authoring context during prepareMovie.
+        return lingo::Datum::list({lingo::Datum::stageRef()});
+    }
     if (prop == "emptystring") return stringDatum("");
     if (prop == "pi") return lingo::Datum::of(std::numbers::pi);
     if (prop == "enter") return stringDatum("\n");

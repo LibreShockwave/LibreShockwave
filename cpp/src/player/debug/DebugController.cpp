@@ -10,6 +10,16 @@ void DebugController::setDelegateListener(std::shared_ptr<lingo::vm::TraceListen
     delegateListener_ = std::move(listener);
 }
 
+void DebugController::setTracingEnabled(bool enabled) {
+    std::lock_guard lock(mutex_);
+    tracingEnabled_ = enabled;
+}
+
+bool DebugController::tracingEnabled() const {
+    std::lock_guard lock(mutex_);
+    return tracingEnabled_;
+}
+
 void DebugController::addListener(DebugStateListener* listener) {
     if (listener == nullptr) {
         return;
@@ -108,7 +118,7 @@ void DebugController::onInstruction(const InstructionInfo& info) {
 }
 
 bool DebugController::needsInstructionTrace() const {
-    return true;
+    return tracingEnabled();
 }
 
 void DebugController::onVariableSet(std::string_view type, std::string_view name, const lingo::Datum& value) {

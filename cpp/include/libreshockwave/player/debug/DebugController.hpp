@@ -29,6 +29,8 @@ public:
     DebugController() = default;
 
     void setDelegateListener(std::shared_ptr<lingo::vm::TraceListener> listener);
+    void setTracingEnabled(bool enabled) override;
+    [[nodiscard]] bool tracingEnabled() const override;
 
     void addListener(DebugStateListener* listener);
     void removeListener(DebugStateListener* listener);
@@ -141,6 +143,7 @@ private:
     int targetCallDepth_{0};
     bool pauseRequested_{false};
     bool nonBlockingMode_{false};
+    bool tracingEnabled_{true};
 };
 
 } // namespace libreshockwave::player::debug
