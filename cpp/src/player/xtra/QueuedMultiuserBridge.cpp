@@ -309,7 +309,7 @@ lingo::Datum readLingoValue(ByteReader& in) {
             for (int i = 0; i < count; ++i) {
                 auto key = readLingoValue(in);
                 auto value = readLingoValue(in);
-                props.put(std::move(key), std::move(value));
+                props.appendProperty(std::move(key), std::move(value));
             }
             return result;
         }
