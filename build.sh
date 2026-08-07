@@ -109,7 +109,6 @@ EOF
 # - A C++20 compiler
 # - zlib development headers
 # - Optional: Ninja
-# - Optional: Qt6 Widgets development headers for the editor
 EOF
             ;;
     esac
@@ -275,7 +274,6 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
     else
         TARGETS=(
             libreshockwave_tests
-            libreshockwave_editor_model_tests
             libreshockwave_probe
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe

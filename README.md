@@ -12,44 +12,9 @@ It **won't** *just* be an emulator: the goal is to eventually become a full soft
 - A C++20 compiler
 - zlib development headers, or a zlib-compatible zlib-ng package
 - Optional: Ninja for faster incremental builds
-- Optional: GTK4 and libcurl development packages for the native player
-- Optional: Qt6 Widgets or Qt5 Widgets development packages for the editor
+
 - Optional: Emscripten for the browser/WASM target
 - Optional: Node.js and npm for browser/WASM verification
-
-## Player
-
-The Lingo VM, native player runtime, and browser/WASM player are under active development and are not production-ready. Expect missing features, incomplete Lingo coverage, and breaking changes.
-
-LibreShockwave includes a Lingo bytecode VM and player that can load and run Director movies. The runtime handles score playback, sprite rendering, input state, external cast loading, networking queues, audio queues, debugging hooks, and software frame rendering.
-
-The player can be used in two ways:
-
-- Native C++: link against `LibreShockwave::libreshockwave` and drive `libreshockwave::player::Player` directly.
-- Browser/WASM: build the Emscripten target and use the assets in `web/`.
-
-Or go to: https://libreshockwave.net/player.html (it isn't updated frequently, however)
-
-<img width="1326" height="1218" alt="image" src="https://github.com/user-attachments/assets/875ca872-e855-4176-9b23-082e2a33d314" />
-
-## Editor
-
-`libreshockwave_editor` is a Qt Widgets Director Studio prototype for inspecting Director and Shockwave projects.
-It is being migrated from the Java Swing editor in `/opt/git/LibreShockwaveJava2/editor` and currently provides the
-Director MX-style main window, menus, toolbar, dockable panel surface, layout persistence, and native C++ movie loading
-summary views. See `docs/EDITOR_PROGRESS.md` for the full migration checklist.
-
-The target is enabled when Qt6 Widgets or Qt5 Widgets development packages are available.
-
-```bash
-./build.sh --target libreshockwave_editor --no-tests
-./cmake-build-debug/cpp/libreshockwave_editor movie.dir
-./cmake-build-debug/cpp/libreshockwave_editor workspace.libresw
-```
-
-### Image
-
-<img width="1508" height="975" alt="Screenshot_20260618_223426" src="https://github.com/user-attachments/assets/993c093e-d438-42e9-b498-81a35f30ab88" />
 
 ## Linux Setup
 
@@ -467,8 +432,6 @@ cpp/
   include/libreshockwave/       Public C++ headers
   src/                          Runtime, SDK, VM, and player sources
   apps/
-    editor/                     Qt Widgets editor source
-    player/                     GTK player executable source
     tools/                      Native probes and browser fixture checker
     wasm/                       WASM bridge entry points
   resources/fonts/              Bundled runtime font assets
