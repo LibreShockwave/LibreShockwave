@@ -212,6 +212,9 @@ private:
     QElapsedTimer recordingClock_;
     std::vector<RecordedInputEvent> recordingEvents_;
     QTimer* replayTimer_{nullptr};
+    QElapsedTimer frameDumpClock_;
+    QElapsedTimer frameStatsClock_;
+    int frameStatsCount_{0};
     bool replaying_{false};
     QElapsedTimer replayClock_;
     qint64 replayClockBaseMs_{0};

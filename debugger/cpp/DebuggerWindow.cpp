@@ -27,6 +27,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <iostream>
 
 #include "DebuggerContext.hpp"
 #include "DebugStateBridge.hpp"
@@ -1299,12 +1300,33 @@ void DebuggerWindow::onBreakpointsChanged() {
 }
 
 void DebuggerWindow::onFrameRendered(const QImage& image) {
-    // The frame was captured on the worker (VM) thread; the image is a
-    // detached copy so painting here never races with the tick loop.
+    // The image is a detached copy produced from an immutable snapshot, so
+    // painting here never races with the VM or renderer threads.
     stageWidget_->setFrameImage(image);
+
+    if (!qEnvironmentVariable("LIBRESHOCKWAVE_DEBUGGER_FRAME_STATS").isEmpty()) {
+        if (!frameStatsClock_.isValid()) {
+            frameStatsClock_.start();
+        }
+        ++frameStatsCount_;
+        const qint64 elapsed = frameStatsClock_.elapsed();
+        if (elapsed >= 1000) {
+            std::cerr << "debugger presentation: "
+                      << (1000.0 * frameStatsCount_) / static_cast<double>(elapsed)
+                      << " fps\n";
+            frameStatsClock_.restart();
+            frameStatsCount_ = 0;
+        }
+    }
+
     const auto dumpPath = qEnvironmentVariable(
         "LIBRESHOCKWAVE_DEBUGGER_FRAME_DUMP");
-    if (!dumpPath.isEmpty()) {
+    // Frame dumps are diagnostic output, not part of presentation. Writing a
+    // PNG for every movie frame can itself destroy the frame budget, so keep
+    // the requested rolling snapshot at most once per second.
+    if (!dumpPath.isEmpty() &&
+        (!frameDumpClock_.isValid() || frameDumpClock_.elapsed() >= 1000)) {
+        frameDumpClock_.restart();
         QSaveFile dumpFile(dumpPath);
         if (dumpFile.open(QIODevice::WriteOnly) &&
             image.save(&dumpFile, "PNG")) {

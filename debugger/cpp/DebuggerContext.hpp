@@ -8,6 +8,8 @@
 
 #include "model/DebuggerModel.hpp"
 #include <atomic>
+#include <condition_variable>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,6 +27,9 @@ namespace libreshockwave {
 class DirectorFile;
 namespace player {
 class Player;
+namespace render::pipeline {
+struct FrameSnapshot;
+} // namespace render::pipeline
 namespace debug {
 class DebugController;
 } // namespace debug
@@ -121,9 +126,9 @@ public slots:
 signals:
     void movieLoaded();
     void errorOccurred(const QString& message);
-    /// Emitted from the worker thread with the newly rendered frame.
-    /// The bitmap is captured on the worker (the only thread touching the
-    /// player), so the UI never races with the tick loop.
+    /// Emitted on the QObject/UI thread with the newest rendered frame.
+    /// Snapshot capture, compositing, and pixel conversion are all detached
+    /// from the VM loop; the UI receives at most one latest frame at a time.
     void frameRendered(const QImage& image);
     /// Emitted after the first play() preparation completes. This gives the
     /// debugger a stable execution-time origin for recording and replay.
@@ -141,6 +146,10 @@ signals:
 private:
     void shutdownWorker();
     void runLoop();
+    void runRenderLoop();
+    void submitFrameSnapshot(libreshockwave::player::render::pipeline::FrameSnapshot snapshot);
+    void dispatchLatestFrame();
+    void wakeWorker();
 
     void issueFetch(NetFetchRequest request);
     void startFetchAttempt(NetFetchRequest request, QList<QUrl> urls);
@@ -166,6 +175,7 @@ private:
     std::optional<MovieTreeSnapshot> lastCastSnapshot_;
     QNetworkAccessManager* netAccess_{nullptr};
     QTimer* netPumpTimer_{nullptr};
+    QTimer* framePumpTimer_{nullptr};
     std::unordered_set<QNetworkReply*> activeReplies_;
 
     // Network queues (thread-safe).  Worker → main: pending fetch requests;
@@ -176,9 +186,31 @@ private:
     std::vector<NetFetchRequest> netOutQueue_;
 
     std::thread workerThread_;
+    std::thread renderThread_;
     std::atomic<bool> quitWorker_{false};
     std::atomic<bool> playing_{false};
     std::atomic<bool> networkReady_{false};
+
+    // Rendering is deliberately fed immutable snapshots.  The VM thread
+    // never waits for software compositing or for the GUI to paint a frame;
+    // the renderer keeps only the newest snapshot so a slow window cannot
+    // build a queue of stale frames.
+    mutable std::mutex renderMutex_;
+    std::condition_variable renderCondition_;
+    std::shared_ptr<const libreshockwave::player::render::pipeline::FrameSnapshot>
+        pendingFrameSnapshot_;
+    std::uint64_t pendingFrameGeneration_{0};
+    bool quitRender_{false};
+    std::atomic<std::uint64_t> renderGeneration_{0};
+
+    mutable std::mutex frameMutex_;
+    std::shared_ptr<QImage> latestFrame_;
+
+    // Wake the VM loop as soon as input or an asynchronous network result
+    // arrives, while retaining the movie's own frame deadline.
+    mutable std::mutex workerWaitMutex_;
+    std::condition_variable workerCondition_;
+    std::atomic<std::uint64_t> workerWakeGeneration_{0};
 
     // Input queue (thread-safe)
     mutable std::mutex inputMutex_;
