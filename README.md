@@ -12,6 +12,7 @@ It **won't** *just* be an emulator: the goal is to eventually become a full soft
 - A C++20 compiler
 - zlib development headers, or a zlib-compatible zlib-ng package
 - Optional: Ninja for faster incremental builds
+- Optional: Qt6 Widgets (or Qt5 Widgets) for the desktop debugger
 
 - Optional: Emscripten for the browser/WASM target
 - Optional: Node.js and npm for browser/WASM verification
@@ -344,21 +345,42 @@ auto callStack = player.formatLingoCallStack();
 
 For bytecode-level debugging, attach a `libreshockwave::player::debug::DebugControllerApi` implementation with `player.setDebugController(...)`.
 
-## Tools
+## Debugger
 
-The C++ tools scan local Director fixture roots. With no path argument, the probes use `/var/html` when present and fall back to `/var/www/html`.
+LibreShockwave includes a Qt desktop debugger and a browser/WASM debugger harness. Both expose movie playback, Lingo bytecode and decompiled code, breakpoints, stepping, call-stack and variable inspection, and watch expressions.
+
+### Desktop debugger
+
+The desktop debugger is built only when Qt6 Widgets or Qt5 Widgets is available. Build its target explicitly:
 
 ```bash
-./cmake-build-debug/cpp/libreshockwave_probe /var/www/html
-./cmake-build-debug/cpp/libreshockwave_render_probe /var/www/html
-./cmake-build-debug/cpp/libreshockwave_wasm_bridge_probe /var/www/html
+./build.sh --target libreshockwave_debugger --no-tests
+./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger path/to/movie.dcr
 ```
 
-`libreshockwave_probe` validates file loading, cast-member discovery, script metadata, score metadata, and external cast paths.
+Use `--release` and `cmake-build-release` for a Release build. The executable is placed under `<build-dir>/cpp/libreshockwave_debugger_app/` when a custom build directory is used.
 
-`libreshockwave_render_probe` drives the player renderer and can preload local external casts. Useful options include `--play`, `--ticks N`, `--scan-frames N`, `--no-preload-casts`, `--show-current`, and `--verbose`.
+The command-line argument is optional. You can also open local `.dir`, `.dcr`, `.dxr`, `.cct`, and `.cst` files from **File → Open Movie**, or enter an HTTP(S) movie URL with **File → Open URL**. Network-dependent movies can receive their `key=value` external parameters from **Parameters → Edit Parameters**; parameter changes take effect after reloading the movie. The window remembers recent movies, parameters, layout, and breakpoints per movie.
 
-`libreshockwave_wasm_bridge_probe` exercises the browser-facing C ABI exports without requiring a browser.
+The debugger workflow is:
+
+1. Load a movie and press **Play**.
+2. Expand a cast in **Movies & Scripts**, select a script and handler, then use the **Bytecode** or **Decompiled** code view.
+3. Click a code gutter line to toggle a breakpoint, or press `F9` while paused to toggle one at the current instruction.
+4. When execution pauses, inspect the call stack, locals, properties, globals, and watches. Enter an expression in the **Watches** panel to evaluate it in the paused context.
+
+Playback and stepping shortcuts are:
+
+| Key | Action |
+|-----|--------|
+| `F5` | Continue |
+| `Esc` | Pause |
+| `F9` | Toggle breakpoint |
+| `F10` | Step over |
+| `F11` | Step into |
+| `Shift+F11` | Step out |
+
+**Play & Record** saves stage mouse and keyboard input as a `.lswdebug` file. Open that file with **File → Open Debug Recording** to reload its movie and external parameters and replay the captured input.
 
 ## Browser Player
 
