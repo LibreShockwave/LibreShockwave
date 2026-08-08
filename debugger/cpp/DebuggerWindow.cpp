@@ -4,15 +4,20 @@
 #include <QCryptographicHash>
 #include <QCloseEvent>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSaveFile>
 #include <QSettings>
 #include <QShortcut>
 #include <QStatusBar>
@@ -67,6 +72,29 @@ static QString breakpointSettingKey(const QString& movieIdentity) {
            QString::fromLatin1(hash.toHex());
 }
 
+static QString recordingEventTypeName(int type) {
+    using InputEvent = DebuggerContext::InputEvent;
+    switch (static_cast<InputEvent::Type>(type)) {
+        case InputEvent::MouseMove: return QStringLiteral("mouseMove");
+        case InputEvent::MouseDown: return QStringLiteral("mouseDown");
+        case InputEvent::MouseUp: return QStringLiteral("mouseUp");
+        case InputEvent::KeyDown: return QStringLiteral("keyDown");
+        case InputEvent::KeyUp: return QStringLiteral("keyUp");
+    }
+    return {};
+}
+
+static bool recordingEventTypeFromName(const QString& name, int& type) {
+    using InputEvent = DebuggerContext::InputEvent;
+    if (name == QStringLiteral("mouseMove")) type = InputEvent::MouseMove;
+    else if (name == QStringLiteral("mouseDown")) type = InputEvent::MouseDown;
+    else if (name == QStringLiteral("mouseUp")) type = InputEvent::MouseUp;
+    else if (name == QStringLiteral("keyDown")) type = InputEvent::KeyDown;
+    else if (name == QStringLiteral("keyUp")) type = InputEvent::KeyUp;
+    else return false;
+    return true;
+}
+
 // -----------------------------------------------------------------------
 // Construction
 // -----------------------------------------------------------------------
@@ -79,6 +107,10 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     resize(1280, 800);
 
     context_ = new DebuggerContext(this);
+    replayTimer_ = new QTimer(this);
+    replayTimer_->setInterval(1);
+    connect(replayTimer_, &QTimer::timeout,
+            this, &DebuggerWindow::onReplayTimer);
 
     setupCentralWidget();
     setupDockWidgets();
@@ -90,9 +122,8 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     restoreSettings();
     updateToolbarState();
 
-    // Resume the last session: if a movie (file or URL) was open last time,
-    // load it and start playing, so the debugger begins "running" like the
-    // WASM version instead of showing "No movie loaded".
+    // Restore the last selected movie without starting playback. The user
+    // explicitly controls execution with Play.
     QSettings settings;
     const auto lastMovie = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
     // A command-line movie is already opened by main().  Do not also restore
@@ -118,6 +149,21 @@ DebuggerWindow::~DebuggerWindow() {
 // -----------------------------------------------------------------------
 
 bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>& params) {
+    if (QFileInfo(path).suffix().compare(QStringLiteral("lswdebug"),
+                                         Qt::CaseInsensitive) == 0) {
+        return openRecording(path);
+    }
+    if (recording_) {
+        context_->stop();
+        finishRecording();
+    }
+    cancelReplay();
+    pendingReplay_.reset();
+    return openMovieInternal(path, params);
+}
+
+bool DebuggerWindow::openMovieInternal(const QString& path,
+                                       const QMap<QString, QString>& params) {
     if (path.isEmpty()) return false;
 
     // URLs are fetched asynchronously; the shared finish path only loads.
@@ -160,6 +206,7 @@ bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>
 
     statusBar()->showMessage(
         QStringLiteral("Loaded: %1 — press Play to start").arg(QFileInfo(path).fileName()));
+    startPendingReplayIfReady();
     return true;
 }
 
@@ -320,7 +367,9 @@ void DebuggerWindow::updateRecentMoviesMenu() {
 
 void DebuggerWindow::closeEvent(QCloseEvent* event) {
     saveSettings();
+    cancelReplay();
     context_->stop();
+    finishRecording();
     event->accept();
 }
 
@@ -338,6 +387,12 @@ void DebuggerWindow::setupMenuBar() {
     auto* openUrlAction = fileMenu->addAction(QStringLiteral("Open &URL..."));
     openUrlAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
     connect(openUrlAction, &QAction::triggered, this, &DebuggerWindow::onOpenUrl);
+
+    auto* openRecordingAction = fileMenu->addAction(
+        QStringLiteral("Open Debug &Recording..."));
+    openRecordingAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
+    connect(openRecordingAction, &QAction::triggered,
+            this, &DebuggerWindow::onOpenRecording);
 
     recentMoviesMenu_ = fileMenu->addMenu(QStringLiteral("&Recent Movies"));
     updateRecentMoviesMenu();
@@ -422,6 +477,10 @@ void DebuggerWindow::setupToolBar() {
     playAction_ = toolbar->addAction(QStringLiteral("▶ Play"));
     connect(playAction_, &QAction::triggered, this, &DebuggerWindow::onPlay);
 
+    recordAction_ = toolbar->addAction(QStringLiteral("▶⏺ Play & Record"));
+    connect(recordAction_, &QAction::triggered,
+            this, &DebuggerWindow::onPlayAndRecord);
+
     pauseAction_ = toolbar->addAction(QStringLiteral("⏸ Pause"));
     connect(pauseAction_, &QAction::triggered, this, &DebuggerWindow::onPause);
 
@@ -503,17 +562,8 @@ void DebuggerWindow::setupCentralWidget() {
         [this](int type, int stageX, int stageY,
                int keyCode, const std::string& keyText,
                bool shift, bool ctrl, bool alt, bool rightButton) {
-            DebuggerContext::InputEvent event;
-            event.type = static_cast<DebuggerContext::InputEvent::Type>(type);
-            event.stageX = stageX;
-            event.stageY = stageY;
-            event.directorKeyCode = keyCode;
-            event.keyText = keyText;
-            event.shift = shift;
-            event.ctrl = ctrl;
-            event.alt = alt;
-            event.rightButton = rightButton;
-            context_->enqueueInput(std::move(event));
+            recordStageInput(type, stageX, stageY, keyCode, keyText,
+                             shift, ctrl, alt, rightButton);
         });
 }
 
@@ -527,6 +577,8 @@ void DebuggerWindow::connectSignals() {
     });
     connect(context_, &DebuggerContext::frameRendered,
             this, &DebuggerWindow::onFrameRendered);
+    connect(context_, &DebuggerContext::playbackStarted,
+            this, &DebuggerWindow::onPlaybackStarted);
     connect(context_, &DebuggerContext::errorOccurred,
             this, &DebuggerWindow::onErrorOccurred);
 
@@ -568,10 +620,16 @@ void DebuggerWindow::onOpenMovie() {
     const auto lastDir = settings.value(QString::fromLatin1(kSettingLastDir)).toString();
     const auto path = QFileDialog::getOpenFileName(
         this, QStringLiteral("Open Director Movie"), lastDir,
-        QStringLiteral("Director Files (*.dir *.dcr *.dxr *.cct *.cst);;All Files (*)"));
+        QStringLiteral("Director Files (*.dir *.dcr *.dxr *.cct *.cst);;"
+                       "Debugger Recordings (*.lswdebug);;All Files (*)"));
     if (path.isEmpty()) return;
     settings.setValue(QString::fromLatin1(kSettingLastDir), QFileInfo(path).absolutePath());
-    openMovie(path, externalParams_);
+    if (QFileInfo(path).suffix().compare(QStringLiteral("lswdebug"),
+                                         Qt::CaseInsensitive) == 0) {
+        openRecording(path);
+    } else {
+        openMovie(path, externalParams_);
+    }
 }
 
 void DebuggerWindow::onOpenUrl() {
@@ -584,7 +642,254 @@ void DebuggerWindow::onOpenUrl() {
         QLineEdit::Normal, lastUrl);
     if (url.isEmpty()) return;
     settings.setValue(QString::fromLatin1(kSettingLastUrl), url);
-    loadMovieFromUrl(url);
+    openMovie(url, externalParams_);
+}
+
+void DebuggerWindow::onOpenRecording() {
+    QSettings settings;
+    const auto lastDir = settings.value(QString::fromLatin1(kSettingLastDir)).toString();
+    const auto path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Open Debug Recording"), lastDir,
+        QStringLiteral("Debugger Recordings (*.lswdebug);;All Files (*)"));
+    if (path.isEmpty()) return;
+    settings.setValue(QString::fromLatin1(kSettingLastDir), QFileInfo(path).absolutePath());
+    openRecording(path);
+}
+
+bool DebuggerWindow::readRecording(const QString& path,
+                                   RecordingFile& recording,
+                                   QString& error) const {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        error = QStringLiteral("Unable to open recording: %1").arg(file.errorString());
+        return false;
+    }
+
+    QJsonParseError parseError;
+    const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        error = QStringLiteral("Invalid recording JSON: %1")
+                    .arg(parseError.errorString());
+        return false;
+    }
+
+    const auto root = document.object();
+    if (root.value(QStringLiteral("format")).toString() !=
+            QStringLiteral("LibreShockwave Debugger Recording") ||
+        root.value(QStringLiteral("version")).toInt() != 1) {
+        error = QStringLiteral("Unsupported debugger recording format");
+        return false;
+    }
+
+    recording.movie = root.value(QStringLiteral("movie")).toString();
+    if (recording.movie.isEmpty()) {
+        error = QStringLiteral("Recording does not contain a movie path or URL");
+        return false;
+    }
+
+    const auto params = root.value(QStringLiteral("externalParams"));
+    if (!params.isUndefined() && !params.isObject()) {
+        error = QStringLiteral("Recording externalParams must be an object");
+        return false;
+    }
+    if (params.isObject()) {
+        const auto paramsObject = params.toObject();
+        for (auto it = paramsObject.begin(); it != paramsObject.end(); ++it) {
+            if (!it.value().isString()) {
+                error = QStringLiteral("Recording contains a non-string external parameter");
+                return false;
+            }
+            recording.externalParams.insert(it.key(), it.value().toString());
+        }
+    }
+
+    const auto events = root.value(QStringLiteral("events"));
+    if (!events.isArray()) {
+        error = QStringLiteral("Recording does not contain an events array");
+        return false;
+    }
+    for (const auto& value : events.toArray()) {
+        if (!value.isObject()) {
+            error = QStringLiteral("Recording contains an invalid event");
+            return false;
+        }
+        const auto object = value.toObject();
+        RecordedInputEvent event;
+        if (!recordingEventTypeFromName(
+                object.value(QStringLiteral("type")).toString(), event.type)) {
+            error = QStringLiteral("Recording contains an unknown input event type");
+            return false;
+        }
+        event.timeMs = static_cast<qint64>(object.value(QStringLiteral("timeMs"))
+                                               .toDouble(-1));
+        if (event.timeMs < 0) {
+            error = QStringLiteral("Recording contains an invalid event time");
+            return false;
+        }
+        event.stageX = object.value(QStringLiteral("stageX")).toInt();
+        event.stageY = object.value(QStringLiteral("stageY")).toInt();
+        event.directorKeyCode = object.value(QStringLiteral("keyCode")).toInt();
+        event.keyText = object.value(QStringLiteral("keyText")).toString();
+        event.shift = object.value(QStringLiteral("shift")).toBool();
+        event.ctrl = object.value(QStringLiteral("ctrl")).toBool();
+        event.alt = object.value(QStringLiteral("alt")).toBool();
+        event.rightButton = object.value(QStringLiteral("rightButton")).toBool();
+        recording.events.push_back(std::move(event));
+    }
+    return true;
+}
+
+bool DebuggerWindow::saveRecording(QString& error) const {
+    if (recordingFilePath_.isEmpty()) {
+        error = QStringLiteral("No recording file was selected");
+        return false;
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("format"),
+                QStringLiteral("LibreShockwave Debugger Recording"));
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("movie"),
+                QString::fromStdString(context_->moviePath()));
+
+    QJsonObject params;
+    for (auto it = externalParams_.cbegin(); it != externalParams_.cend(); ++it) {
+        params.insert(it.key(), it.value());
+    }
+    root.insert(QStringLiteral("externalParams"), params);
+
+    QJsonArray events;
+    for (const auto& event : recordingEvents_) {
+        const auto type = recordingEventTypeName(event.type);
+        if (type.isEmpty()) {
+            error = QStringLiteral("Cannot save an unknown input event type");
+            return false;
+        }
+        QJsonObject object;
+        object.insert(QStringLiteral("timeMs"), event.timeMs);
+        object.insert(QStringLiteral("type"), type);
+        object.insert(QStringLiteral("stageX"), event.stageX);
+        object.insert(QStringLiteral("stageY"), event.stageY);
+        object.insert(QStringLiteral("keyCode"), event.directorKeyCode);
+        object.insert(QStringLiteral("keyText"), event.keyText);
+        object.insert(QStringLiteral("shift"), event.shift);
+        object.insert(QStringLiteral("ctrl"), event.ctrl);
+        object.insert(QStringLiteral("alt"), event.alt);
+        object.insert(QStringLiteral("rightButton"), event.rightButton);
+        events.append(object);
+    }
+    root.insert(QStringLiteral("events"), events);
+
+    QSaveFile file(recordingFilePath_);
+    if (!file.open(QIODevice::WriteOnly)) {
+        error = QStringLiteral("Unable to save recording: %1").arg(file.errorString());
+        return false;
+    }
+    const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        error = QStringLiteral("Unable to save recording: %1").arg(file.errorString());
+        return false;
+    }
+    return true;
+}
+
+bool DebuggerWindow::openRecording(const QString& path) {
+    RecordingFile recording;
+    QString error;
+    if (!readRecording(path, recording, error)) {
+        QMessageBox::warning(this, QStringLiteral("Open Debug Recording"), error);
+        return false;
+    }
+
+    if (recording_) {
+        context_->stop();
+        finishRecording();
+    }
+    cancelReplay();
+    pendingReplay_ = std::move(recording);
+    if (!openMovieInternal(pendingReplay_->movie, pendingReplay_->externalParams)) {
+        pendingReplay_.reset();
+        return false;
+    }
+    return true;
+}
+
+void DebuggerWindow::startPendingReplayIfReady() {
+    if (!pendingReplay_.has_value() || !context_->hasMovie()) {
+        return;
+    }
+
+    replayEvents_ = std::move(pendingReplay_->events);
+    pendingReplay_.reset();
+    replayIndex_ = 0;
+    replaying_ = true;
+    replayClock_.invalidate();
+    context_->play();
+    statusLabel_->setText(QStringLiteral(" ◉ Replaying"));
+    statusLabel_->setStyleSheet(
+        QStringLiteral("color:#c8873d; font-weight:bold; padding:0 8px;"));
+    statusBar()->showMessage(QStringLiteral("Replaying debugger recording..."));
+    updateToolbarState();
+}
+
+void DebuggerWindow::recordStageInput(int type, int stageX, int stageY,
+                                      int keyCode, const std::string& keyText,
+                                      bool shift, bool ctrl, bool alt,
+                                      bool rightButton) {
+    // Do not let physical input perturb an automated replay.
+    if (replaying_) {
+        return;
+    }
+
+    if (recording_) {
+        RecordedInputEvent event;
+        event.timeMs = recordingClock_.isValid() ? recordingClock_.elapsed() : 0;
+        event.type = type;
+        event.stageX = stageX;
+        event.stageY = stageY;
+        event.directorKeyCode = keyCode;
+        event.keyText = QString::fromStdString(keyText);
+        event.shift = shift;
+        event.ctrl = ctrl;
+        event.alt = alt;
+        event.rightButton = rightButton;
+        recordingEvents_.push_back(std::move(event));
+    }
+
+    DebuggerContext::InputEvent event;
+    event.type = static_cast<DebuggerContext::InputEvent::Type>(type);
+    event.stageX = stageX;
+    event.stageY = stageY;
+    event.directorKeyCode = keyCode;
+    event.keyText = keyText;
+    event.shift = shift;
+    event.ctrl = ctrl;
+    event.alt = alt;
+    event.rightButton = rightButton;
+    context_->enqueueInput(std::move(event));
+}
+
+void DebuggerWindow::finishRecording() {
+    if (!recording_) {
+        return;
+    }
+    recording_ = false;
+    recordingClock_.invalidate();
+
+    QString error;
+    if (!saveRecording(error)) {
+        QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
+    }
+}
+
+void DebuggerWindow::cancelReplay() {
+    if (replayTimer_ != nullptr) {
+        replayTimer_->stop();
+    }
+    replaying_ = false;
+    replayClock_.invalidate();
+    replayEvents_.clear();
+    replayIndex_ = 0;
 }
 
 bool DebuggerWindow::isUrl(const QString& value) {
@@ -607,6 +912,7 @@ void DebuggerWindow::loadMovieFromUrl(const QString& url) {
         manager->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {
+            pendingReplay_.reset();
             statusBar()->showMessage(
                 QStringLiteral("Failed to download: %1").arg(reply->errorString()), 5000);
             return;
@@ -653,6 +959,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
             .arg(label)
             .arg(byteCount),
         5000);
+    startPendingReplayIfReady();
 }
 
 void DebuggerWindow::onOpenRecent() {
@@ -768,12 +1075,44 @@ void DebuggerWindow::onPlay() {
     updateToolbarState();
 }
 
+void DebuggerWindow::onPlayAndRecord() {
+    if (!context_->hasMovie() || context_->isPlaying() || isPaused_) {
+        return;
+    }
+
+    const auto suggestedName = QStringLiteral("debug-recording.lswdebug");
+    auto path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Save Debug Recording"), suggestedName,
+        QStringLiteral("Debugger Recordings (*.lswdebug);;All Files (*)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    if (QFileInfo(path).suffix().compare(QStringLiteral("lswdebug"),
+                                         Qt::CaseInsensitive) != 0) {
+        path += QStringLiteral(".lswdebug");
+    }
+
+    recordingFilePath_ = path;
+    recordingEvents_.clear();
+    recordingClock_.invalidate();
+    recording_ = true;
+    context_->play();
+
+    statusLabel_->setText(QStringLiteral(" ⏺ Recording"));
+    statusLabel_->setStyleSheet(
+        QStringLiteral("color:#c34e4e; font-weight:bold; padding:0 8px;"));
+    statusBar()->showMessage(QStringLiteral("Recording stage input..."));
+    updateToolbarState();
+}
+
 void DebuggerWindow::onPause() {
     context_->pausePlayback();
 }
 
 void DebuggerWindow::onStop() {
+    cancelReplay();
     context_->stop();
+    finishRecording();
     codeViewPanel_->clear();
     variablesPanel_->clearAll();
     callStackPanel_->clearAll();
@@ -886,6 +1225,50 @@ void DebuggerWindow::onFrameRendered(const QImage& image) {
     stageWidget_->setFrameImage(image);
 }
 
+void DebuggerWindow::onPlaybackStarted() {
+    if (recording_) {
+        recordingClock_.start();
+    }
+    if (replaying_) {
+        replayClock_.start();
+        replayTimer_->start();
+    }
+}
+
+void DebuggerWindow::onReplayTimer() {
+    if (!replaying_) {
+        replayTimer_->stop();
+        return;
+    }
+
+    const qint64 elapsed = replayClock_.elapsed();
+    while (replayIndex_ < replayEvents_.size() &&
+           replayEvents_[replayIndex_].timeMs <= elapsed) {
+        const auto& recorded = replayEvents_[replayIndex_++];
+        DebuggerContext::InputEvent event;
+        event.type = static_cast<DebuggerContext::InputEvent::Type>(recorded.type);
+        event.stageX = recorded.stageX;
+        event.stageY = recorded.stageY;
+        event.directorKeyCode = recorded.directorKeyCode;
+        event.keyText = recorded.keyText.toStdString();
+        event.shift = recorded.shift;
+        event.ctrl = recorded.ctrl;
+        event.alt = recorded.alt;
+        event.rightButton = recorded.rightButton;
+        context_->enqueueInput(std::move(event));
+    }
+
+    if (replayIndex_ >= replayEvents_.size()) {
+        replayTimer_->stop();
+        replaying_ = false;
+        statusLabel_->setText(QStringLiteral(" ● Running"));
+        statusLabel_->setStyleSheet(
+            QStringLiteral("color:#4da86d; font-weight:bold; padding:0 8px;"));
+        statusBar()->showMessage(QStringLiteral("Debugger recording replay complete"), 4000);
+        updateToolbarState();
+    }
+}
+
 void DebuggerWindow::onErrorOccurred(const QString& message) {
     statusBar()->showMessage(message, 5000);
     QMessageBox::warning(this, QStringLiteral("Error"), message);
@@ -961,6 +1344,7 @@ void DebuggerWindow::updateToolbarState() {
     const bool playing = context_->isPlaying();
 
     playAction_->setEnabled(hasMovie && !playing && !isPaused_);
+    recordAction_->setEnabled(hasMovie && !playing && !isPaused_ && !replaying_);
     pauseAction_->setEnabled(hasMovie && playing && !isPaused_);
     stopAction_->setEnabled(hasMovie && (playing || isPaused_));
     continueAction_->setEnabled(hasMovie && isPaused_);

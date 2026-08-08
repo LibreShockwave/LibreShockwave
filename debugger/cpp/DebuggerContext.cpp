@@ -502,6 +502,7 @@ void DebuggerContext::runLoop() {
         if (!movieStarted) {
             player_->play();
             movieStarted = true;
+            emit playbackStarted();
             // play() prepares the movie's first frame. Keep that frame visible
             // before the first tick advances the score to frame 2.
             firstFrame = true;

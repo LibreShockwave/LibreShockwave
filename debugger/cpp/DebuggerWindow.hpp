@@ -1,10 +1,12 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QMap>
 #include <QString>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,7 @@ class QAction;
 class QDockWidget;
 class QLabel;
 class QMenu;
+class QTimer;
 
 namespace libreshockwave::debugger {
 
@@ -44,11 +47,13 @@ protected:
 private slots:
     void onOpenMovie();
     void onOpenUrl();
+    void onOpenRecording();
     void onOpenRecent();
     void onEditParameters();
     void onLoadDefaultPreset();
     void onClearParameters();
     void onPlay();
+    void onPlayAndRecord();
     void onPause();
     void onStop();
     void onStepInto();
@@ -65,6 +70,8 @@ private slots:
     void onResumed();
     void onBreakpointsChanged();
     void onFrameRendered(const QImage& image);
+    void onPlaybackStarted();
+    void onReplayTimer();
     void onErrorOccurred(const QString& message);
 
     // Movie tree
@@ -96,6 +103,38 @@ private:
     void updateRecentMoviesMenu();
     void updateParamsMenu();
 
+    struct RecordedInputEvent {
+        qint64 timeMs{0};
+        int type{0};
+        int stageX{0};
+        int stageY{0};
+        int directorKeyCode{0};
+        QString keyText;
+        bool shift{false};
+        bool ctrl{false};
+        bool alt{false};
+        bool rightButton{false};
+    };
+
+    struct RecordingFile {
+        QString movie;
+        QMap<QString, QString> externalParams;
+        std::vector<RecordedInputEvent> events;
+    };
+
+    bool openMovieInternal(const QString& path,
+                           const QMap<QString, QString>& params);
+    bool openRecording(const QString& path);
+    bool readRecording(const QString& path, RecordingFile& recording,
+                       QString& error) const;
+    bool saveRecording(QString& error) const;
+    void startPendingReplayIfReady();
+    void recordStageInput(int type, int stageX, int stageY, int keyCode,
+                          const std::string& keyText, bool shift, bool ctrl,
+                          bool alt, bool rightButton);
+    void finishRecording();
+    void cancelReplay();
+
     // Breakpoint persistence.  Breakpoints are stored per movie identity
     // (the movie path/URL) and re-applied whenever that same movie loads —
     // app restart, movie reload, or opening it again — so a session's
@@ -115,7 +154,7 @@ private:
     void loadMovieFromUrl(const QString& url);
     /// Common tail for every successful load: install the bytes, apply the
     /// external params, update the UI, record the recent entry, and start
-    /// playback (movies run immediately, like the WASM debugger).
+    /// in the ready state. Playback starts only from an explicit action.
     void finishLoadedMovie(const QString& label,
                            std::vector<std::uint8_t> data,
                            const std::string& basePath);
@@ -137,6 +176,7 @@ private:
 
     // Toolbar
     QAction* playAction_;
+    QAction* recordAction_;
     QAction* pauseAction_;
     QAction* stopAction_;
     QAction* stepIntoAction_;
@@ -157,6 +197,19 @@ private:
     std::string currentHandlerName_;
     QStringList recentMovies_;
     QMap<QString, QString> externalParams_;
+
+    // Play & Record / replay state. Recordings contain stage input events and
+    // the movie/parameter metadata needed to reopen the same session.
+    bool recording_{false};
+    QString recordingFilePath_;
+    QElapsedTimer recordingClock_;
+    std::vector<RecordedInputEvent> recordingEvents_;
+    QTimer* replayTimer_{nullptr};
+    bool replaying_{false};
+    QElapsedTimer replayClock_;
+    std::vector<RecordedInputEvent> replayEvents_;
+    std::size_t replayIndex_{0};
+    std::optional<RecordingFile> pendingReplay_;
 };
 
 } // namespace libreshockwave::debugger

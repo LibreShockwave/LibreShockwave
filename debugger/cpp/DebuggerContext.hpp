@@ -119,6 +119,9 @@ signals:
     /// The bitmap is captured on the worker (the only thread touching the
     /// player), so the UI never races with the tick loop.
     void frameRendered(const QImage& image);
+    /// Emitted after the first play() preparation completes. This gives the
+    /// debugger a stable execution-time origin for recording and replay.
+    void playbackStarted();
     /// Emitted from the worker thread when the movie navigates to a new URL
     /// (gotoNetPage/gotoNetMovie).  The window must fetch the bytes and load
     /// them as a new session.
