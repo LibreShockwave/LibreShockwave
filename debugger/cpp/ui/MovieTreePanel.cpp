@@ -87,9 +87,8 @@ void MovieTreePanel::populateFromSnapshot(const MovieTreeSnapshot& snapshot) {
     lastSnapshot_ = snapshot;
 
     // Preserve the user's expansion state across repopulates so a runtime
-    // cast load doesn't collapse the tree.  On the first populate the tree
-    // is empty and movie nodes start collapsed by default.
-    const bool firstPopulate = tree_->topLevelItemCount() == 0;
+    // cast load doesn't collapse the tree.  Movie nodes start collapsed by
+    // default.
     QSet<int> expandedMovies;
     for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
         auto* item = tree_->topLevelItem(i);
@@ -161,8 +160,7 @@ void MovieTreePanel::populateFromSnapshot(const MovieTreeSnapshot& snapshot) {
         // Matched movies expand so the matching scripts/handlers are
         // visible; without a filter the tree starts collapsed and keeps the
         // user's expansion state across repopulates.
-        movieItem->setExpanded(filtering || expandedMovies.contains(movie.castLibNumber) ||
-                               (firstPopulate && !filtering));
+        movieItem->setExpanded(filtering || expandedMovies.contains(movie.castLibNumber));
     }
 }
 

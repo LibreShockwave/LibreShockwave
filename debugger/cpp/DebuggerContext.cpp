@@ -138,13 +138,6 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
             return;
         }
         const auto snapshot = MovieTreePanel::buildSnapshot(*player_);
-        qInfo("TEMPTEST castLoaded: %zu movies, %zu scripts",
-              snapshot.movies.size(),
-              [&snapshot] {
-                  size_t total = 0;
-                  for (const auto& m : snapshot.movies) total += m.scripts.size();
-                  return total;
-              }());
         emit castLoaded(snapshot);
     });
     player_->setErrorListener([this](std::string_view message, std::string_view detail) {
@@ -182,7 +175,6 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     // worker's fetchCompleteCallback.
     queuedNet_->setFetchCompleteCallback(
         [this](const std::string& url, const std::vector<std::uint8_t>& fetchData) {
-            qInfo("TEMPTEST2 fetchComplete: %s (%zu bytes)", url.c_str(), fetchData.size());
             if (player_ != nullptr) {
                 player_->onNetFetchComplete(url, fetchData);
             }
@@ -363,7 +355,6 @@ void DebuggerContext::runLoop() {
     const auto deliverPendingFetchResults = [this] {
         std::lock_guard<std::mutex> lock(netInMutex_);
         for (const auto& result : netInQueue_) {
-            qInfo("TEMPTEST4 worker delivering taskId=%d err=%d", result.taskId, result.errorStatus);
             if (result.errorStatus == 0) {
                 queuedNet_->onFetchComplete(result.taskId, result.data);
             } else {
@@ -379,7 +370,6 @@ void DebuggerContext::runLoop() {
         }
 
         const auto& pending = queuedNet_->pendingRequests();
-        qInfo("TEMPTEST6 worker queued %zu requests", pending.size());
         std::lock_guard<std::mutex> lock(netOutMutex_);
         for (const auto& request : pending) {
             netOutQueue_.push_back(NetFetchRequest{
@@ -619,13 +609,11 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
 }
 
 void DebuggerContext::deliverFetchResult(int taskId, std::vector<std::uint8_t> data) {
-    qInfo("TEMPTEST3 reply finished taskId=%d bytes=%zu", taskId, data.size());
     std::lock_guard<std::mutex> lock(netInMutex_);
     netInQueue_.push_back(NetFetchResult{taskId, std::move(data), 0});
 }
 
 void DebuggerContext::deliverFetchError(int taskId, int status) {
-    qInfo("TEMPTEST5 reply error taskId=%d status=%d", taskId, status);
     std::lock_guard<std::mutex> lock(netInMutex_);
     netInQueue_.push_back(NetFetchResult{taskId, {}, status});
 }
