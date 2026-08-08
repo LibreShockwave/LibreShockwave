@@ -220,6 +220,11 @@ public:
         return player_.debugController_ != nullptr && player_.debugController_->needsInstructionTrace();
     }
 
+    [[nodiscard]] bool needsFullInstructionInfo(int offset) const override {
+        return player_.debugController_ == nullptr ||
+               player_.debugController_->needsFullInstructionInfo(offset);
+    }
+
     [[nodiscard]] bool needsVariableTrace() const override {
         return player_.debugController_ != nullptr && player_.debugController_->tracingEnabled();
     }

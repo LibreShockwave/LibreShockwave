@@ -121,6 +121,19 @@ bool DebugController::needsInstructionTrace() const {
     return tracingEnabled();
 }
 
+bool DebugController::needsFullInstructionInfo(int offset) const {
+    std::lock_guard lock(mutex_);
+    if (pauseRequested_ || stepMode_ != StepMode::None || !currentHandlerInfo_.has_value()) {
+        return true;
+    }
+
+    const auto breakpoint = breakpointManager_.getBreakpoint(
+        currentHandlerInfo_->scriptId,
+        currentHandlerInfo_->handlerName,
+        offset);
+    return breakpoint.has_value() && breakpoint->enabled;
+}
+
 void DebugController::onVariableSet(std::string_view type, std::string_view name, const lingo::Datum& value) {
     std::shared_ptr<lingo::vm::TraceListener> delegate;
     {

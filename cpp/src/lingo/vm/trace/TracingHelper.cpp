@@ -13,12 +13,15 @@ TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
     const Scope& scope,
     const chunks::ScriptChunk::Instruction& instruction,
     const RuntimeGlobals& globals,
-    const chunks::ScriptNamesChunk* names) const {
+    const chunks::ScriptNamesChunk* names,
+    bool includeSnapshots) const {
     std::vector<Datum> stackSnapshot;
-    const int snapshotCount = std::min(10, scope.stackSize());
-    stackSnapshot.reserve(static_cast<std::size_t>(snapshotCount));
-    for (int index = 0; index < snapshotCount; ++index) {
-        stackSnapshot.push_back(scope.peek(index).deepCopy());
+    if (includeSnapshots) {
+        const int snapshotCount = std::min(10, scope.stackSize());
+        stackSnapshot.reserve(static_cast<std::size_t>(snapshotCount));
+        for (int index = 0; index < snapshotCount; ++index) {
+            stackSnapshot.push_back(scope.peek(index).deepCopy());
+        }
     }
 
     return TraceListener::InstructionInfo{
@@ -26,11 +29,11 @@ TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
         instruction.offset,
         std::string(mnemonic(instruction.opcode)),
         instruction.argument,
-        buildAnnotation(scope, instruction, names),
+        includeSnapshots ? buildAnnotation(scope, instruction, names) : std::string(),
         scope.stackSize(),
         std::move(stackSnapshot),
-        captureLocals(scope, names),
-        globals,
+        includeSnapshots ? captureLocals(scope, names) : std::unordered_map<std::string, Datum>{},
+        includeSnapshots ? globals : RuntimeGlobals{},
     };
 }
 

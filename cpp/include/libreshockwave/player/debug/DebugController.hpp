@@ -39,6 +39,7 @@ public:
     void onHandlerExit(const HandlerInfo& info, const lingo::Datum& returnValue) override;
     void onInstruction(const InstructionInfo& info) override;
     [[nodiscard]] bool needsInstructionTrace() const override;
+    [[nodiscard]] bool needsFullInstructionInfo(int offset) const override;
     void onVariableSet(std::string_view type, std::string_view name, const lingo::Datum& value) override;
     void onError(std::string_view message, std::string_view error) override;
     void onDebugMessage(std::string_view message) override;

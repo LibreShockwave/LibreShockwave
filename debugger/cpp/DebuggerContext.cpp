@@ -382,25 +382,6 @@ void DebuggerContext::runLoop() {
         queuedNet_->drainPendingRequests();
     };
 
-    // The shell movie's cast 2 contains Core Thread, which owns the external
-    // variable/text/cast bootstrap and the login hand-off.  Director has this
-    // cast available before prepareMovie; an asynchronous debugger load does
-    // not.  Start the ordinary cast preloads, then wait only for that
-    // bootstrap cast so prepareMovie sees its movie scripts.  Waiting for all
-    // placeholder cast slots would unnecessarily delay startup.
-    (void)player_->preloadAllCasts();
-    const auto bootstrapCast = player_->castLibManager().getCastLib(2);
-    if (bootstrapCast && bootstrapCast->isExternal() && !bootstrapCast->isLoaded()) {
-        const auto deadline = std::chrono::steady_clock::now() + 30s;
-        while (!quitWorker_.load(std::memory_order_relaxed) &&
-               !bootstrapCast->isLoaded() &&
-               std::chrono::steady_clock::now() < deadline) {
-            deliverPendingFetchResults();
-            queuePendingFetchRequests();
-            std::this_thread::sleep_for(10ms);
-        }
-    }
-
     const auto emitCurrentFrame = [this, &firstVisibleFrame, &leadingBlankFrames] {
         if (player_ == nullptr) {
             return;

@@ -1176,11 +1176,13 @@ TraceListener::HandlerInfo LingoVM::buildHandlerInfo(
 
 TraceListener::InstructionInfo LingoVM::buildInstructionInfo(
     const Scope& scope,
-    const chunks::ScriptChunk::Instruction& instruction) const {
+    const chunks::ScriptChunk::Instruction& instruction,
+    bool includeSnapshots) const {
     const auto* script = scope.script();
     const auto names = script != nullptr ? scriptNamesForScript(*script, scope.fileOwner(), scope.scriptNamesOwner())
                                         : nullptr;
-    return trace::TracingHelper().buildInstructionInfo(scope, instruction, globals_, names.get());
+    return trace::TracingHelper().buildInstructionInfo(
+        scope, instruction, globals_, names.get(), includeSnapshots);
 }
 
 std::unordered_map<std::string, Datum> LingoVM::captureLocals(const Scope& scope) const {
@@ -1287,7 +1289,10 @@ void LingoVM::executeInstruction(Scope& scope, ExecutionContext& context, bool t
     }
 
     if (traceInstruction) {
-        auto info = buildInstructionInfo(scope, *instruction);
+        const bool includeSnapshots =
+            traceEnabled_ || traceListener_ == nullptr ||
+            traceListener_->needsFullInstructionInfo(instruction->offset);
+        auto info = buildInstructionInfo(scope, *instruction, includeSnapshots);
         if (traceEnabled_) {
             emitConsoleInstruction(info);
         }

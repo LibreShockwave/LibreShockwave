@@ -185,7 +185,8 @@ private:
         const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner = nullptr) const;
     [[nodiscard]] TraceListener::InstructionInfo buildInstructionInfo(
         const Scope& scope,
-        const chunks::ScriptChunk::Instruction& instruction) const;
+        const chunks::ScriptChunk::Instruction& instruction,
+        bool includeSnapshots) const;
     [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(const Scope& scope) const;
     [[nodiscard]] bool handlerDeclaresMeAsFirstParam(
         const chunks::ScriptChunk& script,

@@ -21,7 +21,8 @@ public:
         const Scope& scope,
         const chunks::ScriptChunk::Instruction& instruction,
         const RuntimeGlobals& globals,
-        const chunks::ScriptNamesChunk* names = nullptr) const;
+        const chunks::ScriptNamesChunk* names = nullptr,
+        bool includeSnapshots = true) const;
 
     [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(
         const Scope& scope,

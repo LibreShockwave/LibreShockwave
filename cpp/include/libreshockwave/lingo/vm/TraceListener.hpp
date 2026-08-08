@@ -45,6 +45,11 @@ public:
     virtual void onHandlerExit(const HandlerInfo&, const Datum&) {}
     virtual void onInstruction(const InstructionInfo&) {}
     [[nodiscard]] virtual bool needsInstructionTrace() const { return true; }
+    /// Whether the VM should capture stack, locals, globals, and annotations
+    /// for the current instruction.  Debuggers can return false for ordinary
+    /// instructions and request the expensive snapshot only at a breakpoint
+    /// or step location.
+    [[nodiscard]] virtual bool needsFullInstructionInfo(int /*offset*/) const { return true; }
     [[nodiscard]] virtual bool needsVariableTrace() const { return true; }
     virtual void onVariableSet(std::string_view, std::string_view, const Datum&) {}
     virtual void onError(std::string_view, std::string_view) {}
