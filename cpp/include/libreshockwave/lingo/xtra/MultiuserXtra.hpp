@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,7 +17,11 @@ namespace libreshockwave::lingo::xtra {
 
 class MultiuserXtra : public Xtra {
 public:
-    MultiuserXtra(MultiuserNetBridge* bridge, ScriptCallback callback);
+    using MessageDispatchPredicate = std::function<bool()>;
+
+    MultiuserXtra(MultiuserNetBridge* bridge,
+                  ScriptCallback callback,
+                  MessageDispatchPredicate messageDispatchPredicate = {});
 
     [[nodiscard]] std::string name() const override;
     [[nodiscard]] int createInstance(const std::vector<Datum>& args) override;
@@ -57,6 +62,7 @@ private:
 
     MultiuserNetBridge* bridge_{nullptr};
     ScriptCallback scriptCallback_;
+    MessageDispatchPredicate messageDispatchPredicate_;
     std::unordered_map<int, InstanceState> instances_;
     int nextInstanceId_ = 1;
 };

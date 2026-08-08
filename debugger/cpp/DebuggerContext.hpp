@@ -72,6 +72,7 @@ public:
     [[nodiscard]] const std::string& moviePath() const;
     [[nodiscard]] bool hasMovie() const;
     [[nodiscard]] bool isPlaying() const;
+    [[nodiscard]] bool networkReady() const;
 
     /// Store external parameters for the current movie and for future fresh
     /// player sessions after Stop.
@@ -177,6 +178,7 @@ private:
     std::thread workerThread_;
     std::atomic<bool> quitWorker_{false};
     std::atomic<bool> playing_{false};
+    std::atomic<bool> networkReady_{false};
 
     // Input queue (thread-safe)
     mutable std::mutex inputMutex_;

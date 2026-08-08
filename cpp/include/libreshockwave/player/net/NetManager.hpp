@@ -19,6 +19,10 @@ public:
 
     [[nodiscard]] virtual int preloadNetThing(std::string url) = 0;
     [[nodiscard]] virtual int postNetText(std::string url, std::string postData) = 0;
+    // External casts are loaded asynchronously by the movie's cast loader.
+    // Multiuser notifications that depend on those casts must not overtake
+    // their fetches, even after the request has left the pending queue.
+    [[nodiscard]] virtual bool hasPendingCastLoads() const { return false; }
 
     [[nodiscard]] virtual bool netDone(std::optional<int> taskId = std::nullopt) const = 0;
     [[nodiscard]] virtual std::string netTextResult(std::optional<int> taskId = std::nullopt) const = 0;
@@ -59,6 +63,7 @@ public:
 
     [[nodiscard]] int preloadNetThing(std::string url) override;
     [[nodiscard]] int postNetText(std::string url, std::string postData) override;
+    [[nodiscard]] bool hasPendingCastLoads() const override;
 
     [[nodiscard]] bool netDone(std::optional<int> taskId = std::nullopt) const override;
     [[nodiscard]] std::string netTextResult(std::optional<int> taskId = std::nullopt) const override;

@@ -45,6 +45,14 @@ bool isCastLikeFileName(std::string_view fileName) {
            lowerName.find('.') == std::string::npos;
 }
 
+bool isExternalCastUrl(std::string_view url) {
+    const auto pathEnd = url.find_first_of("?#");
+    const auto path = url.substr(0, pathEnd);
+    const auto fileName = util::getFileName(path);
+    const auto lowerName = toLower(fileName);
+    return lowerName.ends_with(".cct") || lowerName.ends_with(".cst");
+}
+
 void addUnique(std::vector<std::string>& values, std::string value) {
     if (!value.empty() && std::find(values.begin(), values.end(), value) == values.end()) {
         values.push_back(std::move(value));
@@ -134,6 +142,13 @@ int QueuedNetProvider::postNetText(std::string url, std::string postData) {
     tasks_.emplace(taskId, Task{taskId, resolvedUrl});
     pendingRequests_.push_back(PendingRequest{taskId, std::move(resolvedUrl), "POST", std::move(postData), {}});
     return taskId;
+}
+
+bool QueuedNetProvider::hasPendingCastLoads() const {
+    return std::any_of(tasks_.begin(), tasks_.end(), [](const auto& entry) {
+        const auto& task = entry.second;
+        return !task.done && isExternalCastUrl(task.url);
+    });
 }
 
 int QueuedNetProvider::beginMovieNavigation(std::string url) {

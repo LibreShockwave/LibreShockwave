@@ -121,6 +121,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
         netOutQueue_.clear();
     }
     lastCastSnapshot_.reset();
+    networkReady_ = false;
     movieData_ = data;
     moviePath_ = basePath;
 
@@ -213,6 +214,7 @@ bool DebuggerContext::hasMovie() const {
     return player_ != nullptr || !movieData_.empty();
 }
 bool DebuggerContext::isPlaying() const { return playing_.load(); }
+bool DebuggerContext::networkReady() const { return networkReady_.load(std::memory_order_acquire); }
 
 void DebuggerContext::setExternalParams(
     std::vector<std::pair<std::string, std::string>> params) {
@@ -366,6 +368,7 @@ void DebuggerContext::shutdownWorker() {
     debugController_.reset();
     queuedNet_.reset();
     lastCastSnapshot_.reset();
+    networkReady_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,20 +414,18 @@ void DebuggerContext::runLoop() {
     };
 
     // The shell movie's cast 2 contains the bootstrap scripts that set up
-    // the external cast/text flow.  Let its fetch complete before the first
+    // the external cast/text flow. Let its fetch complete before the first
     // prepareMovie pass, but keep the wait bounded so a failed CDN request
     // cannot prevent the debugger from starting.
     (void)player_->preloadAllCasts();
     const auto bootstrapCast = player_->castLibManager().getCastLib(2);
-    if (bootstrapCast && bootstrapCast->isExternal() && !bootstrapCast->isLoaded()) {
-        const auto deadline = std::chrono::steady_clock::now() + 20s;
-        while (!quitWorker_.load(std::memory_order_relaxed) &&
-               !bootstrapCast->isLoaded() &&
-               std::chrono::steady_clock::now() < deadline) {
-            deliverPendingFetchResults();
-            queuePendingFetchRequests();
-            std::this_thread::sleep_for(10ms);
-        }
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    while (!quitWorker_.load(std::memory_order_relaxed) &&
+           bootstrapCast && bootstrapCast->isExternal() && !bootstrapCast->isLoaded() &&
+           std::chrono::steady_clock::now() < deadline) {
+        deliverPendingFetchResults();
+        queuePendingFetchRequests();
+        std::this_thread::sleep_for(10ms);
     }
 
     const auto emitCurrentFrame = [this, &firstVisibleFrame, &leadingBlankFrames] {
@@ -496,7 +497,10 @@ void DebuggerContext::runLoop() {
         // 4. Drain queued input events
         {
             std::lock_guard<std::mutex> lock(inputMutex_);
-            for (const auto& event : inputQueue_) {
+            std::vector<InputEvent> queued;
+            queued.swap(inputQueue_);
+            for (std::size_t index = 0; index < queued.size(); ++index) {
+                const auto& event = queued[index];
                 auto& handler = player_->inputHandler();
                 switch (event.type) {
                     case InputEvent::MouseMove:
@@ -518,13 +522,13 @@ void DebuggerContext::runLoop() {
                         break;
                 }
             }
-            inputQueue_.clear();
         }
         (void)player_->inputHandler().processInputEvents();
 
         if (!movieStarted) {
             player_->play();
             movieStarted = true;
+            networkReady_.store(player_->networkReady(), std::memory_order_release);
             emit playbackStarted();
             // play() prepares the movie's first frame. Keep that frame visible
             // before the first tick advances the score to frame 2.
@@ -542,6 +546,7 @@ void DebuggerContext::runLoop() {
         if (player_->state() == libreshockwave::player::PlayerState::Playing) {
             (void)player_->tick();
         }
+        networkReady_.store(player_->networkReady(), std::memory_order_release);
 
         // Check if we should stop
         if (quitWorker_.load(std::memory_order_relaxed)) {

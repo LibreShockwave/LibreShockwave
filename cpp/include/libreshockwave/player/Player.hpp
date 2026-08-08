@@ -156,6 +156,8 @@ public:
     [[nodiscard]] bool fireTestError(std::string_view errorMessage);
     void onNetFetchComplete(std::string_view url, const std::vector<std::uint8_t>& data);
     [[nodiscard]] int preloadAllCasts();
+    [[nodiscard]] bool externalCastsReady() const;
+    [[nodiscard]] bool networkReady() const;
     void onSynchronousExternalCastLoad(int castLibNumber);
     [[nodiscard]] bool loadExternalCastFromCachedData(int castLibNumber,
                                                       const std::vector<std::uint8_t>& data);
@@ -226,6 +228,11 @@ private:
     std::vector<ExternalCastLoadHandler*> externalCastLoadHandlers_;
     std::vector<std::pair<std::string, std::string>> externalParams_;
     std::vector<std::pair<std::string, lingo::Datum>> initialBuiltinVariables_;
+    // A network-backed movie is not ready for recorded input when its socket
+    // has only completed the crypto handshake. The first server session
+    // response can schedule the security cast; remember that dependency so
+    // playback waits for that async cast cycle to settle.
+    mutable bool externalCastLoadObserved_{false};
     std::vector<lingo::Datum> updatingObjects_;
     std::string lastScriptErrorMessage_;
     std::string lastScriptErrorStack_;

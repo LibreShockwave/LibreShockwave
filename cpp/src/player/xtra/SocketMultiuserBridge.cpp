@@ -183,6 +183,40 @@ SocketMultiuserBridge::~SocketMultiuserBridge() {
     closeAll();
 }
 
+void SocketMultiuserBridge::setIncomingDataReadyPredicate(IncomingDataReadyPredicate predicate) {
+    std::lock_guard lock(connectionsMutex_);
+    incomingDataReadyPredicate_ = std::move(predicate);
+}
+
+bool SocketMultiuserBridge::hasCompletedHandshake() const {
+    std::lock_guard lock(connectionsMutex_);
+    if (!textConnectionRequested_) {
+        return false;
+    }
+    bool activeConnection = false;
+    bool textConnectionActive = false;
+    bool allReady = true;
+    for (const auto& [_, connection] : connections_) {
+        if (!connection) {
+            continue;
+        }
+        std::lock_guard connectionLock(connection->mutex);
+        if (!connection->connecting && !connection->connected) {
+            continue;
+        }
+        activeConnection = true;
+        if (connection->mode != SMUS_MODE) {
+            textConnectionActive = true;
+            if (!connection->rawEncrypted) {
+                allReady = false;
+            }
+        }
+    }
+    const bool ready = allReady && activeConnection &&
+                       (!textConnectionRequested_ || textConnectionActive);
+    return ready;
+}
+
 void SocketMultiuserBridge::requestConnect(int instanceId,
                                            const std::string& host,
                                            int port,
@@ -200,6 +234,9 @@ void SocketMultiuserBridge::requestConnect(int instanceId,
 
     {
         std::lock_guard lock(connectionsMutex_);
+        if (mode != SMUS_MODE) {
+            textConnectionRequested_ = true;
+        }
         connections_[instanceId] = connection;
     }
 
@@ -398,11 +435,19 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
             // Under continuous traffic there are no quiet polls, so a flood
             // would otherwise pile up bytes forever and starve the movie:
             // flush as soon as a full chunk has accumulated.
-            if (connection->inboundBuffer.size() >= RAW_FLUSH_THRESHOLD ||
-                (connection->inboundBuffer.size() >= 7 &&
-                 connection->rawInboundQuietPolls >= 3)) {
+            const bool incomingDataReady = !incomingDataReadyPredicate_ || incomingDataReadyPredicate_();
+            if (incomingDataReady &&
+                (connection->inboundBuffer.size() >= RAW_FLUSH_THRESHOLD ||
+                 (connection->inboundBuffer.size() >= 7 &&
+                  connection->rawInboundQuietPolls >= 3))) {
                 connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
                 connection->inboundBuffer.clear();
+                connection->rawInboundQuietPolls = 0;
+            } else if (!incomingDataReady) {
+                // Do not count quiet polls while the runtime is applying
+                // external casts. The buffered stream is still one TCP
+                // sequence and must be handed to Director as a whole after
+                // the dependency boundary has passed.
                 connection->rawInboundQuietPolls = 0;
             }
         }

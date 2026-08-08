@@ -288,6 +288,9 @@ Player::Player(std::shared_ptr<DirectorFile> file, bool registerSocketMultiuserX
     xtraManager_.registerXtra(std::make_unique<lingo::xtra::XmlParserXtra>());
     if (registerSocketMultiuserXtra) {
         socketMultiuserBridge_ = std::make_unique<xtra::SocketMultiuserBridge>();
+        socketMultiuserBridge_->setIncomingDataReadyPredicate([this] {
+            return externalCastsReady();
+        });
         registerMultiuserXtra(*socketMultiuserBridge_);
     }
     playerTraceListener_ = std::make_shared<PlayerTraceListener>(*this);
@@ -471,6 +474,9 @@ void Player::registerMultiuserXtra(lingo::xtra::MultiuserNetBridge& bridge) {
             } catch (...) {
                 // Match Java Player callback behavior: Xtra callbacks do not break frame polling.
             }
+        },
+        [this] {
+            return externalCastsReady();
         }));
 }
 
@@ -781,6 +787,35 @@ int Player::preloadAllCasts() {
     return count;
 }
 
+bool Player::externalCastsReady() const {
+    for (const auto& [_, castLib] : castLibManager_.castLibs()) {
+        if (castLib && castLib->isExternal() && !castLib->isLoaded() && !castLib->fileName().empty()) {
+            return false;
+        }
+    }
+    return !activeNetProvider().hasPendingCastLoads();
+}
+
+bool Player::networkReady() const {
+    const bool castsReady = externalCastsReady();
+    bool hasUnloadedExternalCast = false;
+    for (const auto& [_, castLib] : castLibManager_.castLibs()) {
+        if (castLib && castLib->isExternal() && !castLib->isLoaded() && !castLib->fileName().empty()) {
+            hasUnloadedExternalCast = true;
+            break;
+        }
+    }
+    if (!castsReady || !hasUnloadedExternalCast) {
+        externalCastLoadObserved_ = true;
+    }
+    if (socketMultiuserBridge_ == nullptr || !socketMultiuserBridge_->hasCompletedHandshake()) {
+        return socketMultiuserBridge_ == nullptr && castsReady;
+    }
+
+    const bool ready = castsReady && externalCastLoadObserved_;
+    return ready;
+}
+
 void Player::onSynchronousExternalCastLoad(int castLibNumber) {
     if (castLibNumber <= 0) {
         return;
@@ -840,6 +875,10 @@ void Player::notifyExternalCastLoaded(int castLibNumber) {
     if (castLoadedListener_) {
         castLoadedListener_();
     }
+    // Runtime scripts can create additional external cast slots while an
+    // earlier cast is being applied. Pick those slots up on the same load
+    // boundary instead of waiting for an unrelated caller to preload them.
+    (void)preloadAllCasts();
 }
 
 void Player::handleTraceError(std::string_view message, std::string_view errorDetail) {

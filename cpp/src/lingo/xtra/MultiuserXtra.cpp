@@ -85,8 +85,12 @@ int modeValue(const Datum& value, int fallback) {
 
 } // namespace
 
-MultiuserXtra::MultiuserXtra(MultiuserNetBridge* bridge, ScriptCallback callback)
-    : bridge_(bridge), scriptCallback_(std::move(callback)) {}
+MultiuserXtra::MultiuserXtra(MultiuserNetBridge* bridge,
+                             ScriptCallback callback,
+                             MessageDispatchPredicate messageDispatchPredicate)
+    : bridge_(bridge),
+      scriptCallback_(std::move(callback)),
+      messageDispatchPredicate_(std::move(messageDispatchPredicate)) {}
 
 std::string MultiuserXtra::name() const {
     return "Multiuser";
@@ -166,6 +170,9 @@ void MultiuserXtra::tick() {
             kMaxMessagesPerFrame);
         std::size_t processed = 0;
         while (!state.messageQueue.empty() && processed < maxThisFrame) {
+            if (messageDispatchPredicate_ && !messageDispatchPredicate_()) {
+                break;
+            }
             state.currentMessage = std::move(state.messageQueue.front());
             state.messageQueue.pop_front();
             ++processed;
@@ -251,6 +258,9 @@ Datum MultiuserXtra::checkNetMessages(int instanceId, InstanceState& state, cons
 
     int processed = 0;
     for (int i = 0; i < count && !state.messageQueue.empty(); ++i) {
+        if (messageDispatchPredicate_ && !messageDispatchPredicate_()) {
+            break;
+        }
         state.currentMessage = std::move(state.messageQueue.front());
         state.messageQueue.pop_front();
         ++processed;

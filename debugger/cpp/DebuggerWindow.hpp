@@ -133,6 +133,8 @@ private:
                        QString& error) const;
     bool saveRecording(QString& error) const;
     void startPendingReplayIfReady();
+    void pauseReplayForNavigation();
+    void resumeReplayAfterNavigation();
     void recordStageInput(int type, int stageX, int stageY, int keyCode,
                           const std::string& keyText, bool shift, bool ctrl,
                           bool alt, bool rightButton);
@@ -212,9 +214,11 @@ private:
     QTimer* replayTimer_{nullptr};
     bool replaying_{false};
     QElapsedTimer replayClock_;
+    qint64 replayClockBaseMs_{0};
     std::vector<RecordedInputEvent> replayEvents_;
     std::size_t replayIndex_{0};
     std::optional<RecordingFile> pendingReplay_;
+    bool replayWaitingForNavigation_{false};
     bool playRequested_{false};
 };
 

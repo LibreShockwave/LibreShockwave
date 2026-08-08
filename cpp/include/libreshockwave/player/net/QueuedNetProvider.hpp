@@ -33,6 +33,7 @@ public:
 
     [[nodiscard]] int preloadNetThing(std::string url) override;
     [[nodiscard]] int postNetText(std::string url, std::string postData) override;
+    [[nodiscard]] bool hasPendingCastLoads() const override;
     [[nodiscard]] int beginMovieNavigation(std::string url);
     void completeMovieNavigationTasks();
 

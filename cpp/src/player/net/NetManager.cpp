@@ -33,6 +33,17 @@ bool isLocalHttpUrl(std::string_view value) {
     return startsWith(value, "http://localhost") || startsWith(value, "http://127.0.0.1");
 }
 
+bool isExternalCastUrl(std::string_view url) {
+    const auto pathEnd = url.find_first_of("?#");
+    const auto path = url.substr(0, pathEnd);
+    const auto fileName = util::getFileName(path);
+    std::string lowerFileName(fileName);
+    std::transform(lowerFileName.begin(), lowerFileName.end(), lowerFileName.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lowerFileName.ends_with(".cct") || lowerFileName.ends_with(".cst");
+}
+
 std::string httpUrlAgainstBase(std::string_view url, std::string_view basePath) {
     if (isHttpUrl(url) || !isHttpUrl(basePath)) {
         return std::string(url);
@@ -206,6 +217,14 @@ int NetManager::postNetText(std::string url, std::string postData) {
     const int taskId = task.taskId();
     executeTask(task, true);
     return taskId;
+}
+
+bool NetManager::hasPendingCastLoads() const {
+    return std::any_of(tasks_.begin(), tasks_.end(), [](const auto& entry) {
+        const auto& task = entry.second;
+        return task.method() == NetTaskMethod::Get && !task.isDone() &&
+               isExternalCastUrl(task.originalUrl());
+    });
 }
 
 bool NetManager::netDone(std::optional<int> taskId) const {

@@ -51,6 +51,7 @@ public:
     [[nodiscard]] int getCastLibByName(const std::string& name);
     [[nodiscard]] int getCastLibCount();
     [[nodiscard]] std::map<int, std::shared_ptr<CastLib>>& castLibs();
+    [[nodiscard]] const std::map<int, std::shared_ptr<CastLib>>& castLibs() const;
 
     [[nodiscard]] lingo::Datum getCastLibProp(int castLibNumber, const std::string& propName);
     bool setCastLibProp(int castLibNumber, const std::string& propName, const lingo::Datum& value);

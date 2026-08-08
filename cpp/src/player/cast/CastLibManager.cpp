@@ -613,6 +613,10 @@ std::map<int, std::shared_ptr<CastLib>>& CastLibManager::castLibs() {
     return castLibs_;
 }
 
+const std::map<int, std::shared_ptr<CastLib>>& CastLibManager::castLibs() const {
+    return castLibs_;
+}
+
 lingo::Datum CastLibManager::getCastLibProp(int castLibNumber, const std::string& propName) {
     auto castLib = getCastLib(castLibNumber);
     return castLib ? castLib->getProp(propName) : lingo::Datum::voidValue();

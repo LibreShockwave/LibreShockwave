@@ -232,7 +232,7 @@ void DebuggerWindow::startPlayback() {
     // Opening a recording starts its replay as soon as the movie is ready.
     // Do not replace the replay status with ordinary playback just because
     // --play was also supplied.
-    if (replaying_) {
+    if (replaying_ && !replayWaitingForNavigation_) {
         playRequested_ = false;
         return;
     }
@@ -861,6 +861,8 @@ void DebuggerWindow::startPendingReplayIfReady() {
     replayIndex_ = 0;
     replaying_ = true;
     playRequested_ = false;
+    replayClockBaseMs_ = 0;
+    replayWaitingForNavigation_ = false;
     replayClock_.invalidate();
     context_->play();
     statusLabel_->setText(QStringLiteral(" ◉ Replaying"));
@@ -926,8 +928,35 @@ void DebuggerWindow::cancelReplay() {
     }
     replaying_ = false;
     replayClock_.invalidate();
+    replayClockBaseMs_ = 0;
     replayEvents_.clear();
     replayIndex_ = 0;
+    replayWaitingForNavigation_ = false;
+}
+
+void DebuggerWindow::pauseReplayForNavigation() {
+    if (!replaying_ || replayWaitingForNavigation_) {
+        return;
+    }
+    if (replayClock_.isValid()) {
+        replayClockBaseMs_ += replayClock_.elapsed();
+        replayClock_.invalidate();
+    }
+    replayWaitingForNavigation_ = true;
+    replayTimer_->stop();
+}
+
+void DebuggerWindow::resumeReplayAfterNavigation() {
+    if (!replaying_ || !replayWaitingForNavigation_) {
+        return;
+    }
+    if (context_->networkReady()) {
+        replayClock_.start();
+    } else {
+        replayClock_.invalidate();
+    }
+    replayWaitingForNavigation_ = false;
+    replayTimer_->start();
 }
 
 bool DebuggerWindow::isUrl(const QString& value) {
@@ -996,7 +1025,13 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
             .arg(byteCount),
         5000);
     startPendingReplayIfReady();
-    if (!replaying_ && (resumePlayback || playRequested_)) {
+    if (replaying_ && resumePlayback) {
+        // Runtime navigation replaces the Player session. Keep the active
+        // recording replay attached to the new session and resume its
+        // paused recording clock.
+        context_->play();
+        resumeReplayAfterNavigation();
+    } else if (!replaying_ && (resumePlayback || playRequested_)) {
         playRequested_ = false;
         onPlay();
     }
@@ -1282,11 +1317,11 @@ void DebuggerWindow::onPlaybackStarted() {
     if (recording_ && !recordingClock_.isValid()) {
         recordingClock_.start();
     }
-    if (replaying_) {
+    if (replaying_ && !replayWaitingForNavigation_) {
         // A movie navigation replaces the Player session while a recording
         // is replaying. Preserve the original recording clock and only
         // restart the timer if the replacement session stopped it.
-        if (!replayClock_.isValid()) {
+        if (!replayClock_.isValid() && context_->networkReady()) {
             replayClock_.start();
         }
         if (!replayTimer_->isActive()) {
@@ -1301,7 +1336,18 @@ void DebuggerWindow::onReplayTimer() {
         return;
     }
 
-    const qint64 elapsed = replayClock_.elapsed();
+    if (replayWaitingForNavigation_) {
+        return;
+    }
+
+    if (!replayClock_.isValid()) {
+        if (!context_->networkReady()) {
+            return;
+        }
+        replayClock_.start();
+    }
+
+    const qint64 elapsed = replayClockBaseMs_ + replayClock_.elapsed();
     while (replayIndex_ < replayEvents_.size() &&
            replayEvents_[replayIndex_].timeMs <= elapsed) {
         const auto& recorded = replayEvents_[replayIndex_++];
@@ -1335,6 +1381,7 @@ void DebuggerWindow::onErrorOccurred(const QString& message) {
 }
 
 void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
+    pauseReplayForNavigation();
     statusBar()->showMessage(QStringLiteral("Navigating to %1...").arg(url));
 
     auto* manager = new QNetworkAccessManager(this);
