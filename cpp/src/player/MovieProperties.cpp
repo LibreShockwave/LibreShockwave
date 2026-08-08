@@ -319,10 +319,11 @@ lingo::Datum MovieProperties::getMovieProp(std::string_view propName) const {
     if (prop == "xtralist") return xtraList();
     if (prop == "activewindow" || prop == "stage") return lingo::Datum::stageRef();
     if (prop == "windowlist") {
-        // The standalone player has one host window: the stage.  Director
-        // movies use this property to distinguish a real player window from
-        // an authoring context during prepareMovie.
-        return lingo::Datum::list({lingo::Datum::stageRef()});
+        // windowList is the list of auxiliary windows, not the player's
+        // stage.  In a standalone player it is empty; exposing the stage
+        // here makes Habbo's authoring-context guard call stopMovie() during
+        // startup (and from its crypto routines).
+        return lingo::Datum::list({});
     }
     if (prop == "emptystring") return stringDatum("");
     if (prop == "pi") return lingo::Datum::of(std::numbers::pi);

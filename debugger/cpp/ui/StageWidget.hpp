@@ -22,6 +22,9 @@ public:
 
     explicit StageWidget(QWidget* parent = nullptr);
 
+    /// Reset the stage viewport before installing a newly loaded movie.
+    void prepareForMovie();
+
     /// Set the current frame image to display.
     void setFrameImage(const QImage& image);
 
@@ -33,17 +36,21 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
+    QSize sizeHint() const override;
 
 private:
     /// Map widget coordinates to stage coordinates.
     void widgetToStage(int wx, int wy, int& sx, int& sy) const;
+    void positionStageSurface();
 
-    QImage currentFrame_;
+    QWidget* stageSurface_{nullptr};
+    QSize stageSize_;
     InputCallback inputCallback_;
 };
 

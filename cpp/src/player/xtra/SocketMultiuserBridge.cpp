@@ -1,6 +1,7 @@
 #include "libreshockwave/player/xtra/SocketMultiuserBridge.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <cstdint>
@@ -119,6 +120,18 @@ std::optional<std::vector<std::uint8_t>> takeSmusFrame(std::vector<std::uint8_t>
     return frame;
 }
 
+std::optional<std::vector<std::uint8_t>> takePlaintextMessage(std::vector<std::uint8_t>& buffer) {
+    const auto terminator = std::find(buffer.begin(), buffer.end(), static_cast<std::uint8_t>(1));
+    if (terminator == buffer.end()) {
+        return std::nullopt;
+    }
+
+    const auto end = terminator + 1;
+    std::vector<std::uint8_t> message(buffer.begin(), end);
+    buffer.erase(buffer.begin(), end);
+    return message;
+}
+
 } // namespace
 
 struct SocketMultiuserBridge::Connection {
@@ -131,6 +144,15 @@ struct SocketMultiuserBridge::Connection {
     int mode = 0;
     std::array<char, READ_BUFFER_SIZE> readBuf{};
     std::vector<std::uint8_t> inboundBuffer;
+    // Raw Multiuser traffic is a TCP byte stream.  The encrypted Director
+    // framing is owned by the movie, so a recv() chunk is not a message
+    // boundary.  Hold encrypted bytes briefly so a split frame header is not
+    // handed to the movie as if it were a complete header.
+    // The handshake responses are delimiter-terminated plaintext messages.
+    // Once the server-secret-key response arrives, subsequent traffic uses
+    // encrypted length-framed packets and must remain opaque to this bridge.
+    bool rawEncrypted = false;
+    int rawInboundQuietPolls = 0;
     std::vector<NetMessage> queuedMessages;
     QueuedMultiuserBridge protocol;
 
@@ -214,7 +236,8 @@ void SocketMultiuserBridge::requestSend(int instanceId,
         if (request.type != QueuedMultiuserBridge::REQ_SEND) {
             continue;
         }
-        if (!sendAll(connection->socketFd, request.wireBytes())) {
+        const auto bytes = request.wireBytes();
+        if (!sendAll(connection->socketFd, bytes)) {
             closeSocket(connection->socketFd);
             connection->connected = false;
             connection->protocol.notifyError(instanceId, -2);
@@ -267,9 +290,17 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
     connection->queuedMessages.clear();
 
     if (!connection->connected || connection->socketFd < 0) {
+        if (connection->mode != SMUS_MODE && !connection->inboundBuffer.empty()) {
+            connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
+            connection->inboundBuffer.clear();
+            connection->rawInboundQuietPolls = 0;
+        }
+        auto messages = connection->protocol.pollMessages(instanceId);
+        result.insert(result.end(), messages.begin(), messages.end());
         return result;
     }
 
+    bool readRawBytes = false;
     for (int attempt = 0; attempt < 16; ++attempt) {
         const ssize_t read = ::recv(connection->socketFd,
                                    connection->readBuf.data(),
@@ -285,9 +316,26 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
                     connection->protocol.deliverMessageBytes(instanceId, *frame);
                 }
             } else {
-                connection->protocol.deliverMessageBytes(
-                    instanceId,
-                    std::vector<std::uint8_t>(begin, begin + read));
+                connection->inboundBuffer.insert(connection->inboundBuffer.end(),
+                                                 begin,
+                                                 begin + read);
+                if (!connection->rawEncrypted) {
+                    while (auto message = takePlaintextMessage(connection->inboundBuffer)) {
+                        const bool isServerSecretKey = message->size() >= 2 &&
+                            QueuedMultiuserBridge::decodeShockwaveCommand(
+                                static_cast<char>((*message)[0]),
+                                static_cast<char>((*message)[1])) == 1;
+                        connection->protocol.deliverMessageBytes(instanceId, *message);
+                        if (isServerSecretKey) {
+                            connection->rawEncrypted = true;
+                            break;
+                        }
+                    }
+                }
+                if (connection->rawEncrypted) {
+                    readRawBytes = true;
+                    connection->rawInboundQuietPolls = 0;
+                }
             }
             continue;
         }
@@ -305,6 +353,25 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
         connection->connected = false;
         connection->protocol.notifyError(instanceId, -2);
         break;
+    }
+
+    if (connection->mode != SMUS_MODE && connection->rawEncrypted &&
+        !connection->inboundBuffer.empty()) {
+        // Director's decoder already retains an incomplete encrypted body,
+        // but it cannot recover if it receives only an encrypted header.  A
+        // few quiet polls let TCP deliver the rest of a small frame while
+        // retaining a complete stream chunk for Director's parser.
+        if (readRawBytes) {
+            connection->rawInboundQuietPolls = 0;
+        } else {
+            ++connection->rawInboundQuietPolls;
+        }
+        if (connection->inboundBuffer.size() >= 7 &&
+            connection->rawInboundQuietPolls >= 3) {
+            connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
+            connection->inboundBuffer.clear();
+            connection->rawInboundQuietPolls = 0;
+        }
     }
 
     auto messages = connection->protocol.pollMessages(instanceId);

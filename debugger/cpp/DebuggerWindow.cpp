@@ -83,7 +83,11 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     // WASM version instead of showing "No movie loaded".
     QSettings settings;
     const auto lastMovie = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
-    if (!lastMovie.isEmpty() &&
+    // A command-line movie is already opened by main().  Do not also restore
+    // the previous URL here: the two asynchronous sessions can finish in
+    // either order and leave the debugger displaying the wrong movie/frame.
+    const bool hasCommandLineMovie = QCoreApplication::arguments().size() > 1;
+    if (!hasCommandLineMovie && !lastMovie.isEmpty() &&
         (isUrl(lastMovie) || QFileInfo::exists(lastMovie))) {
         statusBar()->showMessage(QStringLiteral("Loading last movie..."));
         openMovie(lastMovie, externalParams_);
@@ -117,6 +121,8 @@ bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>
         statusBar()->showMessage(QStringLiteral("Failed to load movie"), 5000);
         return false;
     }
+
+    stageWidget_->prepareForMovie();
 
     // Apply external params
     if (!params.isEmpty()) {
@@ -467,6 +473,12 @@ void DebuggerWindow::connectSignals() {
             this, &DebuggerWindow::onBreakpointToggled);
     connect(context_, &DebuggerContext::movieNavigationRequested,
             this, &DebuggerWindow::onMovieNavigationRequested);
+    // Runtime CCT/CST loads arrive as a snapshot from the VM thread; rebuild
+    // the script list from it so newly loaded scripts appear.
+    connect(context_, &DebuggerContext::castLoaded, this,
+            [this](const MovieTreeSnapshot& snapshot) {
+                movieTreePanel_->populateFromSnapshot(snapshot);
+            });
     connect(watchPanel_, &WatchPanel::watchAdded,
             this, &DebuggerWindow::onWatchAdded);
     connect(watchPanel_, &WatchPanel::watchRemoved,
@@ -511,7 +523,11 @@ void DebuggerWindow::loadMovieFromUrl(const QString& url) {
     statusBar()->showMessage(QStringLiteral("Downloading %1...").arg(url));
 
     auto* manager = new QNetworkAccessManager(this);
-    auto* reply = manager->get(QNetworkRequest(QUrl(url)));
+    QNetworkRequest request{QUrl(url)};
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QStringLiteral("LibreShockwave Debugger/0.1"));
+    request.setTransferTimeout(20000);
+    auto* reply = manager->get(request);
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, manager, url] {
         reply->deleteLater();
@@ -538,6 +554,8 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
         statusBar()->showMessage(QStringLiteral("Failed to load movie"), 5000);
         return;
     }
+
+    stageWidget_->prepareForMovie();
 
     // Apply external params
     if (!externalParams_.isEmpty() && context_->player() != nullptr) {

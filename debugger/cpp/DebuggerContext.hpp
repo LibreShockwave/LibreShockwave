@@ -5,6 +5,8 @@
 #include <QObject>
 #include <QString>
 #include <QUrl>
+
+#include "model/DebuggerModel.hpp"
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -120,6 +122,11 @@ signals:
     /// (gotoNetPage/gotoNetMovie).  The window must fetch the bytes and load
     /// them as a new session.
     void movieNavigationRequested(const QString& url);
+
+    /// Emitted from the worker thread when an external cast (CCT/CST)
+    /// finishes loading at runtime.  Carries a movie-tree snapshot captured
+    /// on the VM thread; the window rebuilds the script list from it.
+    void castLoaded(const MovieTreeSnapshot& snapshot);
 
 private:
     void shutdownWorker();

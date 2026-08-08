@@ -102,6 +102,30 @@ struct BreakpointData {
     bool enabled{true};
 };
 
+/// Movie tree snapshot for runtime cast-load updates.  Built on the VM
+/// (worker) thread when an external cast (CCT/CST) finishes loading and
+/// handed to the UI through a queued signal, so the tree never reads live
+/// cast state concurrently with the tick loop.
+struct MovieTreeSnapshot {
+    struct HandlerEntry {
+        std::string name;
+    };
+    struct ScriptEntry {
+        int scriptId{0};
+        int castLibNumber{0};
+        std::string displayName;
+        std::string typeName;
+        std::vector<HandlerEntry> handlers;
+    };
+    struct MovieEntry {
+        int castLibNumber{0};
+        std::string name;
+        std::string fileName;
+        std::vector<ScriptEntry> scripts;
+    };
+    std::vector<MovieEntry> movies;
+};
+
 } // namespace libreshockwave::debugger
 
 // Required so SnapshotData can cross threads through queued Qt signal
@@ -109,3 +133,7 @@ struct BreakpointData {
 // this, Qt silently drops the paused() signal and the pause/step/breakpoint
 // UI never updates.
 Q_DECLARE_METATYPE(libreshockwave::debugger::SnapshotData)
+
+// Same for the movie tree snapshot: DebuggerContext emits castLoaded() from
+// the worker/VM thread when a runtime CCT/CST load completes.
+Q_DECLARE_METATYPE(libreshockwave::debugger::MovieTreeSnapshot)

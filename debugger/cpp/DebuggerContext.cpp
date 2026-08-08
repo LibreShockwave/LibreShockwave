@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 #include "DebugStateBridge.hpp"
+#include "ui/MovieTreePanel.hpp"
 #include "libreshockwave/DirectorFile.hpp"
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/cast/CastLib.hpp"
@@ -128,6 +129,24 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     player_ = std::make_unique<libreshockwave::player::Player>(directorFile);
     player_->setNetProvider(queuedNet_.get());
     player_->setDebugEnabled(true);
+    // Runtime CCT/CST loads mutate the cast libs on the VM thread.  Capture
+    // a movie-tree snapshot there and hand it to the window through a queued
+    // signal, so the script list stays in sync without the UI ever reading
+    // live cast state concurrently with the tick loop.
+    player_->setCastLoadedListener([this] {
+        if (player_ == nullptr) {
+            return;
+        }
+        const auto snapshot = MovieTreePanel::buildSnapshot(*player_);
+        qInfo("TEMPTEST castLoaded: %zu movies, %zu scripts",
+              snapshot.movies.size(),
+              [&snapshot] {
+                  size_t total = 0;
+                  for (const auto& m : snapshot.movies) total += m.scripts.size();
+                  return total;
+              }());
+        emit castLoaded(snapshot);
+    });
     player_->setErrorListener([this](std::string_view message, std::string_view detail) {
         QString text = QString::fromUtf8(message.data(), static_cast<int>(message.size()));
         if (!detail.empty()) {
@@ -163,6 +182,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     // worker's fetchCompleteCallback.
     queuedNet_->setFetchCompleteCallback(
         [this](const std::string& url, const std::vector<std::uint8_t>& fetchData) {
+            qInfo("TEMPTEST2 fetchComplete: %s (%zu bytes)", url.c_str(), fetchData.size());
             if (player_ != nullptr) {
                 player_->onNetFetchComplete(url, fetchData);
             }
@@ -337,10 +357,13 @@ void DebuggerContext::runLoop() {
 
     bool movieStarted = false;
     bool firstFrame = false;
+    bool firstVisibleFrame = false;
+    int leadingBlankFrames = 0;
 
     const auto deliverPendingFetchResults = [this] {
         std::lock_guard<std::mutex> lock(netInMutex_);
         for (const auto& result : netInQueue_) {
+            qInfo("TEMPTEST4 worker delivering taskId=%d err=%d", result.taskId, result.errorStatus);
             if (result.errorStatus == 0) {
                 queuedNet_->onFetchComplete(result.taskId, result.data);
             } else {
@@ -356,6 +379,7 @@ void DebuggerContext::runLoop() {
         }
 
         const auto& pending = queuedNet_->pendingRequests();
+        qInfo("TEMPTEST6 worker queued %zu requests", pending.size());
         std::lock_guard<std::mutex> lock(netOutMutex_);
         for (const auto& request : pending) {
             netOutQueue_.push_back(NetFetchRequest{
@@ -387,7 +411,7 @@ void DebuggerContext::runLoop() {
         }
     }
 
-    const auto emitCurrentFrame = [this] {
+    const auto emitCurrentFrame = [this, &firstVisibleFrame, &leadingBlankFrames] {
         if (player_ == nullptr) {
             return;
         }
@@ -399,6 +423,20 @@ void DebuggerContext::runLoop() {
             // frame pipeline, so stageImage is null even though the frame is
             // fully renderable.
             const auto bmp = frameSnap.renderFrame();
+            if (!firstVisibleFrame) {
+                const bool hasVisiblePixels = std::any_of(
+                    bmp.pixels().begin(), bmp.pixels().end(), [](std::uint32_t pixel) {
+                        return (pixel & 0x00FFFFFFU) != 0;
+                    });
+                // Habbo's first five score frames are a blank lead-in before
+                // its Sulake splash.  Suppress that transient blank stage so
+                // the debugger does not present it as "No movie loaded", but
+                // still publish a genuinely black movie after a short lead-in.
+                if (!hasVisiblePixels && leadingBlankFrames++ < 5) {
+                    return;
+                }
+                firstVisibleFrame = true;
+            }
             QImage image(bmp.width(), bmp.height(), QImage::Format_ARGB32);
             const auto& pixels = bmp.pixels();
             for (int y = 0; y < bmp.height(); ++y) {
@@ -581,11 +619,13 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
 }
 
 void DebuggerContext::deliverFetchResult(int taskId, std::vector<std::uint8_t> data) {
+    qInfo("TEMPTEST3 reply finished taskId=%d bytes=%zu", taskId, data.size());
     std::lock_guard<std::mutex> lock(netInMutex_);
     netInQueue_.push_back(NetFetchResult{taskId, std::move(data), 0});
 }
 
 void DebuggerContext::deliverFetchError(int taskId, int status) {
+    qInfo("TEMPTEST5 reply error taskId=%d status=%d", taskId, status);
     std::lock_guard<std::mutex> lock(netInMutex_);
     netInQueue_.push_back(NetFetchResult{taskId, {}, status});
 }

@@ -9,9 +9,11 @@ int main(int argc, char* argv[]) {
     app.setApplicationName(QStringLiteral("LibreShockwave Debugger"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
 
-    // Register the metatype used by cross-thread queued signals
-    // (DebugStateBridge emits paused(SnapshotData) from the worker thread).
+    // Register the metatypes used by cross-thread queued signals
+    // (DebugStateBridge emits paused(SnapshotData), DebuggerContext emits
+    // castLoaded(MovieTreeSnapshot) from the worker thread).
     qRegisterMetaType<libreshockwave::debugger::SnapshotData>("SnapshotData");
+    qRegisterMetaType<libreshockwave::debugger::MovieTreeSnapshot>("MovieTreeSnapshot");
 
     libreshockwave::debugger::DebuggerWindow window;
     window.show();

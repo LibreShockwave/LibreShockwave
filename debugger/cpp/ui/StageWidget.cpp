@@ -3,19 +3,70 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QResizeEvent>
 
 namespace libreshockwave::debugger {
+namespace {
+
+constexpr QSize kDefaultStageSize(320, 240);
+
+class StageSurface final : public QWidget {
+public:
+    explicit StageSurface(QWidget* parent)
+        : QWidget(parent) {
+        setAttribute(Qt::WA_OpaquePaintEvent);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+    void setImage(const QImage& image) {
+        image_ = image;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent* /*event*/) override {
+        QPainter painter(this);
+        painter.drawImage(QPoint(0, 0), image_);
+    }
+
+private:
+    QImage image_;
+};
+
+} // namespace
 
 StageWidget::StageWidget(QWidget* parent)
     : QWidget(parent) {
-    setMinimumSize(320, 240);
+    setMinimumSize(kDefaultStageSize);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
+
+    stageSurface_ = new StageSurface(this);
+    stageSurface_->hide();
+}
+
+void StageWidget::prepareForMovie() {
+    stageSize_ = QSize();
+    stageSurface_->hide();
+    setMinimumSize(kDefaultStageSize);
+    updateGeometry();
+    update();
 }
 
 void StageWidget::setFrameImage(const QImage& image) {
-    currentFrame_ = image;
+    if (image.isNull() || !image.size().isValid()) {
+        stageSize_ = QSize();
+        stageSurface_->hide();
+        update();
+        return;
+    }
+
+    stageSize_ = image.size();
+    stageSurface_->resize(stageSize_);
+    static_cast<StageSurface*>(stageSurface_)->setImage(image);
+    positionStageSurface();
+    stageSurface_->show();
     update();
 }
 
@@ -24,53 +75,55 @@ void StageWidget::setInputCallback(InputCallback callback) {
 }
 
 void StageWidget::clearFrame() {
-    currentFrame_ = QImage();
+    stageSize_ = QSize();
+    stageSurface_->hide();
     update();
+}
+
+QSize StageWidget::sizeHint() const {
+    return kDefaultStageSize;
 }
 
 void StageWidget::paintEvent(QPaintEvent* /*event*/) {
     QPainter painter(this);
     painter.fillRect(rect(), Qt::black);
 
-    if (currentFrame_.isNull()) {
+    if (stageSize_.isEmpty()) {
         painter.setPen(QColor(100, 100, 100));
         painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("No movie loaded"));
-        return;
     }
+}
 
-    // Scale the frame to fit, preserving aspect ratio, with pixel-art (nearest-neighbor) scaling
-    const auto targetRect = currentFrame_.scaled(
-        size(), Qt::KeepAspectRatio, Qt::FastTransformation);
-
-    const int x = (width() - targetRect.width()) / 2;
-    const int y = (height() - targetRect.height()) / 2;
-
-    painter.drawImage(x, y, currentFrame_.scaled(
-        targetRect.width(), targetRect.height(),
-        Qt::IgnoreAspectRatio, Qt::FastTransformation));
+void StageWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    positionStageSurface();
 }
 
 void StageWidget::widgetToStage(int wx, int wy, int& sx, int& sy) const {
-    if (currentFrame_.isNull()) {
+    if (stageSize_.isEmpty()) {
         sx = 0;
         sy = 0;
         return;
     }
 
-    const auto targetSize = currentFrame_.size().scaled(size(), Qt::KeepAspectRatio);
-    const int ox = (width() - targetSize.width()) / 2;
-    const int oy = (height() - targetSize.height()) / 2;
-
-    const float scaleX = static_cast<float>(currentFrame_.width()) / targetSize.width();
-    const float scaleY = static_cast<float>(currentFrame_.height()) / targetSize.height();
-
-    sx = static_cast<int>((wx - ox) * scaleX);
-    sy = static_cast<int>((wy - oy) * scaleY);
+    const int ox = stageSurface_->x();
+    const int oy = stageSurface_->y();
+    sx = wx - ox;
+    sy = wy - oy;
 
     if (sx < 0) sx = 0;
     if (sy < 0) sy = 0;
-    if (sx >= currentFrame_.width()) sx = currentFrame_.width() - 1;
-    if (sy >= currentFrame_.height()) sy = currentFrame_.height() - 1;
+    if (sx >= stageSize_.width()) sx = stageSize_.width() - 1;
+    if (sy >= stageSize_.height()) sy = stageSize_.height() - 1;
+}
+
+void StageWidget::positionStageSurface() {
+    if (stageSurface_ == nullptr || stageSize_.isEmpty()) {
+        return;
+    }
+
+    stageSurface_->move((width() - stageSize_.width()) / 2,
+                        (height() - stageSize_.height()) / 2);
 }
 
 // Helper: map Qt key to a simple DOM-like keyCode (the WASM bridge pattern)
