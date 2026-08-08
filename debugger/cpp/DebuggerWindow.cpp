@@ -120,7 +120,7 @@ DebuggerWindow::~DebuggerWindow() {
 bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>& params) {
     if (path.isEmpty()) return false;
 
-    // URLs are fetched asynchronously; the shared finish path loads and plays.
+    // URLs are fetched asynchronously; the shared finish path only loads.
     if (isUrl(path)) {
         loadMovieFromUrl(path);
         return true;
@@ -135,6 +135,7 @@ bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>
     }
 
     stageWidget_->prepareForMovie();
+    isPaused_ = false;
 
     // Apply external params
     if (!params.isEmpty()) {
@@ -152,15 +153,13 @@ bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>
     addRecentMovie(path);
     refreshBreakpoints();
 
-    // Movies start running immediately, like the WASM debugger.
-    context_->play();
-    statusLabel_->setText(QStringLiteral(" ● Running"));
+    statusLabel_->setText(QStringLiteral(" ● Ready"));
     statusLabel_->setStyleSheet(
-        QStringLiteral("color:#4da86d; font-weight:bold; padding:0 8px;"));
+        QStringLiteral("color:#8a9488; font-weight:bold; padding:0 8px;"));
     updateToolbarState();
 
     statusBar()->showMessage(
-        QStringLiteral("Loaded: %1").arg(QFileInfo(path).fileName()));
+        QStringLiteral("Loaded: %1 — press Play to start").arg(QFileInfo(path).fileName()));
     return true;
 }
 
@@ -630,6 +629,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
     }
 
     stageWidget_->prepareForMovie();
+    isPaused_ = false;
 
     // Apply external params
     if (!externalParams_.isEmpty() && context_->player() != nullptr) {
@@ -643,15 +643,16 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
     addRecentMovie(label);
     refreshBreakpoints();
 
-    // Movies start running immediately, like the WASM debugger.
-    context_->play();
-    statusLabel_->setText(QStringLiteral(" ● Running"));
+    statusLabel_->setText(QStringLiteral(" ● Ready"));
     statusLabel_->setStyleSheet(
-        QStringLiteral("color:#4da86d; font-weight:bold; padding:0 8px;"));
+        QStringLiteral("color:#8a9488; font-weight:bold; padding:0 8px;"));
     updateToolbarState();
 
     statusBar()->showMessage(
-        QStringLiteral("Loaded: %1 (%2 bytes)").arg(label).arg(byteCount), 5000);
+        QStringLiteral("Loaded: %1 (%2 bytes) — press Play to start")
+            .arg(label)
+            .arg(byteCount),
+        5000);
 }
 
 void DebuggerWindow::onOpenRecent() {
