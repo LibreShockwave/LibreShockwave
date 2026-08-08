@@ -1,6 +1,7 @@
 #include "DebuggerWindow.hpp"
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -53,7 +54,18 @@ static const char* kSettingRecentMovies   = "debugger/recentMovies";
 static const char* kSettingLastDir        = "debugger/lastDir";
 static const char* kSettingLastUrl        = "debugger/lastUrl";
 static const char* kSettingExternalParams = "debugger/externalParams";
+static const char* kSettingBreakpoints    = "debugger/breakpoints";
 static const int  kMaxRecentMovies        = 8;
+
+// Breakpoint entries live under "debugger/breakpoints/<hash>" with the movie
+// path/URL hashed into the sub-key: QSettings keys may not contain '/', and
+// movie paths and URLs usually do.  Each entry is "scriptId\thandlerName\toffset\tenabled".
+static QString breakpointSettingKey(const QString& movieIdentity) {
+    const QByteArray hash =
+        QCryptographicHash::hash(movieIdentity.toUtf8(), QCryptographicHash::Md5);
+    return QString::fromLatin1(kSettingBreakpoints) + QLatin1Char('/') +
+           QString::fromLatin1(hash.toHex());
+}
 
 // -----------------------------------------------------------------------
 // Construction
@@ -136,6 +148,7 @@ bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(
         QFileInfo(path).fileName()));
     movieTreePanel_->populate(context_->player());
+    restoreBreakpointsForCurrentMovie();
     addRecentMovie(path);
     refreshBreakpoints();
 
@@ -197,6 +210,67 @@ void DebuggerWindow::restoreSettings() {
         }
     }
     updateParamsMenu();
+}
+
+QString DebuggerWindow::currentMovieKey() const {
+    return context_ == nullptr ? QString()
+                               : QString::fromStdString(context_->moviePath());
+}
+
+void DebuggerWindow::restoreBreakpointsForCurrentMovie() {
+    auto* dc = context_->debugController();
+    if (dc == nullptr) return;
+
+    QSettings settings;
+    const QString movieKey = currentMovieKey();
+    const QStringList entries =
+        settings.value(breakpointSettingKey(movieKey)).toStringList();
+    if (entries.isEmpty()) return;
+
+    bool hasEnabledBreakpoint = false;
+    auto& manager = dc->breakpointManager();
+    for (const auto& entry : entries) {
+        const auto parts = entry.split(QLatin1Char('\t'));
+        if (parts.size() != 4) continue;
+        bool okScriptId = false;
+        bool okOffset = false;
+        const int scriptId = parts[0].toInt(&okScriptId);
+        const int offset = parts[2].toInt(&okOffset);
+        if (!okScriptId || !okOffset) continue;
+
+        const bool enabled = parts[3] == QLatin1String("1");
+        const auto breakpoint =
+            manager.addBreakpoint(scriptId, parts[1].toStdString(), offset);
+        if (!enabled) {
+            manager.setBreakpoint(breakpoint.withEnabled(false));
+        } else {
+            hasEnabledBreakpoint = true;
+        }
+    }
+
+    if (hasEnabledBreakpoint) {
+        // Breakpoints only fire while instruction tracing is on — the same
+        // requirement toggleBreakpoint() enforces.
+        dc->setTracingEnabled(true);
+    }
+}
+
+void DebuggerWindow::persistBreakpoints() {
+    auto* dc = context_->debugController();
+    if (dc == nullptr) return;
+
+    QStringList entries;
+    for (const auto& bp : dc->breakpointManager().getAllBreakpoints()) {
+        const QStringList fields{
+            QString::number(bp.scriptId),
+            QString::fromStdString(bp.handlerName),
+            QString::number(bp.offset),
+            QString::number(bp.enabled ? 1 : 0)};
+        entries.append(fields.join(QLatin1Char('\t')));
+    }
+
+    QSettings settings;
+    settings.setValue(breakpointSettingKey(currentMovieKey()), entries);
 }
 
 void DebuggerWindow::addRecentMovie(const QString& path) {
@@ -565,6 +639,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
 
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(label));
     movieTreePanel_->populate(context_->player());
+    restoreBreakpointsForCurrentMovie();
     addRecentMovie(label);
     refreshBreakpoints();
 
@@ -726,6 +801,7 @@ void DebuggerWindow::onToggleBreakpoint() {
         context_->toggleBreakpoint(snap->scriptId, snap->handlerName,
                                    snap->instructionOffset);
         refreshBreakpoints();
+        persistBreakpoints();
         return;
     }
 
@@ -745,6 +821,7 @@ void DebuggerWindow::onToggleBreakpoint() {
     }
     context_->toggleBreakpoint(currentScriptId_, currentHandlerName_, offset);
     refreshBreakpoints();
+    persistBreakpoints();
 }
 
 void DebuggerWindow::onBreakpointToggled(int scriptId,
@@ -752,12 +829,14 @@ void DebuggerWindow::onBreakpointToggled(int scriptId,
                                          int offset) {
     if (context_->toggleBreakpoint(scriptId, handlerName, offset)) {
         refreshBreakpoints();
+        persistBreakpoints();
     }
 }
 
 void DebuggerWindow::onClearBreakpoints() {
     context_->clearAllBreakpoints();
     refreshBreakpoints();
+    persistBreakpoints();
 }
 
 // -----------------------------------------------------------------------

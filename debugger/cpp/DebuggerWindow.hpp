@@ -96,6 +96,17 @@ private:
     void updateRecentMoviesMenu();
     void updateParamsMenu();
 
+    // Breakpoint persistence.  Breakpoints are stored per movie identity
+    // (the movie path/URL) and re-applied whenever that same movie loads —
+    // app restart, movie reload, or opening it again — so a session's
+    // breakpoints survive across player/controller recreation.
+    /// Identity of the currently loaded movie (path or URL).
+    QString currentMovieKey() const;
+    /// Re-add this movie's stored breakpoints to the fresh controller.
+    void restoreBreakpointsForCurrentMovie();
+    /// Write the controller's current breakpoints for this movie to QSettings.
+    void persistBreakpoints();
+
     // Movie loading helpers (files and URLs share one finish path)
     /// True if the given value is an http(s) URL (as opposed to a file path).
     static bool isUrl(const QString& value);
