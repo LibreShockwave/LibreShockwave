@@ -79,6 +79,45 @@ The main library target is `LibreShockwave::libreshockwave`.
 - Palettes: built-in Director palettes and custom CLUT chunks
 - Fonts: PFR1 font parsing and conversion to TrueType (`.ttf`) bytes
 
+## Debugger
+
+LibreShockwave includes a Qt desktop debugger and a browser/WASM debugger harness. Both expose movie playback, Lingo bytecode and decompiled code, breakpoints, stepping, call-stack and variable inspection, and watch expressions.
+
+### Desktop debugger
+
+The desktop debugger is built only when Qt6 Widgets or Qt5 Widgets is available. Build its target explicitly:
+
+```bash
+./build.sh --target libreshockwave_debugger --no-tests
+./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger path/to/movie.dcr
+```
+
+Use `--release` and `cmake-build-release` for a Release build. The executable is placed under `<build-dir>/cpp/libreshockwave_debugger_app/` when a custom build directory is used.
+
+The command-line argument is optional. You can also open local `.dir`, `.dcr`, `.dxr`, `.cct`, and `.cst` files from **File → Open Movie**, or enter an HTTP(S) movie URL with **File → Open URL**. Network-dependent movies can receive their `key=value` external parameters from **Parameters → Edit Parameters**; parameter changes take effect after reloading the movie. The window remembers recent movies, parameters, layout, and breakpoints per movie.
+
+The debugger workflow is:
+
+1. Load a movie and press **Play**.
+2. Expand a cast in **Movies & Scripts**, select a script and handler, then use the **Bytecode** or **Decompiled** code view.
+3. Click a code gutter line to toggle a breakpoint, or press `F9` while paused to toggle one at the current instruction.
+4. When execution pauses, inspect the call stack, locals, properties, globals, and watches. Enter an expression in the **Watches** panel to evaluate it in the paused context.
+
+Playback and stepping shortcuts are:
+
+| Key | Action |
+|-----|--------|
+| `F5` | Continue |
+| `Esc` | Pause |
+| `F9` | Toggle breakpoint |
+| `F10` | Step over |
+| `F11` | Step into |
+| `Shift+F11` | Step out |
+
+**Play & Record** saves stage mouse and keyboard input as a `.lswdebug` file. Open that file with **File → Open Debug Recording** to reload its movie and external parameters and replay the captured input.
+
+<img width="1995" height="1270" alt="Screenshot_20260808_153804" src="https://github.com/user-attachments/assets/f378546f-eeec-43f8-8ecc-f62dd88e96f2" />
+
 ## C++ API Examples
 
 When vendoring the repository inside another CMake project:
@@ -344,43 +383,6 @@ auto callStack = player.formatLingoCallStack();
 ```
 
 For bytecode-level debugging, attach a `libreshockwave::player::debug::DebugControllerApi` implementation with `player.setDebugController(...)`.
-
-## Debugger
-
-LibreShockwave includes a Qt desktop debugger and a browser/WASM debugger harness. Both expose movie playback, Lingo bytecode and decompiled code, breakpoints, stepping, call-stack and variable inspection, and watch expressions.
-
-### Desktop debugger
-
-The desktop debugger is built only when Qt6 Widgets or Qt5 Widgets is available. Build its target explicitly:
-
-```bash
-./build.sh --target libreshockwave_debugger --no-tests
-./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger path/to/movie.dcr
-```
-
-Use `--release` and `cmake-build-release` for a Release build. The executable is placed under `<build-dir>/cpp/libreshockwave_debugger_app/` when a custom build directory is used.
-
-The command-line argument is optional. You can also open local `.dir`, `.dcr`, `.dxr`, `.cct`, and `.cst` files from **File → Open Movie**, or enter an HTTP(S) movie URL with **File → Open URL**. Network-dependent movies can receive their `key=value` external parameters from **Parameters → Edit Parameters**; parameter changes take effect after reloading the movie. The window remembers recent movies, parameters, layout, and breakpoints per movie.
-
-The debugger workflow is:
-
-1. Load a movie and press **Play**.
-2. Expand a cast in **Movies & Scripts**, select a script and handler, then use the **Bytecode** or **Decompiled** code view.
-3. Click a code gutter line to toggle a breakpoint, or press `F9` while paused to toggle one at the current instruction.
-4. When execution pauses, inspect the call stack, locals, properties, globals, and watches. Enter an expression in the **Watches** panel to evaluate it in the paused context.
-
-Playback and stepping shortcuts are:
-
-| Key | Action |
-|-----|--------|
-| `F5` | Continue |
-| `Esc` | Pause |
-| `F9` | Toggle breakpoint |
-| `F10` | Step over |
-| `F11` | Step into |
-| `Shift+F11` | Step out |
-
-**Play & Record** saves stage mouse and keyboard input as a `.lswdebug` file. Open that file with **File → Open Debug Recording** to reload its movie and external parameters and replay the captured input.
 
 ## Browser Player
 
