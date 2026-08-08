@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QCloseEvent>
 #include <QDockWidget>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -60,6 +61,7 @@ static const char* kSettingState          = "debugger/state";
 static const char* kSettingLastMovie      = "debugger/lastMovie";
 static const char* kSettingRecentMovies   = "debugger/recentMovies";
 static const char* kSettingLastDir        = "debugger/lastDir";
+static const char* kSettingLastRecordingDir = "debugger/lastRecordingDir";
 static const char* kSettingLastUrl        = "debugger/lastUrl";
 static const char* kSettingExternalParams = "debugger/externalParams";
 static const char* kSettingBreakpoints    = "debugger/breakpoints";
@@ -920,6 +922,10 @@ void DebuggerWindow::finishRecording() {
     QString error;
     if (!saveRecording(error)) {
         QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
+    } else {
+        QSettings settings;
+        settings.setValue(QString::fromLatin1(kSettingLastRecordingDir),
+                          QFileInfo(recordingFilePath_).absolutePath());
     }
 }
 
@@ -1160,8 +1166,14 @@ void DebuggerWindow::onPlayAndRecord() {
     }
 
     const auto suggestedName = QStringLiteral("debug-recording.lswdebug");
+    QSettings settings;
+    const auto lastRecordingDir =
+        settings.value(QString::fromLatin1(kSettingLastRecordingDir)).toString();
+    const auto suggestedPath = lastRecordingDir.isEmpty()
+        ? suggestedName
+        : QDir(lastRecordingDir).filePath(suggestedName);
     auto path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("Save Debug Recording"), suggestedName,
+        this, QStringLiteral("Save Debug Recording"), suggestedPath,
         QStringLiteral("Debugger Recordings (*.lswdebug);;All Files (*)"));
     if (path.isEmpty()) {
         return;
