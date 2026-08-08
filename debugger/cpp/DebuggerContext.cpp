@@ -120,6 +120,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
         std::lock_guard<std::mutex> lock(netOutMutex_);
         netOutQueue_.clear();
     }
+    lastCastSnapshot_.reset();
 
     // QueuedNetProvider is owned by the worker thread.  The plain Player
     // constructor registers the native SocketMultiuserBridge (the equivalent
@@ -138,6 +139,10 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
             return;
         }
         const auto snapshot = MovieTreePanel::buildSnapshot(*player_);
+        if (lastCastSnapshot_.has_value() && *lastCastSnapshot_ == snapshot) {
+            return;
+        }
+        lastCastSnapshot_ = snapshot;
         emit castLoaded(snapshot);
     });
     player_->setErrorListener([this](std::string_view message, std::string_view detail) {
@@ -381,6 +386,23 @@ void DebuggerContext::runLoop() {
         }
         queuedNet_->drainPendingRequests();
     };
+
+    // The shell movie's cast 2 contains the bootstrap scripts that set up
+    // the external cast/text flow.  Let its fetch complete before the first
+    // prepareMovie pass, but keep the wait bounded so a failed CDN request
+    // cannot prevent the debugger from starting.
+    (void)player_->preloadAllCasts();
+    const auto bootstrapCast = player_->castLibManager().getCastLib(2);
+    if (bootstrapCast && bootstrapCast->isExternal() && !bootstrapCast->isLoaded()) {
+        const auto deadline = std::chrono::steady_clock::now() + 20s;
+        while (!quitWorker_.load(std::memory_order_relaxed) &&
+               !bootstrapCast->isLoaded() &&
+               std::chrono::steady_clock::now() < deadline) {
+            deliverPendingFetchResults();
+            queuePendingFetchRequests();
+            std::this_thread::sleep_for(10ms);
+        }
+    }
 
     const auto emitCurrentFrame = [this, &firstVisibleFrame, &leadingBlankFrames] {
         if (player_ == nullptr) {

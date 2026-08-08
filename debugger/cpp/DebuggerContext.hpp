@@ -10,6 +10,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -149,6 +150,7 @@ private:
     /// QueuedNetProvider is owned by the worker (VM) thread — all access to it
     /// happens in runLoop().
     std::unique_ptr<libreshockwave::player::net::QueuedNetProvider> queuedNet_;
+    std::optional<MovieTreeSnapshot> lastCastSnapshot_;
     QNetworkAccessManager* netAccess_{nullptr};
     QTimer* netPumpTimer_{nullptr};
     std::unordered_set<QNetworkReply*> activeReplies_;

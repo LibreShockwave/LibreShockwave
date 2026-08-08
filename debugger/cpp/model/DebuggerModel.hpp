@@ -109,6 +109,8 @@ struct BreakpointData {
 struct MovieTreeSnapshot {
     struct HandlerEntry {
         std::string name;
+
+        friend bool operator==(const HandlerEntry&, const HandlerEntry&) = default;
     };
     struct ScriptEntry {
         int scriptId{0};
@@ -116,14 +118,20 @@ struct MovieTreeSnapshot {
         std::string displayName;
         std::string typeName;
         std::vector<HandlerEntry> handlers;
+
+        friend bool operator==(const ScriptEntry&, const ScriptEntry&) = default;
     };
     struct MovieEntry {
         int castLibNumber{0};
         std::string name;
         std::string fileName;
         std::vector<ScriptEntry> scripts;
+
+        friend bool operator==(const MovieEntry&, const MovieEntry&) = default;
     };
     std::vector<MovieEntry> movies;
+
+    friend bool operator==(const MovieTreeSnapshot&, const MovieTreeSnapshot&) = default;
 };
 
 } // namespace libreshockwave::debugger
