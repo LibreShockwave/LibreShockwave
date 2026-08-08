@@ -188,7 +188,7 @@ private:
         const chunks::ScriptChunk::Instruction& instruction,
         bool includeSnapshots) const;
     [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(const Scope& scope) const;
-    [[nodiscard]] bool handlerDeclaresMeAsFirstParam(
+    [[nodiscard]] bool handlerDeclaresReceiverAsFirstParam(
         const chunks::ScriptChunk& script,
         const chunks::ScriptChunk::Handler& handler,
         const std::shared_ptr<const DirectorFile>& fileOwner = nullptr,
@@ -247,7 +247,7 @@ private:
     struct HandlerMetadata {
         std::string name;
         std::string normalizedName;
-        bool firstParamDeclaredMe{false};
+        bool firstParamDeclaredReceiver{false};
         mutable int disabledTraceScriptPrologueLength{-1};
     };
 

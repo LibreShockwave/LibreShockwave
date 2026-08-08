@@ -26,7 +26,7 @@ public:
           const chunks::ScriptChunk::Handler& handler,
           std::vector<Datum> arguments = {},
           Datum receiver = Datum::voidValue(),
-          bool firstParamDeclaredMe = false,
+          bool firstParamDeclaredReceiver = false,
           std::shared_ptr<const chunks::ScriptChunk> scriptOwner = nullptr,
           std::shared_ptr<const DirectorFile> fileOwner = nullptr,
           std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesOwner = nullptr);
@@ -34,7 +34,7 @@ public:
           const chunks::ScriptChunk::Handler* handler,
           std::vector<Datum> arguments = {},
           Datum receiver = Datum::voidValue(),
-          bool firstParamDeclaredMe = false,
+          bool firstParamDeclaredReceiver = false,
           std::shared_ptr<const chunks::ScriptChunk> scriptOwner = nullptr,
           std::shared_ptr<const DirectorFile> fileOwner = nullptr,
           std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesOwner = nullptr);
@@ -210,7 +210,7 @@ private:
     const chunks::ScriptChunk::Handler* handler_;
     std::vector<Datum> arguments_;
     Datum receiver_;
-    bool firstParamDeclaredMe_;
+    bool firstParamDeclaredReceiver_;
     mutable int cachedParamOffset_ = -1;
 
     std::vector<Datum> locals_;

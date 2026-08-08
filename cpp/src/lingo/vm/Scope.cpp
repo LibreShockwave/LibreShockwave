@@ -10,7 +10,7 @@ Scope::Scope(const chunks::ScriptChunk* script,
              const chunks::ScriptChunk::Handler& handler,
              std::vector<Datum> arguments,
              Datum receiver,
-             bool firstParamDeclaredMe,
+             bool firstParamDeclaredReceiver,
              std::shared_ptr<const chunks::ScriptChunk> scriptOwner,
              std::shared_ptr<const DirectorFile> fileOwner,
              std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesOwner)
@@ -18,7 +18,7 @@ Scope::Scope(const chunks::ScriptChunk* script,
             &handler,
             std::move(arguments),
             std::move(receiver),
-            firstParamDeclaredMe,
+            firstParamDeclaredReceiver,
             std::move(scriptOwner),
             std::move(fileOwner),
             std::move(scriptNamesOwner)) {}
@@ -27,7 +27,7 @@ Scope::Scope(const chunks::ScriptChunk* script,
              const chunks::ScriptChunk::Handler* handler,
              std::vector<Datum> arguments,
              Datum receiver,
-             bool firstParamDeclaredMe,
+             bool firstParamDeclaredReceiver,
              std::shared_ptr<const chunks::ScriptChunk> scriptOwner,
              std::shared_ptr<const DirectorFile> fileOwner,
              std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesOwner)
@@ -38,7 +38,7 @@ Scope::Scope(const chunks::ScriptChunk* script,
       handler_(handler),
       arguments_(std::move(arguments)),
       receiver_(std::move(receiver)),
-      firstParamDeclaredMe_(firstParamDeclaredMe),
+      firstParamDeclaredReceiver_(firstParamDeclaredReceiver),
       locals_(static_cast<std::size_t>(std::max(0, handler_ != nullptr ? handler_->localCount : 0))) {
     stack_.reserve(16);
     loopReturnStack_.reserve(4);
@@ -220,7 +220,7 @@ std::string Scope::toString() const {
 int Scope::paramOffset() const {
     if (cachedParamOffset_ < 0) {
         if (!receiver_.isVoid() && !receiver_.isNull() && !arguments_.empty() &&
-            arguments_.front() == receiver_ && !firstParamDeclaredMe_) {
+            arguments_.front() == receiver_ && !firstParamDeclaredReceiver_) {
             cachedParamOffset_ = 1;
         } else {
             cachedParamOffset_ = 0;

@@ -1629,6 +1629,22 @@ void testLingoDatumTypes() {
     instance.scriptInstanceValue().setProperty("ancestor", Datum::voidValue());
     assert(instance.scriptInstanceValue().getProperty("ancestor").isVoid());
     assert(instance.scriptInstanceValue().getProperty("baseValue").isVoid());
+
+    // Object Manager replaces an object's base ancestor with a subsystem
+    // ancestor after construction.  The object's identity and
+    // lifecycle state must remain attached to the object instance.
+    auto objectBase = Datum::scriptInstance("objectIdentityState");
+    objectBase.scriptInstanceValue().setProperty("id", Datum::symbol("component"));
+    objectBase.scriptInstanceValue().setProperty("valid", Datum::TRUE);
+    objectBase.scriptInstanceValue().setProperty("delays", Datum::propList());
+    auto subsystemObject = Datum::scriptInstance("subsystemObject");
+    subsystemObject.scriptInstanceValue().setProperty("ancestor", objectBase);
+    auto subsystem = Datum::scriptInstance("subsystem");
+    subsystemObject.scriptInstanceValue().setProperty("ancestor", subsystem);
+    assert(subsystemObject.scriptInstanceValue().getProperty("id").asSymbol()->name == "component");
+    assert(subsystemObject.scriptInstanceValue().getProperty("valid").boolValue());
+    assert(subsystemObject.scriptInstanceValue().getProperty("delays").isPropList());
+
     instance.scriptInstanceValue().putLocalPropertyExact("ExactLocal", Datum::of(11));
     assert(instance.scriptInstanceValue().findExactPropertyIndex("ExactLocal") >= 0);
     assert(instance.scriptInstanceValue().findCaseInsensitivePropertyIndex("exactlocal") >= 0);
@@ -7890,7 +7906,7 @@ void testSocketMultiuserBridgeFoundation() {
                             std::lock_guard lock(mutex_);
                             received_.append(chunk);
                         }
-                        const std::string reply = "server-payload";
+                        const std::string reply = "server-payload\1";
                         (void)::send(accepted, reply.data(), reply.size(), 0);
                         continue;
                     }
@@ -7981,11 +7997,11 @@ void testSocketMultiuserBridgeFoundation() {
     assert(waitUntil([&] {
         messages = bridge.pollMessages(instanceId);
         return std::any_of(messages.begin(), messages.end(), [](const auto& message) {
-            return message.content.stringValue() == "server-payload";
+            return message.content.stringValue() == "server-payload\1";
         });
     }));
     const auto payload = std::find_if(messages.begin(), messages.end(), [](const auto& message) {
-        return message.content.stringValue() == "server-payload";
+        return message.content.stringValue() == "server-payload\1";
     });
     assert(payload != messages.end());
     assert(payload->errorCode == 0);
@@ -8868,7 +8884,8 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(context.resolveName(999) == "#999");
     assert(context.findHandler("known")->handler->nameId == 99);
     assert(!context.findHandler("missing").has_value());
-    assert(context.executeHandler(script, handler, {Datum::of(1)}, Datum::voidValue()).stringValue() == "exec:10:1");
+    const auto executedHandler = context.executeHandler(script, handler, {Datum::of(1)}, Datum::voidValue());
+    assert(executedHandler.stringValue() == "exec:10:1");
 
     assert(context.isBuiltin("abs"));
     assert(context.invokeBuiltin("abs", {Datum::of(-4)}).intValue() == 4);
@@ -8991,9 +9008,11 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         &builtinContext,
         explicitMeCallbacks);
     explicitMeContext.push(Datum::argList({explicitReceiver, Datum::of(std::string("payload"))}));
-    assert(opcodeRegistry.execute(Opcode::LOCAL_CALL, explicitMeContext));
+    const bool localCallExecuted = opcodeRegistry.execute(Opcode::LOCAL_CALL, explicitMeContext);
+    assert(localCallExecuted);
     assert(explicitMeCallChecked);
-    assert(explicitMeContext.pop().stringValue() == "local-call-ok");
+    const auto localCallResult = explicitMeContext.pop();
+    assert(localCallResult.stringValue() == "local-call-ok");
 
     auto makeBytecodeHandler = [](int nameId,
                                   std::vector<std::pair<Opcode, int>> ops,
@@ -14780,6 +14799,38 @@ void testLingoVmRuntimeFoundation() {
         });
     assert(implicitReceiverVm.executeHandler(script, stackHandler, {implicitReceiver, Datum::of(9)}).intValue() == 91);
     assert(implicitReceiverVm.callStackDepth() == 0);
+
+    // Legacy scripts also name the implicit object receiver "this".  It must
+    // occupy the first formal parameter just like the conventional "me".
+    auto thisReceiverHandler = makeHandler(0,
+                                           {{Opcode::GET_PARAM, 1}, {Opcode::RET, 0}},
+                                           0,
+                                           {1, 2});
+    ScriptChunk thisReceiverScript(nullptr,
+                                   ChunkId(964),
+                                   ScriptChunkType::Parent,
+                                   0,
+                                   {thisReceiverHandler},
+                                   {},
+                                   {},
+                                   {},
+                                   {});
+    auto thisReceiverNames = std::make_shared<ScriptNamesChunk>(
+        nullptr,
+        ChunkId(965),
+        std::vector<std::string>{"receiverHandler", "this", "value"});
+    const auto thisReceiver = Datum::scriptInstance("this-receiver");
+    LingoVM thisReceiverVm;
+    assert(thisReceiverVm.executeHandler(
+               HandlerRef{&thisReceiverScript,
+                          &thisReceiverScript.handlers().front(),
+                          nullptr,
+                          nullptr,
+                          thisReceiverNames},
+               {Datum::of(9)},
+               thisReceiver)
+               .intValue() == 9);
+    assert(thisReceiverVm.callStackDepth() == 0);
 
     auto innerParamBuiltinHandler = makeHandler(7, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}}, 0, {20, 21});
     auto outerParamBuiltinHandler = makeHandler(8, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}}, 0, {22});

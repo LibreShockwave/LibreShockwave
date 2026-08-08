@@ -774,7 +774,8 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
         HandlerMetadata metadata;
         metadata.name = handlerName(script, handler, fileOwner, scriptNamesOwner);
         metadata.normalizedName = normalizeLookupName(metadata.name);
-        metadata.firstParamDeclaredMe = handlerDeclaresMeAsFirstParam(script, handler, fileOwner, scriptNamesOwner);
+        metadata.firstParamDeclaredReceiver =
+            handlerDeclaresReceiverAsFirstParam(script, handler, fileOwner, scriptNamesOwner);
         metadataIt = handlerMetadataCache_.emplace(metadataKey, std::make_shared<HandlerMetadata>(std::move(metadata))).first;
     }
     const auto metadata = metadataIt->second;
@@ -820,9 +821,9 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     const bool hasExplicitReceiver = !receiver.isVoid() && !receiver.isNull();
     std::vector<Datum> effectiveArgs =
         hasExplicitReceiver ? std::vector<Datum>() : std::vector<Datum>(args.begin(), args.end());
-    bool firstParamDeclaredMe = false;
+    bool firstParamDeclaredReceiver = false;
     if (hasExplicitReceiver) {
-        firstParamDeclaredMe = metadata->firstParamDeclaredMe;
+        firstParamDeclaredReceiver = metadata->firstParamDeclaredReceiver;
         effectiveArgs.reserve(args.size() + 1);
         effectiveArgs.push_back(receiver);
         effectiveArgs.insert(effectiveArgs.end(), args.begin(), args.end());
@@ -837,7 +838,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
                             &handler,
                             std::move(effectiveArgs),
                             scopeReceiver,
-                            firstParamDeclaredMe,
+                            firstParamDeclaredReceiver,
                             scriptOwner,
                             fileOwner,
                             scriptNamesOwner);
@@ -1192,7 +1193,7 @@ std::unordered_map<std::string, Datum> LingoVM::captureLocals(const Scope& scope
     return trace::TracingHelper().captureLocals(scope, names.get());
 }
 
-bool LingoVM::handlerDeclaresMeAsFirstParam(
+bool LingoVM::handlerDeclaresReceiverAsFirstParam(
     const chunks::ScriptChunk& script,
     const chunks::ScriptChunk::Handler& handler,
     const std::shared_ptr<const DirectorFile>& fileOwner,
@@ -1200,7 +1201,8 @@ bool LingoVM::handlerDeclaresMeAsFirstParam(
     if (handler.argNameIds.empty()) {
         return false;
     }
-    return equalsIgnoreCase(resolveName(script, handler.argNameIds.front(), fileOwner, scriptNamesOwner), "me");
+    const auto firstParamName = resolveName(script, handler.argNameIds.front(), fileOwner, scriptNamesOwner);
+    return equalsIgnoreCase(firstParamName, "me") || equalsIgnoreCase(firstParamName, "this");
 }
 
 bool LingoVM::skipDisabledTraceScriptPrologue(
