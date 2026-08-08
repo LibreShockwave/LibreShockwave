@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cctype>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 namespace libreshockwave::lingo::vm::dispatch {

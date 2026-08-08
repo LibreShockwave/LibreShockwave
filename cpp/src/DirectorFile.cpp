@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <limits>
 #include <string>
 #include <utility>

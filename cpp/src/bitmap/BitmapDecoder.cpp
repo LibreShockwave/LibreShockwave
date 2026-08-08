@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 
 #include "libreshockwave/io/BinaryReader.hpp"
 

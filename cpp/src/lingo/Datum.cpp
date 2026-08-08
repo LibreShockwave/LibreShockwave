@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace libreshockwave::lingo {
 namespace {
@@ -988,6 +989,32 @@ const Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() const {
 }
 
 void Datum::ScriptInstanceRef::setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor) {
+    // Object Manager creates an object by placing an ID-bearing base instance
+    // underneath the class instance.  The client can then replace
+    // that instance's ancestor with a subsystem object.  Preserve the base
+    // object's per-instance state when doing so; otherwise inherited identity
+    // and lifecycle handlers see the subsystem's empty `id` instead of the
+    // object's registered ID.
+    const auto* current = ancestor_.get();
+    for (int depth = 0; current != nullptr && depth < kMaxAncestorDepth; ++depth) {
+        const int idIndex = current->findPropertyIndex("id");
+        const int validIndex = current->findPropertyIndex("valid");
+        const int delaysIndex = current->findPropertyIndex("delays");
+        const bool hasObjectIdentityState = current != this &&
+                                            idIndex >= 0 &&
+                                            !current->properties_[static_cast<std::size_t>(idIndex)].second.isVoid() &&
+                                            validIndex >= 0 &&
+                                            delaysIndex >= 0;
+        if (hasObjectIdentityState) {
+            for (const auto& property : current->properties_) {
+                if (findPropertyIndex(property.first) < 0) {
+                    appendLocalProperty(property.first, property.second);
+                }
+            }
+            break;
+        }
+        current = current->ancestor_.get();
+    }
     ancestor_ = std::move(ancestor);
 }
 
@@ -1014,9 +1041,9 @@ Datum Datum::ScriptInstanceRef::getProperty(const std::string& name) const {
 void Datum::ScriptInstanceRef::setProperty(const std::string& name, Datum value) {
     if (equalsIgnoreCase(name, "ancestor")) {
         if (const auto* ancestor = std::get_if<ScriptInstancePtr>(&value.value_)) {
-            ancestor_ = *ancestor;
+            setAncestor(*ancestor);
         } else if (value.isVoid()) {
-            ancestor_.reset();
+            setAncestor(nullptr);
         }
         return;
     }

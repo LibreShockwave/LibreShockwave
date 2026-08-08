@@ -1,0 +1,138 @@
+name: Debugger Release Build
+
+on:
+  # Manually triggered when a debugger release is wanted.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: debugger-release
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build zip zlib1g-dev qt6-base-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build debugger
+        run: cmake --build build --target libreshockwave_debugger
+
+      - name: Package ZIP
+        run: zip -j libreshockwave-debugger-linux-x86_64.zip build/cpp/libreshockwave_debugger_app/libreshockwave_debugger
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debugger-linux-x86_64
+          path: libreshockwave-debugger-linux-x86_64.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        run: brew install qt@6
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
+
+      - name: Build debugger
+        run: cmake --build build --target libreshockwave_debugger
+
+      - name: Package ZIP
+        run: zip -j libreshockwave-debugger-macos-arm64.zip build/cpp/libreshockwave_debugger_app/libreshockwave_debugger
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debugger-macos-arm64
+          path: libreshockwave-debugger-macos-arm64.zip
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O D:/Qt
+
+      - name: Configure
+        # Visual Studio generator picks MSVC, which the MSVC-built Qt
+        # archives require (MinGW cannot link them).  windows-latest has
+        # shipped Visual Studio 2026 (image windows-2025-vs2026) since
+        # June 2026, so the generator is VS 18 2026.
+        run: cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH=D:/Qt/6.8.3/msvc2022_64
+
+      - name: Build debugger
+        run: cmake --build build --target libreshockwave_debugger --config Release
+
+      - name: Package ZIP
+        run: Compress-Archive -Path build/cpp/libreshockwave_debugger_app/Release/libreshockwave_debugger.exe -DestinationPath libreshockwave-debugger-windows-x86_64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debugger-windows-x86_64
+          path: libreshockwave-debugger-windows-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute release version
+        id: version
+        run: echo "VERSION=$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: debugger-*
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: debugger-${{ steps.version.outputs.VERSION }}
+          name: Debugger Build ${{ steps.version.outputs.VERSION }}
+          files: release-assets/*.zip
+          body: |
+            ## Desktop Debugger Build
+
+            Automated build of the LibreShockwave Qt desktop debugger for all platforms.
+
+            **Built from:** ${{ github.sha }}
+            **Date:** ${{ steps.version.outputs.VERSION }}
+
+            ### Contents
+
+            - `libreshockwave-debugger-linux-x86_64.zip` - Linux debugger binary
+            - `libreshockwave-debugger-macos-arm64.zip` - macOS (Apple Silicon) debugger binary
+            - `libreshockwave-debugger-windows-x86_64.zip` - Windows debugger binary
+
+            ### Notes
+
+            - Each ZIP contains a single executable and expects Qt 6 to be installed on the system.
+            - macOS users may need to clear the quarantine flag: `xattr -d com.apple.quarantine libreshockwave_debugger`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

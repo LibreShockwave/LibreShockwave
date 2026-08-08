@@ -232,6 +232,11 @@ if(ZLIB_FOUND)
     target_compile_definitions(libreshockwave PUBLIC LIBRESHOCKWAVE_HAVE_ZLIB=1)
 endif()
 
+# SocketMultiuserBridge uses winsock2 on Windows.
+if(WIN32)
+    target_link_libraries(libreshockwave PRIVATE ws2_32)
+endif()
+
 if(BUILD_TESTING)
     add_executable(libreshockwave_tests
         tests/sdk_foundation_test.cpp

@@ -12,11 +12,29 @@
 
 #include "libreshockwave/player/xtra/QueuedMultiuserBridge.hpp"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace libreshockwave::player::xtra {
+
+#ifdef _WIN32
+// Winsock handles are unsigned opaque values rather than small POSIX ints,
+// and send()/recv() return int rather than ssize_t.
+using SocketHandle = SOCKET;
+constexpr SocketHandle INVALID_SOCKET_HANDLE = INVALID_SOCKET;
+using SocketSignedSize = int;
+#else
+using SocketHandle = int;
+constexpr SocketHandle INVALID_SOCKET_HANDLE = -1;
+using SocketSignedSize = ssize_t;
+#endif
+
 namespace {
 
 constexpr std::size_t READ_BUFFER_SIZE = 8192;
@@ -38,16 +56,36 @@ constexpr std::size_t MAX_FRAMES_PER_POLL = 128;
 /// quiet-poll condition below, so a size threshold is the flood fallback).
 constexpr std::size_t RAW_FLUSH_THRESHOLD = 4096;
 
-void closeSocket(int& socketFd) {
-    if (socketFd >= 0) {
+void closeSocket(SocketHandle& socketFd) {
+    if (socketFd != INVALID_SOCKET_HANDLE) {
+#ifdef _WIN32
+        ::closesocket(socketFd);
+#else
         ::close(socketFd);
-        socketFd = -1;
+#endif
+        socketFd = INVALID_SOCKET_HANDLE;
     }
 }
 
-int connectSocket(const std::string& host, int port) {
+#ifdef _WIN32
+// Winsock must be initialised once per process before any socket call.  The
+// process lives and dies with the player and connect threads are detached, so
+// WSACleanup is deliberately never called.
+void ensureWinsockStarted() {
+    static const bool started = [] {
+        WSADATA data;
+        return ::WSAStartup(MAKEWORD(2, 2), &data) == 0;
+    }();
+    (void)started;
+}
+#endif
+
+SocketHandle connectSocket(const std::string& host, int port) {
+#ifdef _WIN32
+    ensureWinsockStarted();
+#endif
     if (host.empty() || port <= 0) {
-        return -1;
+        return INVALID_SOCKET_HANDLE;
     }
 
     addrinfo hints{};
@@ -57,23 +95,23 @@ int connectSocket(const std::string& host, int port) {
     addrinfo* rawResult = nullptr;
     const std::string service = std::to_string(port);
     if (::getaddrinfo(host.c_str(), service.c_str(), &hints, &rawResult) != 0) {
-        return -1;
+        return INVALID_SOCKET_HANDLE;
     }
 
     std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> results(rawResult, ::freeaddrinfo);
     for (addrinfo* entry = results.get(); entry != nullptr; entry = entry->ai_next) {
-        int socketFd = ::socket(entry->ai_family, entry->ai_socktype, entry->ai_protocol);
-        if (socketFd < 0) {
+        SocketHandle socketFd = ::socket(entry->ai_family, entry->ai_socktype, entry->ai_protocol);
+        if (socketFd == INVALID_SOCKET_HANDLE) {
             continue;
         }
 
-        if (::connect(socketFd, entry->ai_addr, entry->ai_addrlen) == 0) {
+        if (::connect(socketFd, entry->ai_addr, static_cast<int>(entry->ai_addrlen)) == 0) {
             return socketFd;
         }
-        ::close(socketFd);
+        closeSocket(socketFd);
     }
 
-    return -1;
+    return INVALID_SOCKET_HANDLE;
 }
 
 int sendFlags() {
@@ -92,15 +130,20 @@ int recvFlags() {
 #endif
 }
 
-bool sendAll(int socketFd, const std::vector<std::uint8_t>& bytes) {
-    if (socketFd < 0 || bytes.empty()) {
+bool sendAll(SocketHandle socketFd, const std::vector<std::uint8_t>& bytes) {
+    if (socketFd == INVALID_SOCKET_HANDLE || bytes.empty()) {
         return true;
     }
 
     const auto* cursor = bytes.data();
     std::size_t remaining = bytes.size();
     while (remaining > 0) {
-        const ssize_t sent = ::send(socketFd, cursor, remaining, sendFlags());
+        // Winsock send() takes a char pointer and int length; the same
+        // arguments convert cleanly to POSIX's void*/size_t signature.
+        const SocketSignedSize sent = ::send(socketFd,
+                                             reinterpret_cast<const char*>(cursor),
+                                             static_cast<int>(remaining),
+                                             sendFlags());
         if (sent <= 0) {
             return false;
         }
@@ -151,7 +194,7 @@ std::optional<std::vector<std::uint8_t>> takePlaintextMessage(std::vector<std::u
 
 struct SocketMultiuserBridge::Connection {
     mutable std::mutex mutex;
-    int socketFd = -1;
+    SocketHandle socketFd = INVALID_SOCKET_HANDLE;
     int instanceId = 0;
     bool connected = false;
     bool connecting = false;
@@ -241,20 +284,26 @@ void SocketMultiuserBridge::requestConnect(int instanceId,
     }
 
     std::thread([connection, host, port] {
-        int socketFd = connectSocket(host, port);
+        SocketHandle socketFd = connectSocket(host, port);
         std::lock_guard lock(connection->mutex);
         connection->connecting = false;
         if (connection->closeRequested) {
             closeSocket(socketFd);
             return;
         }
-        if (socketFd < 0) {
+        if (socketFd == INVALID_SOCKET_HANDLE) {
             connection->protocol.notifyError(connection->instanceId, -3);
             auto messages = connection->protocol.pollMessages(connection->instanceId);
             connection->queuedMessages.insert(connection->queuedMessages.end(), messages.begin(), messages.end());
             return;
         }
         connection->socketFd = socketFd;
+#ifdef _WIN32
+        // Winsock has no MSG_DONTWAIT, so switch the socket to non-blocking
+        // mode to keep pollMessages() from stalling on a quiet server.
+        u_long nonBlockingMode = 1;
+        ::ioctlsocket(socketFd, FIONBIO, &nonBlockingMode);
+#endif
         connection->connected = true;
         connection->protocol.notifyConnected(connection->instanceId);
         for (const auto& request : connection->protocol.pendingRequests()) {
@@ -282,7 +331,7 @@ void SocketMultiuserBridge::requestSend(int instanceId,
     }
 
     std::lock_guard lock(connection->mutex);
-    if (!connection->connected || connection->socketFd < 0) {
+    if (!connection->connected || connection->socketFd == INVALID_SOCKET_HANDLE) {
         return;
     }
 
@@ -344,7 +393,7 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
     std::vector<NetMessage> result = std::move(connection->queuedMessages);
     connection->queuedMessages.clear();
 
-    if (connection->connected && connection->socketFd >= 0) {
+    if (connection->connected && connection->socketFd != INVALID_SOCKET_HANDLE) {
         bool readRawBytes = false;
         std::size_t bytesRead = 0;
         std::size_t framesDelivered = 0;
@@ -357,10 +406,10 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
                 connection->inboundBuffer.size() >= MAX_HELD_BYTES) {
                 break;
             }
-            const ssize_t read = ::recv(connection->socketFd,
-                                       connection->readBuf.data(),
-                                       connection->readBuf.size(),
-                                       recvFlags());
+            const SocketSignedSize read = ::recv(connection->socketFd,
+                                                 connection->readBuf.data(),
+                                                 static_cast<int>(connection->readBuf.size()),
+                                                 recvFlags());
             if (read > 0) {
                 bytesRead += static_cast<std::size_t>(read);
                 const auto* begin = reinterpret_cast<const std::uint8_t*>(connection->readBuf.data());
@@ -411,7 +460,11 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
                 connection->protocol.notifyDisconnected(instanceId);
                 break;
             }
+#ifdef _WIN32
+            if (::WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+#endif
                 break;
             }
 
@@ -467,7 +520,7 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
     all.insert(all.end(), messages.begin(), messages.end());
 
     std::vector<NetMessage> delivered;
-    if (connection->connected && connection->socketFd >= 0 &&
+    if (connection->connected && connection->socketFd != INVALID_SOCKET_HANDLE &&
         all.size() > MAX_FRAMES_PER_POLL) {
         // Hold back the excess for the next poll: the movie consumes a
         // bounded batch per frame, and dropping would lose protocol messages.
