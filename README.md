@@ -92,9 +92,18 @@ The desktop debugger is built only when Qt6 Widgets or Qt5 Widgets is available.
 ./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger path/to/movie.dcr
 ```
 
+<img width="1995" height="1270" alt="Screenshot_20260808_153804" src="https://github.com/user-attachments/assets/f378546f-eeec-43f8-8ecc-f62dd88e96f2" />
+
 Use `--release` and `cmake-build-release` for a Release build. The executable is placed under `<build-dir>/cpp/libreshockwave_debugger_app/` when a custom build directory is used.
 
-The command-line argument is optional. You can also open local `.dir`, `.dcr`, `.dxr`, `.cct`, and `.cst` files from **File → Open Movie**, or enter an HTTP(S) movie URL with **File → Open URL**. Network-dependent movies can receive their `key=value` external parameters from **Parameters → Edit Parameters**; parameter changes take effect after reloading the movie. The window remembers recent movies, parameters, layout, and breakpoints per movie.
+The command-line argument is optional. Pass a movie or recording as the positional argument; `--play` starts ordinary playback or recording replay after loading (including asynchronous HTTP(S) movies):
+
+```bash
+libreshockwave_debugger --play path/to/movie.dcr
+libreshockwave_debugger --play path/to/session.lswdebug
+```
+
+You can also open local `.dir`, `.dcr`, `.dxr`, `.cct`, and `.cst` files from **File → Open Movie**, or enter an HTTP(S) movie URL with **File → Open URL**. Network-dependent movies can receive their `key=value` external parameters from **Parameters → Edit Parameters**; parameter changes take effect after reloading the movie. The window remembers recent movies, parameters, layout, and breakpoints per movie.
 
 The debugger workflow is:
 
@@ -115,8 +124,6 @@ Playback and stepping shortcuts are:
 | `Shift+F11` | Step out |
 
 **Play & Record** saves stage mouse and keyboard input as a `.lswdebug` file. Open that file with **File → Open Debug Recording** to reload its movie and external parameters and replay the captured input.
-
-<img width="1995" height="1270" alt="Screenshot_20260808_153804" src="https://github.com/user-attachments/assets/f378546f-eeec-43f8-8ecc-f62dd88e96f2" />
 
 ## C++ API Examples
 

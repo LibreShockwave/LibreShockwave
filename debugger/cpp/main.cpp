@@ -1,4 +1,7 @@
 #include <QApplication>
+#include <QCommandLineOption>
+#include <QCommandLineParser>
+#include <QDebug>
 
 #include "DebuggerWindow.hpp"
 #include "model/DebuggerModel.hpp"
@@ -15,12 +18,34 @@ int main(int argc, char* argv[]) {
     qRegisterMetaType<libreshockwave::debugger::SnapshotData>("SnapshotData");
     qRegisterMetaType<libreshockwave::debugger::MovieTreeSnapshot>("MovieTreeSnapshot");
 
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        QStringLiteral("LibreShockwave desktop debugger and input recording replay tool"));
+    parser.addHelpOption();
+    parser.addVersionOption();
+    const QCommandLineOption playOption(
+        {QStringLiteral("p"), QStringLiteral("play")},
+        QStringLiteral("start playback after loading the movie (or replay a recording)"));
+    parser.addOption(playOption);
+    parser.addPositionalArgument(
+        QStringLiteral("movie-or-recording"),
+        QStringLiteral("Director movie or .lswdebug recording to open"));
+    parser.process(app);
+
+    const QStringList positional = parser.positionalArguments();
+    if (positional.size() > 1) {
+        qCritical().noquote() << QStringLiteral("Only one movie or recording may be specified");
+        return 2;
+    }
+
     libreshockwave::debugger::DebuggerWindow window;
     window.show();
 
-    // If a file path was passed on the command line, open it
-    if (argc > 1) {
-        window.openMovie(QString::fromLocal8Bit(argv[1]));
+    if (!positional.isEmpty() && !window.openMovie(positional.front())) {
+        return 1;
+    }
+    if (parser.isSet(playOption)) {
+        window.startPlayback();
     }
 
     return app.exec();

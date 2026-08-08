@@ -26,6 +26,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 #include "DebuggerContext.hpp"
 #include "DebugStateBridge.hpp"
 #include "ExternalParamsDialog.hpp"
@@ -129,7 +131,12 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     // A command-line movie is already opened by main().  Do not also restore
     // the previous URL here: the two asynchronous sessions can finish in
     // either order and leave the debugger displaying the wrong movie/frame.
-    const bool hasCommandLineMovie = QCoreApplication::arguments().size() > 1;
+    // Options such as --play are not movies. Only suppress the persisted
+    // movie when the command line actually contains a positional path.
+    const auto arguments = QCoreApplication::arguments();
+    const bool hasCommandLineMovie = std::any_of(
+        arguments.cbegin() + (arguments.isEmpty() ? 0 : 1), arguments.cend(),
+        [](const QString& argument) { return !argument.startsWith(QLatin1Char('-')); });
     if (!hasCommandLineMovie && !lastMovie.isEmpty() &&
         (isUrl(lastMovie) || QFileInfo::exists(lastMovie))) {
         statusBar()->showMessage(QStringLiteral("Loading last movie..."));
@@ -149,6 +156,7 @@ DebuggerWindow::~DebuggerWindow() {
 // -----------------------------------------------------------------------
 
 bool DebuggerWindow::openMovie(const QString& path, const QMap<QString, QString>& params) {
+    playRequested_ = false;
     if (QFileInfo(path).suffix().compare(QStringLiteral("lswdebug"),
                                          Qt::CaseInsensitive) == 0) {
         return openRecording(path);
@@ -168,6 +176,11 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
 
     // URLs are fetched asynchronously; the shared finish path only loads.
     if (isUrl(path)) {
+        // Set this before the asynchronous URL fetch. A recording's
+        // parameters must replace the parameters restored from the previous
+        // debugger session, even though the Player does not exist until the
+        // fetch ends.
+        externalParams_ = params;
         loadMovieFromUrl(path);
         return true;
     }
@@ -203,7 +216,29 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
     statusBar()->showMessage(
         QStringLiteral("Loaded: %1 — press Play to start").arg(QFileInfo(path).fileName()));
     startPendingReplayIfReady();
+    if (!replaying_ && playRequested_) {
+        playRequested_ = false;
+        onPlay();
+    }
     return true;
+}
+
+void DebuggerWindow::startPlayback() {
+    playRequested_ = true;
+    if (!context_->hasMovie()) {
+        return;
+    }
+
+    // Opening a recording starts its replay as soon as the movie is ready.
+    // Do not replace the replay status with ordinary playback just because
+    // --play was also supplied.
+    if (replaying_) {
+        playRequested_ = false;
+        return;
+    }
+
+    playRequested_ = false;
+    onPlay();
 }
 
 // -----------------------------------------------------------------------
@@ -806,6 +841,7 @@ bool DebuggerWindow::openRecording(const QString& path) {
         context_->stop();
         finishRecording();
     }
+    playRequested_ = false;
     cancelReplay();
     pendingReplay_ = std::move(recording);
     if (!openMovieInternal(pendingReplay_->movie, pendingReplay_->externalParams)) {
@@ -824,6 +860,7 @@ void DebuggerWindow::startPendingReplayIfReady() {
     pendingReplay_.reset();
     replayIndex_ = 0;
     replaying_ = true;
+    playRequested_ = false;
     replayClock_.invalidate();
     context_->play();
     statusLabel_->setText(QStringLiteral(" ◉ Replaying"));
@@ -927,7 +964,8 @@ void DebuggerWindow::loadMovieFromUrl(const QString& url) {
 
 void DebuggerWindow::finishLoadedMovie(const QString& label,
                                        std::vector<std::uint8_t> data,
-                                       const std::string& basePath) {
+                                       const std::string& basePath,
+                                       bool resumePlayback) {
     const auto byteCount = data.size();
     const bool ok = context_->loadMovieFromData(std::move(data), basePath);
     if (!ok) {
@@ -958,6 +996,10 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
             .arg(byteCount),
         5000);
     startPendingReplayIfReady();
+    if (!replaying_ && (resumePlayback || playRequested_)) {
+        playRequested_ = false;
+        onPlay();
+    }
 }
 
 void DebuggerWindow::onOpenRecent() {
@@ -1225,15 +1267,31 @@ void DebuggerWindow::onFrameRendered(const QImage& image) {
     // The frame was captured on the worker (VM) thread; the image is a
     // detached copy so painting here never races with the tick loop.
     stageWidget_->setFrameImage(image);
+    const auto dumpPath = qEnvironmentVariable(
+        "LIBRESHOCKWAVE_DEBUGGER_FRAME_DUMP");
+    if (!dumpPath.isEmpty()) {
+        QSaveFile dumpFile(dumpPath);
+        if (dumpFile.open(QIODevice::WriteOnly) &&
+            image.save(&dumpFile, "PNG")) {
+            dumpFile.commit();
+        }
+    }
 }
 
 void DebuggerWindow::onPlaybackStarted() {
-    if (recording_) {
+    if (recording_ && !recordingClock_.isValid()) {
         recordingClock_.start();
     }
     if (replaying_) {
-        replayClock_.start();
-        replayTimer_->start();
+        // A movie navigation replaces the Player session while a recording
+        // is replaying. Preserve the original recording clock and only
+        // restart the timer if the replacement session stopped it.
+        if (!replayClock_.isValid()) {
+            replayClock_.start();
+        }
+        if (!replayTimer_->isActive()) {
+            replayTimer_->start();
+        }
     }
 }
 
@@ -1294,7 +1352,7 @@ void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
 
         const auto data = reply->readAll();
         std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
-        finishLoadedMovie(url, std::move(bytes), url.toStdString());
+        finishLoadedMovie(url, std::move(bytes), url.toStdString(), true);
     });
 }
 

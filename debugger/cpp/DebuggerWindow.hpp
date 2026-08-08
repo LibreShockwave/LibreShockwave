@@ -41,6 +41,10 @@ public:
     bool openMovie(const QString& path,
                    const QMap<QString, QString>& params = {});
 
+    /// Start playback immediately, or defer it until an asynchronous movie
+    /// load finishes. Used by the command-line --play option.
+    void startPlayback();
+
 protected:
     void closeEvent(QCloseEvent* event) override;
 
@@ -157,7 +161,8 @@ private:
     /// in the ready state. Playback starts only from an explicit action.
     void finishLoadedMovie(const QString& label,
                            std::vector<std::uint8_t> data,
-                           const std::string& basePath);
+                           const std::string& basePath,
+                           bool resumePlayback = false);
 
     DebuggerContext* context_;
 
@@ -210,6 +215,7 @@ private:
     std::vector<RecordedInputEvent> replayEvents_;
     std::size_t replayIndex_{0};
     std::optional<RecordingFile> pendingReplay_;
+    bool playRequested_{false};
 };
 
 } // namespace libreshockwave::debugger
