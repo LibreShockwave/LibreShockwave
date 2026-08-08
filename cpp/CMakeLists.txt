@@ -217,6 +217,12 @@ add_executable(libreshockwave_wasm_bridge_probe
 target_link_libraries(libreshockwave_wasm_bridge_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_wasm_bridge_probe PRIVATE cxx_std_20)
 
+add_executable(libreshockwave_multiuser_probe
+    apps/tools/MultiuserFloodProbe.cpp
+)
+target_link_libraries(libreshockwave_multiuser_probe PRIVATE LibreShockwave::libreshockwave)
+target_compile_features(libreshockwave_multiuser_probe PRIVATE cxx_std_20)
+
 find_package(Threads REQUIRED)
 target_link_libraries(libreshockwave PUBLIC Threads::Threads)
 

@@ -22,6 +22,21 @@ namespace {
 constexpr std::size_t READ_BUFFER_SIZE = 8192;
 constexpr int SMUS_MODE = 0;
 constexpr std::size_t SMUS_HEADER_SIZE = 6;
+// A server burst can deliver hundreds of messages within milliseconds.  The
+// movie consumes a bounded batch per frame, so a single poll must not drain
+// and parse the whole flood: excess stays in the kernel socket buffer (TCP
+// backpressure slows the server) or is held back for the next poll.
+/// Maximum bytes read from the socket in one poll.
+constexpr std::size_t MAX_READ_BYTES_PER_POLL = 32768;
+/// Stop draining the kernel once this much raw data is already held, so a
+/// movie that cannot keep up throttles the server via TCP flow control.
+constexpr std::size_t MAX_HELD_BYTES = 65536;
+/// Maximum frames/messages handed to the movie per poll; the rest carry over.
+constexpr std::size_t MAX_FRAMES_PER_POLL = 128;
+/// Raw encrypted bytes are flushed to the movie once a flood has piled up a
+/// chunk of at least this size (continuous traffic never reaches the
+/// quiet-poll condition below, so a size threshold is the flood fallback).
+constexpr std::size_t RAW_FLUSH_THRESHOLD = 4096;
 
 void closeSocket(int& socketFd) {
     if (socketFd >= 0) {
@@ -154,6 +169,9 @@ struct SocketMultiuserBridge::Connection {
     bool rawEncrypted = false;
     int rawInboundQuietPolls = 0;
     std::vector<NetMessage> queuedMessages;
+    // Polled messages beyond the per-poll cap, held for the next poll so the
+    // movie consumes a bounded batch per frame without any message loss.
+    std::vector<NetMessage> returnBuffer;
     QueuedMultiuserBridge protocol;
 
     ~Connection() {
@@ -289,93 +307,134 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
     std::vector<NetMessage> result = std::move(connection->queuedMessages);
     connection->queuedMessages.clear();
 
-    if (!connection->connected || connection->socketFd < 0) {
-        if (connection->mode != SMUS_MODE && !connection->inboundBuffer.empty()) {
-            connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
-            connection->inboundBuffer.clear();
-            connection->rawInboundQuietPolls = 0;
-        }
-        auto messages = connection->protocol.pollMessages(instanceId);
-        result.insert(result.end(), messages.begin(), messages.end());
-        return result;
-    }
-
-    bool readRawBytes = false;
-    for (int attempt = 0; attempt < 16; ++attempt) {
-        const ssize_t read = ::recv(connection->socketFd,
-                                   connection->readBuf.data(),
-                                   connection->readBuf.size(),
-                                   recvFlags());
-        if (read > 0) {
-            const auto* begin = reinterpret_cast<const std::uint8_t*>(connection->readBuf.data());
-            if (connection->mode == SMUS_MODE) {
-                connection->inboundBuffer.insert(connection->inboundBuffer.end(),
-                                                 begin,
-                                                 begin + read);
-                while (auto frame = takeSmusFrame(connection->inboundBuffer)) {
-                    connection->protocol.deliverMessageBytes(instanceId, *frame);
-                }
-            } else {
-                connection->inboundBuffer.insert(connection->inboundBuffer.end(),
-                                                 begin,
-                                                 begin + read);
-                if (!connection->rawEncrypted) {
-                    while (auto message = takePlaintextMessage(connection->inboundBuffer)) {
-                        const bool isServerSecretKey = message->size() >= 2 &&
-                            QueuedMultiuserBridge::decodeShockwaveCommand(
-                                static_cast<char>((*message)[0]),
-                                static_cast<char>((*message)[1])) == 1;
-                        connection->protocol.deliverMessageBytes(instanceId, *message);
-                        if (isServerSecretKey) {
-                            connection->rawEncrypted = true;
+    if (connection->connected && connection->socketFd >= 0) {
+        bool readRawBytes = false;
+        std::size_t bytesRead = 0;
+        std::size_t framesDelivered = 0;
+        for (int attempt = 0; attempt < 16; ++attempt) {
+            // Bound this poll's work: stop draining the socket once a burst
+            // has been partially consumed.  Excess stays in the kernel
+            // buffer (TCP backpressure slows the server) or in
+            // inboundBuffer for the next poll.
+            if (bytesRead >= MAX_READ_BYTES_PER_POLL ||
+                connection->inboundBuffer.size() >= MAX_HELD_BYTES) {
+                break;
+            }
+            const ssize_t read = ::recv(connection->socketFd,
+                                       connection->readBuf.data(),
+                                       connection->readBuf.size(),
+                                       recvFlags());
+            if (read > 0) {
+                bytesRead += static_cast<std::size_t>(read);
+                const auto* begin = reinterpret_cast<const std::uint8_t*>(connection->readBuf.data());
+                if (connection->mode == SMUS_MODE) {
+                    connection->inboundBuffer.insert(connection->inboundBuffer.end(),
+                                                     begin,
+                                                     begin + read);
+                    while (framesDelivered < MAX_FRAMES_PER_POLL) {
+                        auto frame = takeSmusFrame(connection->inboundBuffer);
+                        if (!frame.has_value()) {
                             break;
                         }
+                        ++framesDelivered;
+                        connection->protocol.deliverMessageBytes(instanceId, *frame);
+                    }
+                } else {
+                    connection->inboundBuffer.insert(connection->inboundBuffer.end(),
+                                                     begin,
+                                                     begin + read);
+                    if (!connection->rawEncrypted) {
+                        while (framesDelivered < MAX_FRAMES_PER_POLL) {
+                            auto message = takePlaintextMessage(connection->inboundBuffer);
+                            if (!message.has_value()) {
+                                break;
+                            }
+                            ++framesDelivered;
+                            const bool isServerSecretKey = message->size() >= 2 &&
+                                QueuedMultiuserBridge::decodeShockwaveCommand(
+                                    static_cast<char>((*message)[0]),
+                                    static_cast<char>((*message)[1])) == 1;
+                            connection->protocol.deliverMessageBytes(instanceId, *message);
+                            if (isServerSecretKey) {
+                                connection->rawEncrypted = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (connection->rawEncrypted) {
+                        readRawBytes = true;
+                        connection->rawInboundQuietPolls = 0;
                     }
                 }
-                if (connection->rawEncrypted) {
-                    readRawBytes = true;
-                    connection->rawInboundQuietPolls = 0;
-                }
+                continue;
             }
-            continue;
-        }
-        if (read == 0) {
+            if (read == 0) {
+                closeSocket(connection->socketFd);
+                connection->connected = false;
+                connection->protocol.notifyDisconnected(instanceId);
+                break;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+
             closeSocket(connection->socketFd);
             connection->connected = false;
-            connection->protocol.notifyDisconnected(instanceId);
-            break;
-        }
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            connection->protocol.notifyError(instanceId, -2);
             break;
         }
 
-        closeSocket(connection->socketFd);
-        connection->connected = false;
-        connection->protocol.notifyError(instanceId, -2);
-        break;
-    }
-
-    if (connection->mode != SMUS_MODE && connection->rawEncrypted &&
-        !connection->inboundBuffer.empty()) {
-        // Director's decoder already retains an incomplete encrypted body,
-        // but it cannot recover if it receives only an encrypted header.  A
-        // few quiet polls let TCP deliver the rest of a small frame while
-        // retaining a complete stream chunk for Director's parser.
-        if (readRawBytes) {
-            connection->rawInboundQuietPolls = 0;
-        } else {
-            ++connection->rawInboundQuietPolls;
+        if (connection->mode != SMUS_MODE && connection->rawEncrypted &&
+            !connection->inboundBuffer.empty()) {
+            // Director's decoder already retains an incomplete encrypted body,
+            // but it cannot recover if it receives only an encrypted header.  A
+            // few quiet polls let TCP deliver the rest of a small frame while
+            // retaining a complete stream chunk for Director's parser.
+            if (readRawBytes) {
+                connection->rawInboundQuietPolls = 0;
+            } else {
+                ++connection->rawInboundQuietPolls;
+            }
+            // Under continuous traffic there are no quiet polls, so a flood
+            // would otherwise pile up bytes forever and starve the movie:
+            // flush as soon as a full chunk has accumulated.
+            if (connection->inboundBuffer.size() >= RAW_FLUSH_THRESHOLD ||
+                (connection->inboundBuffer.size() >= 7 &&
+                 connection->rawInboundQuietPolls >= 3)) {
+                connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
+                connection->inboundBuffer.clear();
+                connection->rawInboundQuietPolls = 0;
+            }
         }
-        if (connection->inboundBuffer.size() >= 7 &&
-            connection->rawInboundQuietPolls >= 3) {
-            connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
-            connection->inboundBuffer.clear();
-            connection->rawInboundQuietPolls = 0;
-        }
+    } else if (connection->mode != SMUS_MODE && !connection->inboundBuffer.empty()) {
+        // Disconnected: flush any remaining plaintext/raw bytes so the movie
+        // sees the tail before the close/error state.
+        connection->protocol.deliverMessageBytes(instanceId, connection->inboundBuffer);
+        connection->inboundBuffer.clear();
+        connection->rawInboundQuietPolls = 0;
     }
 
     auto messages = connection->protocol.pollMessages(instanceId);
-    result.insert(result.end(), messages.begin(), messages.end());
+    std::vector<NetMessage> all;
+    all.reserve(connection->returnBuffer.size() + messages.size());
+    all.insert(all.end(), connection->returnBuffer.begin(), connection->returnBuffer.end());
+    connection->returnBuffer.clear();
+    all.insert(all.end(), messages.begin(), messages.end());
+
+    std::vector<NetMessage> delivered;
+    if (connection->connected && connection->socketFd >= 0 &&
+        all.size() > MAX_FRAMES_PER_POLL) {
+        // Hold back the excess for the next poll: the movie consumes a
+        // bounded batch per frame, and dropping would lose protocol messages.
+        delivered.assign(all.begin(),
+                         all.begin() + static_cast<std::ptrdiff_t>(MAX_FRAMES_PER_POLL));
+        connection->returnBuffer.assign(
+            all.begin() + static_cast<std::ptrdiff_t>(MAX_FRAMES_PER_POLL),
+            all.end());
+    } else {
+        delivered = std::move(all);
+    }
+    result.insert(result.end(), delivered.begin(), delivered.end());
     return result;
 }
 

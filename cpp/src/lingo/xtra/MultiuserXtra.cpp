@@ -9,6 +9,16 @@
 namespace libreshockwave::lingo::xtra {
 namespace {
 
+// A server burst can deliver hundreds of messages within a few milliseconds.
+// Draining them all inside one frame would freeze the movie until the VM's
+// tick deadline throws, so delivery is budgeted per frame instead.
+/// Messages handed to the movie's handler per frame when the movie did not
+/// call setNetBufferLimits (bufferMax overrides this).
+constexpr std::size_t kDefaultMaxMessagesPerFrame = 100;
+/// Hard ceiling: even a movie-tuned bufferMax must not exceed this, or a
+/// flood could stall a frame again.
+constexpr std::size_t kMaxMessagesPerFrame = 512;
+
 std::string lowerAscii(std::string_view value) {
     std::string result(value);
     std::transform(result.begin(), result.end(), result.begin(), [](unsigned char ch) {
@@ -147,9 +157,18 @@ void MultiuserXtra::tick() {
         }
 
         pollIntoQueue(entry.first, state);
-        while (!state.messageQueue.empty()) {
-            state.currentMessage = state.messageQueue.front();
-            state.messageQueue.erase(state.messageQueue.begin());
+        // Deliver a bounded batch per frame.  Each delivery runs the movie's
+        // Lingo handler, which is expensive; a flood must stretch across
+        // frames, not stall one frame.  Surplus messages carry over.
+        const std::size_t maxThisFrame = std::min(
+            state.bufferMax > 0 ? static_cast<std::size_t>(state.bufferMax)
+                                : kDefaultMaxMessagesPerFrame,
+            kMaxMessagesPerFrame);
+        std::size_t processed = 0;
+        while (!state.messageQueue.empty() && processed < maxThisFrame) {
+            state.currentMessage = std::move(state.messageQueue.front());
+            state.messageQueue.pop_front();
+            ++processed;
             invokeCallback(state);
         }
         state.currentMessage.reset();
@@ -232,8 +251,8 @@ Datum MultiuserXtra::checkNetMessages(int instanceId, InstanceState& state, cons
 
     int processed = 0;
     for (int i = 0; i < count && !state.messageQueue.empty(); ++i) {
-        state.currentMessage = state.messageQueue.front();
-        state.messageQueue.erase(state.messageQueue.begin());
+        state.currentMessage = std::move(state.messageQueue.front());
+        state.messageQueue.pop_front();
         ++processed;
         if (!state.callbackHandler.empty() && state.callbackTarget.has_value()) {
             invokeCallback(state);
@@ -267,6 +286,13 @@ Datum MultiuserXtra::getNetErrorString(const std::vector<Datum>& args) {
 
 void MultiuserXtra::pollIntoQueue(int instanceId, InstanceState& state) {
     if (bridge_ == nullptr) {
+        return;
+    }
+    // Low-water throttle: when the movie configured a minimum buffer, don't
+    // drain the socket further while we are already behind.  The kernel
+    // socket buffer absorbs the excess and TCP backpressure slows the server.
+    if (state.bufferMin > 0 &&
+        state.messageQueue.size() >= static_cast<std::size_t>(state.bufferMin)) {
         return;
     }
     auto messages = bridge_->pollMessages(instanceId);

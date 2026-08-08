@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -38,7 +39,9 @@ private:
         std::string callbackHandler;
         std::optional<Datum> callbackTarget;
         std::optional<MultiuserNetBridge::NetMessage> currentMessage;
-        std::vector<MultiuserNetBridge::NetMessage> messageQueue;
+        // A deque so draining a burst is O(1) per message instead of
+        // O(n) vector erase-from-front (quadratic when catching up).
+        std::deque<MultiuserNetBridge::NetMessage> messageQueue;
     };
 
     [[nodiscard]] Datum setNetBufferLimits(InstanceState& state, const std::vector<Datum>& args);
