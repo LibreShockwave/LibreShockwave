@@ -183,14 +183,10 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
     stageWidget_->prepareForMovie();
     isPaused_ = false;
 
-    // Apply external params
-    if (!params.isEmpty()) {
-        auto playerParams = ExternalParamsDialog::toPlayerParams(params);
-        if (context_->player() != nullptr) {
-            context_->player()->setExternalParams(std::move(playerParams));
-        }
-        externalParams_ = params;
-    }
+    // Store parameters in the context so a later fresh Play session receives
+    // the same values as this initial load.
+    externalParams_ = params;
+    context_->setExternalParams(ExternalParamsDialog::toPlayerParams(params));
 
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(
         QFileInfo(path).fileName()));
@@ -573,6 +569,11 @@ void DebuggerWindow::setupShortcuts() {
 
 void DebuggerWindow::connectSignals() {
     connect(context_, &DebuggerContext::movieLoaded, this, [this]() {
+        if (context_->player() != nullptr) {
+            movieTreePanel_->populate(context_->player());
+            restoreBreakpointsForCurrentMovie();
+            refreshBreakpoints();
+        }
         updateToolbarState();
     });
     connect(context_, &DebuggerContext::frameRendered,
@@ -937,11 +938,8 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
     stageWidget_->prepareForMovie();
     isPaused_ = false;
 
-    // Apply external params
-    if (!externalParams_.isEmpty() && context_->player() != nullptr) {
-        context_->player()->setExternalParams(
-            ExternalParamsDialog::toPlayerParams(externalParams_));
-    }
+    context_->setExternalParams(
+        ExternalParamsDialog::toPlayerParams(externalParams_));
 
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(label));
     movieTreePanel_->populate(context_->player());
@@ -983,9 +981,9 @@ void DebuggerWindow::onEditParameters() {
     saveSettings();
     updateParamsMenu();
 
-    // If a movie is already loaded, re-apply params
-    if (context_->hasMovie() && context_->player() != nullptr) {
-        context_->player()->setExternalParams(
+    // Keep the context copy in sync so fresh Play sessions use these params.
+    if (context_->hasMovie()) {
+        context_->setExternalParams(
             ExternalParamsDialog::toPlayerParams(externalParams_));
         statusBar()->showMessage(
             QStringLiteral("Parameters updated (%1 entries) — reload movie to apply")
@@ -1005,9 +1003,9 @@ void DebuggerWindow::onLoadDefaultPreset() {
     saveSettings();
     updateParamsMenu();
 
-    // Apply to loaded movie if any
-    if (context_->hasMovie() && context_->player() != nullptr) {
-        context_->player()->setExternalParams(
+    // Apply to the current session and retain for a fresh Play session.
+    if (context_->hasMovie()) {
+        context_->setExternalParams(
             ExternalParamsDialog::toPlayerParams(externalParams_));
     }
 
@@ -1018,6 +1016,9 @@ void DebuggerWindow::onLoadDefaultPreset() {
 
 void DebuggerWindow::onClearParameters() {
     externalParams_.clear();
+    if (context_->hasMovie()) {
+        context_->setExternalParams({});
+    }
     saveSettings();
     updateParamsMenu();
     statusBar()->showMessage(QStringLiteral("Parameters cleared"), 3000);
@@ -1117,6 +1118,7 @@ void DebuggerWindow::onStop() {
     variablesPanel_->clearAll();
     callStackPanel_->clearAll();
     watchPanel_->clearAll();
+    movieTreePanel_->clearAll();
     stageWidget_->clearFrame();
     isPaused_ = false;
     statusLabel_->setText(QStringLiteral(" ● Stopped"));
@@ -1341,6 +1343,7 @@ void DebuggerWindow::onWatchRemoved(const std::string& id) {
 
 void DebuggerWindow::updateToolbarState() {
     const bool hasMovie = context_->hasMovie();
+    const bool hasPlayer = context_->player() != nullptr;
     const bool playing = context_->isPlaying();
 
     playAction_->setEnabled(hasMovie && !playing && !isPaused_);
@@ -1351,8 +1354,8 @@ void DebuggerWindow::updateToolbarState() {
     stepIntoAction_->setEnabled(hasMovie && isPaused_);
     stepOverAction_->setEnabled(hasMovie && isPaused_);
     stepOutAction_->setEnabled(hasMovie && isPaused_);
-    toggleBreakpointAction_->setEnabled(hasMovie);
-    clearBreakpointsAction_->setEnabled(hasMovie);
+    toggleBreakpointAction_->setEnabled(hasPlayer);
+    clearBreakpointsAction_->setEnabled(hasPlayer);
 }
 
 void DebuggerWindow::loadHandlerCode(int scriptId, const std::string& handlerName) {

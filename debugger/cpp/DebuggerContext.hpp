@@ -14,6 +14,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 class QNetworkAccessManager;
@@ -71,6 +72,10 @@ public:
     [[nodiscard]] const std::string& moviePath() const;
     [[nodiscard]] bool hasMovie() const;
     [[nodiscard]] bool isPlaying() const;
+
+    /// Store external parameters for the current movie and for future fresh
+    /// player sessions after Stop.
+    void setExternalParams(std::vector<std::pair<std::string, std::string>> params);
 
     /// Thread-safe input queue for keyboard/mouse events from StageWidget.
     struct InputEvent;
@@ -141,6 +146,10 @@ private:
     void deliverFetchResult(int taskId, std::vector<std::uint8_t> data);
     void deliverFetchError(int taskId, int status);
 
+    /// Recreate the player/provider from the retained movie bytes after a
+    /// full Stop teardown.
+    [[nodiscard]] bool restoreMovieSession();
+
     /// Mirror of WasmBridge::isAlreadyLoadedCastRequest: a cast-like request
     /// whose file name matches an already loaded/fetched castLib is satisfied
     /// locally and must not be fetched again.
@@ -173,7 +182,11 @@ private:
     mutable std::mutex inputMutex_;
     std::vector<InputEvent> inputQueue_;
 
+    // The source movie is retained without retaining a live Player session.
+    // Stop tears the session down; Play reconstructs it from these bytes.
+    std::vector<std::uint8_t> movieData_;
     std::string moviePath_;
+    std::vector<std::pair<std::string, std::string>> externalParams_;
 };
 
 /// A raw input event enqueued from the StageWidget (main thread) and

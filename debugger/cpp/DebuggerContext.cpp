@@ -121,6 +121,8 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
         netOutQueue_.clear();
     }
     lastCastSnapshot_.reset();
+    movieData_ = data;
+    moviePath_ = basePath;
 
     // QueuedNetProvider is owned by the worker thread.  The plain Player
     // constructor registers the native SocketMultiuserBridge (the equivalent
@@ -129,6 +131,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     queuedNet_ = std::make_unique<libreshockwave::player::net::QueuedNetProvider>(basePath);
     player_ = std::make_unique<libreshockwave::player::Player>(directorFile);
     player_->setNetProvider(queuedNet_.get());
+    player_->setExternalParams(externalParams_);
     player_->setDebugEnabled(true);
     // Runtime CCT/CST loads mutate the cast libs on the VM thread.  Capture
     // a movie-tree snapshot there and hand it to the window through a queued
@@ -193,7 +196,6 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     // Start the HTTP pump (main thread) for queued fetch requests
     netPumpTimer_->start();
 
-    moviePath_ = basePath;
     playing_ = false;
     quitWorker_ = false;
 
@@ -207,8 +209,28 @@ libreshockwave::player::debug::DebugController* DebuggerContext::debugController
 }
 DebugStateBridge* DebuggerContext::stateBridge() const { return stateBridge_; }
 const std::string& DebuggerContext::moviePath() const { return moviePath_; }
-bool DebuggerContext::hasMovie() const { return player_ != nullptr; }
+bool DebuggerContext::hasMovie() const {
+    return player_ != nullptr || !movieData_.empty();
+}
 bool DebuggerContext::isPlaying() const { return playing_.load(); }
+
+void DebuggerContext::setExternalParams(
+    std::vector<std::pair<std::string, std::string>> params) {
+    externalParams_ = std::move(params);
+    if (player_ != nullptr) {
+        player_->setExternalParams(externalParams_);
+    }
+}
+
+bool DebuggerContext::restoreMovieSession() {
+    if (player_ != nullptr) {
+        return true;
+    }
+    if (movieData_.empty()) {
+        return false;
+    }
+    return loadMovieFromData(movieData_, moviePath_);
+}
 
 void DebuggerContext::enqueueInput(InputEvent event) {
     std::lock_guard<std::mutex> lock(inputMutex_);
@@ -216,7 +238,14 @@ void DebuggerContext::enqueueInput(InputEvent event) {
 }
 
 void DebuggerContext::play() {
-    if (player_ == nullptr || playing_.load()) {
+    if (playing_.load()) {
+        return;
+    }
+
+    if (player_ == nullptr && !restoreMovieSession()) {
+        return;
+    }
+    if (player_ == nullptr) {
         return;
     }
 
@@ -237,34 +266,9 @@ void DebuggerContext::pausePlayback() {
 }
 
 void DebuggerContext::stop() {
-    if (player_ == nullptr) {
-        return;
-    }
-
-    // Critical shutdown order to avoid deadlock:
-    // 1. Remove listener so no more callbacks fire
-    // 2. Clear breakpoints so the VM cannot re-pause after reset
-    // 3. Reset the controller (sets Running state, notifies CV)
-    // 4. Signal the worker to quit
-    // 5. Join the worker thread
-    debugController_->removeListener(stateBridge_);
-    debugController_->clearAllBreakpoints();
-    debugController_->reset();
-
-    quitWorker_ = true;
-    playing_ = false;
-
-    if (workerThread_.joinable()) {
-        workerThread_.join();
-    }
-
-    if (player_ != nullptr) {
-        player_->stop();
-        // Keep the player and its wired components alive so Play can prepare
-        // the same movie again.  Full teardown belongs to shutdownWorker(),
-        // which is used when replacing the movie or destroying the context.
-        debugController_->addListener(stateBridge_);
-    }
+    // Stop is a full session reset.  The selected movie bytes remain so the
+    // next Play creates a new Player, VM, cast manager, and net provider.
+    shutdownWorker();
 }
 
 void DebuggerContext::stepInto() {
@@ -323,7 +327,11 @@ void DebuggerContext::shutdownWorker() {
     }
     for (auto* reply : std::exchange(activeReplies_, {})) {
         reply->disconnect(this);
+        reply->abort();
         reply->deleteLater();
+    }
+    if (netAccess_ != nullptr) {
+        netAccess_->clearConnectionCache();
     }
 
     if (player_ != nullptr && debugController_ != nullptr) {
@@ -336,6 +344,20 @@ void DebuggerContext::shutdownWorker() {
     if (workerThread_.joinable()) {
         workerThread_.join();
     }
+
+    {
+        std::lock_guard<std::mutex> lock(netInMutex_);
+        netInQueue_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(netOutMutex_);
+        netOutQueue_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(inputMutex_);
+        inputQueue_.clear();
+    }
+
     if (player_ != nullptr) {
         player_->stop();
         player_->shutdown();
@@ -343,6 +365,7 @@ void DebuggerContext::shutdownWorker() {
     }
     debugController_.reset();
     queuedNet_.reset();
+    lastCastSnapshot_.reset();
 }
 
 // ---------------------------------------------------------------------------
