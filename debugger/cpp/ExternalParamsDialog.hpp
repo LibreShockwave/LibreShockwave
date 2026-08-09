@@ -20,6 +20,10 @@ public:
     explicit ExternalParamsDialog(const QMap<QString, QString>& currentParams,
                                   QWidget* parent = nullptr);
 
+    /// Ensure the editable default-preset file exists beside the debugger's
+    /// QSettings file.  The in-memory preset is used to bootstrap it.
+    static void ensureDefaultPresetFile();
+
     /// Return the current key=value pairs from the table.
     [[nodiscard]] QMap<QString, QString> params() const;
 

@@ -107,6 +107,7 @@ static bool recordingEventTypeFromName(const QString& name, int& type) {
 DebuggerWindow::DebuggerWindow(QWidget* parent)
     : QMainWindow(parent) {
 
+    ExternalParamsDialog::ensureDefaultPresetFile();
     setWindowTitle(QStringLiteral("LibreShockwave Debugger"));
     setMinimumSize(1024, 640);
     resize(1280, 800);

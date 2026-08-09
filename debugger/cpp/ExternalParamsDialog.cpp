@@ -3,18 +3,24 @@
 #include <algorithm>
 
 #include <QApplication>
+#include <QDir>
 #include <QDialogButtonBox>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
 namespace libreshockwave::debugger {
 namespace {
 
-/// Default connection presets.
+constexpr auto kDefaultPresetFileName = "debugger-defaults.ini";
+
+/// Bootstrap values for the editable default connection preset.
 constexpr std::pair<const char*, const char*> kDefaultPresets[] = {
     {"sw1", "client.allow.cross.domain=1;client.notify.cross.domain=0"},
     {"sw2", "connection.info.host=verysecret.classichabbo.com;connection.info.port=30000"},
@@ -23,8 +29,70 @@ constexpr std::pair<const char*, const char*> kDefaultPresets[] = {
     {"sw5", "client.reload.url=https://images.classichabbo.com/client/beta?x=reauthenticate;client.fatal.error.url=https://images.classichabbo.com/clientutils?key=error"},
     {"sw6", "client.connection.failed.url=https://images.classichabbo.com/clientutils?key=connection_failed;external.variables.txt=https://images.classichabbo.com/gamedata/external_variables.txt?"},
     {"sw7", "external.texts.txt=https://images.classichabbo.com/gamedata/external_texts.txt?"},
-    {"sw8", "use.sso.ticket=1;sso.ticket=venus-sso-Quackster-0538fd42-e527-49a0-98cd-77dcc219cb66"},
+    {"sw8", "use.sso.ticket=1;sso.ticket="},
 };
+
+QMap<QString, QString> memoryDefaultPreset() {
+    QMap<QString, QString> result;
+    for (const auto& [key, value] : kDefaultPresets) {
+        result.insert(QString::fromUtf8(key), QString::fromUtf8(value));
+    }
+    return result;
+}
+
+QString defaultPresetFilePath() {
+    QSettings applicationSettings;
+    const QFileInfo settingsFile(applicationSettings.fileName());
+
+    // QSettings uses a registry path for its native Windows backend rather
+    // than a filesystem path.  AppConfigLocation is the corresponding
+    // filesystem location in that case.
+    const QDir settingsDirectory = settingsFile.isAbsolute()
+        ? settingsFile.absoluteDir()
+        : QDir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+    return settingsDirectory.filePath(QString::fromLatin1(kDefaultPresetFileName));
+}
+
+bool writeDefaultPresetFile(const QString& path,
+                            const QMap<QString, QString>& values) {
+    const QFileInfo fileInfo(path);
+    if (!fileInfo.absoluteDir().exists() &&
+        !QDir().mkpath(fileInfo.absolutePath())) {
+        return false;
+    }
+
+    QSettings settings(path, QSettings::IniFormat);
+    settings.clear();
+    for (auto it = values.cbegin(); it != values.cend(); ++it) {
+        settings.setValue(it.key(), it.value());
+    }
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+QMap<QString, QString> storedDefaultPreset() {
+    const QString path = defaultPresetFilePath();
+    if (!QFileInfo::exists(path)) {
+        const auto defaults = memoryDefaultPreset();
+        writeDefaultPresetFile(path, defaults);
+        return defaults;
+    }
+
+    QSettings settings(path, QSettings::IniFormat);
+    QMap<QString, QString> result;
+    for (const auto& key : settings.allKeys()) {
+        if (!key.isEmpty()) {
+            result.insert(key, settings.value(key).toString());
+        }
+    }
+    if (!result.isEmpty() && settings.status() == QSettings::NoError) {
+        return result;
+    }
+
+    // Keep the debugger usable if an existing defaults file is unreadable or
+    // empty.  Do not overwrite it: the user may need to repair it manually.
+    return memoryDefaultPreset();
+}
 
 QTableWidgetItem* editableItem(const QString& text) {
     auto* item = new QTableWidgetItem(text);
@@ -101,6 +169,13 @@ ExternalParamsDialog::ExternalParamsDialog(
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
+void ExternalParamsDialog::ensureDefaultPresetFile() {
+    const QString path = defaultPresetFilePath();
+    if (!QFileInfo::exists(path)) {
+        writeDefaultPresetFile(path, memoryDefaultPreset());
+    }
+}
+
 QMap<QString, QString> ExternalParamsDialog::params() const {
     stopEditing();
 
@@ -158,8 +233,9 @@ void ExternalParamsDialog::removeSelectedRows() {
 void ExternalParamsDialog::loadDefaultPreset() {
     stopEditing();
     table_->setRowCount(0);
-    for (const auto& [key, value] : kDefaultPresets) {
-        addRow(QString::fromUtf8(key), QString::fromUtf8(value));
+    const auto defaults = storedDefaultPreset();
+    for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
+        addRow(it.key(), it.value());
     }
 }
 
