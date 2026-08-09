@@ -15,6 +15,7 @@
 #include "DebugStateBridge.hpp"
 #include "ui/MovieTreePanel.hpp"
 #include "libreshockwave/DirectorFile.hpp"
+#include "libreshockwave/bitmap/Bitmap.hpp"
 #include "libreshockwave/player/Player.hpp"
 #include "libreshockwave/player/cast/CastLib.hpp"
 #include "libreshockwave/player/cast/CastLibManager.hpp"
@@ -66,12 +67,32 @@ static bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     return toLowerAscii(lhs) == toLowerAscii(rhs);
 }
 
+static std::optional<bitmap::Bitmap> decodeEmbeddedJpeg(const std::vector<std::uint8_t>& data) {
+    const auto* raw = reinterpret_cast<const uchar*>(data.data());
+    QImage image = QImage::fromData(raw, static_cast<int>(data.size()), "JPEG");
+    if (image.isNull()) {
+        return std::nullopt;
+    }
+
+    image = image.convertToFormat(QImage::Format_ARGB32);
+    bitmap::Bitmap bitmap(image.width(), image.height(), 32);
+    for (int y = 0; y < image.height(); ++y) {
+        const auto* scanline = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            bitmap.setPixel(x, y, static_cast<std::uint32_t>(scanline[x]));
+        }
+    }
+    bitmap.setNativeAlpha(true);
+    return bitmap;
+}
+
 // ---------------------------------------------------------------------------
 // DebuggerContext
 // ---------------------------------------------------------------------------
 
 DebuggerContext::DebuggerContext(QObject* parent)
     : QObject(parent) {
+    DirectorFile::setJpegDecoder(decodeEmbeddedJpeg);
     stateBridge_ = new DebugStateBridge(this);
     netAccess_ = new QNetworkAccessManager(this);
     netPumpTimer_ = new QTimer(this);

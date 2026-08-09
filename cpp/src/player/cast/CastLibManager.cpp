@@ -1614,6 +1614,12 @@ bool CastLibManager::copyMemberMedia(int targetCastLibNumber,
 
     if (target->isBitmap() && source->isBitmap()) {
         if (auto bitmap = source->runtimeBitmap()) {
+            if (source->rawChunk()) {
+                const auto image = getMemberProp(source->castLib(), source->memberNum(), "image");
+                if (const auto* imageRef = image.asImageRef()) {
+                    bitmap = imageRef->bitmap;
+                }
+            }
             target->setRegPointState(source->regX(), source->regY(), source->regPointPinnedToMember());
             target->setBitmapAlphaThreshold(source->bitmapAlphaThreshold());
             target->setRuntimeBitmap(*bitmap);

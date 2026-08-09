@@ -951,7 +951,8 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
     if (prop == "media") {
         if (member->isBitmap()) {
             auto bitmap = member->runtimeBitmap();
-            if (!bitmap) {
+            if (!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
+                member->shouldRedecodeAuthoredRuntimeBitmap()) {
                 const auto image = getMemberProp(memberNumber, "image");
                 if (const auto* imageRef = image.asImageRef()) {
                     bitmap = imageRef->bitmap;
@@ -1048,7 +1049,8 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
     if (prop == "rect") return lingo::Datum::intRect(0, 0, member->width(), member->height());
     if (prop == "image") {
         auto bitmap = member->runtimeBitmap();
-        if ((!bitmap || member->shouldRedecodeAuthoredRuntimeBitmap()) &&
+        if ((!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
+             member->shouldRedecodeAuthoredRuntimeBitmap()) &&
             member->isBitmap() &&
             member->rawChunk() &&
             sourceFile_) {
@@ -1067,7 +1069,7 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
                                            member->bitmapInfo()->height,
                                            std::max(member->bitmapInfo()->bitDepth, 32));
                 placeholder.setNativeAlpha(true);
-                member->setRuntimeBitmapFromAuthoredSource(placeholder);
+                member->setRuntimeBitmapDecodePlaceholder(placeholder);
                 bitmap = member->runtimeBitmap();
             }
         }

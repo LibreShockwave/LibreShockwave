@@ -342,6 +342,15 @@ void CastMember::setRuntimeBitmapFromAuthoredSource(const bitmap::Bitmap& bitmap
     setRuntimeBitmapInternal(bitmap, false, true);
 }
 
+void CastMember::setRuntimeBitmapDecodePlaceholder(const bitmap::Bitmap& bitmap) {
+    setRuntimeBitmapInternal(bitmap, false, true);
+    runtimeBitmapDecodePlaceholder_ = true;
+}
+
+bool CastMember::hasRuntimeBitmapDecodePlaceholder() const {
+    return runtimeBitmapDecodePlaceholder_;
+}
+
 void CastMember::setRuntimeBitmapInternal(const bitmap::Bitmap& bitmap,
                                           bool markScriptModified,
                                           bool authoredSource) {
@@ -367,6 +376,7 @@ void CastMember::setRuntimeBitmapInternal(const bitmap::Bitmap& bitmap,
         runtimeBitmap_ = std::make_shared<bitmap::Bitmap>(std::move(copy));
     }
     runtimeBitmapAuthoredSource_ = authoredSource;
+    runtimeBitmapDecodePlaceholder_ = false;
     runtimeBitmapPaletteVersion_ = authoredSource ? paletteVersion_ : 0;
     syncRuntimeBitmapAnchorState();
 }
@@ -445,6 +455,7 @@ void CastMember::resetRuntimePayload() {
     runtimeScript_.reset();
     runtimeBitmap_.reset();
     runtimeBitmapAuthoredSource_ = false;
+    runtimeBitmapDecodePlaceholder_ = false;
     runtimeBitmapPaletteVersion_ = 0;
     runtimePaletteOverride_.reset();
     paletteRefCastLib_ = -1;

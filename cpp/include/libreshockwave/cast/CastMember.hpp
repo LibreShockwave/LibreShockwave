@@ -131,6 +131,8 @@ public:
     [[nodiscard]] bool shouldRedecodeAuthoredRuntimeBitmap() const;
     void setRuntimeBitmap(const bitmap::Bitmap& bitmap, bool markScriptModified = true);
     void setRuntimeBitmapFromAuthoredSource(const bitmap::Bitmap& bitmap);
+    void setRuntimeBitmapDecodePlaceholder(const bitmap::Bitmap& bitmap);
+    [[nodiscard]] bool hasRuntimeBitmapDecodePlaceholder() const;
     void syncRuntimeBitmapAnchorState();
     void erase();
     void reuseAs(MemberType memberType);
@@ -161,6 +163,7 @@ private:
     std::shared_ptr<chunks::ScriptChunk> runtimeScript_;
     std::shared_ptr<bitmap::Bitmap> runtimeBitmap_;
     bool runtimeBitmapAuthoredSource_ = false;
+    bool runtimeBitmapDecodePlaceholder_ = false;
     int runtimeBitmapPaletteVersion_ = 0;
     std::shared_ptr<const bitmap::Palette> runtimePaletteOverride_;
     int paletteRefCastLib_ = -1;
