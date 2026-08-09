@@ -275,6 +275,7 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
         TARGETS=(
             libreshockwave_tests
             libreshockwave_probe
+            libreshockwave_asset_extractor
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe
         )

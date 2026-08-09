@@ -204,6 +204,18 @@ add_executable(libreshockwave_probe
 target_link_libraries(libreshockwave_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_probe PRIVATE cxx_std_20)
 
+add_executable(libreshockwave_asset_extractor
+    apps/tools/AssetExtractor.cpp
+)
+target_link_libraries(libreshockwave_asset_extractor PRIVATE LibreShockwave::libreshockwave)
+target_compile_features(libreshockwave_asset_extractor PRIVATE cxx_std_20)
+
+find_package(JPEG QUIET)
+if(JPEG_FOUND)
+    target_link_libraries(libreshockwave_asset_extractor PRIVATE JPEG::JPEG)
+    target_compile_definitions(libreshockwave_asset_extractor PRIVATE LIBRESHOCKWAVE_HAVE_JPEG=1)
+endif()
+
 add_executable(libreshockwave_render_probe
     apps/tools/RenderProbe.cpp
 )

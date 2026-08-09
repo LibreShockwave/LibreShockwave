@@ -55,6 +55,27 @@ Useful variants:
 
 The main library target is `LibreShockwave::libreshockwave`.
 
+<details>
+<summary>Asset catalogue extractor</summary>
+
+Extract a directory of Director/Shockwave files into the same asset layout used
+by the v31 asset catalogue:
+
+```bash
+./cmake-build-debug/cpp/libreshockwave_asset_extractor path/to/dcr-files path/to/output
+```
+
+The output contains one directory per input file with `manifest.tsv`,
+`file_info.tsv`, and decoded `bitmaps/`, `text/`, `sounds/`, `palettes/`, and
+`raw_chunks/`, and `scripts/` subdirectories. The output directory is optional;
+if omitted, the generated catalogue is written into the input directory.
+
+The `scripts/` directory contains native decompiled Lingo source (`.ls`) and
+resolved bytecode listings (`.lsasm`). Script assets are also added to the
+per-file `manifest.tsv` when they can be associated with a cast member.
+
+</details>
+
 ## Formats
 
 - RIFX, XFIR, RIFF, and FFIR containers
