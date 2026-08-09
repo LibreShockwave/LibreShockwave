@@ -60,6 +60,18 @@ bool BitmapCache::hasDecodeFailed(const chunks::CastMemberChunk& member) const {
     return decodeFailed_.contains(memberKey(&member));
 }
 
+void BitmapCache::invalidateMember(const chunks::CastMemberChunk& member) {
+    const auto memberId = memberKey(&member);
+    for (auto iter = cache_.begin(); iter != cache_.end();) {
+        if (iter->first.member == memberId) {
+            iter = cache_.erase(iter);
+        } else {
+            ++iter;
+        }
+    }
+    decodeFailed_.erase(memberId);
+}
+
 bool BitmapCache::invalidateIfPaletteChanged(const chunks::CastMemberChunk& member, int paletteVersion) {
     const auto memberId = memberKey(&member);
     const auto it = paletteVersions_.find(memberId);

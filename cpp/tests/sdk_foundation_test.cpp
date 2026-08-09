@@ -20738,6 +20738,9 @@ void testBitmapCacheAndInkProcessorFoundation() {
     cache.markDecodeFailed(member);
     assert(cache.hasDecodeFailed(member));
     assert(cache.decodeFailedCount() == 1);
+    cache.invalidateMember(member);
+    assert(cache.cachedBitmapCount() == 0);
+    assert(!cache.hasDecodeFailed(member));
     assert(cache.invalidateIfPaletteChanged(member, 1));
     assert(cache.cachedBitmapCount() == 0);
     assert(!cache.hasDecodeFailed(member));

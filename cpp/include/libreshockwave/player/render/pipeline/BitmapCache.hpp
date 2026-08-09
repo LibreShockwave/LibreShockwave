@@ -55,6 +55,7 @@ public:
 
     void markDecodeFailed(const chunks::CastMemberChunk& member);
     [[nodiscard]] bool hasDecodeFailed(const chunks::CastMemberChunk& member) const;
+    void invalidateMember(const chunks::CastMemberChunk& member);
     [[nodiscard]] bool invalidateIfPaletteChanged(const chunks::CastMemberChunk& member, int paletteVersion);
     void clear();
 

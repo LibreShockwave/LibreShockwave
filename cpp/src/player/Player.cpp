@@ -1059,12 +1059,30 @@ void Player::wireComponents() {
     });
     spriteBaker_.setLiveBitmapProvider([this](const render::pipeline::RenderSprite& sprite)
         -> std::shared_ptr<const bitmap::Bitmap> {
+        const auto discardDecodePlaceholder = [this, &sprite](
+            const std::shared_ptr<const ::libreshockwave::cast::CastMember>& member) {
+            if (member == nullptr ||
+                (!member->hasRuntimeBitmapDecodePlaceholder() &&
+                 !member->shouldRedecodeAuthoredRuntimeBitmap())) {
+                return false;
+            }
+            if (const auto castMember = sprite.castMember()) {
+                spriteBaker_.bitmapCache().invalidateMember(*castMember);
+            }
+            return true;
+        };
         if (auto dynamicMember = sprite.dynamicMember()) {
+            if (discardDecodePlaceholder(dynamicMember)) {
+                return nullptr;
+            }
             return dynamicMember->runtimeBitmap();
         }
         if (auto member = sprite.castMember()) {
             if (auto runtimeMember = castLibManager_.findRuntimeMember(
                     std::const_pointer_cast<chunks::CastMemberChunk>(member))) {
+                if (discardDecodePlaceholder(runtimeMember)) {
+                    return nullptr;
+                }
                 return runtimeMember->runtimeBitmap();
             }
         }
