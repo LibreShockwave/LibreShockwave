@@ -96,17 +96,24 @@ std::shared_ptr<const bitmap::Palette> PaletteResolver::resolveExact(int palette
         }
     }
 
-    int paletteIndex = 0;
-    for (const auto& member : castMembers_) {
-        if (!member || member->memberType() != cast::MemberType::Palette) {
-            continue;
-        }
-        if (paletteIndex == paletteId) {
-            if (auto resolved = resolveFromChunkId(member->id())) {
-                return resolved;
+    // A file with cast libraries uses the bitmap's palette ID as a cast-member
+    // reference.  Treating it as an ordinal in the global palette-member list
+    // can silently select an unrelated palette when the cast member was
+    // removed or the reference is stale.  The ordinal form is only useful for
+    // synthetic/minimal files that have no cast-library table.
+    if (casts_.empty()) {
+        int paletteIndex = 0;
+        for (const auto& member : castMembers_) {
+            if (!member || member->memberType() != cast::MemberType::Palette) {
+                continue;
             }
+            if (paletteIndex == paletteId) {
+                if (auto resolved = resolveFromChunkId(member->id())) {
+                    return resolved;
+                }
+            }
+            ++paletteIndex;
         }
-        ++paletteIndex;
     }
 
     return nullptr;

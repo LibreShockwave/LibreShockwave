@@ -11989,6 +11989,39 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(imageMethodImageRef != nullptr);
     assert(ImageMethodDispatcher::getProperty(*imageMethodImageRef, "width").intValue() == 2);
     assert(ImageMethodDispatcher::dispatch(*imageMethodImageRef, "getAt", {Datum::of(2)}).intValue() == 2);
+    assert(ImageMethodDispatcher::dispatch(*imageMethodImageRef,
+                                           "getAt",
+                                           {Datum::symbol("rect"), Datum::of(3)}).intValue() == 2);
+    assert(ImageMethodDispatcher::dispatch(*imageMethodImageRef,
+                                           "getAt",
+                                           {Datum::symbol("rect"), Datum::of(4)}).intValue() == 2);
+    assert(ImageMethodDispatcher::dispatch(*imageMethodImageRef,
+                                           "getProp",
+                                           {Datum::symbol("rect"), Datum::of(3)}).intValue() == 2);
+    assert(ImageMethodDispatcher::dispatch(*imageMethodImageRef,
+                                           "getProp",
+                                           {Datum::symbol("rect"), Datum::of(4)}).intValue() == 2);
+    auto immediateImageGetPropHandler = makeImmediateObjHandler(Opcode::PUSH_ARG_LIST, 3, 67);
+    ScriptChunk immediateImageGetPropScript(nullptr,
+                                            ChunkId(740),
+                                            ScriptChunkType::MovieScript,
+                                            0,
+                                            {immediateImageGetPropHandler},
+                                            {},
+                                            {},
+                                            {},
+                                            {});
+    Scope immediateImageGetPropScope(&immediateImageGetPropScript, immediateImageGetPropHandler, {});
+    ExecutionContext immediateImageGetPropContext(immediateImageGetPropScope,
+                                                   immediateImageGetPropHandler.instructions[0],
+                                                   &registry,
+                                                   &builtinContext,
+                                                   callbacks);
+    immediateImageGetPropContext.push(imageMethodRef);
+    immediateImageGetPropContext.push(Datum::symbol("rect"));
+    immediateImageGetPropContext.push(Datum::of(3));
+    assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediateImageGetPropContext));
+    assert(immediateImageGetPropContext.pop().intValue() == 2);
     ImageMethodDispatcher::setProperty(&builtinContext, *imageMethodImageRef, "useAlpha", Datum::TRUE);
     assert(imageMethodBitmap->isNativeAlpha());
     const Datum nullImageRef = Datum::imageRef(std::shared_ptr<Bitmap>{});
@@ -12000,6 +12033,8 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(ImageMethodDispatcher::dispatch(*nullImage, "duplicate", {}).asImageRef()->bitmap == nullptr);
     assert(runObjCall(64, {imageMethodRef, Datum::of(1)}).intValue() == 2);
     assert(runObjCall(64, {imageMethodRef, Datum::of(2)}).intValue() == 2);
+    assert(runObjCall(64, {imageMethodRef, Datum::symbol("rect"), Datum::of(3)}).intValue() == 2);
+    assert(runObjCall(64, {imageMethodRef, Datum::symbol("rect"), Datum::of(4)}).intValue() == 2);
     assert(runObjCall(101, {imageMethodRef, Datum::of(1), Datum::of(0), Datum::colorRef(10, 20, 30)}).isVoid());
     assert(imageMethodBitmap->isScriptModified());
     const Datum imagePixelDatum = runObjCall(102, {imageMethodRef, Datum::of(1), Datum::of(0)});
@@ -18089,13 +18124,19 @@ void testStageRendererFoundation() {
     auto authoredShockwaveMember = std::make_shared<CastMember>(101, 1, 10001, shockwaveChunk);
     auto runtimeShockwaveMember = std::make_shared<CastMember>(1, 10002, MemberType::Shockwave3D);
     runtimeShockwaveMember->setName("Runtime 3D");
+    auto runtimeBitmapPlaceholderGeometry = std::make_shared<CastMember>(1, 10004, MemberType::Bitmap);
+    Bitmap runtimeBitmapLoaded(12, 8, 32);
+    runtimeBitmapLoaded.setAnchorPoint(2, 3);
+    runtimeBitmapPlaceholderGeometry->setRuntimeBitmap(runtimeBitmapLoaded);
     renderer.setCastMemberResolver([runtimeMember,
                                     authoredShockwaveMember,
-                                    runtimeShockwaveMember](int castLib,
-                                                            int memberNum) -> std::shared_ptr<const CastMember> {
+                                    runtimeShockwaveMember,
+                                    runtimeBitmapPlaceholderGeometry](int castLib,
+                                                                      int memberNum) -> std::shared_ptr<const CastMember> {
         if (castLib == 1 && memberNum == 10000) return runtimeMember;
         if (castLib == 1 && memberNum == 10001) return authoredShockwaveMember;
         if (castLib == 1 && memberNum == 10002) return runtimeShockwaveMember;
+        if (castLib == 1 && memberNum == 10004) return runtimeBitmapPlaceholderGeometry;
         return nullptr;
     });
     auto runtime = registry.getOrCreateDynamic(7);
@@ -18120,8 +18161,16 @@ void testStageRendererFoundation() {
     runtime3d->setWidth(90);
     runtime3d->setHeight(70);
 
+    auto placeholderGeometry = registry.getOrCreateDynamic(10);
+    placeholderGeometry->setDynamicMember(1, 10004);
+    placeholderGeometry->setLocH(50);
+    placeholderGeometry->setLocV(60);
+    placeholderGeometry->setLocZ(6);
+    placeholderGeometry->setWidth(1);
+    placeholderGeometry->setHeight(1);
+
     const auto sprites = renderer.getSpritesForFrame(99);
-    assert(sprites.size() == 5);
+    assert(sprites.size() == 6);
     assert(sprites[0].channel() == 4);
     assert(sprites[0].x() == 5);
     assert(sprites[0].y() == 6);
@@ -18171,6 +18220,14 @@ void testStageRendererFoundation() {
     assert(sprites[4].dynamicMember().get() == runtimeShockwaveMember.get());
     assert(sprites[4].castMemberId() == 10002);
     assert(sprites[4].memberName().value() == "Runtime 3D");
+
+    const auto placeholderGeometrySprite = std::find_if(
+        sprites.begin(), sprites.end(), [](const RenderSprite& sprite) {
+            return sprite.channel() == 10;
+        });
+    assert(placeholderGeometrySprite != sprites.end());
+    assert(placeholderGeometrySprite->width() == 12);
+    assert(placeholderGeometrySprite->height() == 8);
 
     renderer.setLastBakedSprites({sprites[2]});
     assert(renderer.lastBakedSprites().size() == 1);

@@ -30,6 +30,22 @@ bool isDefaultCastLibSentinel(int castLib) {
     return castLib == 0 || castLib == 0xFFFF;
 }
 
+void restoreRuntimeBitmapSizeIfPlaceholder(const std::shared_ptr<const ::libreshockwave::cast::CastMember>& member,
+                                           int& width,
+                                           int& height) {
+    if (member == nullptr || width > 1 || height > 1) {
+        return;
+    }
+
+    const auto bitmap = member->runtimeBitmap();
+    if (bitmap == nullptr || (bitmap->width() <= 1 && bitmap->height() <= 1)) {
+        return;
+    }
+
+    width = bitmap->width();
+    height = bitmap->height();
+}
+
 } // namespace
 
 StageRenderer::StageRenderer(DirectorFile* file)
@@ -252,8 +268,8 @@ std::optional<RenderSprite> StageRenderer::createRenderSprite(int channel,
     int x = pos.locH;
     int y = pos.locV;
     const int locZ = pos.locZ;
-    const int width = pos.width;
-    const int height = pos.height;
+    int width = pos.width;
+    int height = pos.height;
     const bool visible = state->isVisible();
 
     auto dynamicMember = resolveCastMember(data.castLib, data.castMember);
@@ -275,6 +291,7 @@ std::optional<RenderSprite> StageRenderer::createRenderSprite(int channel,
     }
 
     if (dynamicMember != nullptr) {
+        restoreRuntimeBitmapSizeIfPlaceholder(dynamicMember, width, height);
         const auto reg = scaledRegPoint(*dynamicMember, width, height, x, y,
                                         state->isFlipH() ^ hasDirectorHorizontalMirror(state->rotation(), state->skew()),
                                         state->isFlipV());
@@ -384,6 +401,7 @@ std::optional<RenderSprite> StageRenderer::createDynamicRenderSprite(const sprit
     SpriteType type = SpriteType::Unknown;
     if (dynamicMember != nullptr) {
         type = determineSpriteTypeFromMember(dynamicMember);
+        restoreRuntimeBitmapSizeIfPlaceholder(dynamicMember, width, height);
         if (width == 0 && height == 0 && dynamicMember->width() > 0 && dynamicMember->height() > 0) {
             width = dynamicMember->width();
             height = dynamicMember->height();

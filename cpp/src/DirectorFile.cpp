@@ -747,8 +747,11 @@ std::optional<bitmap::Bitmap> DirectorFile::decodeBitmap(const std::shared_ptr<c
         if (!palette) {
             resolvedPalette = info.paletteId >= 0 ? resolvePaletteExact(info.paletteId) : resolvePalette(info.paletteId);
             if (resolvedPalette == nullptr && info.paletteId >= 0) {
-                resolvedPalette = borrowedPalette(&bitmap::Palette::systemMacPalette());
-                shouldResolveUnlinkedMacLikePalette = true;
+                const auto* fallbackPalette = config_ != nullptr && config_->platform() == 2
+                    ? &bitmap::Palette::systemWinPalette()
+                    : &bitmap::Palette::systemMacPalette();
+                resolvedPalette = borrowedPalette(fallbackPalette);
+                shouldResolveUnlinkedMacLikePalette = fallbackPalette == &bitmap::Palette::systemMacPalette();
             }
             palette = resolvedPalette.get();
         }

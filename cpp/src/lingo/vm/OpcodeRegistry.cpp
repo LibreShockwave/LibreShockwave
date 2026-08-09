@@ -4155,6 +4155,32 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view methodNam
     }
 
     auto& bmp = *image.bitmap;
+    if (equalsIgnoreCase(methodName, "getAt") && args.size() >= 2) {
+        std::string propertyStorage;
+        const auto propertyName = keyNameLikeJavaView(args[0], propertyStorage);
+        Datum property = getImageProp(image, propertyName);
+        if (auto* rect = property.asIntRect()) {
+            return rectObjectMethod(*rect, "getAt", std::span<const Datum>(args.data() + 1, 1));
+        }
+        return Datum::voidValue();
+    }
+    if (equalsIgnoreCase(methodName, "getProp") ||
+        equalsIgnoreCase(methodName, "getPropRef") ||
+        equalsIgnoreCase(methodName, "getAProp")) {
+        if (args.empty()) {
+            return Datum::voidValue();
+        }
+        std::string propertyStorage;
+        const auto propertyName = keyNameLikeJavaView(args[0], propertyStorage);
+        Datum property = getImageProp(image, propertyName);
+        if (args.size() == 1) {
+            return property;
+        }
+        if (auto* rect = property.asIntRect()) {
+            return rectObjectMethod(*rect, "getAt", std::span<const Datum>(args.data() + 1, 1));
+        }
+        return Datum::voidValue();
+    }
     if (equalsIgnoreCase(methodName, "fill")) {
         if (imageFill(bmp, args)) {
             notifyImageMutation(image);

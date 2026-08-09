@@ -682,6 +682,16 @@ RenderSprite SpriteBaker::bake(const RenderSprite& sprite) {
         return sprite.withBakedBitmapAndSize(std::move(baked), width, height);
     }
 
+    if (baked != nullptr &&
+        sprite.type() == SpriteType::Bitmap &&
+        sprite.dynamicMember() != nullptr &&
+        sprite.width() <= 1 && sprite.height() <= 1 &&
+        (baked->width() > 1 || baked->height() > 1)) {
+        const int width = baked->width();
+        const int height = baked->height();
+        return sprite.withBakedBitmapAndSize(std::move(baked), width, height);
+    }
+
     return sprite.withBakedBitmap(std::move(baked));
 }
 
