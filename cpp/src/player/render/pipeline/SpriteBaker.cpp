@@ -1251,9 +1251,15 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
 }
 
 bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, const RenderSprite& sprite) const {
-    bitmap::Bitmap processed = shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, raw)
-        ? InkProcessor::convertOpaqueWhiteToTransparent(raw)
-        : raw.copy();
+    // Director's 32-bit bitmap records can carry RGB data with an all-zero
+    // alpha byte even when the member did not opt into native alpha.  That
+    // byte is padding in that case, not transparency.  Normalize it before
+    // applying ink so the decoded pixels are composited with their authored
+    // RGB values instead of the stage background.
+    const auto normalized = BitmapCache::coerceNonNativeAlphaToOpaque(raw, raw.isNativeAlpha());
+    bitmap::Bitmap processed = shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, normalized)
+        ? InkProcessor::convertOpaqueWhiteToTransparent(normalized)
+        : normalized;
     if (processed.bitDepth() <= 1 && sprite.hasForeColor() && InkProcessor::allowsColorize(sprite.inkMode())) {
         processed = InkProcessor::applyForeColorRemap(processed,
                                                       static_cast<std::uint32_t>(sprite.foreColor()),

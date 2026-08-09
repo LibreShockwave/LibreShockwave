@@ -18527,6 +18527,49 @@ void testSpriteBakerFoundation() {
     assert(decodeCalls == 1);
     assert(baker.tickCounter() == 1);
 
+    SpriteBaker decodedAlphaBaker;
+    decodedAlphaBaker.setBitmapDecodeProvider([](const CastMemberChunk&, const Palette*) {
+        return std::make_shared<Bitmap>(2, 1, 32, std::vector<std::uint32_t>{
+            0x00F0F0F0U,
+            0x80123456U
+        });
+    });
+    auto alphaMember = std::make_shared<CastMemberChunk>(nullptr,
+                                                         ChunkId(802),
+                                                         MemberType::Bitmap,
+                                                         0,
+                                                         0,
+                                                         std::vector<std::uint8_t>{},
+                                                         std::vector<std::uint8_t>{},
+                                                         "decoded-alpha-bitmap",
+                                                         0,
+                                                         0,
+                                                         0);
+    RenderSprite alphaSprite(2,
+                             0,
+                             0,
+                             2,
+                             1,
+                             0,
+                             true,
+                             SpriteType::Bitmap,
+                             alphaMember,
+                             nullptr,
+                             0,
+                             0,
+                             false,
+                             false,
+                             libreshockwave::id::code(InkMode::COPY),
+                             100,
+                             false,
+                             false,
+                             nullptr,
+                             false);
+    auto decodedAlphaSprite = decodedAlphaBaker.bake(alphaSprite);
+    assert(decodedAlphaSprite.bakedBitmap() != nullptr);
+    assert(decodedAlphaSprite.bakedBitmap()->getPixel(0, 0) == 0xFFF0F0F0U);
+    assert(decodedAlphaSprite.bakedBitmap()->getPixel(1, 0) == 0xFF123456U);
+
     int paletteVersion = 0;
     baker.setPaletteVersionProvider([&paletteVersion](const RenderSprite&) {
         return std::optional<int>{paletteVersion};
@@ -22463,6 +22506,16 @@ void testBitmapAlphaAndPaletteBehavior() {
     Bitmap opaque = bitmap.copyWithNonNativeAlphaOpaque();
     assert(opaque.getPixel(0, 0) == 0xFFF0F0F0U);
     assert(opaque.getPixel(1, 0) == 0xFF123456U);
+
+    Bitmap normalized = BitmapCache::coerceNonNativeAlphaToOpaque(bitmap, false);
+    assert(normalized.getPixel(0, 0) == 0xFFF0F0F0U);
+    assert(normalized.getPixel(1, 0) == 0xFF123456U);
+
+    Bitmap nativeBitmap(1, 1, 32, {0x00F0F0F0U});
+    nativeBitmap.setNativeAlpha(true);
+    Bitmap preserved = BitmapCache::coerceNonNativeAlphaToOpaque(nativeBitmap,
+                                                                  nativeBitmap.isNativeAlpha());
+    assert(preserved.getPixel(0, 0) == 0x00F0F0F0U);
 
     Bitmap nativeAlpha(1, 1, 32, {0x00F0F0F0U});
     nativeAlpha.setNativeAlpha(true);
