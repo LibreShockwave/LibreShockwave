@@ -12593,6 +12593,23 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             backgroundTransparentProps}).isVoid());
     assert(wrapperBackingCopyDest->preservesScriptFillBacking());
 
+    auto nativeBitmapCopySource = std::make_shared<Bitmap>(2, 2, 32, std::vector<std::uint32_t>{
+        0xFFFFFFFFU, 0xFF010203U,
+        0xFF040506U, 0xFFFFFFFFU
+    });
+    nativeBitmapCopySource->setNativeAlpha(true);
+    auto nativeBitmapCopyDest = std::make_shared<Bitmap>(4, 4, 32);
+    assert(runObjCall(103, {Datum::imageRef(nativeBitmapCopyDest),
+                            Datum::intRect(0, 0, 4, 4),
+                            Datum::colorRef(240, 240, 240)}).isVoid());
+    assert(nativeBitmapCopyDest->hasScriptFillBacking());
+    assert(runObjCall(110, {Datum::imageRef(nativeBitmapCopyDest),
+                            Datum::imageRef(nativeBitmapCopySource),
+                            Datum::intRect(1, 1, 3, 3),
+                            Datum::intRect(0, 0, 2, 2),
+                            backgroundTransparentProps}).isVoid());
+    assert(nativeBitmapCopyDest->preservesScriptFillBacking());
+
     auto navigatorWhiteLinkCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0xFFFFFFFFU});
     navigatorWhiteLinkCopySource->setRectangularMedia(true);
@@ -24249,6 +24266,11 @@ void testCastListAndMemberChunks() {
     parsedBitmap.setRuntimeBitmapFromAuthoredSource(transparentRgbBackingBitmap);
     assert(!parsedBitmap.runtimeBitmap()->isNativeAlpha());
     assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0xFFEEEEEEU);
+    Bitmap nonNativeAuthoredBitmap(2, 1, 32, {0x00F0F0F0U, 0x80123456U});
+    parsedBitmap.setRuntimeBitmapFromAuthoredSource(nonNativeAuthoredBitmap);
+    assert(!parsedBitmap.runtimeBitmap()->isNativeAlpha());
+    assert(parsedBitmap.runtimeBitmap()->getPixel(0, 0) == 0xFFF0F0F0U);
+    assert(parsedBitmap.runtimeBitmap()->getPixel(1, 0) == 0xFF123456U);
     assert(parsedBitmap.toString().find("BitmapName") != std::string::npos);
 
     auto scriptMemberPtr = std::make_shared<CastMemberChunk>(

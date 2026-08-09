@@ -4169,12 +4169,14 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
         srcRect->top < 0 ||
         srcRect->right > src.width() ||
         srcRect->bottom > src.height();
+    const bool nativeAlphaBitmapSource = src.hasNativeMatteAlpha() && !src.isTextRendered();
     if (ink == id::InkMode::BACKGROUND_TRANSPARENT &&
         dest.hasScriptFillBacking() &&
-        src.isRectangularMedia() &&
-        !src.isTextRendered() &&
-        sourceRectExtendsPastSource &&
-        imageCopyLooksLikeSparseViewportContent(src, *destRect, *srcRect) &&
+        ((!src.isRectangularMedia() && nativeAlphaBitmapSource) ||
+         (src.isRectangularMedia() &&
+          !src.isTextRendered() &&
+          sourceRectExtendsPastSource &&
+          imageCopyLooksLikeSparseViewportContent(src, *destRect, *srcRect))) &&
         mask == nullptr &&
         !colorRemap.has_value() &&
         !bgColorRemap.has_value()) {

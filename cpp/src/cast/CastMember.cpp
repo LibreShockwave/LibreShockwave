@@ -357,6 +357,13 @@ void CastMember::setRuntimeBitmapInternal(const bitmap::Bitmap& bitmap,
     const int currentRegX = regX();
     const int currentRegY = regY();
     auto copy = authoredSource ? bitmap.copyWithDegenerateNativeAlphaOpaque() : bitmap.copy();
+    if (authoredSource && !copy.isNativeAlpha()) {
+        // Authored 32-bit records without native alpha use the alpha byte as
+        // padding. Preserve their RGB pixels when they are exposed directly
+        // through member.image, rather than letting zero-alpha edge pixels
+        // disappear during a later copyPixels operation.
+        copy = copy.copyWithNonNativeAlphaOpaque();
+    }
     if (markScriptModified) {
         copy.markScriptModified();
     }
