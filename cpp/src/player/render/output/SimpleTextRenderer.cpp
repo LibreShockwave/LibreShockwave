@@ -746,9 +746,6 @@ std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& 
     const int leading = std::max(0, lineHeight - font->getLineHeight());
     const int verticalOverflow = std::max(0, font->getLineHeight() - lineHeight);
     int y = initialBitmapTextY(font.get(), lineHeight, topSpacing);
-    if (fixedLineSpace <= 0 && topSpacing == 0) {
-        --y;
-    }
     for (const auto& line : lines) {
         if (y >= height) {
             break;
@@ -988,7 +985,7 @@ std::shared_ptr<Bitmap> renderStyledXmedText(const std::vector<ResolvedXmedSpan>
         : 0;
 
     std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width * neededHeight), bgColor);
-    int y = styledText.fixedLineSpace > 0 ? 0 : 1;
+    int y = 0;
     for (const auto& line : lines) {
         if (y >= neededHeight) {
             break;
@@ -1315,8 +1312,10 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderXmedText(
             : styledText->textColorARGB();
         std::vector<ResolvedXmedSpan> spans(styledText->text.size());
         for (const auto& sourceSpan : styledText->styledSpans) {
-            bool spanUsedRealBold = false;
-            auto spanFont = sourceSpan.fontName.empty() || lowerAscii(sourceSpan.fontName) == lowerAscii(styledText->fontName)
+            const bool usesPrimaryFont = sourceSpan.fontName.empty() ||
+                lowerAscii(sourceSpan.fontName) == lowerAscii(styledText->fontName);
+            bool spanUsedRealBold = usesPrimaryFont ? usedRealBold : false;
+            auto spanFont = usesPrimaryFont
                 ? font
                 : resolveXmedFontByName(sourceSpan.fontName,
                                         nullptr,
@@ -1344,7 +1343,10 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderXmedText(
             }
         }
 
-        const ResolvedXmedSpan fallback{font, false, underline, defaultColor};
+        const ResolvedXmedSpan fallback{font,
+                                        false,
+                                        underline,
+                                        defaultColor};
         for (auto& span : spans) {
             if (span.font == nullptr) {
                 span = fallback;

@@ -21701,6 +21701,69 @@ void testSimpleTextRendererFoundation() {
         assert(xmedUnderlineRow >= 0);
         assert(xmedRendered->getPixel(3, xmedUnderlineRow) == 0xFF445566U);
 
+        XmedStyledText sharedBitmapOrigin{};
+        sharedBitmapOrigin.text = "AA";
+        sharedBitmapOrigin.styledSpans = {
+            StyledSpan{0, 1, preferredDirectorFont, 9, false, false, false, 0, 0, 0},
+            StyledSpan{1, 2, preferredDirectorFont, 9, true, false, false, 0, 0, 0},
+        };
+        sharedBitmapOrigin.alignment = "left";
+        sharedBitmapOrigin.wordWrap = false;
+        sharedBitmapOrigin.fixedLineSpace = 0;
+        sharedBitmapOrigin.width = 40;
+        sharedBitmapOrigin.height = 12;
+        sharedBitmapOrigin.fontName = preferredDirectorFont;
+        sharedBitmapOrigin.fontSize = 9;
+        auto sharedBitmapOriginRendered =
+            renderer.renderXmedText(&sharedBitmapOrigin, 40, 12, 0xFF010203, 0);
+        assert(sharedBitmapOriginRendered != nullptr);
+        int regularOriginPixels = 0;
+        int boldOriginPixels = 0;
+        for (int x = 0; x < 6; ++x) {
+            if (sharedBitmapOriginRendered->getPixel(x, 0) == 0xFF010203U) {
+                ++regularOriginPixels;
+            }
+        }
+        for (int x = 6; x < 20; ++x) {
+            if (sharedBitmapOriginRendered->getPixel(x, 0) == 0xFF010203U) {
+                ++boldOriginPixels;
+            }
+        }
+        assert(regularOriginPixels > 0);
+        assert(boldOriginPixels > 0);
+
+        auto homogeneousRegularOrigin = renderer.renderText("A",
+                                                            20,
+                                                            12,
+                                                            preferredDirectorFont,
+                                                            9,
+                                                            "plain",
+                                                            "left",
+                                                            static_cast<int>(0xFF010203U),
+                                                            0,
+                                                            false,
+                                                            false,
+                                                            0,
+                                                            0);
+        assert(homogeneousRegularOrigin != nullptr);
+        assert(countOpaqueOnRow(*homogeneousRegularOrigin, 6) > 0);
+
+        auto homogeneousBoldOrigin = renderer.renderText("A",
+                                                         20,
+                                                         12,
+                                                         preferredDirectorFont,
+                                                         9,
+                                                         "bold",
+                                                         "left",
+                                                         static_cast<int>(0xFF010203U),
+                                                         0,
+                                                         false,
+                                                         false,
+                                                         0,
+                                                         0);
+        assert(homogeneousBoldOrigin != nullptr);
+        assert(countOpaqueOnRow(*homogeneousBoldOrigin, 6) > 0);
+
         XmedStyledText homogeneousUnderline{};
         homogeneousUnderline.text = "AB";
         homogeneousUnderline.styledSpans = {
