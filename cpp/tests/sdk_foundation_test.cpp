@@ -7836,6 +7836,8 @@ void testMultiuserXtraFoundation() {
     assert(xtra.callHandler(instanceId, "checkNetMessages", {Datum::of(100000)}).intValue() == 512);
     assert(callbacks.size() == callbacksBeforeFlood + 512);
     assert(xtra.callHandler(instanceId, "getNumberWaitingNetMessages", {}).intValue() == 88);
+    assert(xtra.callHandler(instanceId, "checkNetMessages", {Datum::of(100000)}).intValue() == 88);
+    assert(xtra.callHandler(instanceId, "getNumberWaitingNetMessages", {}).intValue() == 0);
 
     assert(xtra.callHandler(instanceId, "setNetMessageHandler", {Datum::voidValue(), Datum::voidValue()}).intValue() == 0);
     const int pollsBeforeTickWithoutHandler = bridge.pollCount;
