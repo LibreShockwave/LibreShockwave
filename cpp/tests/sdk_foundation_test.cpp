@@ -13349,6 +13349,16 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     fullTintIndexedDarkenSource->setImagePalette(&Palette::systemMacPalette());
     fullTintIndexedDarkenSource->setPaletteIndices({107});
     assert(runDarkenBgTint(fullTintIndexedDarkenSource, Datum::colorRef(0xFF, 0x9B, 0xBD)) == 0xFF94596DU);
+    auto matchingPaletteGrayDarkenSource = std::make_shared<Bitmap>(
+        1, 1, 8, std::vector<std::uint32_t>{0xFF999999U});
+    matchingPaletteGrayDarkenSource->setImagePalette(&Palette::systemMacPalette());
+    matchingPaletteGrayDarkenSource->setPaletteIndices({86});
+    assert(runDarkenBgTint(matchingPaletteGrayDarkenSource, Datum::colorRef(0xFF, 0x7C, 0x98)) == 0xFF984A5AU);
+    auto matchingPaletteColorDarkenSource = std::make_shared<Bitmap>(
+        1, 1, 8, std::vector<std::uint32_t>{0xFF663300U});
+    matchingPaletteColorDarkenSource->setImagePalette(&Palette::systemMacPalette());
+    matchingPaletteColorDarkenSource->setPaletteIndices({137});
+    assert(runDarkenBgTint(matchingPaletteColorDarkenSource, Datum::colorRef(0xFF, 0x7C, 0x98)) == 0xFF661800U);
     auto customPaletteDarkenSource = std::make_shared<Bitmap>(
         1, 1, 8, std::vector<std::uint32_t>{0xFFBDBABCU});
     customPaletteDarkenSource->setImagePalette(std::make_shared<Palette>(
