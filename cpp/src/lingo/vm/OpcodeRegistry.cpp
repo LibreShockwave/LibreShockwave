@@ -4169,10 +4169,11 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
         srcRect->top < 0 ||
         srcRect->right > src.width() ||
         srcRect->bottom > src.height();
-    const bool nativeAlphaBitmapSource = src.hasNativeMatteAlpha() && !src.isTextRendered();
+    const bool compositedBitmapSource =
+        !src.isTextRendered() && (src.hasNativeMatteAlpha() || src.isScriptModified());
     if (ink == id::InkMode::BACKGROUND_TRANSPARENT &&
         dest.hasScriptFillBacking() &&
-        ((!src.isRectangularMedia() && nativeAlphaBitmapSource) ||
+        (compositedBitmapSource ||
          (src.isRectangularMedia() &&
           !src.isTextRendered() &&
           sourceRectExtendsPastSource &&

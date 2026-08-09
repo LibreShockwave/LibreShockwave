@@ -12610,6 +12610,24 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             backgroundTransparentProps}).isVoid());
     assert(nativeBitmapCopyDest->preservesScriptFillBacking());
 
+    auto scriptBitmapCopySource = std::make_shared<Bitmap>(2, 2, 32, std::vector<std::uint32_t>{
+        0xFFFFFFFFU, 0xFF010203U,
+        0xFF040506U, 0xFFFFFFFFU
+    });
+    scriptBitmapCopySource->setRectangularMedia(true);
+    scriptBitmapCopySource->markScriptModified();
+    auto scriptBitmapCopyDest = std::make_shared<Bitmap>(4, 4, 32);
+    assert(runObjCall(103, {Datum::imageRef(scriptBitmapCopyDest),
+                            Datum::intRect(0, 0, 4, 4),
+                            Datum::colorRef(240, 240, 240)}).isVoid());
+    assert(scriptBitmapCopyDest->hasScriptFillBacking());
+    assert(runObjCall(110, {Datum::imageRef(scriptBitmapCopyDest),
+                            Datum::imageRef(scriptBitmapCopySource),
+                            Datum::intRect(1, 1, 3, 3),
+                            Datum::intRect(0, 0, 2, 2),
+                            backgroundTransparentProps}).isVoid());
+    assert(scriptBitmapCopyDest->preservesScriptFillBacking());
+
     auto navigatorWhiteLinkCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0xFFFFFFFFU});
     navigatorWhiteLinkCopySource->setRectangularMedia(true);
