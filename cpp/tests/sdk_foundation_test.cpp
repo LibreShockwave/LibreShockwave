@@ -7826,6 +7826,17 @@ void testMultiuserXtraFoundation() {
     assert(xtra.callHandler(instanceId, "checkNetMessages", {Datum::of(5)}).intValue() == 1);
     assert(callbackMessages.back() == "b:TWO:second");
 
+    for (int i = 0; i < 600; ++i) {
+        bridge.messages[instanceId].push_back({0,
+                                               "flood-sender",
+                                               "FLOOD",
+                                               Datum::of(std::to_string(i))});
+    }
+    const auto callbacksBeforeFlood = callbacks.size();
+    assert(xtra.callHandler(instanceId, "checkNetMessages", {Datum::of(100000)}).intValue() == 512);
+    assert(callbacks.size() == callbacksBeforeFlood + 512);
+    assert(xtra.callHandler(instanceId, "getNumberWaitingNetMessages", {}).intValue() == 88);
+
     assert(xtra.callHandler(instanceId, "setNetMessageHandler", {Datum::voidValue(), Datum::voidValue()}).intValue() == 0);
     const int pollsBeforeTickWithoutHandler = bridge.pollCount;
     bridge.messages[instanceId].push_back({0, "c", "IGNORED", Datum::of(std::string("ignored"))});

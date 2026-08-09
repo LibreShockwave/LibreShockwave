@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -18,6 +19,9 @@ constexpr std::size_t kDefaultMaxMessagesPerFrame = 100;
 /// Hard ceiling: even a movie-tuned bufferMax must not exceed this, or a
 /// flood could stall a frame again.
 constexpr std::size_t kMaxMessagesPerFrame = 512;
+/// Keep an unread burst bounded as well.  Once this queue is full, the socket
+/// bridge stops being polled so TCP backpressure can slow the sender.
+constexpr std::size_t kMaxQueuedMessages = 2048;
 
 std::string lowerAscii(std::string_view value) {
     std::string result(value);
@@ -253,11 +257,13 @@ Datum MultiuserXtra::getNetMessage(const InstanceState& state) const {
 }
 
 Datum MultiuserXtra::checkNetMessages(int instanceId, InstanceState& state, const std::vector<Datum>& args) {
-    const int count = args.empty() ? 1 : args[0].intValue();
+    const int requestedCount = args.empty() ? 1 : args[0].intValue();
+    const std::size_t count = static_cast<std::size_t>(std::max(0, requestedCount));
     pollIntoQueue(instanceId, state);
 
     int processed = 0;
-    for (int i = 0; i < count && !state.messageQueue.empty(); ++i) {
+    while (static_cast<std::size_t>(processed) < std::min(count, kMaxMessagesPerFrame) &&
+           !state.messageQueue.empty()) {
         if (messageDispatchPredicate_ && !messageDispatchPredicate_()) {
             break;
         }
@@ -305,8 +311,15 @@ void MultiuserXtra::pollIntoQueue(int instanceId, InstanceState& state) {
         state.messageQueue.size() >= static_cast<std::size_t>(state.bufferMin)) {
         return;
     }
+    if (state.messageQueue.size() >= kMaxQueuedMessages) {
+        return;
+    }
     auto messages = bridge_->pollMessages(instanceId);
-    state.messageQueue.insert(state.messageQueue.end(), messages.begin(), messages.end());
+    const auto capacity = kMaxQueuedMessages - state.messageQueue.size();
+    const auto accepted = std::min(capacity, messages.size());
+    state.messageQueue.insert(state.messageQueue.end(),
+                              messages.begin(),
+                              messages.begin() + static_cast<std::ptrdiff_t>(accepted));
 }
 
 void MultiuserXtra::invokeCallback(const InstanceState& state) const {
