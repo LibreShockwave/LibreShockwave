@@ -30,7 +30,10 @@ jobs:
         run: cmake --build build --target libreshockwave_debugger
 
       - name: Package ZIP
-        run: zip -j libreshockwave-debugger-linux-x86_64.zip build/cpp/libreshockwave_debugger_app/libreshockwave_debugger
+        run: |
+          mkdir -p package/linux-x86_64
+          cp build/cpp/libreshockwave_debugger_app/libreshockwave_debugger package/linux-x86_64/
+          zip -r libreshockwave-debugger-linux-x86_64.zip package/linux-x86_64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -55,7 +58,10 @@ jobs:
         run: cmake --build build --target libreshockwave_debugger
 
       - name: Package ZIP
-        run: zip -j libreshockwave-debugger-macos-arm64.zip build/cpp/libreshockwave_debugger_app/libreshockwave_debugger
+        run: |
+          mkdir -p package/macos-arm64
+          cp build/cpp/libreshockwave_debugger_app/libreshockwave_debugger package/macos-arm64/
+          zip -r libreshockwave-debugger-macos-arm64.zip package/macos-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -85,8 +91,31 @@ jobs:
       - name: Build debugger
         run: cmake --build build --target libreshockwave_debugger --config Release
 
+      - name: Stage Windows runtime
+        shell: pwsh
+        run: |
+          $qtRoot = 'D:/Qt/6.8.3/msvc2022_64'
+          $executable = 'build/cpp/libreshockwave_debugger_app/Release/libreshockwave_debugger.exe'
+          $packageDir = 'package/windows-x86_64'
+          & "$qtRoot/bin/windeployqt.exe" `
+            --release `
+            --no-translations `
+            --compiler-runtime `
+            --dir $packageDir `
+            $executable
+          if ($LASTEXITCODE -ne 0) {
+            throw "windeployqt failed with exit code $LASTEXITCODE"
+          }
+          if (!(Test-Path "$packageDir/libreshockwave_debugger.exe")) {
+            throw 'windeployqt did not stage the debugger executable'
+          }
+          if (!(Test-Path "$packageDir/platforms/qwindows.dll")) {
+            throw 'windeployqt did not stage the Qt Windows platform plugin'
+          }
+
       - name: Package ZIP
-        run: Compress-Archive -Path build/cpp/libreshockwave_debugger_app/Release/libreshockwave_debugger.exe -DestinationPath libreshockwave-debugger-windows-x86_64.zip
+        shell: pwsh
+        run: Compress-Archive -Path package/windows-x86_64 -DestinationPath libreshockwave-debugger-windows-x86_64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -132,7 +161,8 @@ jobs:
 
             ### Notes
 
-            - Each ZIP contains a single executable and expects Qt 6 to be installed on the system.
+            - Each ZIP contains an OS/architecture-specific folder.
+            - The Windows folder is self-contained and includes the Qt 6 runtime, platform plugin, and MSVC runtime deployed by `windeployqt`.
             - macOS users may need to clear the quarantine flag: `xattr -d com.apple.quarantine libreshockwave_debugger`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
