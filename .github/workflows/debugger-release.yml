@@ -106,6 +106,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "windeployqt failed with exit code $LASTEXITCODE"
           }
+          Copy-Item -LiteralPath $executable `
+            -Destination "$packageDir/libreshockwave_debugger.exe" `
+            -Force
           if (!(Test-Path "$packageDir/libreshockwave_debugger.exe")) {
             throw 'windeployqt did not stage the debugger executable'
           }
