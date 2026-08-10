@@ -32,7 +32,7 @@ jobs:
           version: latest
 
       - name: Build WASM dist
-        run: ./build.sh --wasm --release --generator Ninja
+        run: ./build.sh --wasm --release --generator Ninja -- -DLIBRESHOCKWAVE_REQUIRE_ZLIB=ON
 
       - name: Get build date
         id: date

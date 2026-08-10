@@ -238,10 +238,23 @@ target_compile_features(libreshockwave_multiuser_probe PRIVATE cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(libreshockwave PUBLIC Threads::Threads)
 
+option(LIBRESHOCKWAVE_REQUIRE_ZLIB
+    "Fail configuration when zlib is unavailable"
+    OFF
+)
+
 find_package(ZLIB QUIET)
 if(ZLIB_FOUND)
     target_link_libraries(libreshockwave PUBLIC ZLIB::ZLIB)
     target_compile_definitions(libreshockwave PUBLIC LIBRESHOCKWAVE_HAVE_ZLIB=1)
+    message(STATUS "LibreShockwave zlib support: enabled")
+elseif(LIBRESHOCKWAVE_REQUIRE_ZLIB)
+    message(FATAL_ERROR
+        "zlib is required for this build but was not found. "
+        "Install zlib development files or configure with a zlib CMake package."
+    )
+else()
+    message(STATUS "LibreShockwave zlib support: disabled")
 endif()
 
 # SocketMultiuserBridge uses winsock2 on Windows.
