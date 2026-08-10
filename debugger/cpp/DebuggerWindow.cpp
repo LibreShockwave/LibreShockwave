@@ -66,6 +66,8 @@ static const char* kSettingLastUrl        = "debugger/lastUrl";
 static const char* kSettingExternalParams = "debugger/externalParams";
 static const char* kSettingBreakpoints    = "debugger/breakpoints";
 static const int  kMaxRecentMovies        = 8;
+static constexpr qint64 kRecordingFlushIntervalMs = 1000;
+static constexpr qint64 kRecordingMouseMoveIntervalMs = 50;
 
 // Breakpoint entries live under "debugger/breakpoints/<hash>" with the movie
 // path/URL hashed into the sub-key: QSettings keys may not contain '/', and
@@ -113,8 +115,15 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     resize(1280, 800);
 
     context_ = new DebuggerContext(this);
+    recordingFlushTimer_ = new QTimer(this);
+    recordingFlushTimer_->setInterval(static_cast<int>(kRecordingFlushIntervalMs));
+    recordingFlushTimer_->setTimerType(Qt::CoarseTimer);
+    connect(recordingFlushTimer_, &QTimer::timeout,
+            this, &DebuggerWindow::onRecordingFlushTimer);
+
     replayTimer_ = new QTimer(this);
-    replayTimer_->setInterval(1);
+    replayTimer_->setInterval(16);
+    replayTimer_->setTimerType(Qt::CoarseTimer);
     connect(replayTimer_, &QTimer::timeout,
             this, &DebuggerWindow::onReplayTimer);
 
@@ -705,56 +714,36 @@ bool DebuggerWindow::readRecording(const QString& path,
         return false;
     }
 
-    QJsonParseError parseError;
-    const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        error = QStringLiteral("Invalid recording JSON: %1")
-                    .arg(parseError.errorString());
-        return false;
-    }
+    const auto data = file.readAll();
 
-    const auto root = document.object();
-    if (root.value(QStringLiteral("format")).toString() !=
-            QStringLiteral("LibreShockwave Debugger Recording") ||
-        root.value(QStringLiteral("version")).toInt() != 1) {
-        error = QStringLiteral("Unsupported debugger recording format");
-        return false;
-    }
-
-    recording.movie = root.value(QStringLiteral("movie")).toString();
-    if (recording.movie.isEmpty()) {
-        error = QStringLiteral("Recording does not contain a movie path or URL");
-        return false;
-    }
-
-    const auto params = root.value(QStringLiteral("externalParams"));
-    if (!params.isUndefined() && !params.isObject()) {
-        error = QStringLiteral("Recording externalParams must be an object");
-        return false;
-    }
-    if (params.isObject()) {
-        const auto paramsObject = params.toObject();
-        for (auto it = paramsObject.begin(); it != paramsObject.end(); ++it) {
-            if (!it.value().isString()) {
-                error = QStringLiteral("Recording contains a non-string external parameter");
-                return false;
-            }
-            recording.externalParams.insert(it.key(), it.value().toString());
-        }
-    }
-
-    const auto events = root.value(QStringLiteral("events"));
-    if (!events.isArray()) {
-        error = QStringLiteral("Recording does not contain an events array");
-        return false;
-    }
-    for (const auto& value : events.toArray()) {
-        if (!value.isObject()) {
-            error = QStringLiteral("Recording contains an invalid event");
+    const auto parseHeader = [&recording, &error](const QJsonObject& root) {
+        recording.movie = root.value(QStringLiteral("movie")).toString();
+        if (recording.movie.isEmpty()) {
+            error = QStringLiteral("Recording does not contain a movie path or URL");
             return false;
         }
-        const auto object = value.toObject();
-        RecordedInputEvent event;
+
+        const auto params = root.value(QStringLiteral("externalParams"));
+        if (!params.isUndefined() && !params.isObject()) {
+            error = QStringLiteral("Recording externalParams must be an object");
+            return false;
+        }
+        if (params.isObject()) {
+            const auto paramsObject = params.toObject();
+            for (auto it = paramsObject.begin(); it != paramsObject.end(); ++it) {
+                if (!it.value().isString()) {
+                    error = QStringLiteral(
+                        "Recording contains a non-string external parameter");
+                    return false;
+                }
+                recording.externalParams.insert(it.key(), it.value().toString());
+            }
+        }
+        return true;
+    };
+
+    const auto parseEvent = [&error](const QJsonObject& object,
+                                     RecordedInputEvent& event) {
         if (!recordingEventTypeFromName(
                 object.value(QStringLiteral("type")).toString(), event.type)) {
             error = QStringLiteral("Recording contains an unknown input event type");
@@ -774,63 +763,183 @@ bool DebuggerWindow::readRecording(const QString& path,
         event.ctrl = object.value(QStringLiteral("ctrl")).toBool();
         event.alt = object.value(QStringLiteral("alt")).toBool();
         event.rightButton = object.value(QStringLiteral("rightButton")).toBool();
+        return true;
+    };
+
+    QJsonParseError parseError;
+    const auto document = QJsonDocument::fromJson(data, &parseError);
+    const bool wholeDocumentIsObject =
+        parseError.error == QJsonParseError::NoError && document.isObject();
+    if (wholeDocumentIsObject &&
+        document.object().value(QStringLiteral("version")).toInt() == 1) {
+        const auto root = document.object();
+        if (root.value(QStringLiteral("format")).toString() !=
+                QStringLiteral("LibreShockwave Debugger Recording")) {
+            error = QStringLiteral("Unsupported debugger recording format");
+            return false;
+        }
+        if (!parseHeader(root)) {
+            return false;
+        }
+
+        const auto events = root.value(QStringLiteral("events"));
+        if (!events.isArray()) {
+            error = QStringLiteral("Recording does not contain an events array");
+            return false;
+        }
+        for (const auto& value : events.toArray()) {
+            if (!value.isObject()) {
+                error = QStringLiteral("Recording contains an invalid event");
+                return false;
+            }
+            RecordedInputEvent event;
+            if (!parseEvent(value.toObject(), event)) {
+                return false;
+            }
+            recording.events.push_back(std::move(event));
+        }
+        return true;
+    }
+
+    // Version 2 is newline-delimited JSON. Ignore only an incomplete final
+    // line: it can be left behind if the debugger exits during a write, while
+    // all preceding flushed events remain usable.
+    const auto lines = data.split('\n');
+    if (lines.isEmpty()) {
+        error = QStringLiteral("Invalid recording JSON");
+        return false;
+    }
+    QJsonParseError headerParseError;
+    const auto headerDocument = QJsonDocument::fromJson(
+        lines.front().trimmed(), &headerParseError);
+    if (headerParseError.error != QJsonParseError::NoError ||
+        !headerDocument.isObject()) {
+        error = QStringLiteral("Invalid recording JSON: %1")
+                    .arg(parseError.errorString());
+        return false;
+    }
+    const auto header = headerDocument.object();
+    if (header.value(QStringLiteral("format")).toString() !=
+            QStringLiteral("LibreShockwave Debugger Recording") ||
+        header.value(QStringLiteral("version")).toInt() != 2) {
+        error = QStringLiteral("Unsupported debugger recording format");
+        return false;
+    }
+    if (!parseHeader(header)) {
+        return false;
+    }
+
+    for (int index = 1; index < lines.size(); ++index) {
+        const auto line = lines[index].trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        QJsonParseError eventParseError;
+        const auto eventDocument = QJsonDocument::fromJson(line, &eventParseError);
+        if (eventParseError.error != QJsonParseError::NoError ||
+            !eventDocument.isObject()) {
+            if (index == lines.size() - 1 && !data.endsWith('\n')) {
+                break;
+            }
+            error = QStringLiteral("Invalid recording event: %1")
+                        .arg(eventParseError.errorString());
+            return false;
+        }
+        RecordedInputEvent event;
+        if (!parseEvent(eventDocument.object(), event)) {
+            return false;
+        }
         recording.events.push_back(std::move(event));
     }
     return true;
 }
 
-bool DebuggerWindow::saveRecording(QString& error) const {
+bool DebuggerWindow::openRecordingFile(QString& error) {
     if (recordingFilePath_.isEmpty()) {
         error = QStringLiteral("No recording file was selected");
         return false;
     }
 
-    QJsonObject root;
-    root.insert(QStringLiteral("format"),
-                QStringLiteral("LibreShockwave Debugger Recording"));
-    root.insert(QStringLiteral("version"), 1);
-    root.insert(QStringLiteral("movie"),
-                QString::fromStdString(context_->moviePath()));
+    recordingFile_.setFileName(recordingFilePath_);
+    if (!recordingFile_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        error = QStringLiteral("Unable to save recording: %1")
+                    .arg(recordingFile_.errorString());
+        return false;
+    }
 
+    // Version 2 is newline-delimited JSON. The header and every event are
+    // complete records, so a recording can be opened while it is still
+    // running and survives a debugger crash without a final rewrite.
+    QJsonObject header;
+    header.insert(QStringLiteral("format"),
+                  QStringLiteral("LibreShockwave Debugger Recording"));
+    header.insert(QStringLiteral("version"), 2);
+    header.insert(QStringLiteral("movie"),
+                  QString::fromStdString(context_->moviePath()));
     QJsonObject params;
     for (auto it = externalParams_.cbegin(); it != externalParams_.cend(); ++it) {
         params.insert(it.key(), it.value());
     }
-    root.insert(QStringLiteral("externalParams"), params);
+    header.insert(QStringLiteral("externalParams"), params);
 
-    QJsonArray events;
-    for (const auto& event : recordingEvents_) {
-        const auto type = recordingEventTypeName(event.type);
-        if (type.isEmpty()) {
-            error = QStringLiteral("Cannot save an unknown input event type");
-            return false;
-        }
-        QJsonObject object;
-        object.insert(QStringLiteral("timeMs"), event.timeMs);
-        object.insert(QStringLiteral("type"), type);
-        object.insert(QStringLiteral("stageX"), event.stageX);
-        object.insert(QStringLiteral("stageY"), event.stageY);
-        object.insert(QStringLiteral("keyCode"), event.directorKeyCode);
-        object.insert(QStringLiteral("keyText"), event.keyText);
-        object.insert(QStringLiteral("shift"), event.shift);
-        object.insert(QStringLiteral("ctrl"), event.ctrl);
-        object.insert(QStringLiteral("alt"), event.alt);
-        object.insert(QStringLiteral("rightButton"), event.rightButton);
-        events.append(object);
-    }
-    root.insert(QStringLiteral("events"), events);
-
-    QSaveFile file(recordingFilePath_);
-    if (!file.open(QIODevice::WriteOnly)) {
-        error = QStringLiteral("Unable to save recording: %1").arg(file.errorString());
-        return false;
-    }
-    const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
-    if (file.write(bytes) != bytes.size() || !file.commit()) {
-        error = QStringLiteral("Unable to save recording: %1").arg(file.errorString());
+    auto bytes = QJsonDocument(header).toJson(QJsonDocument::Compact);
+    bytes.append('\n');
+    if (recordingFile_.write(bytes) != bytes.size() || !recordingFile_.flush()) {
+        error = QStringLiteral("Unable to save recording: %1")
+                    .arg(recordingFile_.errorString());
+        closeRecordingFile();
         return false;
     }
     return true;
+}
+
+bool DebuggerWindow::writeRecordingEvent(const RecordedInputEvent& event,
+                                         QString& error) {
+    const auto type = recordingEventTypeName(event.type);
+    if (type.isEmpty()) {
+        error = QStringLiteral("Cannot save an unknown input event type");
+        return false;
+    }
+
+    QJsonObject object;
+    object.insert(QStringLiteral("timeMs"), event.timeMs);
+    object.insert(QStringLiteral("type"), type);
+    object.insert(QStringLiteral("stageX"), event.stageX);
+    object.insert(QStringLiteral("stageY"), event.stageY);
+    object.insert(QStringLiteral("keyCode"), event.directorKeyCode);
+    object.insert(QStringLiteral("keyText"), event.keyText);
+    object.insert(QStringLiteral("shift"), event.shift);
+    object.insert(QStringLiteral("ctrl"), event.ctrl);
+    object.insert(QStringLiteral("alt"), event.alt);
+    object.insert(QStringLiteral("rightButton"), event.rightButton);
+
+    auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    bytes.append('\n');
+    if (recordingFile_.write(bytes) != bytes.size()) {
+        error = QStringLiteral("Unable to save recording: %1")
+                    .arg(recordingFile_.errorString());
+        return false;
+    }
+    return true;
+}
+
+bool DebuggerWindow::flushRecordingFile(QString& error) {
+    if (!recordingFile_.isOpen() || recordingFile_.flush()) {
+        return true;
+    }
+    error = QStringLiteral("Unable to flush recording: %1")
+                .arg(recordingFile_.errorString());
+    return false;
+}
+
+void DebuggerWindow::closeRecordingFile() {
+    if (recordingFlushTimer_ != nullptr) {
+        recordingFlushTimer_->stop();
+    }
+    if (recordingFile_.isOpen()) {
+        recordingFile_.flush();
+        recordingFile_.close();
+    }
 }
 
 bool DebuggerWindow::openRecording(const QString& path) {
@@ -886,18 +995,48 @@ void DebuggerWindow::recordStageInput(int type, int stageX, int stageY,
     }
 
     if (recording_) {
-        RecordedInputEvent event;
-        event.timeMs = recordingClock_.isValid() ? recordingClock_.elapsed() : 0;
-        event.type = type;
-        event.stageX = stageX;
-        event.stageY = stageY;
-        event.directorKeyCode = keyCode;
-        event.keyText = QString::fromStdString(keyText);
-        event.shift = shift;
-        event.ctrl = ctrl;
-        event.alt = alt;
-        event.rightButton = rightButton;
-        recordingEvents_.push_back(std::move(event));
+        const qint64 eventTimeMs = recordingClock_.isValid()
+            ? recordingClock_.elapsed()
+            : 0;
+        const auto inputType = static_cast<DebuggerContext::InputEvent::Type>(type);
+        bool shouldRecord = true;
+        if (inputType == DebuggerContext::InputEvent::MouseMove) {
+            // Stage mouseMove can arrive hundreds of times per second. The
+            // movie only needs a useful motion sample, while clicks and keys
+            // remain lossless and carry their own coordinates.
+            shouldRecord = !hasRecordedMouseMove_ ||
+                           (eventTimeMs - lastRecordedMouseMoveMs_ >=
+                            kRecordingMouseMoveIntervalMs &&
+                            (stageX != lastRecordedMouseX_ ||
+                             stageY != lastRecordedMouseY_));
+        }
+
+        if (shouldRecord) {
+            RecordedInputEvent event;
+            event.timeMs = eventTimeMs;
+            event.type = type;
+            event.stageX = stageX;
+            event.stageY = stageY;
+            event.directorKeyCode = keyCode;
+            event.keyText = QString::fromStdString(keyText);
+            event.shift = shift;
+            event.ctrl = ctrl;
+            event.alt = alt;
+            event.rightButton = rightButton;
+
+            QString error;
+            if (!writeRecordingEvent(event, error)) {
+                recording_ = false;
+                recordingClock_.invalidate();
+                closeRecordingFile();
+                QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
+            } else if (inputType == DebuggerContext::InputEvent::MouseMove) {
+                lastRecordedMouseMoveMs_ = eventTimeMs;
+                lastRecordedMouseX_ = stageX;
+                lastRecordedMouseY_ = stageY;
+                hasRecordedMouseMove_ = true;
+            }
+        }
     }
 
     DebuggerContext::InputEvent event;
@@ -914,20 +1053,21 @@ void DebuggerWindow::recordStageInput(int type, int stageX, int stageY,
 }
 
 void DebuggerWindow::finishRecording() {
-    if (!recording_) {
+    if (!recording_ && !recordingFile_.isOpen()) {
         return;
     }
     recording_ = false;
     recordingClock_.invalidate();
 
     QString error;
-    if (!saveRecording(error)) {
+    if (!flushRecordingFile(error)) {
         QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
     } else {
         QSettings settings;
         settings.setValue(QString::fromLatin1(kSettingLastRecordingDir),
                           QFileInfo(recordingFilePath_).absolutePath());
     }
+    closeRecordingFile();
 }
 
 void DebuggerWindow::cancelReplay() {
@@ -1185,9 +1325,20 @@ void DebuggerWindow::onPlayAndRecord() {
     }
 
     recordingFilePath_ = path;
-    recordingEvents_.clear();
+    QString error;
+    if (!openRecordingFile(error)) {
+        QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
+        recordingFilePath_.clear();
+        return;
+    }
+
+    lastRecordedMouseMoveMs_ = -1;
+    lastRecordedMouseX_ = 0;
+    lastRecordedMouseY_ = 0;
+    hasRecordedMouseMove_ = false;
     recordingClock_.invalidate();
     recording_ = true;
+    recordingFlushTimer_->start();
     context_->play();
 
     statusLabel_->setText(QStringLiteral(" ⏺ Recording"));
@@ -1310,6 +1461,21 @@ void DebuggerWindow::onResumed() {
 
 void DebuggerWindow::onBreakpointsChanged() {
     refreshBreakpoints();
+}
+
+void DebuggerWindow::onRecordingFlushTimer() {
+    if (!recording_ || !recordingFile_.isOpen()) {
+        recordingFlushTimer_->stop();
+        return;
+    }
+
+    QString error;
+    if (!flushRecordingFile(error)) {
+        recording_ = false;
+        recordingClock_.invalidate();
+        closeRecordingFile();
+        QMessageBox::warning(this, QStringLiteral("Save Debug Recording"), error);
+    }
 }
 
 void DebuggerWindow::onFrameRendered(const QImage& image) {

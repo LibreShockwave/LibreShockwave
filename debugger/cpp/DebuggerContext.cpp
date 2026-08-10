@@ -103,8 +103,12 @@ DebuggerContext::DebuggerContext(QObject* parent)
     connect(netPumpTimer_, &QTimer::timeout, this, &DebuggerContext::pumpNetRequests);
 
     framePumpTimer_ = new QTimer(this);
-    framePumpTimer_->setInterval(5);
-    framePumpTimer_->setTimerType(Qt::PreciseTimer);
+    // The frame mailbox keeps only the newest rendered image, so polling it
+    // every 5 ms just wakes the GUI repeatedly when no new frame is ready.
+    // A normal display cadence is frequent enough and avoids competing with
+    // input and recording work on the GUI thread.
+    framePumpTimer_->setInterval(16);
+    framePumpTimer_->setTimerType(Qt::CoarseTimer);
     connect(framePumpTimer_, &QTimer::timeout, this, &DebuggerContext::dispatchLatestFrame);
     framePumpTimer_->start();
 
@@ -296,6 +300,17 @@ bool DebuggerContext::restoreMovieSession() {
 
 void DebuggerContext::enqueueInput(InputEvent event) {
     std::lock_guard<std::mutex> lock(inputMutex_);
+
+    // Mouse moves are high-frequency and only the newest position matters
+    // before the next VM iteration. Coalesce adjacent moves so a busy GUI
+    // cannot build an unbounded input backlog while the movie is ticking.
+    if (event.type == InputEvent::MouseMove && !inputQueue_.empty() &&
+        inputQueue_.back().type == InputEvent::MouseMove) {
+        inputQueue_.back() = std::move(event);
+        wakeWorker();
+        return;
+    }
+
     inputQueue_.push_back(std::move(event));
     wakeWorker();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QElapsedTimer>
+#include <QFile>
 #include <QMainWindow>
 #include <QMap>
 #include <QString>
@@ -75,6 +76,7 @@ private slots:
     void onBreakpointsChanged();
     void onFrameRendered(const QImage& image);
     void onPlaybackStarted();
+    void onRecordingFlushTimer();
     void onReplayTimer();
     void onErrorOccurred(const QString& message);
 
@@ -131,7 +133,10 @@ private:
     bool openRecording(const QString& path);
     bool readRecording(const QString& path, RecordingFile& recording,
                        QString& error) const;
-    bool saveRecording(QString& error) const;
+    bool openRecordingFile(QString& error);
+    bool writeRecordingEvent(const RecordedInputEvent& event, QString& error);
+    bool flushRecordingFile(QString& error);
+    void closeRecordingFile();
     void startPendingReplayIfReady();
     void pauseReplayForNavigation();
     void resumeReplayAfterNavigation();
@@ -209,8 +214,13 @@ private:
     // the movie/parameter metadata needed to reopen the same session.
     bool recording_{false};
     QString recordingFilePath_;
+    QFile recordingFile_;
+    QTimer* recordingFlushTimer_{nullptr};
     QElapsedTimer recordingClock_;
-    std::vector<RecordedInputEvent> recordingEvents_;
+    qint64 lastRecordedMouseMoveMs_{-1};
+    int lastRecordedMouseX_{0};
+    int lastRecordedMouseY_{0};
+    bool hasRecordedMouseMove_{false};
     QTimer* replayTimer_{nullptr};
     QElapsedTimer frameDumpClock_;
     QElapsedTimer frameStatsClock_;
