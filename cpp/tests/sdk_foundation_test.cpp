@@ -18808,10 +18808,10 @@ void testSpriteBakerFoundation() {
     assert(bakedNonRectangularRuntime.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
 
     auto compositedScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
-    compositedScriptBackingBitmap->fill(0xFFFFFFFFU);
+    compositedScriptBackingBitmap->fill(0xFFF0F0F0U);
     compositedScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
     compositedScriptBackingBitmap->markScriptModified();
-    compositedScriptBackingBitmap->markScriptFillBacking();
+    compositedScriptBackingBitmap->markScriptFillBacking(0xFFF0F0F0U);
     compositedScriptBackingBitmap->markPreserveScriptFillBacking();
     SpriteBaker compositedScriptBackingBaker;
     compositedScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
@@ -18838,8 +18838,22 @@ void testSpriteBakerFoundation() {
                                                nullptr,
                                                false);
     auto bakedCompositedScriptBacking = compositedScriptBackingBaker.bake(compositedScriptBackingSprite);
-    assert(bakedCompositedScriptBacking.bakedBitmap()->getPixel(0, 0) == 0xFFFFFFFFU);
+    assert(bakedCompositedScriptBacking.bakedBitmap()->getPixel(0, 0) == 0xFFF0F0F0U);
     assert(bakedCompositedScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
+
+    auto keyedScriptBackingBitmap = std::make_shared<Bitmap>(3, 2, 32);
+    keyedScriptBackingBitmap->fill(0xFFFFFFFFU);
+    keyedScriptBackingBitmap->setPixel(1, 1, 0xFF010203U);
+    keyedScriptBackingBitmap->markScriptModified();
+    keyedScriptBackingBitmap->markScriptFillBacking(0xFFFFFFFFU);
+    keyedScriptBackingBitmap->markPreserveScriptFillBacking();
+    SpriteBaker keyedScriptBackingBaker;
+    keyedScriptBackingBaker.setLiveBitmapProvider([&](const RenderSprite&) -> std::shared_ptr<const Bitmap> {
+        return keyedScriptBackingBitmap;
+    });
+    auto bakedKeyedScriptBacking = keyedScriptBackingBaker.bake(rectangularRuntimeSprite);
+    assert(bakedKeyedScriptBacking.bakedBitmap()->getPixel(0, 0) == 0x00000000U);
+    assert(bakedKeyedScriptBacking.bakedBitmap()->getPixel(1, 1) == 0xFF010203U);
 
     auto unmarkedLargeScriptBackingBitmap = std::make_shared<Bitmap>(202, 200, 32);
     unmarkedLargeScriptBackingBitmap->fill(0xFFFFFFFFU);

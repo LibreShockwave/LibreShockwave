@@ -108,7 +108,17 @@ bool shouldPreserveScriptFillBacking(const RenderSprite& sprite, const bitmap::B
         bitmap.isTextRendered()) {
         return false;
     }
-    return bitmap.preservesScriptFillBacking();
+    if (!bitmap.preservesScriptFillBacking()) {
+        return false;
+    }
+
+    // A script-created white canvas is the key colour for Director's
+    // background-transparent ink.  It must still be keyed at the sprite
+    // boundary; only an authored non-white backing (for example the
+    // catalogue panel grey) should survive as visible compositing state.
+    const auto backingColor = bitmap.scriptFillBackingColor();
+    return !backingColor.has_value() ||
+           ((*backingColor & 0x00FFFFFFU) != 0x00FFFFFFU);
 }
 
 int shapeBorderStrokeCount(const RenderSprite& sprite, const ::libreshockwave::cast::ShapeInfo& shapeInfo) {
