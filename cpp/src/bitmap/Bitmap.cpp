@@ -98,8 +98,19 @@ void Bitmap::markTextRendered() { textRendered_ = true; }
 void Bitmap::clearTextRendered() { textRendered_ = false; }
 
 bool Bitmap::hasScriptFillBacking() const { return scriptFillBacking_; }
-void Bitmap::markScriptFillBacking() { scriptFillBacking_ = true; }
-void Bitmap::clearScriptFillBacking() { scriptFillBacking_ = false; }
+void Bitmap::markScriptFillBacking() {
+    scriptFillBacking_ = true;
+    scriptFillBackingColor_.reset();
+}
+void Bitmap::markScriptFillBacking(std::uint32_t argb) {
+    scriptFillBacking_ = true;
+    scriptFillBackingColor_ = argb;
+}
+void Bitmap::clearScriptFillBacking() {
+    scriptFillBacking_ = false;
+    scriptFillBackingColor_.reset();
+}
+std::optional<std::uint32_t> Bitmap::scriptFillBackingColor() const { return scriptFillBackingColor_; }
 
 bool Bitmap::preservesScriptFillBacking() const { return preserveScriptFillBacking_; }
 void Bitmap::markPreserveScriptFillBacking() { preserveScriptFillBacking_ = true; }
@@ -307,6 +318,7 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
         rectangularMedia_ = false;
         textRendered_ = false;
         scriptFillBacking_ = false;
+        scriptFillBackingColor_.reset();
         preserveScriptFillBacking_ = false;
         clearPaletteRefMetadata();
         clearAnchorPoint();
@@ -320,6 +332,7 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
     rectangularMedia_ = other->rectangularMedia_;
     textRendered_ = other->textRendered_;
     scriptFillBacking_ = other->scriptFillBacking_;
+    scriptFillBackingColor_ = other->scriptFillBackingColor_;
     preserveScriptFillBacking_ = other->preserveScriptFillBacking_;
     paletteRefCastLib_ = other->paletteRefCastLib_;
     paletteRefMemberNum_ = other->paletteRefMemberNum_;
@@ -327,6 +340,21 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
     hasAnchorPoint_ = other->hasAnchorPoint_;
     anchorX_ = other->anchorX_;
     anchorY_ = other->anchorY_;
+}
+
+void Bitmap::copyPaletteStateFrom(const Bitmap* other) {
+    if (other == nullptr) {
+        imagePalette_.reset();
+        paletteIndices_.reset();
+        clearPaletteRefMetadata();
+        return;
+    }
+
+    imagePalette_ = other->imagePalette_;
+    paletteIndices_ = other->paletteIndices_;
+    paletteRefCastLib_ = other->paletteRefCastLib_;
+    paletteRefMemberNum_ = other->paletteRefMemberNum_;
+    paletteRefSystemName_ = other->paletteRefSystemName_;
 }
 
 std::uint32_t Bitmap::resolvePaletteIndex(int index, const Palette* fallback) const {

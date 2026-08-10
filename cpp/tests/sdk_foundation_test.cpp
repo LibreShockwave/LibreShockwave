@@ -12702,6 +12702,37 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             backgroundTransparentProps}).isVoid());
     assert(!partialTextCopyDest->isTextRendered());
 
+    auto navigatorMatteTextCopySource = std::make_shared<Bitmap>(
+        3, 3, 32, std::vector<std::uint32_t>{
+            0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
+            0xFFFFFFFFU, 0xFF000000U, 0xFFFFFFFFU,
+            0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
+        });
+    navigatorMatteTextCopySource->markTextRendered();
+    auto navigatorMatteTextCopyDest = std::make_shared<Bitmap>(3, 3, 8);
+    navigatorMatteTextCopyDest->fill(0xFFFFFFFFU);
+    auto navigatorMatteProps = Datum::propList();
+    navigatorMatteProps.propListValue().put(Datum::symbol("ink"), Datum::symbol("matte"));
+    assert(runObjCall(110, {Datum::imageRef(navigatorMatteTextCopyDest),
+                            Datum::imageRef(navigatorMatteTextCopySource),
+                            Datum::intRect(0, 0, 3, 3),
+                            Datum::intRect(0, 0, 3, 3),
+                            navigatorMatteProps}).isVoid());
+    assert(navigatorMatteTextCopyDest->isTextRendered());
+
+    auto extendedBackingSource = std::make_shared<Bitmap>(2, 2, 32);
+    extendedBackingSource->fill(0xFFF0F0F0U);
+    extendedBackingSource->markScriptFillBacking(0xFFF0F0F0U);
+    auto extendedBackingDest = std::make_shared<Bitmap>(3, 3, 32);
+    extendedBackingDest->fill(0xFFFFFFFFU);
+    assert(runObjCall(110, {Datum::imageRef(extendedBackingDest),
+                            Datum::imageRef(extendedBackingSource),
+                            Datum::intRect(0, 0, 3, 3),
+                            Datum::intRect(0, 0, 2, 3)}).isVoid());
+    for (const auto pixel : extendedBackingDest->pixels()) {
+        assert(pixel == 0xFFF0F0F0U);
+    }
+
     auto alphaCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0x80000000U});
     auto alphaCopyDest = std::make_shared<Bitmap>(1, 1, 32);

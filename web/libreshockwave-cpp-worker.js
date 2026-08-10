@@ -103,6 +103,8 @@ function ensureModule() {
       drainDebugMessages: Module.cwrap("lsw_drain_debug_messages", null, ["number"]),
       pollFetches: Module.cwrap("lsw_poll_fetch_requests", "string", ["number"]),
       drainFetches: Module.cwrap("lsw_drain_fetch_requests", null, ["number"]),
+      pollJpegDecodes: Module.cwrap("lsw_poll_jpeg_decode_requests", "string", ["number"]),
+      jpegDecodeComplete: Module.cwrap("lsw_jpeg_decode_complete", null, ["number", "number", "number", "number", "number", "number"]),
       pollMovieNavigations: Module.cwrap("lsw_poll_movie_navigation_requests", "string", ["number"]),
       movieNavigationComplete: Module.cwrap("lsw_movie_navigation_complete", null, ["number", "number"]),
       fetchComplete: Module.cwrap("lsw_fetch_complete", null, ["number", "number", "number", "number"]),
@@ -304,6 +306,33 @@ async function satisfyFetchRequest(request) {
   post("warning", { message: `Fetch failed for ${request.url}: ${lastError ? lastError.message : "no candidates"}` });
 }
 
+async function satisfyJpegDecodeRequest(request) {
+  try {
+    const jpegBytes = decodeBase64(request.data);
+    if (jpegBytes.byteLength === 0 || typeof createImageBitmap !== "function" ||
+        typeof OffscreenCanvas !== "function") {
+      throw new Error("browser JPEG decode is unavailable");
+    }
+    const image = await createImageBitmap(new Blob([jpegBytes], { type: "image/jpeg" }));
+    try {
+      const canvas = new OffscreenCanvas(image.width, image.height);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("2D canvas is unavailable for JPEG decode");
+      context.drawImage(image, 0, 0);
+      const rgba = context.getImageData(0, 0, image.width, image.height).data;
+      withBytes(rgba, (ptr, length) => bridgeCall("JPEG decode complete", () =>
+        api.jpegDecodeComplete(handle, request.id, image.width, image.height, ptr, length)));
+    } finally {
+      if (typeof image.close === "function") image.close();
+    }
+    return true;
+  } catch (error) {
+    post("warning", { message: `JPEG decode failed for ${request.id}: ${errorMessage(error)}` });
+    bridgeCall("discard failed JPEG decode", () => api.jpegDecodeComplete(handle, request.id, 0, 0, 0, 0));
+    return false;
+  }
+}
+
 function decodeBase64(value) {
   if (!value) return new Uint8Array();
   const binary = atob(value);
@@ -481,6 +510,11 @@ async function pumpHostQueues() {
   if (!handle) return;
   drainSocketEvents();
   for (let round = 0; round < 64; round += 1) {
+    const jpegDecodes = parseJsonArray(bridgeCall("poll JPEG decodes", () => api.pollJpegDecodes(handle), "[]"));
+    if (jpegDecodes.length > 0) {
+      await Promise.all(jpegDecodes.map(satisfyJpegDecodeRequest));
+    }
+
     const fetches = parseJsonArray(bridgeCall("poll fetches", () => api.pollFetches(handle), "[]"));
     if (fetches.length > 0) {
       bridgeCall("drain fetches", () => api.drainFetches(handle));
@@ -511,7 +545,8 @@ async function pumpHostQueues() {
 
     const audioCommands = emitAudioCommands();
 
-    if (fetches.length === 0 && navigations.length === 0 && socketRequests.length === 0 && audioCommands === 0) {
+    if (jpegDecodes.length === 0 && fetches.length === 0 && navigations.length === 0 &&
+        socketRequests.length === 0 && audioCommands === 0) {
       break;
     }
   }

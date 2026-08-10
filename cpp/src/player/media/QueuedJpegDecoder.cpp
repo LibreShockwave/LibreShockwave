@@ -66,6 +66,7 @@ void QueuedJpegDecoder::reset() {
     pendingOrder_.clear();
     decoded_.clear();
     currentData_.reset();
+    DirectorFile::clearJpegDecodePending();
 }
 
 void QueuedJpegDecoder::deliverDecoded(int id,
@@ -109,6 +110,9 @@ int QueuedJpegDecoder::idFor(const std::vector<std::uint8_t>& data) {
 void QueuedJpegDecoder::removePending(int id) {
     pending_.erase(id);
     pendingOrder_.erase(std::remove(pendingOrder_.begin(), pendingOrder_.end(), id), pendingOrder_.end());
+    if (pendingOrder_.empty()) {
+        DirectorFile::clearJpegDecodePending();
+    }
 }
 
 } // namespace libreshockwave::player::media

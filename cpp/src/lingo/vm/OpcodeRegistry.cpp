@@ -2437,7 +2437,7 @@ bool imageFill(bitmap::Bitmap& bmp, const std::vector<Datum>& args) {
     }
     bmp.clearPreserveScriptFillBacking();
     if (((colorArgb >> 24U) & 0xFFU) == 0xFFU) {
-        bmp.markScriptFillBacking();
+        bmp.markScriptFillBacking(colorArgb);
     }
     return true;
 }
@@ -3959,7 +3959,7 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
     }
 
     if (dest.imagePalette() == nullptr && src.imagePalette() != nullptr) {
-        dest.copyPaletteMetadataFrom(&src);
+        dest.copyPaletteStateFrom(&src);
         if (dest.bitDepth() > 8) {
             dest.clearPaletteIndices();
         }
@@ -3972,6 +3972,20 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
     if (ink == id::InkMode::MATTE &&
         dest.bitDepth() <= 8 &&
         imageCopyMatteToMaskImage(dest, src, *destRect, *srcRect)) {
+        const bool destinationIsFullyReplaced =
+            destRect->left <= 0 &&
+            destRect->top <= 0 &&
+            destRect->right >= dest.width() &&
+            destRect->bottom >= dest.height();
+        const bool sourceIsFullyConsumed =
+            srcRect->left <= 0 &&
+            srcRect->top <= 0 &&
+            srcRect->right >= src.width() &&
+            srcRect->bottom >= src.height();
+        if (src.isTextRendered() &&
+            ((destinationIsFullyReplaced && sourceIsFullyConsumed) || !dest.hasScriptFillBacking())) {
+            dest.markTextRendered();
+        }
         return Datum::voidValue();
     }
 
@@ -4043,6 +4057,33 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
     const bool keyDefaultIndexedMatte =
         effectiveInk == id::InkMode::BACKGROUND_TRANSPARENT &&
         imageShouldKeyDefaultIndexedMatte(copySrc, backgroundKeyRgb, srcPaletteIndices);
+
+    const bool destinationIsFullyReplaced =
+        destRect->left <= 0 &&
+        destRect->top <= 0 &&
+        destRect->right >= dest.width() &&
+        destRect->bottom >= dest.height();
+    const bool sourceIsFullyConsumed =
+        srcRect->left <= 0 &&
+        srcRect->top <= 0 &&
+        srcRect->right >= src.width() &&
+        srcRect->bottom >= src.height();
+    const bool sourceRectExtendsPastSource =
+        srcRect->left < 0 ||
+        srcRect->top < 0 ||
+        srcRect->right > src.width() ||
+        srcRect->bottom > src.height();
+    if (destinationIsFullyReplaced &&
+        sourceRectExtendsPastSource &&
+        !src.isTextRendered() &&
+        src.hasScriptFillBacking() &&
+        src.scriptFillBackingColor().has_value()) {
+        // Director's image copy leaves the source's authored backing in the
+        // uncovered part of a full destination when the source rect extends
+        // beyond the source image. Preserve that backing before compositing.
+        dest.fill(*src.scriptFillBackingColor());
+    }
+
     const bool preservePaletteIndices = imageCanPreservePaletteIndices(
         dest, copySrc, srcPaletteIndices, effectiveInk, blend, mask, colorRemap, bgColorRemap);
     const bool refreshPreservedBackgroundTransparentIndices =
@@ -4164,30 +4205,16 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
     if (destPaletteIndices.has_value()) {
         dest.setPaletteIndices(std::move(*destPaletteIndices));
     }
-    const bool destinationIsFullyReplaced =
-        destRect->left <= 0 &&
-        destRect->top <= 0 &&
-        destRect->right >= dest.width() &&
-        destRect->bottom >= dest.height();
-    const bool sourceIsFullyConsumed =
-        srcRect->left <= 0 &&
-        srcRect->top <= 0 &&
-        srcRect->right >= src.width() &&
-        srcRect->bottom >= src.height();
     const bool textRenderingSource =
         src.isTextRendered() || (mask != nullptr && mask->isTextRendered());
-    if (textRenderingSource && destinationIsFullyReplaced && sourceIsFullyConsumed) {
+    if (textRenderingSource &&
+        ((destinationIsFullyReplaced && sourceIsFullyConsumed) || !dest.hasScriptFillBacking())) {
         // Text wrappers repeatedly copy a rendered text member through
         // intermediate images before the field reaches its window buffer.
         // Keep the provenance while the full destination is being replaced so
         // the final background-transparent copy can key the text matte.
         dest.markTextRendered();
     }
-    const bool sourceRectExtendsPastSource =
-        srcRect->left < 0 ||
-        srcRect->top < 0 ||
-        srcRect->right > src.width() ||
-        srcRect->bottom > src.height();
     const bool compositedBitmapSource =
         !src.isTextRendered() && (src.hasNativeMatteAlpha() || src.isScriptModified());
     if (ink == id::InkMode::BACKGROUND_TRANSPARENT &&

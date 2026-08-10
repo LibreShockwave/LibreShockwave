@@ -33,6 +33,7 @@
 #include "libreshockwave/player/debug/DebugControllerApi.hpp"
 #include "libreshockwave/player/event/EventDispatcher.hpp"
 #include "libreshockwave/player/input/DirectorKeyCodes.hpp"
+#include "libreshockwave/player/media/QueuedJpegDecoder.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
 #include "libreshockwave/player/net/QueuedNetProvider.hpp"
 #include "libreshockwave/player/xtra/QueuedMultiuserBridge.hpp"
@@ -49,6 +50,7 @@ using libreshockwave::player::PlayerState;
 using libreshockwave::player::handlerName;
 using libreshockwave::player::audio::QueuedAudioBackend;
 using libreshockwave::player::input::DirectorKeyCodes;
+using libreshockwave::player::media::QueuedJpegDecoder;
 using libreshockwave::player::net::QueuedNetProvider;
 using libreshockwave::player::render::pipeline::RenderSprite;
 using libreshockwave::player::xtra::QueuedMultiuserBridge;
@@ -64,6 +66,7 @@ struct WasmPlayerContext {
     std::unique_ptr<QueuedNetProvider> netProvider;
     std::unique_ptr<QueuedMultiuserBridge> multiuserBridge;
     std::unique_ptr<QueuedAudioBackend> audioBackend;
+    std::unique_ptr<QueuedJpegDecoder> jpegDecoder;
     std::unique_ptr<Player> player;
     std::vector<std::pair<std::string, std::string>> externalParams;
     std::vector<std::uint8_t> frameRgba;
@@ -960,6 +963,26 @@ std::string audioCommandsJson(const std::vector<QueuedAudioBackend::SoundCommand
     return out.str();
 }
 
+std::string jpegDecodeRequestsJson(QueuedJpegDecoder& decoder) {
+    std::ostringstream out;
+    out << '[';
+    bool first = true;
+    for (int index = 0; index < decoder.pendingCount(); ++index) {
+        const int id = decoder.pendingId(index);
+        if (id == 0 || decoder.prepareData(id) <= 0 || decoder.currentData() == nullptr) {
+            continue;
+        }
+        if (!first) {
+            out << ',';
+        }
+        first = false;
+        out << "{\"id\":" << id
+            << ",\"data\":\"" << base64Encode(*decoder.currentData()) << "\"}";
+    }
+    out << ']';
+    return out.str();
+}
+
 void processQueuedInput(WasmPlayerContext& ctx) {
     if (ctx.player == nullptr) {
         return;
@@ -1096,10 +1119,14 @@ EMSCRIPTEN_KEEPALIVE int lsw_create() {
 }
 
 EMSCRIPTEN_KEEPALIVE void lsw_destroy(int handle) {
-    if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
-        guardedVoid(*ctx, "destroy", [&]() {
-            ctx->player->shutdown();
-        });
+    if (auto* ctx = getContext(handle); ctx != nullptr) {
+        if (ctx->player != nullptr) {
+            guardedVoid(*ctx, "destroy", [&]() {
+                ctx->player->shutdown();
+            });
+        }
+        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
+        ctx->jpegDecoder.reset();
     }
     contexts.erase(handle);
 }
@@ -1118,8 +1145,10 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         if (ctx->player != nullptr) {
             ctx->player->shutdown();
         }
+        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
         ctx->player.reset();
         ctx->audioBackend.reset();
+        ctx->jpegDecoder.reset();
         ctx->multiuserBridge.reset();
         ctx->netProvider.reset();
         ctx->file.reset();
@@ -1140,6 +1169,8 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         auto netProvider = std::make_unique<QueuedNetProvider>(ctx->movieSource);
         auto multiuserBridge = std::make_unique<QueuedMultiuserBridge>();
         auto audioBackend = std::make_unique<QueuedAudioBackend>();
+        auto jpegDecoder = std::make_unique<QueuedJpegDecoder>();
+        jpegDecoder->install();
         auto player = std::make_unique<Player>(file, netProvider.get());
         player->registerMultiuserXtra(*multiuserBridge);
         player->setAudioBackend(audioBackend.get());
@@ -1183,6 +1214,7 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         ctx->netProvider = std::move(netProvider);
         ctx->multiuserBridge = std::move(multiuserBridge);
         ctx->audioBackend = std::move(audioBackend);
+        ctx->jpegDecoder = std::move(jpegDecoder);
         ctx->player = std::move(player);
         ctx->player->setDebugEnabled(ctx->debugPlaybackEnabled);
         ctx->player->setSlowHandlerWarningThresholdMs(ctx->slowHandlerWarningMs);
@@ -1195,9 +1227,13 @@ EMSCRIPTEN_KEEPALIVE int lsw_load_movie(int handle,
         (void)renderCurrentFrame(*ctx);
         return 1;
     } catch (const std::exception& error) {
+        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
+        ctx->jpegDecoder.reset();
         setError(*ctx, error.what());
         return 0;
     } catch (...) {
+        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
+        ctx->jpegDecoder.reset();
         setError(*ctx, "Unknown load error");
         return 0;
     }
@@ -1483,6 +1519,45 @@ EMSCRIPTEN_KEEPALIVE void lsw_drain_fetch_requests(int handle) {
             ctx->netProvider->drainPendingRequests();
         });
     }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* lsw_poll_jpeg_decode_requests(int handle) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr || ctx->jpegDecoder == nullptr) {
+        return "[]";
+    }
+    try {
+        return scratch(*ctx, jpegDecodeRequestsJson(*ctx->jpegDecoder));
+    } catch (const std::exception& error) {
+        setError(*ctx, error.what());
+        return "[]";
+    } catch (...) {
+        setError(*ctx, "Unknown JPEG decode request poll error");
+        return "[]";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void lsw_jpeg_decode_complete(int handle,
+                                                    int id,
+                                                    int width,
+                                                    int height,
+                                                    const std::uint8_t* rgba,
+                                                    int byteCount) {
+    auto* ctx = getContext(handle);
+    if (ctx == nullptr || ctx->jpegDecoder == nullptr || byteCount < 0 ||
+        (byteCount > 0 && rgba == nullptr)) {
+        return;
+    }
+    guardedVoid(*ctx, "complete JPEG decode", [&]() {
+        std::vector<std::uint8_t> data;
+        if (rgba != nullptr && byteCount > 0) {
+            data.assign(rgba, rgba + byteCount);
+        }
+        ctx->jpegDecoder->deliverDecoded(id, width, height, data);
+        if (ctx->player != nullptr) {
+            (void)renderCurrentFrame(*ctx);
+        }
+    });
 }
 
 EMSCRIPTEN_KEEPALIVE const char* lsw_poll_movie_navigation_requests(int handle) {

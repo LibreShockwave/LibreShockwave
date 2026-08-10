@@ -310,6 +310,8 @@ if(EMSCRIPTEN)
         "_lsw_drain_debug_messages"
         "_lsw_poll_fetch_requests"
         "_lsw_drain_fetch_requests"
+        "_lsw_poll_jpeg_decode_requests"
+        "_lsw_jpeg_decode_complete"
         "_lsw_poll_movie_navigation_requests"
         "_lsw_movie_navigation_complete"
         "_lsw_fetch_complete"

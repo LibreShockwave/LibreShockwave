@@ -46,7 +46,9 @@ public:
     void clearTextRendered();
     [[nodiscard]] bool hasScriptFillBacking() const;
     void markScriptFillBacking();
+    void markScriptFillBacking(std::uint32_t argb);
     void clearScriptFillBacking();
+    [[nodiscard]] std::optional<std::uint32_t> scriptFillBackingColor() const;
     [[nodiscard]] bool preservesScriptFillBacking() const;
     void markPreserveScriptFillBacking();
     void clearPreserveScriptFillBacking();
@@ -82,6 +84,7 @@ public:
     void clearAnchorPoint();
 
     void copyPaletteMetadataFrom(const Bitmap* other);
+    void copyPaletteStateFrom(const Bitmap* other);
     [[nodiscard]] std::uint32_t resolvePaletteIndex(int index, const Palette* fallback) const;
 
     [[nodiscard]] std::uint32_t getPixel(int x, int y) const;
@@ -115,6 +118,7 @@ private:
     bool rectangularMedia_ = false;
     bool textRendered_ = false;
     bool scriptFillBacking_ = false;
+    std::optional<std::uint32_t> scriptFillBackingColor_;
     bool preserveScriptFillBacking_ = false;
     std::shared_ptr<const Palette> imagePalette_;
     int paletteRefCastLib_ = -1;
