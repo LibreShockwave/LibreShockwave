@@ -13154,6 +13154,79 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             backgroundInkProps}).isVoid());
     assert(backgroundInkDest->getPixel(0, 0) == 0xFF000000U);
     assert(backgroundInkDest->getPixel(1, 0) == 0xFFFF0000U);
+
+    const auto makeCatalogueStateIndicator = [](const std::vector<std::string_view>& rows) {
+        Bitmap image(static_cast<int>(rows.front().size()), static_cast<int>(rows.size()), 32);
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const auto pixel = rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)];
+                const auto rgb = pixel == 'k' ? 0x000000U : pixel == 'w' ? 0xFFFFFFU : 0xF0F0F0U;
+                image.setPixel(x, y, 0xFF000000U | rgb);
+            }
+        }
+        return image;
+    };
+    const auto catalogueStateIndicatorSource = std::make_shared<Bitmap>(makeCatalogueStateIndicator({
+        "..............",
+        "w.kkkkkkkkkk.w",
+        "ww.kkkkkkkk.ww",
+        "www.kkkkkk.www",
+        "wwww.kkkk.wwww",
+        "wwwww.kkwwwwww",
+        "wwwwww..wwwwww",
+    }));
+    auto catalogueStateIndicatorDest = std::make_shared<Bitmap>(14, 7, 32);
+    catalogueStateIndicatorDest->fill(0xFFBCF563U);
+    auto catalogueStateIndicatorProps = Datum::propList();
+    catalogueStateIndicatorProps.propListValue().put(Datum::symbol("ink"), Datum::of(36));
+    assert(runObjCall(110, {Datum::imageRef(catalogueStateIndicatorDest),
+                            Datum::imageRef(catalogueStateIndicatorSource),
+                            Datum::intRect(0, 0, 14, 7),
+                            Datum::intRect(0, 0, 14, 7),
+                            catalogueStateIndicatorProps}).isVoid());
+    for (int y = 0; y < catalogueStateIndicatorDest->height(); ++y) {
+        for (int x = 0; x < catalogueStateIndicatorDest->width(); ++x) {
+            const auto sourcePixel = catalogueStateIndicatorSource->getPixel(x, y);
+            const auto expected = (sourcePixel & 0x00FFFFFFU) == 0x00FFFFFFU
+                ? 0xFFBCF563U
+                : sourcePixel;
+            assert(catalogueStateIndicatorDest->getPixel(x, y) == expected);
+        }
+    }
+
+    const auto catalogueStateIndicatorRightSource = std::make_shared<Bitmap>(makeCatalogueStateIndicator({
+        ".wwwwww",
+        "..wwwww",
+        ".k.wwww",
+        ".kk.www",
+        ".kkk.ww",
+        ".kkkk.w",
+        ".kkkkk.",
+        ".kkkkk.",
+        ".kkkkww",
+        ".kkk.ww",
+        ".kk.www",
+        ".k.wwww",
+        "..wwwww",
+        ".wwwwww",
+    }));
+    auto catalogueStateIndicatorRightDest = std::make_shared<Bitmap>(7, 14, 32);
+    catalogueStateIndicatorRightDest->fill(0xFFBCF563U);
+    assert(runObjCall(110, {Datum::imageRef(catalogueStateIndicatorRightDest),
+                            Datum::imageRef(catalogueStateIndicatorRightSource),
+                            Datum::intRect(0, 0, 7, 14),
+                            Datum::intRect(0, 0, 7, 14),
+                            catalogueStateIndicatorProps}).isVoid());
+    for (int y = 0; y < catalogueStateIndicatorRightDest->height(); ++y) {
+        for (int x = 0; x < catalogueStateIndicatorRightDest->width(); ++x) {
+            const auto sourcePixel = catalogueStateIndicatorRightSource->getPixel(x, y);
+            const auto expected = (sourcePixel & 0x00FFFFFFU) == 0x00FFFFFFU
+                ? 0xFFBCF563U
+                : sourcePixel;
+            assert(catalogueStateIndicatorRightDest->getPixel(x, y) == expected);
+        }
+    }
+
     auto nativeAlphaBackgroundInkSource = std::make_shared<Bitmap>(3, 3, 32);
     nativeAlphaBackgroundInkSource->fill(0x00FFFFFFU);
     nativeAlphaBackgroundInkSource->setPixel(1, 1, 0xFF000000U);

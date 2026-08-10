@@ -309,15 +309,24 @@ std::optional<FloodFillMatte> resolveBackgroundTransparentMatte(
 
     int opaqueEdgeCount = 0;
     int nearWhiteEdgeCount = 0;
+    bool exactWhiteEdge = false;
     for (const int index : edgeIndices(width, height)) {
         const auto pixel = pixels[static_cast<std::size_t>(index)];
         if (((pixel >> 24) & 0xFFU) == 0) {
             continue;
         }
         ++opaqueEdgeCount;
+        exactWhiteEdge |= (pixel & 0x00FFFFFFU) == 0x00FFFFFFU;
         if (isNearWhiteGrayscale(static_cast<int>(pixel & 0x00FFFFFFU), 232, 16)) {
             ++nearWhiteEdgeCount;
         }
+    }
+    // If the declared background colour reaches the edge, use the exact key.
+    // Near-white edge pixels may be authored foreground outlines (for example
+    // the catalogue arrows), and must not be absorbed by the antialias matte
+    // tolerance in that case.
+    if (exactWhiteEdge) {
+        return std::nullopt;
     }
     if (opaqueEdgeCount == 0 || nearWhiteEdgeCount * 4 < opaqueEdgeCount * 3) {
         return std::nullopt;
