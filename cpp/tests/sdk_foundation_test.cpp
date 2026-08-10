@@ -22207,6 +22207,7 @@ void testQueuedNetProviderFoundation() {
 
     const int rootCastTask = provider.preloadNetThing("https://example.invalid/room.cct");
     assert(rootCastTask == 2);
+    assert(provider.hasPendingCastLoads());
     assert(provider.pendingRequests().size() == 1);
     const auto& rootCastRequest = provider.pendingRequests().back();
     assert(rootCastRequest.url == "https://example.invalid/movies/room.cct");
@@ -22218,6 +22219,7 @@ void testQueuedNetProviderFoundation() {
     }));
     provider.onFetchComplete(rootCastTask, {'C', 'A', 'S', 'T'});
     assert(provider.netTextResult(rootCastTask) == "CAST");
+    assert(!provider.hasPendingCastLoads());
 
     QueuedNetProvider crossOriginMovieProvider("http://127.0.0.1/dcr/14.1_b8/habbo.dcr");
     const int localMovieCastTask = crossOriginMovieProvider.preloadNetThing("hh_human_50_acc_head.cst");

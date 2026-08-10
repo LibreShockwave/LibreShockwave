@@ -78,7 +78,9 @@ private:
     [[nodiscard]] Task* getTask(std::optional<int> taskId);
     [[nodiscard]] const Task* getTask(std::optional<int> taskId) const;
     [[nodiscard]] const Task* getTask(std::string_view url) const;
-    [[nodiscard]] bool taskMatchesUrl(const Task& task, std::string_view url) const;
+    void indexTask(const Task& task);
+    void trackPendingCastLoad(const Task& task);
+    void markTaskDone(Task& task);
     [[nodiscard]] std::vector<std::string> buildTaskLookupKeys(const Task& task) const;
     [[nodiscard]] std::vector<std::string> buildLookupKeys(std::string_view url) const;
     void addLookupCacheKeys(std::vector<std::string>& keys, std::string_view url) const;
@@ -103,9 +105,12 @@ private:
 
     std::string basePath_;
     std::unordered_map<int, Task> tasks_;
+    std::unordered_map<std::string, int> latestTaskByExactUrl_;
+    std::unordered_map<std::string, int> latestTaskByLookupKey_;
     std::unordered_map<std::string, std::vector<std::uint8_t>> urlCache_;
     std::vector<PendingRequest> pendingRequests_;
     std::deque<int> pendingMovieNavigationTasks_;
+    int pendingExternalCastLoads_ = 0;
     int nextTaskId_ = 1;
     int lastTaskId_ = 0;
     FetchCompleteCallback fetchCompleteCallback_;

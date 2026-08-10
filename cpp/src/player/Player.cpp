@@ -1936,7 +1936,11 @@ void Player::processUpdatingObjects() {
 }
 
 void Player::refreshDebugControllerGlobals() {
-    if (!debugController_) {
+    // Keeping the controller attached lets the debugger enable tracing later,
+    // but ordinary playback does not need a full copy of the VM globals every
+    // frame.  Movies can add globals while running, so doing this unconditionally
+    // turns a constant per-frame cost into progressively more work over time.
+    if (!debugController_ || !debugController_->tracingEnabled()) {
         return;
     }
 

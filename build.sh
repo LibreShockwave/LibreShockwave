@@ -278,6 +278,7 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
             libreshockwave_asset_extractor
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe
+            libreshockwave_debugger
         )
     fi
 fi

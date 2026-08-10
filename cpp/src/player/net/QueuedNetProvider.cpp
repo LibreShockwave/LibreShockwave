@@ -18,19 +18,6 @@ bool isAbsoluteHttpUrl(std::string_view value) {
     return startsWith(value, "http://") || startsWith(value, "https://");
 }
 
-bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
-    if (lhs.size() != rhs.size()) {
-        return false;
-    }
-    for (std::size_t index = 0; index < lhs.size(); ++index) {
-        if (std::tolower(static_cast<unsigned char>(lhs[index])) !=
-            std::tolower(static_cast<unsigned char>(rhs[index]))) {
-            return false;
-        }
-    }
-    return true;
-}
-
 std::string toLower(std::string_view value) {
     std::string lowered(value);
     std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
@@ -94,12 +81,14 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
 
     if (url.empty()) {
         tasks_.emplace(taskId, Task{taskId, std::move(url), std::nullopt, 0, 0, true});
+        indexTask(tasks_.at(taskId));
         return taskId;
     }
 
     const std::string resolvedUrl = resolveUrl(url);
     if (isDirectoryOnlyUrl(resolvedUrl)) {
         tasks_.emplace(taskId, Task{taskId, resolvedUrl, std::nullopt, 0, 0, true});
+        indexTask(tasks_.at(taskId));
         return taskId;
     }
 
@@ -112,6 +101,7 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
     (void)ok;
     auto& task = inserted->second;
     task.fallbackUrls = fallbacks;
+    indexTask(task);
 
     if (auto cached = findCachedData(url, resolvedUrl); cached.has_value()) {
         task.data = *cached;
@@ -130,6 +120,7 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
         return taskId;
     }
 
+    trackPendingCastLoad(task);
     pendingRequests_.push_back(PendingRequest{taskId, fallbacks.front(), "GET", std::nullopt, fallbacks});
     return taskId;
 }
@@ -139,16 +130,16 @@ int QueuedNetProvider::postNetText(std::string url, std::string postData) {
     lastTaskId_ = taskId;
 
     std::string resolvedUrl = resolveUrl(url);
-    tasks_.emplace(taskId, Task{taskId, resolvedUrl});
+    auto [inserted, ok] = tasks_.emplace(taskId, Task{taskId, resolvedUrl});
+    (void)ok;
+    indexTask(inserted->second);
+    trackPendingCastLoad(inserted->second);
     pendingRequests_.push_back(PendingRequest{taskId, std::move(resolvedUrl), "POST", std::move(postData), {}});
     return taskId;
 }
 
 bool QueuedNetProvider::hasPendingCastLoads() const {
-    return std::any_of(tasks_.begin(), tasks_.end(), [](const auto& entry) {
-        const auto& task = entry.second;
-        return !task.done && isExternalCastUrl(task.url);
-    });
+    return pendingExternalCastLoads_ > 0;
 }
 
 int QueuedNetProvider::beginMovieNavigation(std::string url) {
@@ -156,7 +147,10 @@ int QueuedNetProvider::beginMovieNavigation(std::string url) {
     lastTaskId_ = taskId;
 
     std::string resolvedUrl = resolveUrl(url);
-    tasks_.emplace(taskId, Task{taskId, std::move(resolvedUrl)});
+    auto [inserted, ok] = tasks_.emplace(taskId, Task{taskId, std::move(resolvedUrl)});
+    (void)ok;
+    indexTask(inserted->second);
+    trackPendingCastLoad(inserted->second);
     pendingMovieNavigationTasks_.push_back(taskId);
     return taskId;
 }
@@ -166,7 +160,7 @@ void QueuedNetProvider::completeMovieNavigationTasks() {
         const int taskId = pendingMovieNavigationTasks_.front();
         pendingMovieNavigationTasks_.pop_front();
         if (auto* task = getTask(taskId)) {
-            task->done = true;
+            markTaskDone(*task);
             task->errorCode = 0;
         }
     }
@@ -308,7 +302,7 @@ void QueuedNetProvider::onFetchComplete(int taskId, std::vector<std::uint8_t> da
     }
 
     task->byteCount = static_cast<int>(data.size());
-    task->done = true;
+    markTaskDone(*task);
     task->errorCode = 0;
     task->data = std::move(data);
 
@@ -325,7 +319,7 @@ void QueuedNetProvider::onMovieNavigationComplete(int taskId) {
     if (task == nullptr) {
         return;
     }
-    task->done = true;
+    markTaskDone(*task);
     task->errorCode = 0;
 
     const auto removeIt = std::remove(pendingMovieNavigationTasks_.begin(),
@@ -341,7 +335,7 @@ void QueuedNetProvider::onFetchStatusComplete(int taskId, int byteCount) {
     }
     task->data = std::nullopt;
     task->byteCount = std::max(0, byteCount);
-    task->done = true;
+    markTaskDone(*task);
     task->errorCode = 0;
 }
 
@@ -351,7 +345,7 @@ void QueuedNetProvider::onFetchError(int taskId, int status) {
         return;
     }
     task->errorCode = status != 0 ? status : -1;
-    task->done = true;
+    markTaskDone(*task);
 }
 
 const std::string& QueuedNetProvider::basePath() const {
@@ -385,44 +379,61 @@ const QueuedNetProvider::Task* QueuedNetProvider::getTask(std::string_view url) 
         return nullptr;
     }
     const std::string normalizedUrl = normalizeLookupUrl(url);
+    if (normalizedUrl.empty()) {
+        return nullptr;
+    }
+
     const Task* bestMatch = nullptr;
-    for (const auto& [id, task] : tasks_) {
-        (void)id;
-        if (taskMatchesUrl(task, normalizedUrl)) {
-            if (bestMatch == nullptr || task.id > bestMatch->id) {
-                bestMatch = &task;
-            }
+    const auto considerTask = [this, &bestMatch](int taskId) {
+        const auto found = tasks_.find(taskId);
+        if (found != tasks_.end() && (bestMatch == nullptr || taskId > bestMatch->id)) {
+            bestMatch = &found->second;
+        }
+    };
+
+    if (const auto found = latestTaskByExactUrl_.find(toLower(normalizedUrl));
+        found != latestTaskByExactUrl_.end()) {
+        considerTask(found->second);
+    }
+    for (const auto& key : buildLookupKeys(normalizedUrl)) {
+        if (const auto found = latestTaskByLookupKey_.find(key); found != latestTaskByLookupKey_.end()) {
+            considerTask(found->second);
         }
     }
     return bestMatch;
 }
 
-bool QueuedNetProvider::taskMatchesUrl(const Task& task, std::string_view url) const {
-    const std::string normalizedUrl = normalizeLookupUrl(url);
-    if (normalizedUrl.empty()) {
-        return false;
-    }
-
-    const auto taskKeys = buildTaskLookupKeys(task);
-    if (!taskKeys.empty()) {
-        for (const auto& key : buildLookupKeys(normalizedUrl)) {
-            if (std::find(taskKeys.begin(), taskKeys.end(), key) != taskKeys.end()) {
-                return true;
-            }
+void QueuedNetProvider::indexTask(const Task& task) {
+    const auto indexExactUrl = [this, taskId = task.id](std::string_view url) {
+        const std::string normalizedUrl = normalizeLookupUrl(url);
+        if (!normalizedUrl.empty()) {
+            latestTaskByExactUrl_[toLower(normalizedUrl)] = taskId;
         }
-    }
+    };
 
-    const std::string normalizedTaskUrl = normalizeLookupUrl(task.url);
-    if (!normalizedTaskUrl.empty() && equalsIgnoreCase(normalizedTaskUrl, normalizedUrl)) {
-        return true;
-    }
+    indexExactUrl(task.url);
     for (const auto& fallback : task.fallbackUrls) {
-        const std::string normalizedFallback = normalizeLookupUrl(fallback);
-        if (!normalizedFallback.empty() && equalsIgnoreCase(normalizedFallback, normalizedUrl)) {
-            return true;
-        }
+        indexExactUrl(fallback);
     }
-    return false;
+    for (const auto& key : buildTaskLookupKeys(task)) {
+        latestTaskByLookupKey_[key] = task.id;
+    }
+}
+
+void QueuedNetProvider::trackPendingCastLoad(const Task& task) {
+    if (!task.done && isExternalCastUrl(task.url)) {
+        ++pendingExternalCastLoads_;
+    }
+}
+
+void QueuedNetProvider::markTaskDone(Task& task) {
+    if (task.done) {
+        return;
+    }
+    if (isExternalCastUrl(task.url) && pendingExternalCastLoads_ > 0) {
+        --pendingExternalCastLoads_;
+    }
+    task.done = true;
 }
 
 std::vector<std::string> QueuedNetProvider::buildTaskLookupKeys(const Task& task) const {
