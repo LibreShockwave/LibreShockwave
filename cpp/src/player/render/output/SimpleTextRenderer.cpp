@@ -713,6 +713,7 @@ void drawBuiltinChar(char ch,
 std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& font,
                                              const std::string& text,
                                              int width,
+                                             int wrapWidth,
                                              int height,
                                              std::string_view alignment,
                                              std::uint32_t textColor,
@@ -730,7 +731,7 @@ std::shared_ptr<Bitmap> renderWithBitmapFont(const std::shared_ptr<BitmapFont>& 
                                    [&font](std::string_view value) {
                                        return font->getStringWidth(value);
                                    },
-                                   width,
+                                   wrapWidth,
                                    lines);
         } else {
             lines.push_back(rawLine);
@@ -892,6 +893,7 @@ void underlineStyledSpans(const std::shared_ptr<Bitmap>& bitmap,
 
 std::shared_ptr<Bitmap> renderWithBuiltinFont(const std::string& text,
                                               int width,
+                                              int wrapWidth,
                                               int height,
                                               int fontSize,
                                               std::string_view alignment,
@@ -913,7 +915,7 @@ std::shared_ptr<Bitmap> renderWithBuiltinFont(const std::string& text,
                                    [charWidth](std::string_view value) {
                                        return static_cast<int>(value.size()) * charWidth;
                                    },
-                                   width,
+                                   wrapWidth,
                                    lines);
         } else {
             lines.push_back(rawLine);
@@ -1093,6 +1095,42 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderText(std::string text,
                               false);
 }
 
+std::shared_ptr<Bitmap> SimpleTextRenderer::renderTextInField(std::string text,
+                                                              int width,
+                                                              int height,
+                                                              std::string fontName,
+                                                              int fontSize,
+                                                              std::string fontStyle,
+                                                              std::string alignment,
+                                                              int textColor,
+                                                              int bgColor,
+                                                              bool wordWrap,
+                                                              bool antialias,
+                                                              int fixedLineSpace,
+                                                              int topSpacing,
+                                                              int textGutter) {
+    const int fieldWidth = width > 0 ? width : 200;
+    const int contentWidth = std::max(1, fieldWidth - std::max(0, textGutter) * 2);
+    // Director text fields leave a one-pixel leading inset before their first
+    // glyph; keep the general text renderer's direct-output origin unchanged.
+    const int fieldTopSpacing = std::max(1, topSpacing);
+    return renderTextInternal(std::move(text),
+                              width,
+                              height,
+                              std::move(fontName),
+                              fontSize,
+                              std::move(fontStyle),
+                              std::move(alignment),
+                              textColor,
+                              bgColor,
+                              wordWrap,
+                              antialias,
+                              fixedLineSpace,
+                              fieldTopSpacing,
+                              false,
+                              contentWidth);
+}
+
 std::shared_ptr<Bitmap> SimpleTextRenderer::renderLegacyStxtText(std::string text,
                                                                  int width,
                                                                  int height,
@@ -1135,12 +1173,16 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderTextInternal(std::string text,
                                                               bool antialias,
                                                               int fixedLineSpace,
                                                               int topSpacing,
-                                                              bool preferRegisteredDirectorFonts) {
+                                                              bool preferRegisteredDirectorFonts,
+                                                              int wrapWidth) {
     if (width <= 0) {
         width = 200;
     }
     if (height <= 0) {
         height = 1;
+    }
+    if (wrapWidth <= 0) {
+        wrapWidth = width;
     }
     const auto style = lowerAscii(std::move(fontStyle));
     const bool wantsBold = style.find("bold") != std::string::npos;
@@ -1159,6 +1201,7 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderTextInternal(std::string text,
         bitmap = renderWithBitmapFont(font,
                                       text,
                                       width,
+                                      wrapWidth,
                                       height,
                                       alignment,
                                       static_cast<std::uint32_t>(textColor),
@@ -1171,6 +1214,7 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderTextInternal(std::string text,
     } else {
         bitmap = renderWithBuiltinFont(text,
                                        width,
+                                       wrapWidth,
                                        height,
                                        fontSize,
                                        alignment,
@@ -1360,6 +1404,7 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderXmedText(
             bitmap = renderWithBitmapFont(font,
                                           styledText->text,
                                           width,
+                                          width,
                                           height,
                                           styledText->alignment,
                                           defaultColor,
@@ -1379,6 +1424,7 @@ std::shared_ptr<Bitmap> SimpleTextRenderer::renderXmedText(
     }
 
     return renderWithBuiltinFont(styledText->text,
+                                 width,
                                  width,
                                  height,
                                  styledText->fontSize,

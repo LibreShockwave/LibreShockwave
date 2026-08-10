@@ -264,6 +264,8 @@ int CastMember::textFixedLineSpace() const { return textFixedLineSpace_; }
 void CastMember::setTextFixedLineSpace(int lineSpace) { textFixedLineSpace_ = lineSpace; }
 int CastMember::textTopSpacing() const { return textTopSpacing_; }
 void CastMember::setTextTopSpacing(int spacing) { textTopSpacing_ = spacing; }
+int CastMember::textGutterSize() const { return textGutterSize_; }
+void CastMember::setTextGutterSize(int gutter) { textGutterSize_ = std::max(0, gutter); }
 bool CastMember::editable() const { return editable_; }
 void CastMember::setEditable(bool editable) { editable_ = editable; }
 
@@ -494,6 +496,7 @@ void CastMember::resetTextProperties() {
     textRectBottom_ = 480;
     textFixedLineSpace_ = 0;
     textTopSpacing_ = 0;
+    textGutterSize_ = 2;
     editable_ = false;
 }
 

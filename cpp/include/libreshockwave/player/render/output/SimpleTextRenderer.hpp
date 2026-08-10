@@ -27,6 +27,22 @@ public:
         int fixedLineSpace,
         int topSpacing) override;
 
+    [[nodiscard]] std::shared_ptr<bitmap::Bitmap> renderTextInField(
+        std::string text,
+        int width,
+        int height,
+        std::string fontName,
+        int fontSize,
+        std::string fontStyle,
+        std::string alignment,
+        int textColor,
+        int bgColor,
+        bool wordWrap,
+        bool antialias,
+        int fixedLineSpace,
+        int topSpacing,
+        int textGutter) override;
+
     [[nodiscard]] std::shared_ptr<bitmap::Bitmap> renderLegacyStxtText(
         std::string text,
         int width,
@@ -88,7 +104,8 @@ private:
         bool antialias,
         int fixedLineSpace,
         int topSpacing,
-        bool preferRegisteredDirectorFonts);
+        bool preferRegisteredDirectorFonts,
+        int wrapWidth = -1);
 
     [[nodiscard]] static std::shared_ptr<font::BitmapFont> resolveBitmapFont(
         const std::string& fontName,

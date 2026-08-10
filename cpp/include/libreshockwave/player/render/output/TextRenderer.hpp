@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "libreshockwave/bitmap/Bitmap.hpp"
@@ -29,6 +30,40 @@ public:
         bool antialias,
         int fixedLineSpace,
         int topSpacing) = 0;
+
+    // Render a Director text member into its full field rectangle. The field
+    // width includes the member's inner gutter, while the returned bitmap
+    // retains the full authored dimensions.
+    [[nodiscard]] virtual std::shared_ptr<bitmap::Bitmap> renderTextInField(
+        std::string text,
+        int width,
+        int height,
+        std::string fontName,
+        int fontSize,
+        std::string fontStyle,
+        std::string alignment,
+        int textColor,
+        int bgColor,
+        bool wordWrap,
+        bool antialias,
+        int fixedLineSpace,
+        int topSpacing,
+        int textGutter) {
+        (void)textGutter;
+        return renderText(std::move(text),
+                          width,
+                          height,
+                          std::move(fontName),
+                          fontSize,
+                          std::move(fontStyle),
+                          std::move(alignment),
+                          textColor,
+                          bgColor,
+                          wordWrap,
+                          antialias,
+                          fixedLineSpace,
+                          topSpacing);
+    }
 
     [[nodiscard]] virtual std::vector<int> charPosToLoc(std::string text,
                                                         int charIndex,

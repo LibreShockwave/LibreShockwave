@@ -276,10 +276,10 @@ std::shared_ptr<BitmapFont> BitmapFont::fromPfr1(const Pfr1Font& font, int targe
         outlineRes = 2048;
     }
 
-    const float metricHeight = std::abs(static_cast<float>(fm.ascender - fm.descender));
-    const float scale = metricHeight > 0.0F
-                            ? static_cast<float>(targetHeight) / metricHeight
-                            : static_cast<float>(targetHeight) / static_cast<float>(outlineRes);
+    // Director's PFR font size scales glyph coordinates from outlineResolution.
+    // Do not derive the glyph scale from the ascender/descender span: that is a
+    // separate metric and can produce a different vertical extent.
+    const float scale = static_cast<float>(targetHeight) / static_cast<float>(outlineRes);
     const float matrixScaleX = static_cast<float>(font.fontMatrix[0]) / 256.0F;
     const float matrixScaleY = static_cast<float>(font.fontMatrix[3]) / 256.0F;
     const float scaleX = scale * std::abs(matrixScaleX);

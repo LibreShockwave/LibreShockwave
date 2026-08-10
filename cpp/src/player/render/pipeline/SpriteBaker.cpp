@@ -104,7 +104,8 @@ bool shouldPreserveOutlinedWhiteBodyForScriptCanvas(const RenderSprite& sprite, 
 bool shouldPreserveScriptFillBacking(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
     if (sprite.inkMode() != id::InkMode::BACKGROUND_TRANSPARENT ||
         !bitmap.isScriptModified() ||
-        bitmap.isNativeAlpha()) {
+        bitmap.isNativeAlpha() ||
+        bitmap.isTextRendered()) {
         return false;
     }
     return bitmap.preservesScriptFillBacking();

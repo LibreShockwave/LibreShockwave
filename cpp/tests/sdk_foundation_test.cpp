@@ -963,6 +963,18 @@ void testBitmapFontAndFontRegistry() {
     assert(pfrBitmapFont->getCharWidth('C') == 10);
     assert(pfrBitmapFont->getCharWidth(0xE9) == 10);
 
+    // PFR glyph coordinates use outlineResolution, which need not equal the
+    // ascender/descender span.  The outline scale must therefore follow the
+    // coordinate resolution rather than the font's metric height.
+    auto coordinateSpacePfr = rasterPfr;
+    coordinateSpacePfr.fontName = "CoordinateSpacePFR";
+    coordinateSpacePfr.metrics.descender = -100;
+    auto coordinateSpaceBitmap = BitmapFont::fromPfr1(coordinateSpacePfr, 20);
+    assert(coordinateSpaceBitmap != nullptr);
+    assert(coordinateSpaceBitmap->cellWidth() == 10);
+    assert(coordinateSpaceBitmap->getCharWidth('A') == 10);
+    assert(coordinateSpaceBitmap->getLineHeight() == 18);
+
     auto countInk = [](const std::vector<std::uint32_t>& pixels) {
         return static_cast<int>(std::count_if(pixels.begin(), pixels.end(), [](std::uint32_t pixel) {
             return ((pixel >> 24U) & 0xFFU) != 0;
@@ -12677,6 +12689,18 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                             Datum::intRect(0, 0, 2, 2),
                             backgroundTransparentProps}).isVoid());
     assert(!navigatorTextCopyDest->preservesScriptFillBacking());
+    assert(navigatorTextCopyDest->isTextRendered());
+
+    auto partialTextCopyDest = std::make_shared<Bitmap>(3, 3, 32);
+    assert(runObjCall(103, {Datum::imageRef(partialTextCopyDest),
+                            Datum::intRect(0, 0, 3, 3),
+                            Datum::colorRef(255, 255, 255)}).isVoid());
+    assert(runObjCall(110, {Datum::imageRef(partialTextCopyDest),
+                            Datum::imageRef(navigatorTextCopySource),
+                            Datum::intRect(1, 1, 2, 2),
+                            Datum::intRect(0, 0, 1, 1),
+                            backgroundTransparentProps}).isVoid());
+    assert(!partialTextCopyDest->isTextRendered());
 
     auto alphaCopySource = std::make_shared<Bitmap>(
         1, 1, 32, std::vector<std::uint32_t>{0x80000000U});
@@ -21571,6 +21595,24 @@ void testSimpleTextRendererFoundation() {
         assert(defaultLeadingRendered->getPixel(1, 0) == 0x00000000U);
         assert(defaultLeadingRendered->getPixel(1, 1) == 0xFF010203U);
         assert(defaultLeadingRendered->getPixel(1, 9) == 0xFF010203U);
+
+        auto fieldRendered = renderer.renderTextInField("g",
+                                                        8,
+                                                        9,
+                                                        "DefaultLeadingFont",
+                                                        9,
+                                                        "plain",
+                                                        "left",
+                                                        static_cast<int>(0xFF010203U),
+                                                        0,
+                                                        false,
+                                                        false,
+                                                        9,
+                                                        0,
+                                                        2);
+        assert(fieldRendered != nullptr);
+        assert(fieldRendered->getPixel(1, 0) == 0x00000000U);
+        assert(fieldRendered->getPixel(1, 1) == 0xFF010203U);
 
         auto wrapped = renderer.renderText("AB AB",
                                            7,

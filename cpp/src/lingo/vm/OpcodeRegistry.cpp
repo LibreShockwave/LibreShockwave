@@ -4164,6 +4164,25 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
     if (destPaletteIndices.has_value()) {
         dest.setPaletteIndices(std::move(*destPaletteIndices));
     }
+    const bool destinationIsFullyReplaced =
+        destRect->left <= 0 &&
+        destRect->top <= 0 &&
+        destRect->right >= dest.width() &&
+        destRect->bottom >= dest.height();
+    const bool sourceIsFullyConsumed =
+        srcRect->left <= 0 &&
+        srcRect->top <= 0 &&
+        srcRect->right >= src.width() &&
+        srcRect->bottom >= src.height();
+    const bool textRenderingSource =
+        src.isTextRendered() || (mask != nullptr && mask->isTextRendered());
+    if (textRenderingSource && destinationIsFullyReplaced && sourceIsFullyConsumed) {
+        // Text wrappers repeatedly copy a rendered text member through
+        // intermediate images before the field reaches its window buffer.
+        // Keep the provenance while the full destination is being replaced so
+        // the final background-transparent copy can key the text matte.
+        dest.markTextRendered();
+    }
     const bool sourceRectExtendsPastSource =
         srcRect->left < 0 ||
         srcRect->top < 0 ||

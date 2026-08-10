@@ -113,6 +113,8 @@ public:
     void setTextFixedLineSpace(int lineSpace);
     [[nodiscard]] int textTopSpacing() const;
     void setTextTopSpacing(int spacing);
+    [[nodiscard]] int textGutterSize() const;
+    void setTextGutterSize(int gutter);
     [[nodiscard]] bool editable() const;
     void setEditable(bool editable);
     [[nodiscard]] std::shared_ptr<const bitmap::Palette> paletteData() const;
@@ -192,6 +194,7 @@ private:
     int textRectBottom_ = 480;
     int textFixedLineSpace_ = 0;
     int textTopSpacing_ = 0;
+    int textGutterSize_ = 2;
     bool editable_ = false;
 };
 

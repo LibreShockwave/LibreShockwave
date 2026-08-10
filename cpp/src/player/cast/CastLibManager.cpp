@@ -241,7 +241,7 @@ std::shared_ptr<bitmap::Bitmap> renderTextMemberImage(
         width = std::max(width, measureAutoTextWidth(member, renderer, text, rectWidth));
     }
     const int height = member->textBoxType() == 0 ? 0 : member->textRectBottom() - member->textRectTop();
-    auto rendered = renderer->renderText(text,
+    auto rendered = renderer->renderTextInField(text,
                                          width,
                                          height,
                                          member->textFont(),
@@ -253,7 +253,8 @@ std::shared_ptr<bitmap::Bitmap> renderTextMemberImage(
                                          member->textWordWrap(),
                                          member->textAntialias(),
                                          member->textFixedLineSpace(),
-                                         member->textTopSpacing());
+                                         member->textTopSpacing(),
+                                         member->textGutterSize());
     if (rendered != nullptr &&
         ((((static_cast<std::uint32_t>(member->textBgColor()) >> 24U) & 0xFFU) < 0xFFU) ||
          rendered->hasTransparentPixels())) {
@@ -1608,6 +1609,7 @@ bool CastLibManager::copyMemberMedia(int targetCastLibNumber,
         target->setTextBgColor(source->textBgColor());
         target->setTextBoxType(source->textBoxType());
         target->setTextTopSpacing(source->textTopSpacing());
+        target->setTextGutterSize(source->textGutterSize());
         target->setEditable(source->editable());
         return true;
     }
