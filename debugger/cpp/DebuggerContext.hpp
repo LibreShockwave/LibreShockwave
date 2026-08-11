@@ -83,6 +83,13 @@ public:
     /// player sessions after Stop.
     void setExternalParams(std::vector<std::pair<std::string, std::string>> params);
 
+    /// Enable or disable authored debug output (put/alert/debug builtins).
+    /// Applies to the current session and to future sessions.
+    void setDebugEnabled(bool enabled);
+
+    /// True while authored debug output is enabled.
+    [[nodiscard]] bool debugEnabled() const;
+
     /// Thread-safe input queue for keyboard/mouse events from StageWidget.
     struct InputEvent;
     void enqueueInput(InputEvent event);
@@ -142,6 +149,11 @@ signals:
     /// finishes loading at runtime.  Carries a movie-tree snapshot captured
     /// on the VM thread; the window rebuilds the script list from it.
     void castLoaded(const MovieTreeSnapshot& snapshot);
+
+    /// Emitted from the worker thread for each debug print line: the
+    /// tag is "PUT", "ALERT", "DEBUG", or "TRACE".  Delivered to the GUI
+    /// thread via queued connection.
+    void vmOutput(const QString& tag, const QString& text);
 
 private:
     void shutdownWorker();
@@ -221,6 +233,7 @@ private:
     std::vector<std::uint8_t> movieData_;
     std::string moviePath_;
     std::vector<std::pair<std::string, std::string>> externalParams_;
+    std::atomic<bool> debugEnabled_{true};
 };
 
 /// A raw input event enqueued from the StageWidget (main thread) and

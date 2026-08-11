@@ -23,6 +23,7 @@ namespace libreshockwave::debugger {
 
 class CodeViewPanel;
 class CallStackPanel;
+class DebugWindowPanel;
 class DebuggerContext;
 class MovieTreePanel;
 class StageWidget;
@@ -180,11 +181,13 @@ private:
     VariablesPanel* variablesPanel_;
     CallStackPanel* callStackPanel_;
     WatchPanel* watchPanel_;
+    DebugWindowPanel* debugWindowPanel_;
 
     // Docks
     QDockWidget* leftDock_;
     QDockWidget* rightDock_;
     QDockWidget* bottomDock_;
+    QDockWidget* debugDock_;
 
     // Toolbar
     QAction* playAction_;

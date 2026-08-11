@@ -20,6 +20,8 @@ add_executable(libreshockwave_debugger
     ui/CallStackPanel.hpp
     ui/WatchPanel.cpp
     ui/WatchPanel.hpp
+    ui/DebugWindowPanel.cpp
+    ui/DebugWindowPanel.hpp
     ui/StageWidget.cpp
     ui/StageWidget.hpp
     format/DatumFormat.cpp

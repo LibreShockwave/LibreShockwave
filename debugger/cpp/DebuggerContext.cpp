@@ -196,11 +196,23 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     player_ = std::make_unique<libreshockwave::player::Player>(directorFile);
     player_->setNetProvider(queuedNet_.get());
     player_->setExternalParams(externalParams_);
-    // Match the WASM worker's normal playback mode: the debugger controller
-    // remains attached for breakpoints/stepping, but authored debug playback
-    // diagnostics and per-frame FrameContext logging stay off until a debug
-    // command enables controller tracing.
-    player_->setDebugEnabled(false);
+    // Authored debug output follows the Debug Window toggle: put/alert/debug
+    // builtins only produce output while the user keeps debug mode enabled.
+    player_->setDebugEnabled(debugEnabled_.load());
+
+    // Route authored debug output and VM trace lines to the Debug Window
+    // panel.  Both handlers run on the VM thread and hand off to the GUI
+    // thread through the queued vmOutput signal.
+    auto& vm = player_->vm();
+    vm.builtinContext().outputHandler =
+        [this](std::string_view tag, std::string_view text) {
+            emit vmOutput(QString::fromUtf8(tag.data(), static_cast<int>(tag.size())),
+                          QString::fromUtf8(text.data(), static_cast<int>(text.size())));
+        };
+    vm.setTraceOutputHandler([this](std::string_view line) {
+        emit vmOutput(QStringLiteral("TRACE"),
+                      QString::fromUtf8(line.data(), static_cast<int>(line.size())));
+    });
     // Runtime CCT/CST loads mutate the cast libs on the VM thread.  Capture
     // a movie-tree snapshot there and hand it to the window through a queued
     // signal, so the script list stays in sync without the UI ever reading
@@ -286,6 +298,17 @@ void DebuggerContext::setExternalParams(
     if (player_ != nullptr) {
         player_->setExternalParams(externalParams_);
     }
+}
+
+void DebuggerContext::setDebugEnabled(bool enabled) {
+    debugEnabled_.store(enabled, std::memory_order_relaxed);
+    if (player_ != nullptr) {
+        player_->setDebugEnabled(enabled);
+    }
+}
+
+bool DebuggerContext::debugEnabled() const {
+    return debugEnabled_.load(std::memory_order_relaxed);
 }
 
 bool DebuggerContext::restoreMovieSession() {

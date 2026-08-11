@@ -45,6 +45,7 @@
 #include "libreshockwave/player/render/pipeline/FrameSnapshot.hpp"
 #include "ui/CallStackPanel.hpp"
 #include "ui/CodeViewPanel.hpp"
+#include "ui/DebugWindowPanel.hpp"
 #include "ui/MovieTreePanel.hpp"
 #include "ui/StageWidget.hpp"
 #include "ui/VariablesPanel.hpp"
@@ -596,6 +597,14 @@ void DebuggerWindow::setupDockWidgets() {
     codeViewPanel_ = new CodeViewPanel(bottomDock_);
     bottomDock_->setWidget(codeViewPanel_);
     addDockWidget(Qt::BottomDockWidgetArea, bottomDock_);
+
+    // Bottom-right dock: Debug window, beside the code view
+    debugDock_ = new QDockWidget(QStringLiteral("Debug Window"), this);
+    debugDock_->setObjectName(QStringLiteral("debugWindowDock"));
+    debugWindowPanel_ = new DebugWindowPanel(debugDock_);
+    debugDock_->setWidget(debugWindowPanel_);
+    addDockWidget(Qt::BottomDockWidgetArea, debugDock_);
+    splitDockWidget(bottomDock_, debugDock_, Qt::Horizontal);
 }
 
 void DebuggerWindow::setupCentralWidget() {
@@ -622,8 +631,15 @@ void DebuggerWindow::connectSignals() {
             restoreBreakpointsForCurrentMovie();
             refreshBreakpoints();
         }
+        // Start each movie with a fresh debug log; keep the toggle state.
+        debugWindowPanel_->setDebugEnabled(context_->debugEnabled());
+        debugWindowPanel_->clearLog();
         updateToolbarState();
     });
+    connect(debugWindowPanel_, &DebugWindowPanel::debugEnabledChanged,
+            context_, &DebuggerContext::setDebugEnabled);
+    connect(context_, &DebuggerContext::vmOutput,
+            debugWindowPanel_, &DebugWindowPanel::appendLogLine);
     connect(context_, &DebuggerContext::frameRendered,
             this, &DebuggerWindow::onFrameRendered);
     connect(context_, &DebuggerContext::playbackStarted,
