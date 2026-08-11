@@ -11364,6 +11364,38 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediateMissingCharGetPropContext));
     assert(immediateMissingCharGetPropContext.pop().stringValue().empty());
 
+    auto immediateStringCharHandler = makeImmediateObjHandler(Opcode::PUSH_ARG_LIST, 2, 69);
+    ScriptChunk immediateStringCharScript(nullptr,
+                                          ChunkId(713),
+                                          ScriptChunkType::MovieScript,
+                                          0,
+                                          {immediateStringCharHandler},
+                                          {},
+                                          {},
+                                          {},
+                                          {});
+    Scope immediateStringCharScope(&immediateStringCharScript, immediateStringCharHandler, {});
+    ExecutionContext immediateStringCharContext(immediateStringCharScope,
+                                                immediateStringCharHandler.instructions[0],
+                                                &registry,
+                                                &builtinContext,
+                                                callbacks);
+    immediateStringCharContext.push(Datum::of(std::string("abcd")));
+    immediateStringCharContext.push(Datum::of(3));
+    assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediateStringCharContext));
+    assert(immediateStringCharContext.pop().stringValue() == "c");
+
+    Scope immediateStringMissingCharScope(&immediateStringCharScript, immediateStringCharHandler, {});
+    ExecutionContext immediateStringMissingCharContext(immediateStringMissingCharScope,
+                                                        immediateStringCharHandler.instructions[0],
+                                                        &registry,
+                                                        &builtinContext,
+                                                        callbacks);
+    immediateStringMissingCharContext.push(Datum::of(std::string("abcd")));
+    immediateStringMissingCharContext.push(Datum::of(9));
+    assert(opcodeRegistry.execute(Opcode::PUSH_ARG_LIST, immediateStringMissingCharContext));
+    assert(immediateStringMissingCharContext.pop().stringValue().empty());
+
     auto immediateStringLineCountHandler = makeImmediateObjHandler(Opcode::PUSH_ARG_LIST, 2, 70);
     ScriptChunk immediateStringLineCountScript(nullptr,
                                                ChunkId(740),

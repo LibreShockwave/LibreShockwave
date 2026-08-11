@@ -2154,7 +2154,7 @@ std::optional<builtin::BuiltinContext::ScriptHandlerLocation> findScriptInstance
         return std::nullopt;
     }
 
-    if (instance.ancestor() == nullptr) {
+    if (instance.ancestorRaw() == nullptr) {
         if (const auto& scriptRef = instance.scriptRef(); scriptRef.has_value()) {
             const int castLib = scriptRef->castLib > 0 ? scriptRef->castLib : 1;
             const int memberNum = scriptRef->memberNum();
@@ -2214,6 +2214,7 @@ enum class ImmediateObjectMethod {
     AddAt,
     AddProp,
     Append,
+    Char,
     Count,
     DeleteProp,
     DeleteAt,
@@ -2244,6 +2245,9 @@ ImmediateObjectMethod classifyImmediateObjectMethod(std::string_view methodName)
             if (equalsIgnoreCase(methodName, "count")) return ImmediateObjectMethod::Count;
             if (equalsIgnoreCase(methodName, "getAt")) return ImmediateObjectMethod::GetAt;
             if (equalsIgnoreCase(methodName, "setAt")) return ImmediateObjectMethod::SetAt;
+            break;
+        case 4:
+            if (equalsIgnoreCase(methodName, "char")) return ImmediateObjectMethod::Char;
             break;
         case 6:
             if (equalsIgnoreCase(methodName, "append")) return ImmediateObjectMethod::Append;
@@ -2354,7 +2358,7 @@ Datum scriptInstanceObjectMethod(ExecutionContext& context,
             std::string propNameStorage;
             return scriptInstancePropertyCountValue(instance, keyNameLikeJavaView(args[0], propNameStorage));
         }
-        return Datum::of(static_cast<int>(instance.properties().size()) + (instance.ancestor() ? 1 : 0));
+        return Datum::of(static_cast<int>(instance.properties().size()) + (instance.ancestorRaw() != nullptr ? 1 : 0));
     }
     if (method == ImmediateObjectMethod::Ilk) {
         return Datum::symbol("instance");
@@ -7942,7 +7946,7 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (argCount == 1 && method == ImmediateObjectMethod::Count) {
             const auto& instance = target.scriptInstanceValue();
             const int count = static_cast<int>(instance.properties().size()) +
-                              (instance.ancestor() ? 1 : 0);
+                              (instance.ancestorRaw() != nullptr ? 1 : 0);
             context.scope().drop(argCount);
             if (!noReturn) {
                 context.push(Datum::of(count));
@@ -8132,6 +8136,20 @@ bool tryImmediateFastObjCall(ExecutionContext& context,
         if (result.isVoid()) {
             result = Datum::of(util::getChunkRange(value, *chunkType, start, end, currentItemDelimiter(context)));
         }
+        context.scope().drop(argCount);
+        if (!noReturn) {
+            context.push(std::move(result));
+        }
+        return true;
+    }
+
+    if (target.isString() && argCount == 2 && method == ImmediateObjectMethod::Char) {
+        std::string valueStorage;
+        const std::string_view value = stringViewLikeJava(target, valueStorage);
+        const int index = toIntLikeJava(context.peekRef(0));
+        Datum result = (index >= 1 && index <= static_cast<int>(value.size()))
+            ? Datum::of(std::string(1, value[static_cast<std::size_t>(index - 1)]))
+            : Datum::of(std::string());
         context.scope().drop(argCount);
         if (!noReturn) {
             context.push(std::move(result));
