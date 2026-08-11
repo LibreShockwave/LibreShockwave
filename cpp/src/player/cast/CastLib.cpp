@@ -15,6 +15,7 @@
 #include "libreshockwave/bitmap/Bitmap.hpp"
 #include "libreshockwave/bitmap/BitmapDecoder.hpp"
 #include "libreshockwave/bitmap/Palette.hpp"
+#include "libreshockwave/cast/BitmapInfo.hpp"
 #include "libreshockwave/cast/CastMember.hpp"
 #include "libreshockwave/cast/MemberType.hpp"
 #include "libreshockwave/chunks/CastChunk.hpp"
@@ -29,6 +30,7 @@
 #include "libreshockwave/format/ChunkType.hpp"
 #include "libreshockwave/io/BinaryReader.hpp"
 #include "libreshockwave/player/audio/SoundManager.hpp"
+#include "libreshockwave/player/BitmapResolver.hpp"
 #include "libreshockwave/player/cast/FontRegistry.hpp"
 #include "libreshockwave/util/FileUtil.hpp"
 
@@ -40,6 +42,15 @@ std::string lower(std::string value) {
         return static_cast<char>(std::tolower(ch));
     });
     return value;
+}
+
+bool isSystemMacPalette(const std::shared_ptr<const bitmap::Palette>& palette) {
+    if (!palette) {
+        return false;
+    }
+    const auto name = lower(palette->name());
+    return palette.get() == &bitmap::Palette::systemMacPalette() ||
+           name == "system - mac" || name == "systemmac";
 }
 
 std::string trim(const std::string& value) {
@@ -111,6 +122,17 @@ int directorPaletteId(const bitmap::Bitmap& bitmap) {
         }
         if (normalized == "systemWin") {
             return bitmap::Palette::SYSTEM_WIN + 1;
+        }
+    }
+    if (bitmap.bitDepth() <= 8 && bitmap.imagePalette() != nullptr) {
+        const auto paletteName = lower(bitmap.imagePalette()->name());
+        if (bitmap.imagePalette().get() == &bitmap::Palette::systemWinPalette() ||
+            paletteName == lower(bitmap::Palette::systemWinPalette().name())) {
+            return bitmap::Palette::SYSTEM_WIN + 1;
+        }
+        if (bitmap.imagePalette().get() == &bitmap::Palette::systemMacPalette() ||
+            paletteName == lower(bitmap::Palette::systemMacPalette().name())) {
+            return bitmap::Palette::SYSTEM_MAC + 1;
         }
     }
     if (bitmap.bitDepth() <= 8 && bitmap.imagePalette() != nullptr &&
@@ -504,6 +526,10 @@ CastLib::CastLib(int number,
 
 void CastLib::setSourceFile(std::shared_ptr<DirectorFile> file) {
     sourceFile_ = std::move(file);
+}
+
+void CastLib::setBitmapPaletteHostFile(std::shared_ptr<DirectorFile> file) {
+    bitmapPaletteHostFile_ = std::move(file);
 }
 
 std::shared_ptr<DirectorFile> CastLib::sourceFile() const {
@@ -1049,14 +1075,35 @@ lingo::Datum CastLib::getMemberProp(int memberNumber, const std::string& propNam
     if (prop == "rect") return lingo::Datum::intRect(0, 0, member->width(), member->height());
     if (prop == "image") {
         auto bitmap = member->runtimeBitmap();
+        const auto info = member->bitmapInfo();
+        const bool usesUnlinkedPalette = info.has_value() && info->paletteId >= 0 &&
+            sourceFile_ != nullptr && sourceFile_->resolvePaletteExact(info->paletteId) == nullptr;
+        const bool hostUsesWindowsPalette = bitmapPaletteHostFile_ != nullptr &&
+            bitmapPaletteHostFile_->config() != nullptr && bitmapPaletteHostFile_->config()->platform() == 2 &&
+            usesUnlinkedPalette;
+        const bool runtimeNeedsHostPalette = hostUsesWindowsPalette && bitmap != nullptr &&
+            isSystemMacPalette(bitmap->imagePalette()) && member->runtimePaletteOverride() == nullptr;
         if ((!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
-             member->shouldRedecodeAuthoredRuntimeBitmap()) &&
+             member->shouldRedecodeAuthoredRuntimeBitmap() || runtimeNeedsHostPalette) &&
             member->isBitmap() &&
             member->rawChunk() &&
             sourceFile_) {
             const bool hadRuntimeBitmap = bitmap != nullptr;
             const auto paletteOverride = member->runtimePaletteOverride();
-            auto decoded = sourceFile_->decodeBitmap(member->rawChunk(), paletteOverride.get());
+            const bitmap::Palette* decodePalette = paletteOverride.get();
+            if (decodePalette == nullptr && bitmapPaletteHostFile_ &&
+                bitmapPaletteHostFile_->config() != nullptr &&
+                bitmapPaletteHostFile_->config()->platform() == 2 &&
+                usesUnlinkedPalette) {
+                decodePalette = &bitmap::Palette::systemWinPalette();
+            }
+            std::optional<bitmap::Bitmap> decoded;
+            if (bitmapPaletteHostFile_ && sourceFile_.get() != bitmapPaletteHostFile_.get()) {
+                player::BitmapResolver resolver(bitmapPaletteHostFile_, nullptr, nullptr);
+                decoded = resolver.decodeBitmap(member->rawChunk(), decodePalette);
+            } else {
+                decoded = sourceFile_->decodeBitmap(member->rawChunk(), decodePalette);
+            }
             if (decoded.has_value()) {
                 applyRuntimePaletteMetadata(*decoded, member);
                 member->setRuntimeBitmapFromAuthoredSource(*decoded);

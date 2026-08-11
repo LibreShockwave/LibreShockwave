@@ -19,6 +19,7 @@
 #include "libreshockwave/chunks/CastChunk.hpp"
 #include "libreshockwave/chunks/CastListChunk.hpp"
 #include "libreshockwave/chunks/CastMemberChunk.hpp"
+#include "libreshockwave/chunks/ConfigChunk.hpp"
 #include "libreshockwave/id/Ids.hpp"
 #include "libreshockwave/lingo/LingoValueParser.hpp"
 #include "libreshockwave/player/BitmapResolver.hpp"
@@ -33,6 +34,21 @@ std::string lower(std::string value) {
         return static_cast<char>(std::tolower(ch));
     });
     return value;
+}
+
+bool isSystemMacPalette(const std::shared_ptr<const bitmap::Palette>& palette) {
+    if (!palette) {
+        return false;
+    }
+    const auto name = lower(palette->name());
+    return palette.get() == &bitmap::Palette::systemMacPalette() ||
+           name == "system - mac" || name == "systemmac";
+}
+
+std::shared_ptr<const bitmap::Palette> borrowedPalette(const bitmap::Palette* palette) {
+    return palette != nullptr
+        ? std::shared_ptr<const bitmap::Palette>(palette, [](const bitmap::Palette*) {})
+        : nullptr;
 }
 
 bool equalsIgnoreCase(const std::string& lhs, const std::string& rhs) {
@@ -101,13 +117,6 @@ std::string keyNameLikeJava(const lingo::Datum& value) {
         return symbol->name;
     }
     return value.stringValue();
-}
-
-std::shared_ptr<const bitmap::Palette> borrowedPalette(const bitmap::Palette* palette) {
-    if (palette == nullptr) {
-        return nullptr;
-    }
-    return std::shared_ptr<const bitmap::Palette>(palette, [](const bitmap::Palette*) {});
 }
 
 struct ResolvedPaletteOverride {
@@ -736,6 +745,35 @@ lingo::Datum CastLibManager::getMemberProp(int castLibNumber, int memberNumber, 
 
     const auto prop = lower(propName);
     if (auto member = castLib->getMember(memberNumber)) {
+        const auto info = member->bitmapInfo();
+        const auto sourceFile = castLib->sourceFile();
+        const bool usesUnlinkedPalette = info.has_value() && info->paletteId >= 0 && sourceFile != nullptr &&
+            sourceFile->resolvePaletteExact(info->paletteId) == nullptr;
+        const bool hostUsesWindowsPalette = file_ != nullptr && file_->config() != nullptr &&
+            file_->config()->platform() == 2 && usesUnlinkedPalette;
+        const bool runtimeNeedsHostPalette = hostUsesWindowsPalette && member->runtimeBitmap() != nullptr &&
+            isSystemMacPalette(member->runtimeBitmap()->imagePalette()) &&
+            member->runtimePaletteOverride() == nullptr;
+        if (member->isBitmap() && prop == "image" && member->rawChunk() &&
+            (!member->runtimeBitmap() || member->hasRuntimeBitmapDecodePlaceholder() ||
+             member->shouldRedecodeAuthoredRuntimeBitmap() ||
+             (member->runtimeBitmap() && !member->runtimeBitmap()->isScriptModified()) ||
+             runtimeNeedsHostPalette)) {
+            // Bitmap member properties are normally decoded by CastLib, which
+            // only knows the external cast's own platform.  Resolve through
+            // the host-aware bitmap resolver so unlinked external bitmaps use
+            // the movie platform palette instead of an unrelated Mac CLUT.
+            BitmapResolver resolver(file_, this, nullptr);
+            const bitmap::Palette* decodePalette = nullptr;
+            const auto runtimePaletteOverride = member->runtimePaletteOverride();
+            if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform() == 2 &&
+                (usesUnlinkedPalette || isSystemMacPalette(runtimePaletteOverride))) {
+                decodePalette = &bitmap::Palette::systemWinPalette();
+            }
+            if (auto decoded = resolver.decodeBitmap(member->rawChunk(), decodePalette)) {
+                member->setRuntimeBitmapFromAuthoredSource(*decoded);
+            }
+        }
         if (!member->isTextLike()) {
             if (prop == "width") {
                 return lingo::Datum::of(member->width());
@@ -800,10 +838,20 @@ bool CastLibManager::setMemberProp(int castLibNumber,
             paletteRefCastLib = resolved->memberRef->castLib;
             paletteRefMemberNum = resolved->memberRef->memberNum();
         }
-        member->setRuntimePaletteOverride(resolved->palette,
+        auto resolvedPalette = resolved->palette;
+        auto paletteRefSystemName = resolved->systemName;
+        const auto info = member->bitmapInfo();
+        const bool isAuthoredIndexedBitmapWithLocalPalette =
+            member->rawChunk() != nullptr && info.has_value() && info->bitDepth <= 8 && info->paletteId >= 0;
+        if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform() == 2 &&
+            isAuthoredIndexedBitmapWithLocalPalette && isSystemMacPalette(resolvedPalette)) {
+            resolvedPalette = borrowedPalette(&bitmap::Palette::systemWinPalette());
+            paletteRefSystemName = std::string("systemWin");
+        }
+        member->setRuntimePaletteOverride(resolvedPalette,
                                           paletteRefCastLib,
                                           paletteRefMemberNum,
-                                          resolved->systemName,
+                                          paletteRefSystemName,
                                           equalsIgnoreCase(propName, "palette"));
         return true;
     }
@@ -1504,6 +1552,7 @@ void CastLibManager::ensureInitialized() {
             }
 
             auto castLib = std::make_shared<CastLib>(castLibNumber, castChunk, &listEntry);
+            castLib->setBitmapPaletteHostFile(file_);
             castLib->setPreloadMode(listEntry.preloadSettings);
             if (!isExternal) {
                 castLib->setSourceFile(file_);
@@ -1514,6 +1563,7 @@ void CastLibManager::ensureInitialized() {
         for (int index = 0; index < static_cast<int>(casts.size()); ++index) {
             const int castLibNumber = index + 1;
             auto castLib = std::make_shared<CastLib>(castLibNumber, casts[static_cast<std::size_t>(index)], nullptr);
+            castLib->setBitmapPaletteHostFile(file_);
             castLib->setSourceFile(file_);
             castLibs_[castLibNumber] = castLib;
         }
@@ -1620,6 +1670,15 @@ bool CastLibManager::copyMemberMedia(int targetCastLibNumber,
                 const auto image = getMemberProp(source->castLib(), source->memberNum(), "image");
                 if (const auto* imageRef = image.asImageRef()) {
                     bitmap = imageRef->bitmap;
+                }
+                if (!source->runtimePaletteOverride()) {
+                    const auto info = source->bitmapInfo();
+                    if (info.has_value() && bitmap::Palette::builtInSymbolName(info->paletteId).has_value()) {
+                        BitmapResolver resolver(file_, this, nullptr);
+                        if (auto authored = resolver.decodeBitmap(source->rawChunk())) {
+                            bitmap = std::make_shared<bitmap::Bitmap>(std::move(*authored));
+                        }
+                    }
                 }
             }
             target->setRegPointState(source->regX(), source->regY(), source->regPointPinnedToMember());

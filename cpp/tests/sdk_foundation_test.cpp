@@ -27757,6 +27757,35 @@ void testCastLibManagerFoundation() {
     assert(decodedRuntimeIndexed->imagePalette() == sourceRuntimePalette);
     assert(decodedRuntimeIndexed->paletteIndex(0, 0).value() == 1);
     assert(decodedRuntimeIndexed->paletteIndex(1, 0).value() == 2);
+
+    auto systemWinMediaSource = manager.createMember(1, "bitmap");
+    const auto* systemWinMediaSourceRef = systemWinMediaSource.asCastMemberRef();
+    assert(systemWinMediaSourceRef != nullptr);
+    auto systemWinMediaBitmap = std::make_shared<Bitmap>(2, 1, 8);
+    systemWinMediaBitmap->setPaletteIndices({18, 251});
+    systemWinMediaBitmap->setImagePalette(&Palette::systemWinPalette());
+    assert(manager.setMemberProp(1,
+                                 systemWinMediaSourceRef->memberNum(),
+                                 "media",
+                                 Datum::imageRef(systemWinMediaBitmap)));
+    const auto systemWinMediaDatum = manager.getMemberProp(1, systemWinMediaSourceRef->memberNum(), "media");
+    const auto* systemWinMedia = systemWinMediaDatum.asMedia();
+    assert(systemWinMedia != nullptr);
+    auto systemWinMediaReceiver = manager.createMember(1, "bitmap");
+    const auto* systemWinMediaReceiverRef = systemWinMediaReceiver.asCastMemberRef();
+    assert(systemWinMediaReceiverRef != nullptr);
+    assert(manager.setMemberProp(1,
+                                 systemWinMediaReceiverRef->memberNum(),
+                                 "media",
+                                 systemWinMediaDatum));
+    const auto systemWinRoundTrip = manager.resolveMember(1, systemWinMediaReceiverRef->memberNum())->runtimeBitmap();
+    assert(systemWinRoundTrip != nullptr);
+    assert(systemWinRoundTrip->imagePalette().get() == &Palette::systemWinPalette());
+    assert(systemWinRoundTrip->paletteIndex(0, 0).value() == 18);
+    assert(systemWinRoundTrip->paletteIndex(1, 0).value() == 251);
+    assert(systemWinRoundTrip->getPixel(0, 0) == 0xFFDDDDDDU);
+    assert(systemWinRoundTrip->getPixel(1, 0) == 0xFF000080U);
+
     assert(!registry.invoke("importFileInto",
                             context,
                             {Datum::castMemberRef(CastLibId(1), MemberId(2)),
@@ -27978,6 +28007,74 @@ void testCastLibManagerFoundation() {
         {"BITD", bitdData},
         {"snd ", soundChunkData},
     });
+
+    auto windowsHostConfigData = configData;
+    putI16At(windowsHostConfigData, 56, 2);
+    auto windowsHostFile = DirectorFile::load(buildRifx({
+        {"DRCF", windowsHostConfigData},
+        {"MCsL", castListData},
+        {"CAS*", castData},
+        {"CASt", heroMemberData},
+        {"CASt", sourceDoorMemberData},
+        {"CASt", soundMemberData},
+        {"KEY*", keyData},
+        {"BITD", bitdData},
+        {"snd ", soundChunkData},
+    }));
+    CastLibManager windowsHostManager(windowsHostFile);
+    assert(windowsHostManager.setExternalCastData(2, externalCastData));
+    const auto externalImage = windowsHostManager.getMemberProp(2, 2, "image");
+    const auto* externalImageRef = externalImage.asImageRef();
+    assert(externalImageRef != nullptr);
+    assert(externalImageRef->bitmap != nullptr);
+    assert(externalImageRef->bitmap->imagePalette().get() == &Palette::systemWinPalette());
+    assert(externalImageRef->bitmap->getPixel(1, 0) ==
+           (0xFF000000U | Palette::systemWinPalette().getColor(1)));
+    auto externalRuntimeMember = windowsHostManager.resolveMember(2, 2);
+    assert(externalRuntimeMember != nullptr);
+    auto staleMacRuntime = externalImageRef->bitmap->copy();
+    assert(staleMacRuntime.remapImagePalette(&Palette::systemMacPalette()));
+    externalRuntimeMember->setRuntimeBitmap(staleMacRuntime, true);
+    const auto repairedExternalImage = windowsHostManager.getMemberProp(2, 2, "image");
+    const auto* repairedExternalImageRef = repairedExternalImage.asImageRef();
+    assert(repairedExternalImageRef != nullptr);
+    assert(repairedExternalImageRef->bitmap != nullptr);
+    assert(repairedExternalImageRef->bitmap->imagePalette().get() == &Palette::systemWinPalette());
+
+    const auto windowPreview = windowsHostManager.createMember(2, "bitmap");
+    const auto* windowPreviewRef = windowPreview.asCastMemberRef();
+    assert(windowPreviewRef != nullptr);
+    assert(windowsHostManager.setMemberProp(windowPreviewRef->castLib,
+                                            windowPreviewRef->memberNum(),
+                                            "name",
+                                            Datum::of(std::string("window_test_small"))));
+    assert(windowsHostManager.setMemberProp(windowPreviewRef->castLib,
+                                            windowPreviewRef->memberNum(),
+                                            "paletteRef",
+                                            Datum::symbol("systemMac")));
+    assert(windowsHostManager.getMemberProp(windowPreviewRef->castLib,
+                                            windowPreviewRef->memberNum(),
+                                            "paletteRef")
+               .asSymbol()
+               ->name == "systemMac");
+
+    const auto uiShadow = windowsHostManager.createMember(2, "bitmap");
+    const auto* uiShadowRef = uiShadow.asCastMemberRef();
+    assert(uiShadowRef != nullptr);
+    assert(windowsHostManager.setMemberProp(uiShadowRef->castLib,
+                                            uiShadowRef->memberNum(),
+                                            "name",
+                                            Datum::of(std::string("shadow.pixel"))));
+    assert(windowsHostManager.setMemberProp(uiShadowRef->castLib,
+                                            uiShadowRef->memberNum(),
+                                            "paletteRef",
+                                            Datum::symbol("systemMac")));
+    assert(windowsHostManager.getMemberProp(uiShadowRef->castLib,
+                                            uiShadowRef->memberNum(),
+                                            "paletteRef")
+               .asSymbol()
+               ->name == "systemMac");
+
     manager.cacheExternalData("runtime/newCast.cct", externalCastData);
     auto retargetedCast = manager.castLibs().find(2);
     assert(retargetedCast != manager.castLibs().end());
@@ -28459,6 +28556,35 @@ void testBitmapResolverFoundation() {
     assert(decoded->getPixel(1, 0) == 0xFFFFFFCCU);
     assert(decoded->paletteIndex(1, 0).value() == 1);
     assert(decoded->imagePalette().get() == &Palette::systemMacPalette());
+
+    auto windowsHostConfigData = configData;
+    putI16At(windowsHostConfigData, 56, 2);
+    auto windowsHostFile = DirectorFile::load(buildRifx({
+        {"DRCF", windowsHostConfigData},
+        {"KEY*", keyData},
+        {"BITD", bitdData},
+    }));
+    auto externalBitmapFile = DirectorFile::load(buildRifx({
+        {"DRCF", configData},
+        {"KEY*", keyData},
+        {"BITD", bitdData},
+    }));
+    auto externalBitmapMember = std::make_shared<CastMemberChunk>(externalBitmapFile.get(),
+                                                                    ChunkId(9),
+                                                                    MemberType::Bitmap,
+                                                                    0,
+                                                                    static_cast<int>(bitmapSpecific.size()),
+                                                                    std::vector<std::uint8_t>{},
+                                                                    bitmapSpecific,
+                                                                    "External Bitmap",
+                                                                    0,
+                                                                    0,
+                                                                    0);
+    BitmapResolver externalBitmapResolver(windowsHostFile);
+    auto externalDecoded = externalBitmapResolver.decodeBitmap(externalBitmapMember);
+    assert(externalDecoded.has_value());
+    assert(externalDecoded->imagePalette().get() == &Palette::systemWinPalette());
+    assert(externalDecoded->getPixel(1, 0) == (0xFF000000U | Palette::systemWinPalette().getColor(1)));
 
     Palette overridePalette({0x010203U, 0x040506U}, "override");
     auto overridden = resolver.decodeBitmap(bitmapMember, &overridePalette);

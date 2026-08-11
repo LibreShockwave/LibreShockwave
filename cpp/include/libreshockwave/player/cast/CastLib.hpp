@@ -45,6 +45,7 @@ public:
             const chunks::CastListChunk::CastListEntry* listEntry = nullptr);
 
     void setSourceFile(std::shared_ptr<DirectorFile> file);
+    void setBitmapPaletteHostFile(std::shared_ptr<DirectorFile> file);
     [[nodiscard]] std::shared_ptr<DirectorFile> sourceFile() const;
     void reloadFromFile(std::shared_ptr<DirectorFile> file);
 
@@ -149,6 +150,7 @@ private:
 
     std::shared_ptr<chunks::CastChunk> castChunk_;
     std::shared_ptr<DirectorFile> sourceFile_;
+    std::shared_ptr<DirectorFile> bitmapPaletteHostFile_;
     std::vector<std::uint8_t> fetchedExternalData_;
     std::map<int, std::shared_ptr<chunks::CastMemberChunk>> memberChunks_;
     std::map<int, std::shared_ptr<libreshockwave::cast::CastMember>> members_;

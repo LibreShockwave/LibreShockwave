@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "libreshockwave/DirectorFile.hpp"
+#include "libreshockwave/bitmap/Palette.hpp"
 #include "libreshockwave/cast/BitmapInfo.hpp"
 #include "libreshockwave/cast/CastMember.hpp"
 #include "libreshockwave/chunks/CastMemberChunk.hpp"
@@ -19,6 +20,14 @@ std::shared_ptr<const bitmap::Palette> borrowedPalette(const bitmap::Palette* pa
         return nullptr;
     }
     return std::shared_ptr<const bitmap::Palette>(palette, [](const bitmap::Palette*) {});
+}
+
+std::shared_ptr<const bitmap::Palette> moviePlatformPalette(const std::shared_ptr<DirectorFile>& file) {
+    const auto config = file != nullptr ? file->config() : nullptr;
+    const auto* palette = config != nullptr && config->platform() == 2
+        ? &bitmap::Palette::systemWinPalette()
+        : &bitmap::Palette::systemMacPalette();
+    return borrowedPalette(palette);
 }
 
 DirectorFile* mutableFileFor(const std::shared_ptr<chunks::CastMemberChunk>& member) {
@@ -209,11 +218,20 @@ std::shared_ptr<const bitmap::Palette> BitmapResolver::resolvePaletteCrossFile(
 
     const int directorVersion = memberFile->config() != nullptr ? memberFile->config()->directorVersion() : 1200;
     const auto info = libreshockwave::cast::BitmapInfo::parse(member->specificData(), directorVersion);
+    const auto exactPalette = memberFile->resolvePaletteExact(info.paletteId);
     if (info.paletteId < 0) {
+        // Built-in palette IDs are part of the bitmap's authored format and
+        // remain valid when the bitmap is decoded through another movie.  In
+        // particular, -102 is the Director 4 Windows system palette.  Do not
+        // drop it here: doing so lets the source file's platform default
+        // silently reinterpret indexed pixels with the Mac palette.
+        if (bitmap::Palette::builtInSymbolName(info.paletteId).has_value()) {
+            return exactPalette;
+        }
         return nullptr;
     }
 
-    if (memberFile->resolvePaletteExact(info.paletteId)) {
+    if (exactPalette) {
         return nullptr;
     }
 
@@ -223,27 +241,12 @@ std::shared_ptr<const bitmap::Palette> BitmapResolver::resolvePaletteCrossFile(
         }
     }
 
-    if (file_ != nullptr) {
-        if (auto palette = file_->resolvePaletteExact(info.paletteId)) {
-            return palette;
-        }
-    }
-
-    if (castLibManager_ != nullptr) {
-        for (const auto& [_, castLib] : castLibManager_->castLibs()) {
-            if (!castLib || !castLib->isLoaded()) {
-                continue;
-            }
-            auto source = castLib->sourceFile();
-            if (source != nullptr && source.get() != memberFile && source != file_) {
-                if (auto palette = source->resolvePaletteExact(info.paletteId)) {
-                    return palette;
-                }
-            }
-        }
-    }
-
-    return nullptr;
+    // A non-negative palette ID is local to the bitmap's cast library.  It is
+    // not a global palette ID, so falling through to the movie or another
+    // external cast can apply an unrelated CLUT.  This is especially visible
+    // for old Windows casts whose default palette is the Windows system
+    // palette: another cast's custom CLUT can turn black/navy pixels pink.
+    return moviePlatformPalette(file_);
 }
 
 } // namespace libreshockwave::player
