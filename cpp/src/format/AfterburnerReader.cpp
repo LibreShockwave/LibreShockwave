@@ -37,12 +37,10 @@ std::optional<std::vector<std::uint8_t>> AfterburnerReader::getChunkData(int res
     }
 
     if (const auto cached = cachedChunkData_.find(resourceId); cached != cachedChunkData_.end()) {
-        auto chunkData = cached->second;
-        const auto* info = getChunkInfo(resourceId);
-        if (info && info->compressedSize != info->uncompressedSize && info->isZlibCompressed()) {
-            chunkData = io::BinaryReader::decompressZlib(chunkData);
-        }
-        return chunkData;
+        // The cache always holds final (decompressed) data: resources read from the
+        // ILS body are already plain, and file-backed resources are decompressed
+        // before caching below.
+        return cached->second;
     }
 
     const auto* info = getChunkInfo(resourceId);
@@ -62,10 +60,13 @@ std::optional<std::vector<std::uint8_t>> AfterburnerReader::getChunkData(int res
     auto chunkData = reader_.readBytes(static_cast<std::size_t>(info->compressedSize));
     reader_.seek(savedPosition);
 
-    cachedChunkData_[resourceId] = chunkData;
-    if (info->compressedSize != info->uncompressedSize && info->isZlibCompressed()) {
+    // Decompress whenever the resource is zlib-marked. compressedSize can equal
+    // uncompressedSize even when the data is still zlib-compressed (e.g. hh_photo's
+    // camera.props, chunk 831), so size equality alone must not skip decompression.
+    if (info->isZlibCompressed()) {
         chunkData = io::BinaryReader::decompressZlib(chunkData);
     }
+    cachedChunkData_[resourceId] = chunkData;
 
     return chunkData;
 }

@@ -26,3 +26,4 @@ Thumbs.db
 node_modules/
 cpp/apps/tools/ts/**/dist/
 cpp/apps/tools/ts/**/*.tsbuildinfo
+exported

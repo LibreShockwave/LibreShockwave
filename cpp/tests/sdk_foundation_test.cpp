@@ -1960,8 +1960,9 @@ void testLingoDecompilerNodeFoundation() {
                                   "caseOps",
                                   "caseOtherwiseOps",
                                   "caseOrOps",
-                                  "caseExpressionOps",
-                                  "jsOps",
+                                   "caseExpressionOps",
+                                   "casePopOtherwiseOps",
+                                   "jsOps",
                                   "literalOps"});
     ScriptChunk::Handler bytecodeHandler{
         0,
@@ -2960,6 +2961,77 @@ void testLingoDecompilerNodeFoundation() {
     assert(caseExpressionMapping.lines[3].bytecodeOffset == 14);
     assert(caseExpressionMapping.lines[4].bytecodeOffset == -1);
     assert(caseExpressionMapping.lines[5].bytecodeOffset == -1);
+
+    // A case whose last branch's no-match target is the selector-cleanup POP
+    // followed by a real otherwise body (the matched branch jumps over it).
+    // The otherwise body must be captured, not flattened into the tail of the
+    // handler. Mirrors hh_shared's Figure_System_Class.parseFigure.
+    ScriptChunk::Handler casePopOtherwiseHandler{
+        scriptNames.findName("casePopOtherwiseOps"),
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        {},
+        {4},
+        {
+            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
+            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            ScriptChunk::Instruction{6, Opcode::EQ, 0x0F, 0},
+            ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 8},
+            ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 2},
+            ScriptChunk::Instruction{11, Opcode::SET_LOCAL, 0x52, 0},
+            ScriptChunk::Instruction{13, Opcode::JMP, 0x53, 7},
+            ScriptChunk::Instruction{15, Opcode::POP, 0x65, 1},
+            ScriptChunk::Instruction{16, Opcode::PUSH_INT8, 0x41, 99},
+            ScriptChunk::Instruction{18, Opcode::SET_LOCAL, 0x52, 0},
+            ScriptChunk::Instruction{20, Opcode::POP, 0x65, 1},
+            ScriptChunk::Instruction{22, Opcode::PUSH_INT8, 0x41, 7},
+            ScriptChunk::Instruction{24, Opcode::SET_LOCAL, 0x52, 0},
+            ScriptChunk::Instruction{26, Opcode::RET, 0x01, 0}
+        },
+        {}
+    };
+    ScriptChunk casePopOtherwiseScript(nullptr,
+                                       ChunkId(517),
+                                       ScriptChunkType::MovieScript,
+                                       0,
+                                       {casePopOtherwiseHandler},
+                                       {},
+                                       {},
+                                       {},
+                                       {});
+    assert(decompiler.decompileHandler(casePopOtherwiseScript.handlers().front(),
+                                       casePopOtherwiseScript,
+                                       &scriptNames) ==
+           "on casePopOtherwiseOps\n"
+           "  case caseValue of\n"
+           "    1:\n"
+           "      localOne = 2\n"
+           "    otherwise:\n"
+           "      localOne = 99\n"
+           "\n"
+           "  end case\n"
+           "  localOne = 7\n"
+           "end");
+    const auto casePopOtherwiseMapping =
+        decompiler.decompileHandlerWithMapping(casePopOtherwiseScript.handlers().front(),
+                                               casePopOtherwiseScript,
+                                               &scriptNames);
+    assert(casePopOtherwiseMapping.toText() ==
+           "on casePopOtherwiseOps\n"
+           "  case caseValue of\n"
+           "    1:\n"
+           "      localOne = 2\n"
+           "    otherwise:\n"
+           "      localOne = 99\n"
+           "  end case\n"
+           "  localOne = 7\n"
+           "end\n");
 
     ScriptChunk::Handler nextLoopHandler{
         23,

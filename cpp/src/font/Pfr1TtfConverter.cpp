@@ -111,7 +111,7 @@ std::vector<std::uint8_t> buildHead(int unitsPerEm, const Pfr1Font::FontMetrics&
     writer.writeU16(0);
     writer.writeU16(8);
     writer.writeU16(2);
-    writer.writeU16(1);
+    writer.writeU16(0);
     writer.writeU16(0);
     return std::move(writer.bytes);
 }

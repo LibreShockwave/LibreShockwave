@@ -587,7 +587,37 @@ std::unique_ptr<HandlerNode> LingoDecompiler::translateHandler(const chunks::Scr
                             currentBlock_->currentCase = nullptr;
                         }
                     } else if (caseNode->expect() == CaseNode::EXPECT_POP) {
-                        currentBlock_->currentCase = nullptr;
+                        // The no-match path lands on a selector-cleanup pop. That
+                        // pop is usually the case's own end (no otherwise body).
+                        // But when the matched branches jump past it to a later
+                        // case end, the gap between the pop and that end is a real
+                        // otherwise body and must be captured (rather than flattened
+                        // into the tail of the handler). Mirrors hh_shared's
+                        // Figure_System_Class.parseFigure.
+                        const bool hasOtherwiseBody = [&]() {
+                            if (currentHandler_ == nullptr || casesStmt->endPos <= exitedBlock->endPos) {
+                                return false;
+                            }
+                            for (const auto& ins : currentHandler_->instructions) {
+                                if (ins.offset > exitedBlock->endPos && ins.offset < casesStmt->endPos) {
+                                    if (ins.opcode != Opcode::POP &&
+                                        ins.opcode != Opcode::RET &&
+                                        ins.opcode != Opcode::RET_FACTORY) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }();
+                        if (hasOtherwiseBody) {
+                            auto otherwise = std::make_unique<BlockNode>();
+                            otherwise->endPos = casesStmt->endPos;
+                            auto* otherwiseBlock = otherwise.get();
+                            caseNode->setOtherwise(std::move(otherwise));
+                            enterBlock(*otherwiseBlock);
+                        } else {
+                            currentBlock_->currentCase = nullptr;
+                        }
                     }
                 }
             }

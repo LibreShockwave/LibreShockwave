@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <utility>
@@ -61,6 +62,74 @@ int colorDistance(std::uint32_t left, std::uint32_t right) {
     return (redDelta * redDelta) + (greenDelta * greenDelta) + (blueDelta * blueDelta);
 }
 
+std::shared_ptr<const bitmap::Palette> closestMacLikePaletteForIndexCounts(
+    const std::array<long long, 256>& usedPixelCounts,
+    long long totalUsedPixels,
+    const std::vector<std::shared_ptr<chunks::PaletteChunk>>& paletteChunks) {
+    if (totalUsedPixels == 0) {
+        return nullptr;
+    }
+
+    // A bitmap that references a palette it can't resolve (e.g. a palette
+    // living in the movie's internal cast, absent from this file) is decoded
+    // against the System palette first, preserving its raw palette indices.
+    // Prefer the file palette that actually provides colors for the indices
+    // the bitmap uses: entries that resolve to black mean the palette does not
+    // carry data for that index. Break ties with closeness to the System Mac
+    // palette, which is the palette those unresolved members were authored
+    // against when the true palette is also missing from the file.
+    const auto& macPalette = bitmap::Palette::systemMacPalette();
+    std::shared_ptr<const bitmap::Palette> bestPalette;
+    long long bestCovered = std::numeric_limits<long long>::min();
+    long long bestMacDistance = std::numeric_limits<long long>::max();
+    for (const auto& chunk : paletteChunks) {
+        if (!chunk || chunk->colorCount() <= 0) {
+            continue;
+        }
+        const auto& colors = chunk->colors();
+        auto candidate = std::make_shared<bitmap::Palette>(
+            colors,
+            "Custom Palette #" + std::to_string(chunk->id().value()));
+        long long covered = 0;
+        long long macDistance = 0;
+        for (int index = 0; index < 256; ++index) {
+            const long long count = usedPixelCounts[static_cast<std::size_t>(index)];
+            if (count == 0) {
+                continue;
+            }
+            if (index >= static_cast<int>(colors.size()) ||
+                index >= static_cast<int>(macPalette.size())) {
+                macDistance += 255LL * 255LL * 3LL * count;
+                continue;
+            }
+            const auto color = colors[static_cast<std::size_t>(index)];
+            if ((color & 0xFFFFFFU) != 0) {
+                covered += count;
+            }
+            macDistance += colorDistance(color, macPalette.getColor(index)) * count;
+        }
+        const bool betterCovered = covered > bestCovered;
+        const bool equallyCovered = covered == bestCovered && macDistance < bestMacDistance;
+        if (betterCovered || equallyCovered) {
+            bestCovered = covered;
+            bestMacDistance = macDistance;
+            bestPalette = std::move(candidate);
+        }
+    }
+
+    // Adopt the best file palette only when it meaningfully covers the
+    // bitmap's indexed pixels; otherwise keep the System palette fallback.
+    if (bestPalette) {
+        std::fprintf(stderr, "[paldbg] closestMacLike: covered %lld/%lld chose %s idx254=0x%06X\n",
+                     bestCovered, totalUsedPixels, bestPalette->name().c_str(),
+                     bestPalette->getColor(254) & 0xFFFFFFU);
+    } else {
+        std::fprintf(stderr, "[paldbg] closestMacLike: covered %lld/%lld -> none (keep systemMac idx254=0x%06X)\n",
+                     bestCovered, totalUsedPixels, bitmap::Palette::systemMacPalette().getColor(254) & 0xFFFFFFU);
+    }
+    return bestCovered * 2 >= totalUsedPixels ? bestPalette : nullptr;
+}
+
 std::shared_ptr<const bitmap::Palette> closestMacLikePaletteForIndexedBitmap(
     const bitmap::Bitmap& bitmap,
     const std::vector<std::shared_ptr<chunks::PaletteChunk>>& paletteChunks) {
@@ -69,53 +138,19 @@ std::shared_ptr<const bitmap::Palette> closestMacLikePaletteForIndexedBitmap(
         return nullptr;
     }
 
-    std::array<bool, 256> usedIndices{};
-    int usedCount = 0;
+    std::array<long long, 256> usedPixelCounts{};
+    long long totalUsedPixels = 0;
     for (const auto rawIndex : *indices) {
         const int index = rawIndex & 0xFF;
-        if (!usedIndices[static_cast<std::size_t>(index)]) {
-            usedIndices[static_cast<std::size_t>(index)] = true;
-            ++usedCount;
-        }
-    }
-    if (usedCount == 0) {
-        return nullptr;
+        ++usedPixelCounts[static_cast<std::size_t>(index)];
+        ++totalUsedPixels;
     }
 
-    const auto& macPalette = bitmap::Palette::systemMacPalette();
-    std::shared_ptr<const bitmap::Palette> bestPalette;
-    long long bestDistance = std::numeric_limits<long long>::max();
-    for (const auto& chunk : paletteChunks) {
-        if (!chunk || chunk->colorCount() <= 0) {
-            continue;
-        }
-        auto candidate = std::make_shared<bitmap::Palette>(
-            chunk->colors(),
-            "Custom Palette #" + std::to_string(chunk->id().value()));
-        long long totalDistance = 0;
-        for (int index = 0; index < 256; ++index) {
-            if (!usedIndices[static_cast<std::size_t>(index)]) {
-                continue;
-            }
-            if (index >= candidate->size() || index >= macPalette.size()) {
-                totalDistance += 255LL * 255LL * 3LL;
-                continue;
-            }
-            totalDistance += colorDistance(candidate->getColor(index), macPalette.getColor(index));
-        }
-        if (totalDistance < bestDistance) {
-            bestDistance = totalDistance;
-            bestPalette = std::move(candidate);
-        }
-    }
-
-    constexpr long long maxAverageChannelDistanceSquared = 64LL * 64LL;
-    const long long maxDistance = static_cast<long long>(usedCount) * maxAverageChannelDistanceSquared;
-    return bestDistance <= maxDistance ? bestPalette : nullptr;
+    return closestMacLikePaletteForIndexCounts(usedPixelCounts, totalUsedPixels, paletteChunks);
 }
 
 bool& jpegDecodePending() {
-    static bool pending = false;
+    static thread_local bool pending = false;
     return pending;
 }
 
@@ -171,6 +206,47 @@ bool matchesLinkedChunkFourCC(const chunks::KeyTableChunk::KeyTableEntry& entry,
 }
 
 } // namespace
+
+std::shared_ptr<const bitmap::Palette> DirectorFile::resolveUnlinkedMacLikePaletteForPaletteId(int paletteId) {
+    if (auto found = unresolvedPaletteCache_.find(paletteId); found != unresolvedPaletteCache_.end()) {
+        return found->second;
+    }
+
+    // All bitmaps referencing the same unresolved paletteId were authored
+    // against a single (missing) palette, so choose one palette for the whole
+    // group rather than one per bitmap. Aggregate the raw palette indices
+    // across every bitmap member that references the palette, then score the
+    // file's palettes against the combined usage.
+    std::array<long long, 256> usedPixelCounts{};
+    long long totalUsedPixels = 0;
+    const int directorVersion = config_ ? config_->directorVersion() : 1200;
+    for (const auto& member : castMembers_) {
+        if (!member || !member->isBitmap()) {
+            continue;
+        }
+        const auto info = cast::BitmapInfo::parse(member->specificData(), directorVersion);
+        if (info.paletteId != paletteId) {
+            continue;
+        }
+        const auto decoded = decodeBitmap(member, &bitmap::Palette::systemMacPalette());
+        if (!decoded) {
+            continue;
+        }
+        const auto indices = decoded->paletteIndices();
+        if (!indices) {
+            continue;
+        }
+        for (const auto rawIndex : *indices) {
+            const int index = rawIndex & 0xFF;
+            ++usedPixelCounts[static_cast<std::size_t>(index)];
+            ++totalUsedPixels;
+        }
+    }
+
+    auto resolved = closestMacLikePaletteForIndexCounts(usedPixelCounts, totalUsedPixels, palettes_);
+    unresolvedPaletteCache_[paletteId] = resolved;
+    return resolved;
+}
 
 format::ChunkType DirectorChunkInfo::type() const {
     return format::chunkTypeFromFourCC(fourcc);
@@ -761,14 +837,19 @@ std::optional<bitmap::Bitmap> DirectorFile::decodeBitmap(const std::shared_ptr<c
                                                     directorVersion,
                                                     info.pitch);
         if (shouldResolveUnlinkedMacLikePalette) {
-            if (auto closestPalette = closestMacLikePaletteForIndexedBitmap(bitmap, palettes_)) {
+            const auto closestPalette = info.paletteId >= 0
+                                            ? resolveUnlinkedMacLikePaletteForPaletteId(info.paletteId)
+                                            : closestMacLikePaletteForIndexedBitmap(bitmap, palettes_);
+            if (closestPalette) {
                 (void)bitmap.remapImagePalette(closestPalette);
-                resolvedPalette = std::move(closestPalette);
+                resolvedPalette = closestPalette;
                 palette = resolvedPalette.get();
             }
         }
         bitmap.setNativeAlpha(info.useAlpha);
-        if (palette) {
+        if (resolvedPalette) {
+            bitmap.setImagePalette(resolvedPalette);
+        } else if (palette) {
             bitmap.setImagePalette(palette);
         }
         return bitmap;
@@ -837,8 +918,8 @@ std::optional<bitmap::Bitmap> DirectorFile::decodeEdiMBitmap(const cast::BitmapI
 }
 
 std::shared_ptr<chunks::Chunk> DirectorFile::getChunk(id::ChunkId id) {
-    if (const auto found = chunks_.find(id.value()); found != chunks_.end()) {
-        return found->second;
+    if (const auto cached = chunks_.find(id.value()); cached != chunks_.end()) {
+        return cached->second;
     }
     return reparseChunk(id);
 }

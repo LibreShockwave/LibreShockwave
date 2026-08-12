@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "libreshockwave/format/ChunkType.hpp"
@@ -193,6 +194,7 @@ private:
     [[nodiscard]] lookup::CastMemberLookup& castMemberLookup();
     [[nodiscard]] lookup::PaletteResolver& paletteResolver();
     [[nodiscard]] lookup::ScriptLookup& scriptLookup();
+    [[nodiscard]] std::shared_ptr<const bitmap::Palette> resolveUnlinkedMacLikePaletteForPaletteId(int paletteId);
     [[nodiscard]] std::optional<bitmap::Bitmap> decodeEdiMBitmap(const cast::BitmapInfo& info,
                                                                   const std::vector<std::uint8_t>& jpegData,
                                                                   const std::vector<std::uint8_t>* alfaData);
@@ -226,6 +228,7 @@ private:
     std::vector<std::shared_ptr<chunks::ScriptChunk>> scripts_;
     std::vector<std::shared_ptr<chunks::PaletteChunk>> palettes_;
     std::vector<std::shared_ptr<chunks::FontMapChunk>> fontMaps_;
+    std::unordered_map<int, std::shared_ptr<const bitmap::Palette>> unresolvedPaletteCache_;
     std::unique_ptr<lookup::CastMemberLookup> castMemberLookup_;
     std::unique_ptr<lookup::PaletteResolver> paletteResolver_;
     std::unique_ptr<lookup::ScriptLookup> scriptLookup_;

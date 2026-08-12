@@ -295,7 +295,9 @@ fi
 if [[ -n "${GENERATOR}" ]]; then
     configure_cmd+=(-G "${GENERATOR}")
 fi
-configure_cmd+=("${EXTRA_CMAKE_ARGS[@]}")
+if [[ "${#EXTRA_CMAKE_ARGS[@]}" -gt 0 ]]; then
+    configure_cmd+=("${EXTRA_CMAKE_ARGS[@]}")
+fi
 
 build_cmd=(cmake --build "${BUILD_DIR}")
 for target in "${TARGETS[@]}"; do

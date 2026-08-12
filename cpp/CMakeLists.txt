@@ -235,6 +235,14 @@ if(ZLIB_FOUND)
     target_compile_definitions(libreshockwave PUBLIC LIBRESHOCKWAVE_HAVE_ZLIB=1)
 endif()
 
+if(ZLIB_FOUND)
+    add_executable(libreshockwave_cast_exporter
+        apps/tools/CastExporter.cpp
+    )
+    target_link_libraries(libreshockwave_cast_exporter PRIVATE LibreShockwave::libreshockwave)
+    target_compile_features(libreshockwave_cast_exporter PRIVATE cxx_std_20)
+endif()
+
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(GTK4 QUIET IMPORTED_TARGET gtk4)

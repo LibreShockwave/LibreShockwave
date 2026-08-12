@@ -395,6 +395,53 @@ The C++ tools scan local Director fixture roots. With no path argument, the prob
 
 `libreshockwave_wasm_bridge_probe` exercises the browser-facing C ABI exports without requiring a browser.
 
+### Cast Exporter
+
+`libreshockwave_cast_exporter` dumps every cast member from Director `.cct`, `.cst`, `.dcr`, `.dir`, and `.dxr` movies into readable files, one subfolder per movie. It is built only when zlib is available.
+
+```bash
+./build.sh --target libreshockwave_cast_exporter --no-tests
+./cmake-build-debug/cpp/libreshockwave_cast_exporter <file-or-directory> <output-directory>
+```
+
+When the input is a directory, every supported movie below it is exported (recursively) and each movie gets its own folder under the output directory.
+
+Options:
+
+| Option | Description |
+|--------|-------------|
+| `--only bitmap,sound,script,text,palette,font,raw` | Export only the listed cast member types. |
+| `--no-decompile` | Write raw script bytecode (`.bin`) instead of decompiled Lingo (`.ls`). |
+| `--bin` | Also keep the raw `.bin` sidecar for shape/xtra/other members (default: readable `.txt` only). |
+| `--jobs N` (or `-j N`) | Process up to N movies concurrently. Movies are parsed and exported independently, so this is safe; output is byte-identical to a serial run. |
+| `--verbose` | Print a per-movie summary line. |
+| `-h` / `--help` | Show usage. |
+
+Per-member output, sorted into per-type subfolders inside each movie folder (`bitmaps/`, `sounds/`, `scripts/`, `texts/`, `palettes/`, `fonts/`, `shapes/`, `other/`):
+
+- Bitmaps/Pictures → `bitmaps/...png` (RGBA) plus a `.regpoint` sidecar with the registration point and a `.pal` sidecar with the palette the bitmap was decoded with (JASC text; indexed bitmaps only).
+- Sounds → `sounds/...mp3` or `.wav` (every linked sound chunk; multiple chunks get `_2`, `_3`, ... suffixes).
+- Scripts → `scripts/...ls` (or `.bin` with `--no-decompile`).
+- Text/RichText/Buttons → `texts/...txt`.
+- Palettes → `palettes/...pal` (JASC text format).
+- Fonts → `fonts/...ttf` (cast member fonts), plus any PFR fonts found across members and a `fonts.txt` font map manifest.
+- Shapes → `shapes/...txt` (readable shape properties).
+- Xtras/other members → `other/...txt` (readable ASCII strings; raw `.bin` also kept with `--bin`).
+
+Per-movie metadata:
+
+- `movie.txt` — stage size and rect, background/stage colors, tempo, member range, default palette, and Director/movie versions.
+- `casts.txt` — every cast library in the movie (id, name, path, member range, member count). Empty casts such as the internal `bin` cast have `member_count 0`.
+- `linked_casts.txt` — external cast files referenced by the movie (e.g. a `.dcr` linking `fuse_client.cst`), deduplicated, one per line.
+
+Example using all CPUs:
+
+```bash
+./cmake-build-debug/cpp/libreshockwave_cast_exporter --jobs 8 ./fixtures ./exported
+```
+
+The exporter needs zlib for PNG encoding; without it the CMake target is skipped.
+
 ## Browser Player
 
 Build the Emscripten target from an Emscripten-enabled shell:
