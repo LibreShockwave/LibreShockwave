@@ -782,6 +782,30 @@ bitmap::Bitmap InkProcessor::applyMask(const bitmap::Bitmap& src) {
     return derivedBitmap(src, std::move(result));
 }
 
+bitmap::Bitmap InkProcessor::applyMask(const bitmap::Bitmap& src, const bitmap::Bitmap& mask) {
+    std::vector<std::uint32_t> result;
+    result.reserve(src.pixels().size());
+    for (int y = 0; y < src.height(); ++y) {
+        for (int x = 0; x < src.width(); ++x) {
+            const auto pixel = src.getPixel(x, y);
+            const int srcAlpha = static_cast<int>((pixel >> 24) & 0xFFU);
+            if (srcAlpha == 0 || x >= mask.width() || y >= mask.height()) {
+                result.push_back(0);
+                continue;
+            }
+
+            // Director MASK ink receives a separate cast member immediately
+            // after the source image. Black mask pixels reveal the source;
+            // white pixels hide it, with greys providing partial opacity.
+            const int maskAlpha = 255 - maskAlphaFromPixel(mask.getPixel(x, y));
+            const int combinedAlpha = (srcAlpha * maskAlpha) / 255;
+            result.push_back((static_cast<std::uint32_t>(combinedAlpha & 0xFF) << 24) |
+                             (pixel & 0x00FFFFFFU));
+        }
+    }
+    return derivedBitmap(src, std::move(result));
+}
+
 bitmap::Bitmap InkProcessor::applyMatte(const bitmap::Bitmap& src, int matteColorRgb, int tolerance) {
     const int width = src.width();
     const int height = src.height();

@@ -698,6 +698,7 @@ void LingoVM::invalidateHandlerCache() {
     missingHandlerCache_.clear();
     handlerMetadataCache_.clear();
     resolvedNameCache_.clear();
+    builtinContext_.scriptResolutionCache.clear();
     builtinContext_.scriptPropertyNamesCache.clear();
 }
 

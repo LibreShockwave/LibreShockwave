@@ -1562,6 +1562,14 @@ void DebuggerWindow::onReplayTimer() {
             return;
         }
         replayClock_.start();
+    } else if (!context_->networkReady()) {
+        // A replay's timestamps are relative to usable movie time, not to
+        // wall-clock time spent loading external casts or completing the
+        // session handshake.  Keep the pending event at its recorded time so
+        // clicks are not delivered to an empty/loading score.
+        replayClockBaseMs_ += replayClock_.elapsed();
+        replayClock_.invalidate();
+        return;
     }
 
     const qint64 elapsed = replayClockBaseMs_ + replayClock_.elapsed();

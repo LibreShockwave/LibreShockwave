@@ -14479,6 +14479,36 @@ void testLingoVmRuntimeFoundation() {
     vm.setGlobalHandlerFinder(nullptr);
     assert(vm.callHandler("externalStart").isVoid());
 
+    auto& scriptResolutionContext = vm.builtinContext();
+    scriptResolutionContext.castMemberNameResolver = [](int, const std::string& memberName) {
+        if (memberName == "HugeInt15") {
+            return Datum::castMemberRef(CastLibId(2), MemberId(5));
+        }
+        return Datum::voidValue();
+    };
+    const auto initialScriptResolution = vm.builtinRegistry().invoke(
+        "script", scriptResolutionContext, {Datum::of(std::string("HugeInt15"))});
+    assert(initialScriptResolution.asScriptRef() != nullptr);
+    assert(initialScriptResolution.asScriptRef()->memberRef.castLib == 2);
+    assert(initialScriptResolution.asScriptRef()->memberRef.memberNum() == 5);
+    scriptResolutionContext.castMemberNameResolver = [](int, const std::string& memberName) {
+        if (memberName == "HugeInt15") {
+            return Datum::castMemberRef(CastLibId(7), MemberId(15));
+        }
+        return Datum::voidValue();
+    };
+    const auto staleScriptResolution = vm.builtinRegistry().invoke(
+        "script", scriptResolutionContext, {Datum::of(std::string("HugeInt15"))});
+    assert(staleScriptResolution.asScriptRef() != nullptr);
+    assert(staleScriptResolution.asScriptRef()->memberRef.castLib == 2);
+    vm.invalidateHandlerCache();
+    const auto refreshedScriptResolution = vm.builtinRegistry().invoke(
+        "script", scriptResolutionContext, {Datum::of(std::string("HugeInt15"))});
+    assert(refreshedScriptResolution.asScriptRef() != nullptr);
+    assert(refreshedScriptResolution.asScriptRef()->memberRef.castLib == 7);
+    assert(refreshedScriptResolution.asScriptRef()->memberRef.memberNum() == 15);
+    scriptResolutionContext.castMemberNameResolver = {};
+
     auto scaledLocalHandler = makeHandler(6, {
         {Opcode::PUSH_INT8, 42},
         {Opcode::SET_LOCAL, 8},
@@ -21095,6 +21125,17 @@ void testInkProcessorJavaParityEdges() {
     assert(maskWaterResult.getPixel(1, 0) == 0xFFFFFFFFU);
     assert(maskWaterResult.getPixel(2, 0) == 0x35009999U);
 
+    Bitmap waterMask(3, 1, 1, {
+        0xFF000000U,
+        0xFFFFFFFFU,
+        0xFF808080U
+    });
+    Bitmap pairedMaskResult = InkProcessor::applyMask(maskWater, waterMask);
+    assert(pairedMaskResult.getPixel(0, 0) == 0xFF009999U);
+    assert(pairedMaskResult.getPixel(1, 0) == 0x00FFFFFFU);
+    assert((pairedMaskResult.getPixel(2, 0) >> 24) == 0x3FU);
+    assert((pairedMaskResult.getPixel(2, 0) & 0x00FFFFFFU) == 0x009999U);
+
     Bitmap nearWhiteBackground(3, 1, 32, {
         0xFFFFFFFFU,
         0xFFC8C8C8U,
@@ -21381,6 +21422,30 @@ void testSoftwareFrameRenderer() {
                                   false);
     FrameSnapshot discoBlendSnapshot{4, 1, 1, 0x00000000, {discoBlendSprite}, "", nullptr, 0, RenderPipelineTrace::empty()};
     assert(discoBlendSnapshot.renderFrame().getPixel(0, 0) == 0xFF664C00U);
+
+    auto opaqueWater = std::make_shared<Bitmap>(1, 1, 32, std::vector<std::uint32_t>{0xFF009C9CU});
+    RenderSprite waterSprite(3,
+                             0,
+                             0,
+                             1,
+                             1,
+                             0,
+                             true,
+                             SpriteType::Bitmap,
+                             nullptr,
+                             nullptr,
+                             0,
+                             0,
+                             false,
+                             false,
+                             libreshockwave::id::code(InkMode::MASK),
+                             60,
+                             false,
+                             false,
+                             opaqueWater,
+                             false);
+    FrameSnapshot waterSnapshot{4, 1, 1, 0x00FFFFFF, {waterSprite}, "", nullptr, 0, RenderPipelineTrace::empty()};
+    assert(waterSnapshot.renderFrame().getPixel(0, 0) == 0xFF66C3C3U);
 
     auto redBlue = std::make_shared<Bitmap>(2, 1, 32, std::vector<std::uint32_t>{
         0xFFFF0000U,
@@ -22409,6 +22474,9 @@ void testQueuedNetProviderFoundation() {
         "https://example.invalid/room.cct",
         "https://example.invalid/room.cst",
     }));
+    const int duplicateRootCastTask = provider.preloadNetThing("https://example.invalid/room.cct");
+    assert(duplicateRootCastTask == rootCastTask);
+    assert(provider.pendingRequests().size() == 1);
     provider.onFetchComplete(rootCastTask, {'C', 'A', 'S', 'T'});
     assert(provider.netTextResult(rootCastTask) == "CAST");
     assert(!provider.hasPendingCastLoads());
@@ -22802,6 +22870,10 @@ void testBitmapAlphaAndPaletteBehavior() {
     Bitmap normalized = BitmapCache::coerceNonNativeAlphaToOpaque(bitmap, false);
     assert(normalized.getPixel(0, 0) == 0xFFF0F0F0U);
     assert(normalized.getPixel(1, 0) == 0xFF123456U);
+
+    Bitmap emptyNonNative(1, 1, 32, {0x00000000U});
+    Bitmap preservedEmpty = BitmapCache::coerceNonNativeAlphaToOpaque(emptyNonNative, false);
+    assert(preservedEmpty.getPixel(0, 0) == 0x00000000U);
 
     Bitmap nativeBitmap(1, 1, 32, {0x00F0F0F0U});
     nativeBitmap.setNativeAlpha(true);

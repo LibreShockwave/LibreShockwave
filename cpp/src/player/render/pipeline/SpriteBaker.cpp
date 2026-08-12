@@ -17,6 +17,8 @@
 #include "libreshockwave/cast/FilmLoopInfo.hpp"
 #include "libreshockwave/cast/ShapeInfo.hpp"
 #include "libreshockwave/cast/TextInfo.hpp"
+#include "libreshockwave/chunks/CastChunk.hpp"
+#include "libreshockwave/chunks/CastListChunk.hpp"
 #include "libreshockwave/chunks/ConfigChunk.hpp"
 #include "libreshockwave/chunks/ScoreChunk.hpp"
 #include "libreshockwave/chunks/TextChunk.hpp"
@@ -1277,11 +1279,23 @@ bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, cons
                                                       static_cast<std::uint32_t>(sprite.backColor()));
     }
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
-        processed = InkProcessor::applyInk(processed,
-                                           sprite.inkMode(),
-                                           sprite.backColor(),
-                                           processed.isNativeAlpha(),
-                                           raw.imagePalette().get());
+        if (sprite.inkMode() == id::InkMode::MASK) {
+            if (const auto mask = decodeMaskBitmap(sprite)) {
+                processed = InkProcessor::applyMask(processed, *mask);
+            } else {
+                processed = InkProcessor::applyInk(processed,
+                                                   sprite.inkMode(),
+                                                   sprite.backColor(),
+                                                   processed.isNativeAlpha(),
+                                                   raw.imagePalette().get());
+            }
+        } else {
+            processed = InkProcessor::applyInk(processed,
+                                               sprite.inkMode(),
+                                               sprite.backColor(),
+                                               processed.isNativeAlpha(),
+                                               raw.imagePalette().get());
+        }
     }
 
     return BitmapCache::applyIndexedMatteColorRemapIfNeeded(&raw,
@@ -1311,17 +1325,29 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
             ? InkProcessor::convertOpaqueWhiteToTransparent(source)
             : source.copy();
         const bool hasNativeAlpha = inkSource.bitDepth() == 32 && inkSource.isNativeAlpha();
-        processed = shouldPreserveOutlinedWhiteBodyForScriptCanvas(sprite, inkSource)
-            ? InkProcessor::applyInkPreservingOutlinedWhiteBody(inkSource,
-                                                                sprite.inkMode(),
-                                                                sprite.backColor(),
-                                                                hasNativeAlpha,
-                                                                inkSource.imagePalette().get())
-            : InkProcessor::applyInk(inkSource,
-                                     sprite.inkMode(),
-                                     sprite.backColor(),
-                                     hasNativeAlpha,
-                                     inkSource.imagePalette().get());
+        if (sprite.inkMode() == id::InkMode::MASK) {
+            if (const auto mask = decodeMaskBitmap(sprite)) {
+                processed = InkProcessor::applyMask(inkSource, *mask);
+            } else {
+                processed = InkProcessor::applyInk(inkSource,
+                                                   sprite.inkMode(),
+                                                   sprite.backColor(),
+                                                   hasNativeAlpha,
+                                                   inkSource.imagePalette().get());
+            }
+        } else {
+            processed = shouldPreserveOutlinedWhiteBodyForScriptCanvas(sprite, inkSource)
+                ? InkProcessor::applyInkPreservingOutlinedWhiteBody(inkSource,
+                                                                    sprite.inkMode(),
+                                                                    sprite.backColor(),
+                                                                    hasNativeAlpha,
+                                                                    inkSource.imagePalette().get())
+                : InkProcessor::applyInk(inkSource,
+                                         sprite.inkMode(),
+                                         sprite.backColor(),
+                                         hasNativeAlpha,
+                                         inkSource.imagePalette().get());
+        }
     }
 
     bitmap::Bitmap result = BitmapCache::applyIndexedMatteColorRemapIfNeeded(&source,
@@ -1338,6 +1364,70 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
         result = InkProcessor::remapExactColor(result, 0x00FFFFFFU, static_cast<std::uint32_t>(sprite.backColor()));
     }
     return result;
+}
+
+std::shared_ptr<const chunks::CastMemberChunk> SpriteBaker::resolveMaskMember(const RenderSprite& sprite) const {
+    const auto dynamicMember = sprite.dynamicMember();
+    if (dynamicMember != nullptr && dynamicMember->rawChunk() != nullptr) {
+        auto* file = mutableFileFor(dynamicMember->rawChunk());
+        if (file != nullptr) {
+            auto mask = file->getCastMemberByNumber(dynamicMember->castLib(), dynamicMember->memberNum() + 1);
+            if (mask == nullptr && dynamicMember->castLib() != 1) {
+                mask = file->getCastMemberByNumber(1, dynamicMember->memberNum() + 1);
+            }
+            if (mask != nullptr && mask->isBitmap()) {
+                return mask;
+            }
+        }
+    }
+
+    const auto sourceMember = sprite.castMember();
+    if (sourceMember == nullptr || sourceMember->file() == nullptr) {
+        return nullptr;
+    }
+
+    auto* file = mutableFileFor(sourceMember);
+    const auto castList = file->castList();
+    for (int castLib = 1; castLib <= static_cast<int>(file->casts().size()); ++castLib) {
+        const auto cast = file->getMappedCastChunk(castLib);
+        if (cast == nullptr) {
+            continue;
+        }
+
+        const auto& memberIds = cast->memberIds();
+        const auto sourceId = sourceMember->id().value();
+        const auto sourceIt = std::find(memberIds.begin(), memberIds.end(), sourceId);
+        if (sourceIt == memberIds.end()) {
+            continue;
+        }
+
+        const auto sourceIndex = static_cast<int>(std::distance(memberIds.begin(), sourceIt));
+        if (sourceIndex + 1 >= static_cast<int>(memberIds.size())) {
+            return nullptr;
+        }
+
+        int minMember = file->config() != nullptr ? file->config()->minMember() : 1;
+        if (castList != nullptr && castLib - 1 < static_cast<int>(castList->entries().size())) {
+            minMember = castList->entries()[static_cast<std::size_t>(castLib - 1)].minMember;
+        }
+        auto mask = file->getCastMemberByNumber(castLib, minMember + sourceIndex + 1);
+        if (mask != nullptr && mask->isBitmap()) {
+            return mask;
+        }
+        return nullptr;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<const bitmap::Bitmap> SpriteBaker::decodeMaskBitmap(const RenderSprite& sprite) const {
+    if (!bitmapDecodeProvider_) {
+        return nullptr;
+    }
+    const auto maskMember = resolveMaskMember(sprite);
+    if (maskMember == nullptr) {
+        return nullptr;
+    }
+    return bitmapDecodeProvider_(*maskMember, nullptr);
 }
 
 std::shared_ptr<const bitmap::Bitmap> SpriteBaker::cachedBitmap(const RenderSprite& sprite) const {

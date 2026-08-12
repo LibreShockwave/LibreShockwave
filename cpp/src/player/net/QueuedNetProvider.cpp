@@ -76,10 +76,9 @@ void QueuedNetProvider::setSatisfiedFetchPredicate(SatisfiedFetchPredicate predi
 }
 
 int QueuedNetProvider::preloadNetThing(std::string url) {
-    const int taskId = nextTaskId_++;
-    lastTaskId_ = taskId;
-
     if (url.empty()) {
+        const int taskId = nextTaskId_++;
+        lastTaskId_ = taskId;
         tasks_.emplace(taskId, Task{taskId, std::move(url), std::nullopt, 0, 0, true});
         indexTask(tasks_.at(taskId));
         return taskId;
@@ -87,6 +86,8 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
 
     const std::string resolvedUrl = resolveUrl(url);
     if (isDirectoryOnlyUrl(resolvedUrl)) {
+        const int taskId = nextTaskId_++;
+        lastTaskId_ = taskId;
         tasks_.emplace(taskId, Task{taskId, resolvedUrl, std::nullopt, 0, 0, true});
         indexTask(tasks_.at(taskId));
         return taskId;
@@ -96,6 +97,29 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
     if (fallbacks.empty()) {
         fallbacks.push_back(resolvedUrl);
     }
+
+    // Cast libraries are often declared in many placeholder slots that all
+    // point at the same external CCT/CST.  A second request can arrive before
+    // the first HTTP result has populated urlCache_.  Reuse the pending task
+    // in that window so one resource is fetched and parsed once; callers that
+    // poll the returned task still observe the original task's completion.
+    if (isExternalCastUrl(resolvedUrl)) {
+        const auto* pending = getTask(resolvedUrl);
+        if (pending != nullptr && !pending->done && isExternalCastUrl(pending->url)) {
+            lastTaskId_ = pending->id;
+            return pending->id;
+        }
+        for (const auto& fallback : fallbacks) {
+            pending = getTask(fallback);
+            if (pending != nullptr && !pending->done && isExternalCastUrl(pending->url)) {
+                lastTaskId_ = pending->id;
+                return pending->id;
+            }
+        }
+    }
+
+    const int taskId = nextTaskId_++;
+    lastTaskId_ = taskId;
 
     auto [inserted, ok] = tasks_.emplace(taskId, Task{taskId, resolvedUrl});
     (void)ok;

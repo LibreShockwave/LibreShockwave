@@ -142,14 +142,27 @@ std::shared_ptr<const bitmap::Bitmap> BitmapCache::coerceNonNativeAlphaToOpaque(
     if (!raw || raw->bitDepth() != 32 || useAlpha || !raw->hasTransparentPixels()) {
         return raw;
     }
-    return std::make_shared<bitmap::Bitmap>(raw->copyWithNonNativeAlphaOpaque());
+    return std::make_shared<bitmap::Bitmap>(coerceNonNativeAlphaToOpaque(*raw, useAlpha));
 }
 
 bitmap::Bitmap BitmapCache::coerceNonNativeAlphaToOpaque(const bitmap::Bitmap& raw, bool useAlpha) {
     if (raw.bitDepth() != 32 || useAlpha || !raw.hasTransparentPixels()) {
         return raw.copy();
     }
-    return raw.copyWithNonNativeAlphaOpaque();
+
+    // Most non-native 32-bit Director records use the alpha byte as padding,
+    // but an empty 0x00000000 pixel is also used as a real transparent
+    // placeholder (notably by 1x1 click-area members). Preserve that sentinel
+    // so special inks cannot turn an invisible hit area into a visible block.
+    auto normalized = raw.copy();
+    for (auto& pixel : normalized.pixels()) {
+        const auto rgb = pixel & 0x00FFFFFFU;
+        if (((pixel >> 24U) & 0xFFU) != 0U || rgb != 0U) {
+            pixel = 0xFF000000U | rgb;
+        }
+    }
+    normalized.setNativeAlpha(false);
+    return normalized;
 }
 
 std::optional<IndexedMatteColorRemap> BitmapCache::resolveIndexedMatteColorRemap(

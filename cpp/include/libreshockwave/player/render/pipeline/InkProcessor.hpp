@@ -57,6 +57,8 @@ public:
     [[nodiscard]] static bitmap::Bitmap applyBackgroundTransparent(const bitmap::Bitmap& src,
                                                                    int bgColorRgb);
     [[nodiscard]] static bitmap::Bitmap applyMask(const bitmap::Bitmap& src);
+    [[nodiscard]] static bitmap::Bitmap applyMask(const bitmap::Bitmap& src,
+                                                  const bitmap::Bitmap& mask);
     [[nodiscard]] static bitmap::Bitmap applyMatte(const bitmap::Bitmap& src,
                                                    int matteColorRgb,
                                                    int tolerance = 0);

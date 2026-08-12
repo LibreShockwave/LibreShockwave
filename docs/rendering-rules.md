@@ -145,6 +145,10 @@ complete rendering specification.
 - `maskImage` uses luma-style mask semantics: white blocks drawing and black
   allows drawing. In code, `Drawing.maskAllowsPixel(mask, x, y)` is true when
   `maskAlphaFromPixel(pixel) < 255`.
+- A score sprite using Director `MASK` ink uses the immediately following cast
+  bitmap as its mask. Apply that mask to the source alpha (black reveals,
+  white hides), then apply the sprite blend once; do not derive opacity from
+  the source artwork's own colour.
 - Explicit `#maskImage` properties must remain honored. Native-alpha source
   images do not automatically invalidate authored masks.
 - When scaling with a mask, evaluate the mask at original source coordinates.
