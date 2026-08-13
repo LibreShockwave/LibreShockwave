@@ -13,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
@@ -25,7 +26,6 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
-#include <QVBoxLayout>
 
 #include <algorithm>
 #include <iostream>
@@ -58,7 +58,9 @@ namespace libreshockwave::debugger {
 // -----------------------------------------------------------------------
 
 static const char* kSettingGeometry       = "debugger/geometry";
-static const char* kSettingState          = "debugger/state";
+// Versioned: the Inspector dock was split into three docks (call stack,
+// variables, watches); restoreState() must never be fed the pre-split bytes.
+static const char* kSettingState          = "debugger/state2";
 static const char* kSettingLastMovie      = "debugger/lastMovie";
 static const char* kSettingRecentMovies   = "debugger/recentMovies";
 static const char* kSettingLastDir        = "debugger/lastDir";
@@ -271,6 +273,12 @@ void DebuggerWindow::saveSettings() {
         paramList.append(it.key() + QStringLiteral("=") + it.value());
     }
     settings.setValue(QString::fromLatin1(kSettingExternalParams), paramList);
+}
+
+void DebuggerWindow::onResetLayout() {
+    // Re-apply the layout captured at startup: default positions, splits,
+    // sizes, and visibility of every dock.
+    restoreState(defaultLayoutState_);
 }
 
 void DebuggerWindow::restoreSettings() {
@@ -507,6 +515,20 @@ void DebuggerWindow::setupMenuBar() {
         QStringLiteral("&Clear All Breakpoints"));
     connect(clearBreakpointsAction_, &QAction::triggered,
             this, &DebuggerWindow::onClearBreakpoints);
+
+    // ---- View menu ----
+    auto* viewMenu = menuBar()->addMenu(QStringLiteral("&View"));
+    viewMenu->addAction(leftDock_->toggleViewAction());
+    viewMenu->addAction(callStackDock_->toggleViewAction());
+    viewMenu->addAction(variablesDock_->toggleViewAction());
+    viewMenu->addAction(watchDock_->toggleViewAction());
+    viewMenu->addAction(bottomDock_->toggleViewAction());
+    viewMenu->addAction(debugDock_->toggleViewAction());
+
+    viewMenu->addSeparator();
+    auto* resetLayoutAction = viewMenu->addAction(QStringLiteral("&Reset Layout"));
+    connect(resetLayoutAction, &QAction::triggered,
+            this, &DebuggerWindow::onResetLayout);
 }
 
 void DebuggerWindow::setupToolBar() {
@@ -561,6 +583,21 @@ void DebuggerWindow::setupToolBar() {
     toolbar->addWidget(statusLabel_);
 }
 
+// Right-clicking a dock's title bar or panel body shows "Hide Panel".
+// QDockWidget and the panel widgets don't consume QContextMenuEvent, so one
+// CustomContextMenu policy per dock covers everything (except text fields,
+// which correctly show Qt's own edit menu).
+static void addHidePanelMenu(QDockWidget* dock) {
+    dock->setContextMenuPolicy(Qt::CustomContextMenu);
+    QObject::connect(dock, &QWidget::customContextMenuRequested, dock,
+                     [dock](const QPoint& pos) {
+                         QMenu menu(dock);
+                         menu.addAction(QStringLiteral("Hide Panel"), dock,
+                                        [dock] { dock->hide(); });
+                         menu.exec(dock->mapToGlobal(pos));
+                     });
+}
+
 void DebuggerWindow::setupDockWidgets() {
     // Left dock: Movie tree
     leftDock_ = new QDockWidget(QStringLiteral("Movies & Scripts"), this);
@@ -569,27 +606,32 @@ void DebuggerWindow::setupDockWidgets() {
     leftDock_->setWidget(movieTreePanel_);
     addDockWidget(Qt::LeftDockWidgetArea, leftDock_);
 
-    // Right dock: Variables + Call Stack + Watches
-    rightDock_ = new QDockWidget(QStringLiteral("Inspector"), this);
-    rightDock_->setObjectName(QStringLiteral("inspectorDock"));
-    auto* rightWidget = new QWidget(rightDock_);
-    auto* rightLayout = new QVBoxLayout(rightWidget);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(0);
+    // Right docks: Call Stack / Variables / Watches stacked vertically.
+    // Add order matters for saveState()/restoreState(): a split host must be
+    // added before the dock split out of it.
+    callStackDock_ = new QDockWidget(QStringLiteral("Call Stack"), this);
+    callStackDock_->setObjectName(QStringLiteral("callStackDock"));
+    callStackPanel_ = new CallStackPanel(callStackDock_);
+    callStackDock_->setWidget(callStackPanel_);
+    addDockWidget(Qt::RightDockWidgetArea, callStackDock_);
 
-    callStackPanel_ = new CallStackPanel(rightWidget);
-    callStackPanel_->setMaximumHeight(150);
-    rightLayout->addWidget(callStackPanel_);
+    variablesDock_ = new QDockWidget(QStringLiteral("Variables"), this);
+    variablesDock_->setObjectName(QStringLiteral("variablesDock"));
+    variablesPanel_ = new VariablesPanel(variablesDock_);
+    variablesDock_->setWidget(variablesPanel_);
+    addDockWidget(Qt::RightDockWidgetArea, variablesDock_);
+    splitDockWidget(callStackDock_, variablesDock_, Qt::Vertical);
 
-    variablesPanel_ = new VariablesPanel(rightWidget);
-    rightLayout->addWidget(variablesPanel_, 1);
+    watchDock_ = new QDockWidget(QStringLiteral("Watches"), this);
+    watchDock_->setObjectName(QStringLiteral("watchDock"));
+    watchPanel_ = new WatchPanel(watchDock_);
+    watchDock_->setWidget(watchPanel_);
+    addDockWidget(Qt::RightDockWidgetArea, watchDock_);
+    splitDockWidget(variablesDock_, watchDock_, Qt::Vertical);
 
-    watchPanel_ = new WatchPanel(rightWidget);
-    watchPanel_->setMaximumHeight(220);
-    rightLayout->addWidget(watchPanel_);
-
-    rightDock_->setWidget(rightWidget);
-    addDockWidget(Qt::RightDockWidgetArea, rightDock_);
+    // Initial sizes match the old stacked Inspector (call stack ~150px,
+    // watches ~220px; variables takes the remainder).
+    resizeDocks({callStackDock_, watchDock_}, {150, 220}, Qt::Vertical);
 
     // Bottom dock: Code view
     bottomDock_ = new QDockWidget(QStringLiteral("Code"), this);
@@ -605,6 +647,16 @@ void DebuggerWindow::setupDockWidgets() {
     debugDock_->setWidget(debugWindowPanel_);
     addDockWidget(Qt::BottomDockWidgetArea, debugDock_);
     splitDockWidget(bottomDock_, debugDock_, Qt::Horizontal);
+
+    // Per-dock "Hide Panel" context menu.
+    for (QDockWidget* dock : {leftDock_, callStackDock_, variablesDock_,
+                              watchDock_, bottomDock_, debugDock_}) {
+        addHidePanelMenu(dock);
+    }
+
+    // Snapshot of the default layout for View > Reset Layout. Captured here
+    // (before restoreSettings()) so it is independent of any saved state.
+    defaultLayoutState_ = saveState();
 }
 
 void DebuggerWindow::setupCentralWidget() {
@@ -673,6 +725,19 @@ void DebuggerWindow::connectSignals() {
             this, &DebuggerWindow::onWatchAdded);
     connect(watchPanel_, &WatchPanel::watchRemoved,
             this, &DebuggerWindow::onWatchRemoved);
+
+    // Persist the dock layout immediately on user-driven changes
+    // (hide/show, float/dock, move) so a crash or kill does not lose them.
+    // Splitter drag-resizes are still captured by saveSettings() on close.
+    for (QDockWidget* dock : {leftDock_, callStackDock_, variablesDock_,
+                              watchDock_, bottomDock_, debugDock_}) {
+        connect(dock, &QDockWidget::visibilityChanged,
+                this, &DebuggerWindow::saveSettings);
+        connect(dock, &QDockWidget::topLevelChanged,
+                this, &DebuggerWindow::saveSettings);
+        connect(dock, &QDockWidget::dockLocationChanged,
+                this, &DebuggerWindow::saveSettings);
+    }
 }
 
 // -----------------------------------------------------------------------

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QMainWindow>
@@ -69,6 +70,7 @@ private slots:
     void onToggleBreakpoint();
     void onBreakpointToggled(int scriptId, const std::string& handlerName, int offset);
     void onClearBreakpoints();
+    void onResetLayout();
     void onMovieNavigationRequested(const QString& url);
 
     // Debug state callbacks
@@ -185,7 +187,9 @@ private:
 
     // Docks
     QDockWidget* leftDock_;
-    QDockWidget* rightDock_;
+    QDockWidget* callStackDock_;
+    QDockWidget* variablesDock_;
+    QDockWidget* watchDock_;
     QDockWidget* bottomDock_;
     QDockWidget* debugDock_;
 
@@ -212,6 +216,9 @@ private:
     std::string currentHandlerName_;
     QStringList recentMovies_;
     QMap<QString, QString> externalParams_;
+
+    /// Dock layout captured at startup; View > Reset Layout restores it.
+    QByteArray defaultLayoutState_;
 
     // Play & Record / replay state. Recordings contain stage input events and
     // the movie/parameter metadata needed to reopen the same session.
