@@ -245,7 +245,6 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
 
     statusBar()->showMessage(
         QStringLiteral("Loaded: %1 — press Play to start").arg(QFileInfo(path).fileName()));
-    startPendingReplayIfReady();
     if (!replaying_ && playRequested_) {
         playRequested_ = false;
         onPlay();
@@ -259,9 +258,7 @@ void DebuggerWindow::startPlayback() {
         return;
     }
 
-    // Opening a recording starts its replay as soon as the movie is ready.
-    // Do not replace the replay status with ordinary playback just because
-    // --play was also supplied.
+    // Do not restart a replay that is already active.
     if (replaying_ && !replayWaitingForNavigation_) {
         playRequested_ = false;
         return;
@@ -1303,7 +1300,6 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
             .arg(label)
             .arg(byteCount),
         5000);
-    startPendingReplayIfReady();
     if (replaying_ && resumePlayback) {
         // Runtime navigation replaces the Player session. Keep the active
         // recording replay attached to the new session and resume its
@@ -1424,6 +1420,10 @@ void DebuggerWindow::updateParamsMenu() {
 
 void DebuggerWindow::onPlay() {
     if (!context_->hasMovie()) return;
+    if (pendingReplay_.has_value()) {
+        startPendingReplayIfReady();
+        return;
+    }
     context_->play();
     statusLabel_->setText(QStringLiteral(" ● Running"));
     statusLabel_->setStyleSheet(
@@ -1433,7 +1433,8 @@ void DebuggerWindow::onPlay() {
 }
 
 void DebuggerWindow::onPlayAndRecord() {
-    if (!context_->hasMovie() || context_->isPlaying() || isPaused_) {
+    if (!context_->hasMovie() || context_->isPlaying() || isPaused_ ||
+        pendingReplay_.has_value()) {
         return;
     }
 
@@ -1790,9 +1791,11 @@ void DebuggerWindow::updateToolbarState() {
     const bool hasMovie = context_->hasMovie();
     const bool hasPlayer = context_->player() != nullptr;
     const bool playing = context_->isPlaying();
+    const bool hasPendingReplay = pendingReplay_.has_value();
 
     playAction_->setEnabled(hasMovie && !playing && !isPaused_);
-    recordAction_->setEnabled(hasMovie && !playing && !isPaused_ && !replaying_);
+    recordAction_->setEnabled(
+        hasMovie && !playing && !isPaused_ && !replaying_ && !hasPendingReplay);
     pauseAction_->setEnabled(hasMovie && playing && !isPaused_);
     stopAction_->setEnabled(hasMovie && (playing || isPaused_));
     continueAction_->setEnabled(hasMovie && isPaused_);
