@@ -791,7 +791,10 @@ Datum LingoVM::executeHandler(const HandlerRef& handlerRef,
     const Datum* effectiveReceiver = nullptr;
     if (!receiver.isVoid() && !receiver.isNull()) {
         effectiveReceiver = &receiver;
-    } else if (!args.empty() && args.front().type() == DatumType::ScriptInstanceRef) {
+    } else if (handler.argNameIds.empty() &&
+               !args.empty() &&
+               args.front().type() == DatumType::ScriptInstanceRef) {
+        // Unnamed handlers use Director's legacy first-argument receiver convention.
         scopeReceiver = args.front();
         effectiveReceiver = &args.front();
     }

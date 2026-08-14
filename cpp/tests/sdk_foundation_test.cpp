@@ -15083,6 +15083,34 @@ void testLingoVmRuntimeFoundation() {
     assert(implicitReceiverVm.executeHandler(script, stackHandler, {implicitReceiver, Datum::of(9)}).intValue() == 91);
     assert(implicitReceiverVm.callStackDepth() == 0);
 
+    // A named first formal is an ordinary argument even when its value is an object.
+    auto objectArgumentHandler = makeHandler(0,
+                                              {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}},
+                                              0,
+                                              {1});
+    ScriptChunk objectArgumentScript(nullptr,
+                                     ChunkId(963),
+                                     ScriptChunkType::MovieScript,
+                                     0,
+                                     {objectArgumentHandler},
+                                     {},
+                                     {},
+                                     {},
+                                     {});
+    auto objectArgumentNames = std::make_shared<ScriptNamesChunk>(
+        nullptr,
+        ChunkId(962),
+        std::vector<std::string>{"objectArgument", "tObject"});
+    LingoVM objectArgumentVm;
+    const auto objectArgumentResult = objectArgumentVm.executeHandler(
+        HandlerRef{&objectArgumentScript,
+                   &objectArgumentScript.handlers().front(),
+                   nullptr,
+                   nullptr,
+                   objectArgumentNames},
+        {implicitReceiver, Datum::of(std::string("message"))});
+    assert(objectArgumentResult.type() == DatumType::ScriptInstanceRef);
+
     // Legacy scripts also name the implicit object receiver "this".  It must
     // occupy the first formal parameter just like the conventional "me".
     auto thisReceiverHandler = makeHandler(0,
