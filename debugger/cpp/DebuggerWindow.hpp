@@ -32,7 +32,7 @@ class VariablesPanel;
 class WatchPanel;
 
 /// Main debugger window with dock panels, toolbar, and menu bar.
-/// Persists window layout, last movie, and external params via QSettings.
+/// Persists window layout, last movie source, and replay session via QSettings.
 class DebuggerWindow : public QMainWindow {
     Q_OBJECT
 
@@ -108,8 +108,8 @@ private:
     // Persistence
     void saveSettings();
     void restoreSettings();
-    void addRecentMovie(const QString& path);
-    void updateRecentMoviesMenu();
+    void addRecentSession(const QString& path, bool makeLastSession = true);
+    void updateRecentSessionsMenu();
     void updateParamsMenu();
 
     struct RecordedInputEvent {
@@ -207,14 +207,17 @@ private:
     QLabel* statusLabel_;
 
     // Menus
-    QMenu* recentMoviesMenu_;
+    QMenu* recentSessionsMenu_;
     QMenu* paramsMenu_;
 
     // State
     bool isPaused_{false};
+    bool settingsReady_{false};
     int currentScriptId_{0};
     std::string currentHandlerName_;
-    QStringList recentMovies_;
+    QStringList recentSessions_;
+    QString lastMovie_;
+    QString lastSession_;
     QMap<QString, QString> externalParams_;
 
     /// Dock layout captured at startup; View > Reset Layout restores it.

@@ -459,12 +459,12 @@ and input recording with replay.
 Build and run:
 
 ```bash
-./build.sh --target libreshockwave_debugger --no-tests
-./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger [movie-or-recording]
+./build.sh --release --target libreshockwave_debugger --no-tests
+./cmake-build-release/cpp/libreshockwave_debugger_app/libreshockwave_debugger [movie-or-recording]
 ```
 
-Use `--release` and `cmake-build-release` for a Release build. Pass a movie or
-recording as the positional argument; `--play` starts ordinary playback or
+Always test the desktop debugger in Release mode, never Debug mode. Pass a movie
+or recording as the positional argument; `--play` starts ordinary playback or
 recording replay after loading (including asynchronous HTTP(S) movies):
 
 ```bash

@@ -61,6 +61,9 @@ static const char* kSettingGeometry       = "debugger/geometry";
 // Versioned: the Inspector dock was split into three docks (call stack,
 // variables, watches); restoreState() must never be fed the pre-split bytes.
 static const char* kSettingState          = "debugger/state2";
+static const char* kSettingLastSession    = "debugger/lastSession";
+static const char* kSettingRecentSessions = "debugger/recentSessions";
+// Legacy settings retained so existing debugger installations are upgraded.
 static const char* kSettingLastMovie      = "debugger/lastMovie";
 static const char* kSettingRecentMovies   = "debugger/recentMovies";
 static const char* kSettingLastDir        = "debugger/lastDir";
@@ -68,7 +71,7 @@ static const char* kSettingLastRecordingDir = "debugger/lastRecordingDir";
 static const char* kSettingLastUrl        = "debugger/lastUrl";
 static const char* kSettingExternalParams = "debugger/externalParams";
 static const char* kSettingBreakpoints    = "debugger/breakpoints";
-static const int  kMaxRecentMovies        = 8;
+static const int  kMaxRecentSessions      = 8;
 static constexpr qint64 kRecordingFlushIntervalMs = 1000;
 static constexpr qint64 kRecordingMouseMoveIntervalMs = 50;
 
@@ -143,7 +146,14 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     // Restore the last selected movie without starting playback. The user
     // explicitly controls execution with Play.
     QSettings settings;
-    const auto lastMovie = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
+    lastMovie_ = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
+    const auto lastMovie = lastMovie_;
+    lastSession_ = settings.value(QString::fromLatin1(kSettingLastSession)).toString();
+    const auto canRestore = [this](const QString& path) {
+        return !path.isEmpty() && (isUrl(path) || QFileInfo::exists(path));
+    };
+    const auto startupSession = canRestore(lastSession_) ? lastSession_ : lastMovie;
+    settingsReady_ = true;
     // A command-line movie is already opened by main().  Do not also restore
     // the previous URL here: the two asynchronous sessions can finish in
     // either order and leave the debugger displaying the wrong movie/frame.
@@ -153,10 +163,9 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     const bool hasCommandLineMovie = std::any_of(
         arguments.cbegin() + (arguments.isEmpty() ? 0 : 1), arguments.cend(),
         [](const QString& argument) { return !argument.startsWith(QLatin1Char('-')); });
-    if (!hasCommandLineMovie && !lastMovie.isEmpty() &&
-        (isUrl(lastMovie) || QFileInfo::exists(lastMovie))) {
+    if (!hasCommandLineMovie && canRestore(startupSession)) {
         statusBar()->showMessage(QStringLiteral("Loading last movie..."));
-        openMovie(lastMovie, externalParams_);
+        openMovie(startupSession, externalParams_);
     } else {
         statusBar()->showMessage(
             QStringLiteral("Ready — Open a movie to begin (Ctrl+O)"));
@@ -197,6 +206,9 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
         // debugger session, even though the Player does not exist until the
         // fetch ends.
         externalParams_ = params;
+        const bool isRecordingSession = pendingReplay_.has_value();
+        lastMovie_ = path;
+        addRecentSession(path, !isRecordingSession);
         loadMovieFromUrl(path);
         return true;
     }
@@ -221,7 +233,9 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
         QFileInfo(path).fileName()));
     movieTreePanel_->populate(context_->player());
     restoreBreakpointsForCurrentMovie();
-    addRecentMovie(path);
+    const bool isRecordingSession = pendingReplay_.has_value();
+    lastMovie_ = path;
+    addRecentSession(path, !isRecordingSession);
     refreshBreakpoints();
 
     statusLabel_->setText(QStringLiteral(" ● Ready"));
@@ -262,10 +276,16 @@ void DebuggerWindow::startPlayback() {
 // -----------------------------------------------------------------------
 
 void DebuggerWindow::saveSettings() {
+    if (!settingsReady_) {
+        return;
+    }
+
     QSettings settings;
     settings.setValue(QString::fromLatin1(kSettingGeometry), saveGeometry());
     settings.setValue(QString::fromLatin1(kSettingState), saveState());
-    settings.setValue(QString::fromLatin1(kSettingRecentMovies), recentMovies_);
+    settings.setValue(QString::fromLatin1(kSettingLastMovie), lastMovie_);
+    settings.setValue(QString::fromLatin1(kSettingLastSession), lastSession_);
+    settings.setValue(QString::fromLatin1(kSettingRecentSessions), recentSessions_);
 
     // Save external params as a serialized list
     QStringList paramList;
@@ -292,13 +312,35 @@ void DebuggerWindow::restoreSettings() {
         restoreState(settings.value(QString::fromLatin1(kSettingState)).toByteArray());
     }
 
-    // Recent movies
-    recentMovies_ = settings.value(QString::fromLatin1(kSettingRecentMovies)).toStringList();
-    recentMovies_.removeDuplicates();
-    while (recentMovies_.size() > kMaxRecentMovies) {
-        recentMovies_.removeLast();
+    // Recent movie sources and recording sessions.
+    if (settings.contains(QString::fromLatin1(kSettingRecentSessions))) {
+        recentSessions_ =
+            settings.value(QString::fromLatin1(kSettingRecentSessions)).toStringList();
+    } else {
+        recentSessions_ = settings.value(QString::fromLatin1(kSettingRecentMovies)).toStringList();
+        const auto recordingDirectory =
+            settings.value(QString::fromLatin1(kSettingLastRecordingDir)).toString();
+        if (!recordingDirectory.isEmpty()) {
+            const auto recordingFiles = QDir(recordingDirectory).entryInfoList(
+                {QStringLiteral("*.lswdebug")}, QDir::Files, QDir::Time);
+            for (const auto& fileInfo : recordingFiles) {
+                if (recentSessions_.size() >= kMaxRecentSessions) {
+                    break;
+                }
+                const auto path = fileInfo.absoluteFilePath();
+                if (!recentSessions_.contains(path)) {
+                    recentSessions_.append(path);
+                }
+            }
+        }
     }
-    updateRecentMoviesMenu();
+    recentSessions_.removeDuplicates();
+    while (recentSessions_.size() > kMaxRecentSessions) {
+        recentSessions_.removeLast();
+    }
+    lastMovie_ = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
+    lastSession_ = settings.value(QString::fromLatin1(kSettingLastSession)).toString();
+    updateRecentSessionsMenu();
 
     // External params
     const auto paramList = settings.value(QString::fromLatin1(kSettingExternalParams)).toStringList();
@@ -372,27 +414,31 @@ void DebuggerWindow::persistBreakpoints() {
     settings.setValue(breakpointSettingKey(currentMovieKey()), entries);
 }
 
-void DebuggerWindow::addRecentMovie(const QString& path) {
-    recentMovies_.removeAll(path);
-    recentMovies_.prepend(path);
-    while (recentMovies_.size() > kMaxRecentMovies) {
-        recentMovies_.removeLast();
+void DebuggerWindow::addRecentSession(const QString& path, bool makeLastSession) {
+    recentSessions_.removeAll(path);
+    recentSessions_.prepend(path);
+    while (recentSessions_.size() > kMaxRecentSessions) {
+        recentSessions_.removeLast();
     }
-    updateRecentMoviesMenu();
+    if (makeLastSession) {
+        lastSession_ = path;
+    }
+    updateRecentSessionsMenu();
 
-    // Persist last movie path
+    // Persist both the movie source and the target used to reopen a session.
     QSettings settings;
-    settings.setValue(QString::fromLatin1(kSettingLastMovie), path);
-    settings.setValue(QString::fromLatin1(kSettingRecentMovies), recentMovies_);
+    settings.setValue(QString::fromLatin1(kSettingLastMovie), lastMovie_);
+    settings.setValue(QString::fromLatin1(kSettingLastSession), lastSession_);
+    settings.setValue(QString::fromLatin1(kSettingRecentSessions), recentSessions_);
 }
 
-void DebuggerWindow::updateRecentMoviesMenu() {
-    recentMoviesMenu_->clear();
-    if (recentMovies_.isEmpty()) {
-        recentMoviesMenu_->addAction(QStringLiteral("(none)"))->setEnabled(false);
+void DebuggerWindow::updateRecentSessionsMenu() {
+    recentSessionsMenu_->clear();
+    if (recentSessions_.isEmpty()) {
+        recentSessionsMenu_->addAction(QStringLiteral("(none)"))->setEnabled(false);
         return;
     }
-    for (const auto& path : recentMovies_) {
+    for (const auto& path : recentSessions_) {
         // Files are labelled by their file name; URLs by their path segment.
         QString label = QFileInfo(path).fileName();
         if (label.isEmpty() || isUrl(path)) {
@@ -401,16 +447,16 @@ void DebuggerWindow::updateRecentMoviesMenu() {
         if (label.isEmpty()) {
             label = path;
         }
-        auto* action = recentMoviesMenu_->addAction(
+        auto* action = recentSessionsMenu_->addAction(
             label + QStringLiteral("  —  ") + path);
         action->setData(path);
         connect(action, &QAction::triggered, this, &DebuggerWindow::onOpenRecent);
     }
-    recentMoviesMenu_->addSeparator();
-    auto* clearAction = recentMoviesMenu_->addAction(QStringLiteral("Clear Recent"));
+    recentSessionsMenu_->addSeparator();
+    auto* clearAction = recentSessionsMenu_->addAction(QStringLiteral("Clear Recent"));
     connect(clearAction, &QAction::triggered, this, [this] {
-        recentMovies_.clear();
-        updateRecentMoviesMenu();
+        recentSessions_.clear();
+        updateRecentSessionsMenu();
     });
 }
 
@@ -447,8 +493,8 @@ void DebuggerWindow::setupMenuBar() {
     connect(openRecordingAction, &QAction::triggered,
             this, &DebuggerWindow::onOpenRecording);
 
-    recentMoviesMenu_ = fileMenu->addMenu(QStringLiteral("&Recent Movies"));
-    updateRecentMoviesMenu();
+    recentSessionsMenu_ = fileMenu->addMenu(QStringLiteral("&Recent Sessions"));
+    updateRecentSessionsMenu();
 
     fileMenu->addSeparator();
 
@@ -1042,6 +1088,8 @@ bool DebuggerWindow::openRecording(const QString& path) {
         pendingReplay_.reset();
         return false;
     }
+    lastSession_ = path;
+    addRecentSession(path);
     return true;
 }
 
@@ -1240,7 +1288,9 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(label));
     movieTreePanel_->populate(context_->player());
     restoreBreakpointsForCurrentMovie();
-    addRecentMovie(label);
+    const bool isRecordingSession = pendingReplay_.has_value();
+    lastMovie_ = label;
+    addRecentSession(label, !isRecordingSession);
     refreshBreakpoints();
 
     statusLabel_->setText(QStringLiteral(" ● Ready"));
