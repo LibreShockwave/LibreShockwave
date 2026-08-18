@@ -43,6 +43,7 @@
 #include "libreshockwave/player/debug/BreakpointManager.hpp"
 #include "libreshockwave/player/debug/DebugController.hpp"
 #include "libreshockwave/player/render/pipeline/FrameSnapshot.hpp"
+#include "StartupSession.hpp"
 #include "ui/CallStackPanel.hpp"
 #include "ui/CodeViewPanel.hpp"
 #include "ui/DebugWindowPanel.hpp"
@@ -147,12 +148,12 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     // explicitly controls execution with Play.
     QSettings settings;
     lastMovie_ = settings.value(QString::fromLatin1(kSettingLastMovie)).toString();
-    const auto lastMovie = lastMovie_;
     lastSession_ = settings.value(QString::fromLatin1(kSettingLastSession)).toString();
     const auto canRestore = [this](const QString& path) {
         return !path.isEmpty() && (isUrl(path) || QFileInfo::exists(path));
     };
-    const auto startupSession = canRestore(lastSession_) ? lastSession_ : lastMovie;
+    const auto startup_movie = select_startup_movie_source(
+        canRestore(lastMovie_) ? lastMovie_ : QString(), lastSession_);
     settingsReady_ = true;
     // A command-line movie is already opened by main().  Do not also restore
     // the previous URL here: the two asynchronous sessions can finish in
@@ -163,9 +164,9 @@ DebuggerWindow::DebuggerWindow(QWidget* parent)
     const bool hasCommandLineMovie = std::any_of(
         arguments.cbegin() + (arguments.isEmpty() ? 0 : 1), arguments.cend(),
         [](const QString& argument) { return !argument.startsWith(QLatin1Char('-')); });
-    if (!hasCommandLineMovie && canRestore(startupSession)) {
+    if (!hasCommandLineMovie && canRestore(startup_movie)) {
         statusBar()->showMessage(QStringLiteral("Loading last movie..."));
-        openMovie(startupSession, externalParams_);
+        openMovie(startup_movie, externalParams_);
     } else {
         statusBar()->showMessage(
             QStringLiteral("Ready — Open a movie to begin (Ctrl+O)"));

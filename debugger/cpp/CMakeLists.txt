@@ -4,6 +4,8 @@ add_executable(libreshockwave_debugger
     main.cpp
     DebuggerWindow.cpp
     DebuggerWindow.hpp
+    StartupSession.cpp
+    StartupSession.hpp
     ExternalParamsDialog.cpp
     ExternalParamsDialog.hpp
     DebuggerContext.cpp
@@ -57,3 +59,17 @@ endif()
 target_include_directories(libreshockwave_debugger PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(libreshockwave_debugger PRIVATE cxx_std_20)
 set_target_properties(libreshockwave_debugger PROPERTIES AUTOMOC ON)
+
+if(BUILD_TESTING)
+    add_executable(libreshockwave_debugger_startup_tests
+        StartupSession.cpp
+        StartupSession.hpp
+        startup_session_test.cpp
+    )
+    target_link_libraries(libreshockwave_debugger_startup_tests
+        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
+    target_compile_features(libreshockwave_debugger_startup_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_startup_tests PRIVATE -UNDEBUG)
+    add_test(NAME libreshockwave_debugger_startup_tests
+             COMMAND libreshockwave_debugger_startup_tests)
+endif()
