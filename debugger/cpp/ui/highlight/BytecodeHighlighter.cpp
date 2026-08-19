@@ -2,6 +2,8 @@
 
 #include <QTextCharFormat>
 
+#include "DeclarationHighlighting.hpp"
+
 namespace libreshockwave::debugger {
 
 namespace {
@@ -114,19 +116,18 @@ void BytecodeHighlighter::highlightBlock(const QString& text) {
         comment.setFontItalic(true);
         setFormat(match.capturedStart(6), match.capturedLength(6), comment);
 
-        // Underline declaration names inside the annotation (e.g. the
-        // "stopMovie" of "<stopMovie()>"), the right-click "Go to
-        // declaration" targets.
-        const int base = match.capturedStart(6);
-        auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(6));
-        while (nameMatch.hasNext()) {
-            const auto name = nameMatch.next();
-            if (!declarationNames_.contains(name.captured().toLower())) {
-                continue;
+        if (detail::kEnableDeclarationHighlighting) {
+            const int base = match.capturedStart(6);
+            auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(6));
+            while (nameMatch.hasNext()) {
+                const auto name = nameMatch.next();
+                if (!declarationNames_.contains(name.captured().toLower())) {
+                    continue;
+                }
+                QTextCharFormat underline;
+                underline.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+                setFormat(base + name.capturedStart(), name.capturedLength(), underline);
             }
-            QTextCharFormat underline;
-            underline.setUnderlineStyle(QTextCharFormat::SingleUnderline);
-            setFormat(base + name.capturedStart(), name.capturedLength(), underline);
         }
     }
 }

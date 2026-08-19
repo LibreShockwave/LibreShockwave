@@ -2,6 +2,8 @@
 
 #include <QTextCharFormat>
 
+#include "DeclarationHighlighting.hpp"
+
 namespace libreshockwave::debugger {
 
 namespace {
@@ -130,13 +132,13 @@ void LingoHighlighter::highlightBlock(const QString& text) {
                 format.setForeground(*color);
                 hasFormat = true;
             }
-            // Underline the words the right-click "Go to declaration"
-            // resolves: current-handler variables (dotted) first, then the
-            // movie-wide declarations (single).
-            if (variableNames_.contains(lower)) {
-                format.setUnderlineStyle(QTextCharFormat::DotLine);
-            } else if (declarationNames_.contains(lower)) {
-                format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+            if (detail::kEnableDeclarationHighlighting) {
+                // Variables take precedence because they resolve locally.
+                if (variableNames_.contains(lower)) {
+                    format.setUnderlineStyle(QTextCharFormat::DotLine);
+                } else if (declarationNames_.contains(lower)) {
+                    format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+                }
             }
             if (format.underlineStyle() != QTextCharFormat::NoUnderline) {
                 hasFormat = true;

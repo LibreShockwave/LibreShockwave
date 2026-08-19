@@ -12,12 +12,11 @@ namespace libreshockwave::debugger {
 
 /// Syntax highlighter for decompiled Lingo in the code view.  Colors
 /// keywords, builtin words, strings, numbers, `#symbol` values, and known
-/// movie method names (handler calls).  Declaration words are additionally
-/// underlined so the reader sees which words the right-click "Go to
-/// declaration" resolves: movie-wide declarations (methods, properties,
-/// globals) get a single underline, and the current handler's arguments and
-/// locals get a dotted underline.  The color scheme adapts to the editor's
-/// light or dark base palette.
+/// movie method names (handler calls).  Declaration words can be underlined
+/// internally to show which words the right-click "Go to declaration" resolves:
+/// movie-wide declarations get a single underline, and current-handler
+/// arguments and locals get a dotted underline.  The color scheme adapts to the
+/// editor's light or dark base palette.
 ///
 /// Usage:
 ///   LingoHighlighter highlighter{view->document()};
@@ -31,17 +30,17 @@ public:
     explicit LingoHighlighter(QTextDocument* document);
 
     /// Replace the set of known (lower-cased) method names and re-highlight.
-    /// Methods are colored and underlined.
+    /// Methods are colored; declaration underlines are controlled internally.
     void setMethodNames(const QSet<QString>& names);
 
     /// Replace the movie-wide (lower-cased) declaration names — methods,
-    /// properties, and globals — and re-highlight.  These words receive a
-    /// single underline marking the right-click "Go to declaration" targets.
+    /// properties, and globals — and re-highlight.  These names are also used
+    /// by right-click "Go to declaration" even when underlines are disabled.
     void setDeclarationNames(const QSet<QString>& names);
 
     /// Replace the current handler's (lower-cased) argument and local names
-    /// and re-highlight.  These words receive a dotted underline marking the
-    /// right-click "Go to variable/argument declaration" targets.
+    /// and re-highlight.  These names remain available for right-click
+    /// "Go to variable/argument declaration" when underlines are disabled.
     void setVariableNames(const QSet<QString>& names);
 
     /// Scheme colors, exposed so tests can assert on the produced formats.

@@ -34,6 +34,7 @@ add_executable(libreshockwave_debugger
     model/SymbolIndex.hpp
     ui/highlight/GutterHighlighter.cpp
     ui/highlight/GutterHighlighter.hpp
+    ui/highlight/DeclarationHighlighting.hpp
     ui/highlight/LingoHighlighter.cpp
     ui/highlight/LingoHighlighter.hpp
     ui/highlight/BytecodeHighlighter.cpp
@@ -97,6 +98,7 @@ if(BUILD_TESTING)
     add_executable(libreshockwave_debugger_highlight_tests
         ui/highlight/GutterHighlighter.cpp
         ui/highlight/GutterHighlighter.hpp
+        ui/highlight/DeclarationHighlighting.hpp
         ui/highlight/LingoHighlighter.cpp
         ui/highlight/LingoHighlighter.hpp
         ui/highlight/BytecodeHighlighter.cpp
@@ -124,6 +126,7 @@ if(BUILD_TESTING)
         ui/CodeViewPanel.hpp
         ui/highlight/GutterHighlighter.cpp
         ui/highlight/GutterHighlighter.hpp
+        ui/highlight/DeclarationHighlighting.hpp
         ui/highlight/LingoHighlighter.cpp
         ui/highlight/LingoHighlighter.hpp
         ui/highlight/BytecodeHighlighter.cpp
