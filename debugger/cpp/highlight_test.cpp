@@ -41,6 +41,10 @@ int charWeight(QTextDocument& doc, int blockNumber, int pos) {
     return formatAt(doc, blockNumber, pos).fontWeight();
 }
 
+int underlineStyle(QTextDocument& doc, int blockNumber, int pos) {
+    return formatAt(doc, blockNumber, pos).underlineStyle();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -97,6 +101,32 @@ int main(int argc, char** argv) {
         assert(!hasForeground(doc, 1, 3)); // foo is no longer a method
     }
 
+    // ---- Lingo view: declaration / variable underlines ----
+    {
+        QTextDocument doc;
+        LingoHighlighter highlighter(&doc);
+        // "foo" and "speed" are movie-wide declarations (single underline).
+        // "lfoo" is both a declaration and a current-handler variable, so the
+        // dotted (variable) underline must win.
+        highlighter.setDeclarationNames({"foo", "speed", "lfoo"});
+        highlighter.setVariableNames({"lfoo"});
+        doc.setPlainText(
+            QStringLiteral("call foo()\n"      // foo   -> single underline
+                           "put 1 into speed\n" // speed -> single underline
+                           "put 2 into lFoo\n"  // lFoo  -> dotted underline (variable wins)
+                           "put 3 into plain")); // plain -> no underline
+        highlighter.rehighlight();
+
+        // Block 0: `call foo()` — foo at index 5.
+        assert(underlineStyle(doc, 0, 5) == QTextCharFormat::SingleUnderline);
+        // Block 1: `put 1 into speed` — speed at index 11.
+        assert(underlineStyle(doc, 1, 11) == QTextCharFormat::SingleUnderline);
+        // Block 2: `put 2 into lFoo` — lFoo at index 11.
+        assert(underlineStyle(doc, 2, 11) == QTextCharFormat::DotLine);
+        // Block 3: `put 3 into plain` — plain at index 11, no underline.
+        assert(underlineStyle(doc, 3, 11) == QTextCharFormat::NoUnderline);
+    }
+
     // ---- Bytecode view ----
     {
         QTextDocument doc;
@@ -135,6 +165,29 @@ int main(int argc, char** argv) {
 
         // Block 5: put opcode.
         assert(charColor(doc, 5, 8) == BytecodeHighlighter::categoryColor("put"));
+    }
+
+    // ---- Bytecode view: declaration underline in the annotation ----
+    {
+        QTextDocument doc;
+        BytecodeHighlighter highlighter(&doc);
+        highlighter.setDeclarationNames({"foo"});
+        doc.setPlainText(
+            QStringLiteral("  0000  extCall              7  ; foo\n"
+                           "  0004  pushZero             0  ; bar\n"));
+        highlighter.rehighlight();
+
+        // Block 0: annotation `; foo` — the identifier foo gets a single
+        // underline. Block 1: `; bar` — bar is not a declaration. Positions are
+        // computed from the rendered text so the assertion is layout-robust.
+        const QTextBlock block0 = doc.findBlockByNumber(0);
+        const int fooPos = block0.text().indexOf(QStringLiteral("; foo")) + 2;
+        assert(fooPos > 0);
+        assert(underlineStyle(doc, 0, fooPos) == QTextCharFormat::SingleUnderline);
+        const QTextBlock block1 = doc.findBlockByNumber(1);
+        const int barPos = block1.text().indexOf(QStringLiteral("; bar")) + 2;
+        assert(barPos > 0);
+        assert(underlineStyle(doc, 1, barPos) == QTextCharFormat::NoUnderline);
     }
 
     return 0;

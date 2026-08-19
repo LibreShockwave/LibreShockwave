@@ -33,6 +33,11 @@ public:
     /// Used to color method calls in the decompiled view.
     [[nodiscard]] const std::vector<std::string>& methodNames() const;
 
+    /// All lower-cased declaration names (methods, properties, and globals),
+    /// in snapshot order (duplicates removed).  These are exactly the words
+    /// the code view underlines as right-click "Go to declaration" targets.
+    [[nodiscard]] const std::vector<std::string>& declarationNames() const;
+
     [[nodiscard]] bool empty() const;
 
     /// Lower-cased lookup key for a name.
@@ -41,6 +46,7 @@ public:
 private:
     std::unordered_map<std::string, std::vector<DeclarationTarget>> byName_;
     std::vector<std::string> methodNames_;
+    std::vector<std::string> declarationNames_;
 };
 
 } // namespace libreshockwave::debugger

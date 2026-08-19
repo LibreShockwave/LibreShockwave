@@ -59,6 +59,22 @@ void LingoHighlighter::setMethodNames(const QSet<QString>& names) {
     rehighlight();
 }
 
+void LingoHighlighter::setDeclarationNames(const QSet<QString>& names) {
+    if (names == declarationNames_) {
+        return;
+    }
+    declarationNames_ = names;
+    rehighlight();
+}
+
+void LingoHighlighter::setVariableNames(const QSet<QString>& names) {
+    if (names == variableNames_) {
+        return;
+    }
+    variableNames_ = names;
+    rehighlight();
+}
+
 QColor LingoHighlighter::keywordColor() {
     return darkBase() ? kDarkKeyword : kLightKeyword;
 }
@@ -98,18 +114,35 @@ void LingoHighlighter::highlightBlock(const QString& text) {
     while (match.hasNext()) {
         const auto capture = match.next();
         QTextCharFormat format;
-        std::optional<QColor> color;
+        bool hasFormat = false;
         if (!capture.captured(1).isEmpty()) {
-            color = stringColor();
+            format.setForeground(stringColor());
+            hasFormat = true;
         } else if (!capture.captured(2).isEmpty()) {
-            color = symbolColor();
+            format.setForeground(symbolColor());
+            hasFormat = true;
         } else if (!capture.captured(3).isEmpty()) {
-            color = numberColor();
+            format.setForeground(numberColor());
+            hasFormat = true;
         } else {
-            color = identifierColor(capture.captured(4).toLower(), methodNames_);
+            const QString lower = capture.captured(4).toLower();
+            if (auto color = identifierColor(lower, methodNames_)) {
+                format.setForeground(*color);
+                hasFormat = true;
+            }
+            // Underline the words the right-click "Go to declaration"
+            // resolves: current-handler variables (dotted) first, then the
+            // movie-wide declarations (single).
+            if (variableNames_.contains(lower)) {
+                format.setUnderlineStyle(QTextCharFormat::DotLine);
+            } else if (declarationNames_.contains(lower)) {
+                format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+            }
+            if (format.underlineStyle() != QTextCharFormat::NoUnderline) {
+                hasFormat = true;
+            }
         }
-        if (color.has_value()) {
-            format.setForeground(*color);
+        if (hasFormat) {
             setFormat(capture.capturedStart(), capture.capturedLength(), format);
         }
     }

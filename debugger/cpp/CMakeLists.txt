@@ -40,11 +40,6 @@ add_executable(libreshockwave_debugger
     ui/highlight/BytecodeHighlighter.hpp
 )
 
-# Temporary diagnostic probe (remove before commit)
-add_executable(player_probe player_probe.cpp)
-target_link_libraries(player_probe PRIVATE LibreShockwave::libreshockwave)
-target_compile_features(player_probe PRIVATE cxx_std_20)
-
 find_package(Qt6 QUIET COMPONENTS Network)
 if(Qt6Network_FOUND)
     set(LIBRESHOCKWAVE_QT_NETWORK_TARGET Qt6::Network)
@@ -118,4 +113,32 @@ if(BUILD_TESTING)
     set_target_properties(libreshockwave_debugger_highlight_tests PROPERTIES AUTOMOC ON)
     add_test(NAME libreshockwave_debugger_highlight_tests
              COMMAND libreshockwave_debugger_highlight_tests)
+
+    # Code view panel: current-line marker (the -1 sentinel) and the
+    # right-click "Go to declaration" menu.  The panel is a QWidget, so the
+    # test runs under QApplication offscreen; it uses only Qt + the debugger
+    # model, so no libreshockwave link is needed.
+    add_executable(libreshockwave_debugger_code_view_tests
+        code_view_test.cpp
+        ui/CodeViewPanel.cpp
+        ui/CodeViewPanel.hpp
+        ui/highlight/GutterHighlighter.cpp
+        ui/highlight/GutterHighlighter.hpp
+        ui/highlight/LingoHighlighter.cpp
+        ui/highlight/LingoHighlighter.hpp
+        ui/highlight/BytecodeHighlighter.cpp
+        ui/highlight/BytecodeHighlighter.hpp
+        model/SymbolIndex.cpp
+        model/SymbolIndex.hpp
+        model/DebuggerModel.hpp
+    )
+    target_link_libraries(libreshockwave_debugger_code_view_tests
+        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
+    target_include_directories(libreshockwave_debugger_code_view_tests
+                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features(libreshockwave_debugger_code_view_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_code_view_tests PRIVATE -UNDEBUG)
+    set_target_properties(libreshockwave_debugger_code_view_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME libreshockwave_debugger_code_view_tests
+             COMMAND libreshockwave_debugger_code_view_tests)
 endif()

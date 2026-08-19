@@ -26,6 +26,12 @@ DeclarationTarget makeTarget(int castLibNumber,
 
 SymbolIndex::SymbolIndex(const MovieTreeSnapshot& snapshot) {
     std::unordered_set<std::string> seenMethods;
+    std::unordered_set<std::string> seenDeclarations;
+    const auto addDeclaration = [&seenDeclarations, this](const std::string& key) {
+        if (seenDeclarations.insert(key).second) {
+            declarationNames_.push_back(key);
+        }
+    };
     for (const auto& movie : snapshot.movies) {
         for (const auto& script : movie.scripts) {
             for (const auto& handler : script.handlers) {
@@ -37,18 +43,23 @@ SymbolIndex::SymbolIndex(const MovieTreeSnapshot& snapshot) {
                 if (seenMethods.insert(key).second) {
                     methodNames_.push_back(key);
                 }
+                addDeclaration(key);
             }
             for (const auto& property : script.propertyNames) {
                 if (property.empty()) continue;
-                byName_[keyFor(property)].push_back(makeTarget(
+                const std::string key = keyFor(property);
+                byName_[key].push_back(makeTarget(
                     movie.castLibNumber, script, property,
                     DeclarationKind::Property));
+                addDeclaration(key);
             }
             for (const auto& global : script.globalNames) {
                 if (global.empty()) continue;
-                byName_[keyFor(global)].push_back(
+                const std::string key = keyFor(global);
+                byName_[key].push_back(
                     makeTarget(movie.castLibNumber, script, global,
                                DeclarationKind::Global));
+                addDeclaration(key);
             }
         }
     }
@@ -102,6 +113,10 @@ std::vector<DeclarationTarget> SymbolIndex::find(const std::string& name,
 
 const std::vector<std::string>& SymbolIndex::methodNames() const {
     return methodNames_;
+}
+
+const std::vector<std::string>& SymbolIndex::declarationNames() const {
+    return declarationNames_;
 }
 
 bool SymbolIndex::empty() const {

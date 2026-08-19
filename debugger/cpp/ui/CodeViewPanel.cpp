@@ -118,6 +118,9 @@ void CodeViewPanel::setHandlerCode(
     for (const auto& name : localNames) {
         localNames_.insert(QString::fromStdString(name).toLower());
     }
+    QSet<QString> variables = argNames_;
+    variables.unite(localNames_);
+    lingoHighlighter_->setVariableNames(variables);
 
     // Update handler combo
     handlerCombo_->blockSignals(true);
@@ -155,11 +158,17 @@ void CodeViewPanel::setBreakpointOffsets(const std::set<int>& offsets) {
 
 void CodeViewPanel::setSymbolIndex(const SymbolIndex& index) {
     symbolIndex_ = index;
-    QSet<QString> names;
+    QSet<QString> methods;
+    QSet<QString> declarations;
     for (const auto& name : index.methodNames()) {
-        names.insert(QString::fromStdString(name));
+        methods.insert(QString::fromStdString(name));
     }
-    lingoHighlighter_->setMethodNames(names);
+    for (const auto& name : index.declarationNames()) {
+        declarations.insert(QString::fromStdString(name));
+    }
+    lingoHighlighter_->setMethodNames(methods);
+    lingoHighlighter_->setDeclarationNames(declarations);
+    bytecodeHighlighter_->setDeclarationNames(declarations);
 }
 
 void CodeViewPanel::clear() {
@@ -179,6 +188,9 @@ void CodeViewPanel::clear() {
     handlerCombo_->clear();
     infoLabel_->clear();
     lingoHighlighter_->setMethodNames({});
+    lingoHighlighter_->setDeclarationNames({});
+    lingoHighlighter_->setVariableNames({});
+    bytecodeHighlighter_->setDeclarationNames({});
     clearFlash();
 
     bytecodeView_->clear();
@@ -260,17 +272,26 @@ void CodeViewPanel::onHandlerComboChanged(int index) {
 }
 
 void CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos) {
+    QMenu* menu = buildRightClickMenu(view, viewportPos);
+    if (menu != nullptr) {
+        // WA_DeleteOnClose: the menu deletes itself once exec() returns.
+        menu->exec(view->mapToGlobal(viewportPos));
+    }
+}
+
+QMenu* CodeViewPanel::buildRightClickMenu(QPlainTextEdit* view,
+                                          const QPoint& viewportPos) {
     // Extract the word under the cursor in the clicked view.
     QTextCursor cursor = view->cursorForPosition(viewportPos);
     cursor.select(QTextCursor::WordUnderCursor);
     const QString word = cursor.selectedText();
     if (word.isEmpty()) {
-        return;
+        return nullptr;
     }
     const QString lower = word.toLower();
 
-    // Build the context menu.
-    QMenu menu(this);
+    auto* menu = new QMenu();
+    menu->setAttribute(Qt::WA_DeleteOnClose);
 
     if (view == decompiledView_) {
         // Local variables and arguments declared in the current handler
@@ -280,7 +301,7 @@ void CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewpor
             const int line = findVariableDeclarationLine(lower, isArgument);
             if (line >= 0) {
                 const int targetLine = line;
-                const auto* action = menu.addAction(
+                const auto* action = menu->addAction(
                     QStringLiteral("Go to %1 declaration (line %2)")
                         .arg(isArgument ? QStringLiteral("argument")
                                         : QStringLiteral("variable"),
@@ -309,28 +330,28 @@ void CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewpor
                 target.scriptId == currentScriptId_ &&
                 target.handlerName == currentHandlerName_;
             if (isCurrent) {
-                menu.addAction(
+                menu->addAction(
                         QStringLiteral("%1 (%2) — current")
                             .arg(label, QString::fromStdString(target.scriptName)))
                     ->setEnabled(false);
                 continue;
             }
             const DeclarationTarget targetCopy = target;
-            menu.addAction(
+            menu->addAction(
                 QStringLiteral("%1 (%2)").arg(
                     label, QString::fromStdString(target.scriptName)));
-            connect(menu.actions().last(), &QAction::triggered, this,
+            connect(menu->actions().last(), &QAction::triggered, this,
                     [this, targetCopy]() {
                         emit goToDeclarationRequested(targetCopy);
                     });
         }
     }
 
-    if (menu.isEmpty()) {
-        menu.addAction(QStringLiteral("No declaration found"))
+    if (menu->isEmpty()) {
+        menu->addAction(QStringLiteral("No declaration found"))
             ->setEnabled(false);
     }
-    menu.exec(view->mapToGlobal(viewportPos));
+    return menu;
 }
 
 int CodeViewPanel::findVariableDeclarationLine(const QString& lowerName,
@@ -417,7 +438,9 @@ void CodeViewPanel::rebuildDisplay() {
     {
         QString text;
         for (const auto& instr : instructions_) {
-            const bool isCurrent = (instr.offset == currentInstructionOffset_);
+            // -1 means "no instruction is current" and must never match a line.
+            const bool isCurrent = currentInstructionOffset_ >= 0 &&
+                                   instr.offset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(instr.offset) > 0;
 
             QString line;
@@ -459,7 +482,11 @@ void CodeViewPanel::rebuildDisplay() {
     {
         QString text;
         for (const auto& line : decompiledLines_) {
-            const bool isCurrent = (line.bytecodeOffset == currentInstructionOffset_);
+            // Structural lines carry a -1 offset sentinel; -1 also means "no
+            // current instruction", so both must be guarded or every
+            // structural line would light up as the current line.
+            const bool isCurrent = currentInstructionOffset_ >= 0 &&
+                                   line.bytecodeOffset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(line.bytecodeOffset) > 0;
 
             QString displayLine;

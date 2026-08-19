@@ -13,6 +13,7 @@
 #include "model/DebuggerModel.hpp"
 #include "model/SymbolIndex.hpp"
 
+class QMenu;
 class QTimer;
 
 namespace libreshockwave::debugger {
@@ -63,6 +64,18 @@ public:
 
     /// Clear all displayed code.
     void clear();
+
+    /// The bytecode and decompiled code views (the two tabs).
+    [[nodiscard]] QPlainTextEdit* bytecodeView() const { return bytecodeView_; }
+    [[nodiscard]] QPlainTextEdit* decompiledView() const { return decompiledView_; }
+
+    /// Build the right-click context menu for `view` at `viewportPos`, for
+    /// the word under that position.  Returns nullptr when there is no word.
+    /// The caller takes ownership of the returned menu; it deletes itself
+    /// on close (Qt::WA_DeleteOnClose).  The event filter execs the menu;
+    /// tests build it directly without showing it.
+    [[nodiscard]] QMenu* buildRightClickMenu(QPlainTextEdit* view,
+                                             const QPoint& viewportPos);
 
     /// Offset of the code line last clicked in the gutter column, or -1.
     /// Used by the window's F9 shortcut when the movie is running.

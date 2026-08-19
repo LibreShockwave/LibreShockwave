@@ -6,6 +6,10 @@ namespace libreshockwave::debugger {
 
 namespace {
 
+// Identifiers inside the annotation column (handler/property names, e.g.
+// the "stopMovie" of "<stopMovie()>").
+const QRegularExpression kAnnotationIdentifier("[A-Za-z_]\\w*");
+
 // Display-asset colors (VS Code light/dark theme inspired).
 const QColor kLightPush(0x0d, 0x94, 0x88);
 const QColor kLightGet(0x05, 0x50, 0xae);
@@ -30,6 +34,14 @@ BytecodeHighlighter::BytecodeHighlighter(QTextDocument* document)
       // 5 = argument, 6 = "; annotation".
       lineRegex_(QRegularExpression(
           R"(^(> )?(▶ |● |  )(\d{4,})  ([A-Za-z][A-Za-z0-9]*)\s+(-?\d+)(  ;.*)?)")) {
+}
+
+void BytecodeHighlighter::setDeclarationNames(const QSet<QString>& names) {
+    if (names == declarationNames_) {
+        return;
+    }
+    declarationNames_ = names;
+    rehighlight();
 }
 
 std::optional<QColor> BytecodeHighlighter::categoryColor(const QString& opcode) {
@@ -101,6 +113,21 @@ void BytecodeHighlighter::highlightBlock(const QString& text) {
         comment.setForeground(commentColor());
         comment.setFontItalic(true);
         setFormat(match.capturedStart(6), match.capturedLength(6), comment);
+
+        // Underline declaration names inside the annotation (e.g. the
+        // "stopMovie" of "<stopMovie()>"), the right-click "Go to
+        // declaration" targets.
+        const int base = match.capturedStart(6);
+        auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(6));
+        while (nameMatch.hasNext()) {
+            const auto name = nameMatch.next();
+            if (!declarationNames_.contains(name.captured().toLower())) {
+                continue;
+            }
+            QTextCharFormat underline;
+            underline.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+            setFormat(base + name.capturedStart(), name.capturedLength(), underline);
+        }
     }
 }
 

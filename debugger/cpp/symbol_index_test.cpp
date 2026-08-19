@@ -89,6 +89,20 @@ int main() {
     assert(names[1] == "foo");
     assert(names[2] == "draw");
 
+    // Declaration names: methods + properties + globals, lower-cased, snapshot
+    // order, duplicates removed.  These are the words the code view underlines
+    // as right-click "Go to declaration" targets.
+    const std::vector<std::string>& declarations = index.declarationNames();
+    assert(declarations.size() == 6);
+    assert(declarations[0] == "handlemouseup");
+    assert(declarations[1] == "foo");
+    assert(declarations[2] == "speed");
+    assert(declarations[3] == "gcount");
+    assert(declarations[4] == "draw");
+    assert(declarations[5] == "color");
+    // An empty index has no declaration names.
+    assert(empty.declarationNames().empty());
+
     // Scripts sharing an ID across cast libraries stay distinct.
     MovieTreeSnapshot multi = makeSnapshot();
     MovieTreeSnapshot::MovieEntry second;
