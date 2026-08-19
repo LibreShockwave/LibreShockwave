@@ -30,6 +30,14 @@ add_executable(libreshockwave_debugger
     format/DatumFormat.hpp
     model/DebuggerModel.cpp
     model/DebuggerModel.hpp
+    model/SymbolIndex.cpp
+    model/SymbolIndex.hpp
+    ui/highlight/GutterHighlighter.cpp
+    ui/highlight/GutterHighlighter.hpp
+    ui/highlight/LingoHighlighter.cpp
+    ui/highlight/LingoHighlighter.hpp
+    ui/highlight/BytecodeHighlighter.cpp
+    ui/highlight/BytecodeHighlighter.hpp
 )
 
 # Temporary diagnostic probe (remove before commit)
@@ -72,4 +80,42 @@ if(BUILD_TESTING)
     target_compile_options(libreshockwave_debugger_startup_tests PRIVATE -UNDEBUG)
     add_test(NAME libreshockwave_debugger_startup_tests
              COMMAND libreshockwave_debugger_startup_tests)
+
+    # SymbolIndex is pure C++; Qt Core is linked only because the model
+    # header declares Qt metatypes.
+    add_executable(libreshockwave_debugger_symbol_index_tests
+        model/SymbolIndex.cpp
+        model/SymbolIndex.hpp
+        model/DebuggerModel.hpp
+        symbol_index_test.cpp
+    )
+    target_link_libraries(libreshockwave_debugger_symbol_index_tests
+        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
+    target_include_directories(libreshockwave_debugger_symbol_index_tests
+                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features(libreshockwave_debugger_symbol_index_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_symbol_index_tests PRIVATE -UNDEBUG)
+    add_test(NAME libreshockwave_debugger_symbol_index_tests
+             COMMAND libreshockwave_debugger_symbol_index_tests)
+
+    # Highlighter tests drive QSyntaxHighlighter through a QTextDocument.
+    add_executable(libreshockwave_debugger_highlight_tests
+        ui/highlight/GutterHighlighter.cpp
+        ui/highlight/GutterHighlighter.hpp
+        ui/highlight/LingoHighlighter.cpp
+        ui/highlight/LingoHighlighter.hpp
+        ui/highlight/BytecodeHighlighter.cpp
+        ui/highlight/BytecodeHighlighter.hpp
+        model/DebuggerModel.hpp
+        highlight_test.cpp
+    )
+    target_link_libraries(libreshockwave_debugger_highlight_tests
+        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
+    target_include_directories(libreshockwave_debugger_highlight_tests
+                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features(libreshockwave_debugger_highlight_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_highlight_tests PRIVATE -UNDEBUG)
+    set_target_properties(libreshockwave_debugger_highlight_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME libreshockwave_debugger_highlight_tests
+             COMMAND libreshockwave_debugger_highlight_tests)
 endif()

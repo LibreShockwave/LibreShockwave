@@ -39,6 +39,19 @@ public:
     /// thread — the only thread that touches cast state.
     static MovieTreeSnapshot buildSnapshot(libreshockwave::player::Player& player);
 
+    /// Last built snapshot, so other panels (e.g. the symbol index) can reuse
+    /// it without re-reading the player.
+    [[nodiscard]] const MovieTreeSnapshot& lastSnapshot() const;
+
+    /// Expand the movie and select the script with the given ID in the tree
+    /// without emitting a selection signal (used for go-to-declaration).
+    void selectScript(int castLibNumber, int scriptId);
+
+    /// Like selectScript, then expand the script and select the handler
+    /// child, if present.
+    void selectHandler(int castLibNumber, int scriptId,
+                       const std::string& handlerName);
+
     /// Clear all items.
     void clearAll();
 
@@ -46,7 +59,8 @@ signals:
     /// Emitted when the user selects a script (for loading handler list).
     void scriptSelected(int castLibNumber, int scriptId);
     /// Emitted when the user selects a specific handler (for loading code).
-    void handlerSelected(int scriptId, const std::string& handlerName);
+    void handlerSelected(int castLibNumber, int scriptId,
+                         const std::string& handlerName);
 
 private slots:
     void onFilterTextChanged(const QString& text);

@@ -41,6 +41,24 @@ struct DecompiledLineData {
     int bytecodeOffset{0};
 };
 
+/// The kind of declaration a right-click "Go to declaration" resolves to.
+enum class DeclarationKind {
+    Method,    // a handler in a script
+    Property,  // a behavior property declared by a script
+    Global     // a global variable listed by a script
+};
+
+/// One resolvable declaration site in the movie, produced by SymbolIndex.
+/// `handlerName` is only set for Method targets; `castLibNumber` disambiguates
+/// scripts that share an ID across cast libraries.
+struct DeclarationTarget {
+    int castLibNumber{0};
+    int scriptId{0};
+    std::string scriptName;
+    std::string handlerName;
+    DeclarationKind kind{DeclarationKind::Method};
+};
+
 /// Handler code data (bytecode + decompiled).
 struct HandlerCodeData {
     std::string scriptName;
@@ -118,6 +136,11 @@ struct MovieTreeSnapshot {
         std::string displayName;
         std::string typeName;
         std::vector<HandlerEntry> handlers;
+        // Declared behavior properties and globals of the script, resolved
+        // on the VM thread so "Go to declaration" can index them without
+        // reading live cast state from the UI thread.
+        std::vector<std::string> propertyNames;
+        std::vector<std::string> globalNames;
 
         friend bool operator==(const ScriptEntry&, const ScriptEntry&) = default;
     };
@@ -145,3 +168,7 @@ Q_DECLARE_METATYPE(libreshockwave::debugger::SnapshotData)
 // Same for the movie tree snapshot: DebuggerContext emits castLoaded() from
 // the worker/VM thread when a runtime CCT/CST load completes.
 Q_DECLARE_METATYPE(libreshockwave::debugger::MovieTreeSnapshot)
+
+// DeclarationTarget crosses from CodeViewPanel to the window as a queued-safe
+// value when "Go to declaration" targets another script.
+Q_DECLARE_METATYPE(libreshockwave::debugger::DeclarationTarget)

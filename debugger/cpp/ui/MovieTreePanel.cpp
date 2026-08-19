@@ -63,6 +63,7 @@ MovieTreeSnapshot MovieTreePanel::buildSnapshot(libreshockwave::player::Player& 
         movie.name = castLib->name();
         movie.fileName = castLib->fileName();
 
+        const auto names = castLib->scriptNames();
         for (const auto& script : castLib->allScripts()) {
             if (script == nullptr) continue;
 
@@ -75,6 +76,14 @@ MovieTreeSnapshot MovieTreePanel::buildSnapshot(libreshockwave::player::Player& 
             for (const auto& handler : script->handlers()) {
                 scriptEntry.handlers.push_back(
                     MovieTreeSnapshot::HandlerEntry{script->resolveName(handler.nameId)});
+            }
+            for (const auto& property : script->properties()) {
+                scriptEntry.propertyNames.push_back(
+                    script->resolveName(property.nameId, names.get()));
+            }
+            for (const auto& global : script->globals()) {
+                scriptEntry.globalNames.push_back(
+                    script->resolveName(global.nameId, names.get()));
             }
             movie.scripts.push_back(std::move(scriptEntry));
         }
@@ -164,6 +173,53 @@ void MovieTreePanel::populateFromSnapshot(const MovieTreeSnapshot& snapshot) {
     }
 }
 
+const MovieTreeSnapshot& MovieTreePanel::lastSnapshot() const {
+    return lastSnapshot_;
+}
+
+void MovieTreePanel::selectScript(int castLibNumber, int scriptId) {
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+        auto* movie = tree_->topLevelItem(i);
+        if (movie->data(0, Qt::UserRole).toInt() != castLibNumber) continue;
+        for (int j = 0; j < movie->childCount(); ++j) {
+            auto* script = movie->child(j);
+            if (script->data(0, Qt::UserRole + 1).toInt() != scriptId) continue;
+            movie->setExpanded(true);
+            script->setSelected(true);
+            tree_->scrollToItem(script);
+            return;
+        }
+    }
+}
+
+void MovieTreePanel::selectHandler(int castLibNumber, int scriptId,
+                                   const std::string& handlerName) {
+    if (handlerName.empty()) {
+        selectScript(castLibNumber, scriptId);
+        return;
+    }
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
+        auto* movie = tree_->topLevelItem(i);
+        if (movie->data(0, Qt::UserRole).toInt() != castLibNumber) continue;
+        for (int j = 0; j < movie->childCount(); ++j) {
+            auto* script = movie->child(j);
+            if (script->data(0, Qt::UserRole + 1).toInt() != scriptId) continue;
+            script->setExpanded(true);
+            for (int k = 0; k < script->childCount(); ++k) {
+                auto* handler = script->child(k);
+                if (handler->text(0).toStdString() != handlerName) continue;
+                handler->setSelected(true);
+                tree_->scrollToItem(handler);
+                return;
+            }
+            // The handler child may be hidden by the filter; still select the script.
+            script->setSelected(true);
+            tree_->scrollToItem(script);
+            return;
+        }
+    }
+}
+
 void MovieTreePanel::clearAll() {
     tree_->clear();
     lastSnapshot_ = MovieTreeSnapshot{};
@@ -191,7 +247,7 @@ void MovieTreePanel::onItemClicked(QTreeWidgetItem* item, int /*column*/) {
         emit scriptSelected(castLibNumber, scriptId);
     } else if (scriptId >= 0 && !handlerName.isEmpty()) {
         // Handler level — emit handlerSelected
-        emit handlerSelected(scriptId, handlerName.toStdString());
+        emit handlerSelected(castLibNumber, scriptId, handlerName.toStdString());
     }
 }
 

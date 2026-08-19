@@ -1,13 +1,34 @@
 #include "CodeViewPanel.hpp"
 
+#include <QAction>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
+#include <QRegularExpression>
 #include <QSplitter>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextEdit>
+#include <QTimer>
 #include <QVBoxLayout>
 
+#include "ui/highlight/BytecodeHighlighter.hpp"
+#include "ui/highlight/LingoHighlighter.hpp"
+
 namespace libreshockwave::debugger {
+
+namespace {
+
+// Flash shown after a go-to-declaration jump fades out after this long.
+constexpr int kFlashDurationMs = 1500;
+
+// Amber flash background (semi-transparent) for the jumped-to line.
+const QColor kFlashBackground(0xff, 0xd5, 0x4f, 0x5c);
+
+} // namespace
 
 CodeViewPanel::CodeViewPanel(QWidget* parent)
     : QWidget(parent) {
@@ -42,13 +63,20 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
     bytecodeView_->setFont(QFont(QStringLiteral("monospace"), 11));
     bytecodeView_->setLineWrapMode(QPlainTextEdit::NoWrap);
     bytecodeView_->setTabStopDistance(32);
+    bytecodeHighlighter_ = new BytecodeHighlighter(bytecodeView_->document());
     tabWidget_->addTab(bytecodeView_, QStringLiteral("Bytecode"));
 
     decompiledView_ = new QPlainTextEdit(this);
     decompiledView_->setReadOnly(true);
     decompiledView_->setFont(QFont(QStringLiteral("monospace"), 11));
     decompiledView_->setLineWrapMode(QPlainTextEdit::NoWrap);
+    lingoHighlighter_ = new LingoHighlighter(decompiledView_->document());
     tabWidget_->addTab(decompiledView_, QStringLiteral("Decompiled"));
+
+    flashTimer_ = new QTimer(this);
+    flashTimer_->setSingleShot(true);
+    flashTimer_->setInterval(kFlashDurationMs);
+    connect(flashTimer_, &QTimer::timeout, this, &CodeViewPanel::clearFlash);
 
     layout->addWidget(tabWidget_);
 
@@ -63,13 +91,17 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
 }
 
 void CodeViewPanel::setHandlerCode(
+    int castLibNumber,
     int scriptId,
     const std::string& scriptName,
     const std::string& handlerName,
     const std::vector<InstructionData>& instructions,
     const std::vector<DecompiledLineData>& decompiledLines,
-    const std::vector<std::string>& handlerNames) {
+    const std::vector<std::string>& handlerNames,
+    const std::vector<std::string>& argNames,
+    const std::vector<std::string>& localNames) {
 
+    currentCastLibNumber_ = castLibNumber;
     currentScriptId_ = scriptId;
     scriptName_ = scriptName;
     currentHandlerName_ = handlerName;
@@ -77,6 +109,15 @@ void CodeViewPanel::setHandlerCode(
     decompiledLines_ = decompiledLines;
     handlerNames_ = handlerNames;
     lastClickedOffset_ = -1;
+
+    argNames_.clear();
+    localNames_.clear();
+    for (const auto& name : argNames) {
+        argNames_.insert(QString::fromStdString(name).toLower());
+    }
+    for (const auto& name : localNames) {
+        localNames_.insert(QString::fromStdString(name).toLower());
+    }
 
     // Update handler combo
     handlerCombo_->blockSignals(true);
@@ -112,18 +153,33 @@ void CodeViewPanel::setBreakpointOffsets(const std::set<int>& offsets) {
     rebuildDisplay();
 }
 
+void CodeViewPanel::setSymbolIndex(const SymbolIndex& index) {
+    symbolIndex_ = index;
+    QSet<QString> names;
+    for (const auto& name : index.methodNames()) {
+        names.insert(QString::fromStdString(name));
+    }
+    lingoHighlighter_->setMethodNames(names);
+}
+
 void CodeViewPanel::clear() {
+    currentCastLibNumber_ = 0;
     currentScriptId_ = 0;
     scriptName_.clear();
     currentHandlerName_.clear();
     instructions_.clear();
     decompiledLines_.clear();
     handlerNames_.clear();
+    argNames_.clear();
+    localNames_.clear();
+    symbolIndex_ = SymbolIndex();
     breakpointOffsets_.clear();
     currentInstructionOffset_ = -1;
     lastClickedOffset_ = -1;
     handlerCombo_->clear();
     infoLabel_->clear();
+    lingoHighlighter_->setMethodNames({});
+    clearFlash();
 
     bytecodeView_->clear();
     decompiledView_->clear();
@@ -139,6 +195,15 @@ bool CodeViewPanel::eventFilter(QObject* obj, QEvent* event) {
             }
             if (obj == decompiledView_->viewport()) {
                 handleGutterClick(decompiledView_, mouse->pos(), false);
+                return true;
+            }
+        } else if (mouse->button() == Qt::RightButton) {
+            if (obj == bytecodeView_->viewport()) {
+                handleRightClick(bytecodeView_, mouse->pos());
+                return true;
+            }
+            if (obj == decompiledView_->viewport()) {
+                handleRightClick(decompiledView_, mouse->pos());
                 return true;
             }
         }
@@ -194,7 +259,160 @@ void CodeViewPanel::onHandlerComboChanged(int index) {
     }
 }
 
+void CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos) {
+    // Extract the word under the cursor in the clicked view.
+    QTextCursor cursor = view->cursorForPosition(viewportPos);
+    cursor.select(QTextCursor::WordUnderCursor);
+    const QString word = cursor.selectedText();
+    if (word.isEmpty()) {
+        return;
+    }
+    const QString lower = word.toLower();
+
+    // Build the context menu.
+    QMenu menu(this);
+
+    if (view == decompiledView_) {
+        // Local variables and arguments declared in the current handler
+        // jump to their first assignment in this handler's decompiled code.
+        if (argNames_.contains(lower) || localNames_.contains(lower)) {
+            const bool isArgument = argNames_.contains(lower);
+            const int line = findVariableDeclarationLine(lower, isArgument);
+            if (line >= 0) {
+                const int targetLine = line;
+                const auto* action = menu.addAction(
+                    QStringLiteral("Go to %1 declaration (line %2)")
+                        .arg(isArgument ? QStringLiteral("argument")
+                                        : QStringLiteral("variable"),
+                             QString::number(line + 1)));
+                connect(action, &QAction::triggered, this,
+                        [this, targetLine]() {
+                            jumpToDecompiledLine(targetLine);
+                        });
+            }
+        }
+    }
+
+    // Methods, properties, and globals resolve across the whole movie.
+    if (!symbolIndex_.empty()) {
+        const auto targets = symbolIndex_.find(word.toStdString(), currentScriptId_);
+        for (const auto& target : targets) {
+            const QString label =
+                target.kind == DeclarationKind::Method
+                    ? QStringLiteral("Go to method")
+                    : (target.kind == DeclarationKind::Property
+                          ? QStringLiteral("Go to property")
+                          : QStringLiteral("Go to global"));
+            const bool isCurrent =
+                target.kind == DeclarationKind::Method &&
+                target.castLibNumber == currentCastLibNumber_ &&
+                target.scriptId == currentScriptId_ &&
+                target.handlerName == currentHandlerName_;
+            if (isCurrent) {
+                menu.addAction(
+                        QStringLiteral("%1 (%2) — current")
+                            .arg(label, QString::fromStdString(target.scriptName)))
+                    ->setEnabled(false);
+                continue;
+            }
+            const DeclarationTarget targetCopy = target;
+            menu.addAction(
+                QStringLiteral("%1 (%2)").arg(
+                    label, QString::fromStdString(target.scriptName)));
+            connect(menu.actions().last(), &QAction::triggered, this,
+                    [this, targetCopy]() {
+                        emit goToDeclarationRequested(targetCopy);
+                    });
+        }
+    }
+
+    if (menu.isEmpty()) {
+        menu.addAction(QStringLiteral("No declaration found"))
+            ->setEnabled(false);
+    }
+    menu.exec(view->mapToGlobal(viewportPos));
+}
+
+int CodeViewPanel::findVariableDeclarationLine(const QString& lowerName,
+                                               bool isArgument) const {
+    const auto wordsOf = [](const QString& text) {
+        return text.split(QRegularExpression("[\\s()]+"), Qt::SkipEmptyParts);
+    };
+
+    const int lineCount = static_cast<int>(decompiledLines_.size());
+    for (int i = 0; i < lineCount; ++i) {
+        const QString text =
+            QString::fromStdString(decompiledLines_[i].text).trimmed();
+        if (text.isEmpty()) continue;
+
+        const QStringList words = wordsOf(text);
+        const int w = static_cast<int>(words.size());
+        auto lw = [&](int idx) -> QString {
+            return (idx < w) ? words[idx].toLower() : QString();
+        };
+
+        // 1) Signature line for an argument: `on name(arg1, arg2)`
+        if (isArgument && i == 0 && lw(0) == QLatin1String("on")) {
+            for (int j = 0; j < w; ++j) {
+                if (lw(j) == lowerName) return i;
+            }
+        }
+        // 2) `put ... <var>` — the variable is the last token.
+        if (lw(0) == QLatin1String("put") && lw(w - 1) == lowerName) {
+            return i;
+        }
+        // 3) `<var> = ...`
+        if (lw(0) == lowerName && lw(1) == QLatin1String("=")) {
+            return i;
+        }
+        // 4) `set <var> to ...`
+        if (lw(0) == QLatin1String("set") && lw(1) == lowerName &&
+            lw(2) == QLatin1String("to")) {
+            return i;
+        }
+        // 5) `repeat with <var> ...`
+        if (lw(0) == QLatin1String("repeat") && lw(1) == QLatin1String("with") &&
+            lw(2) == lowerName) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void CodeViewPanel::jumpToDecompiledLine(int line) {
+    if (line < 0 || line >= static_cast<int>(decompiledLines_.size())) {
+        return;
+    }
+    tabWidget_->setCurrentWidget(decompiledView_);
+
+    QTextDocument* doc = decompiledView_->document();
+    QTextBlock block = doc->findBlockByLineNumber(line);
+    if (block.isValid()) {
+        QTextCursor cursor(block);
+        cursor.select(QTextCursor::LineUnderCursor);
+        decompiledView_->setTextCursor(cursor);
+        decompiledView_->centerCursor();
+    }
+
+    // Flash the line.
+    QTextCursor selCursor(block);
+    selCursor.select(QTextCursor::LineUnderCursor);
+    QTextEdit::ExtraSelection selection;
+    selection.cursor = selCursor;
+    selection.format.setBackground(kFlashBackground);
+    decompiledView_->setExtraSelections({selection});
+    flashTimer_->start();
+}
+
+void CodeViewPanel::clearFlash() {
+    decompiledView_->setExtraSelections({});
+}
+
 void CodeViewPanel::rebuildDisplay() {
+    // setPlainText() below replaces both documents, so drop the flash
+    // selection (its cursors would otherwise reference stale positions).
+    clearFlash();
+
     // Build bytecode text
     {
         QString text;

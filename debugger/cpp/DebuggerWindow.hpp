@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "model/DebuggerModel.hpp"
+#include "model/SymbolIndex.hpp"
 
 class QAction;
 class QDockWidget;
@@ -85,10 +86,14 @@ private slots:
 
     // Movie tree
     void onScriptSelected(int castLibNumber, int scriptId);
-    void onHandlerSelected(int scriptId, const std::string& handlerName);
+    void onHandlerSelected(int castLibNumber, int scriptId,
+                           const std::string& handlerName);
 
     // Code view
     void onCodeHandlerChanged(const std::string& handlerName);
+    /// Jump to the declaration of a word the user right-clicked in the code
+    /// view (method, property, or global in another script).
+    void onGoToDeclaration(const DeclarationTarget& target);
 
     // Watches
     void onWatchAdded(const std::string& expression);
@@ -102,8 +107,12 @@ private:
     void setupShortcuts();
     void connectSignals();
     void updateToolbarState();
-    void loadHandlerCode(int scriptId, const std::string& handlerName);
+    void loadHandlerCode(int castLibNumber, int scriptId,
+                         const std::string& handlerName);
     void refreshBreakpoints();
+    /// Rebuild the movie-wide declaration index from a snapshot and push it
+    /// to the code view (right-click "Go to declaration" + method coloring).
+    void refreshMovieIndex(const MovieTreeSnapshot& snapshot);
 
     // Persistence
     void saveSettings();
@@ -213,8 +222,12 @@ private:
     // State
     bool isPaused_{false};
     bool settingsReady_{false};
+    int currentCastLibNumber_{0};
     int currentScriptId_{0};
     std::string currentHandlerName_;
+    /// Movie-wide declaration index (methods, properties, globals) used by
+    /// the code view's right-click "Go to declaration".
+    SymbolIndex symbolIndex_;
     QStringList recentSessions_;
     QString lastMovie_;
     QString lastSession_;

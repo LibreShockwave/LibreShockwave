@@ -233,6 +233,7 @@ bool DebuggerWindow::openMovieInternal(const QString& path,
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(
         QFileInfo(path).fileName()));
     movieTreePanel_->populate(context_->player());
+    refreshMovieIndex(movieTreePanel_->lastSnapshot());
     restoreBreakpointsForCurrentMovie();
     const bool isRecordingSession = pendingReplay_.has_value();
     lastMovie_ = path;
@@ -724,6 +725,7 @@ void DebuggerWindow::connectSignals() {
     connect(context_, &DebuggerContext::movieLoaded, this, [this]() {
         if (context_->player() != nullptr) {
             movieTreePanel_->populate(context_->player());
+            refreshMovieIndex(movieTreePanel_->lastSnapshot());
             restoreBreakpointsForCurrentMovie();
             refreshBreakpoints();
         }
@@ -757,6 +759,8 @@ void DebuggerWindow::connectSignals() {
             this, &DebuggerWindow::onCodeHandlerChanged);
     connect(codeViewPanel_, &CodeViewPanel::breakpointToggled,
             this, &DebuggerWindow::onBreakpointToggled);
+    connect(codeViewPanel_, &CodeViewPanel::goToDeclarationRequested,
+            this, &DebuggerWindow::onGoToDeclaration);
     connect(context_, &DebuggerContext::movieNavigationRequested,
             this, &DebuggerWindow::onMovieNavigationRequested);
     // Runtime CCT/CST loads arrive as a snapshot from the VM thread; rebuild
@@ -764,6 +768,7 @@ void DebuggerWindow::connectSignals() {
     connect(context_, &DebuggerContext::castLoaded, this,
             [this](const MovieTreeSnapshot& snapshot) {
                 movieTreePanel_->populateFromSnapshot(snapshot);
+                refreshMovieIndex(snapshot);
             });
     connect(watchPanel_, &WatchPanel::watchAdded,
             this, &DebuggerWindow::onWatchAdded);
@@ -1285,6 +1290,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
 
     setWindowTitle(QStringLiteral("LibreShockwave Debugger — %1").arg(label));
     movieTreePanel_->populate(context_->player());
+    refreshMovieIndex(movieTreePanel_->lastSnapshot());
     restoreBreakpointsForCurrentMovie();
     const bool isRecordingSession = pendingReplay_.has_value();
     lastMovie_ = label;
@@ -1578,7 +1584,9 @@ void DebuggerWindow::onPaused(const SnapshotData& data) {
     callStackPanel_->updateFromSnapshot(data);
     watchPanel_->updateFromSnapshot(data);
     updateToolbarState();
-    loadHandlerCode(data.scriptId, data.handlerName);
+    // The VM snapshot carries no cast-lib number; 0 means "match scriptId in
+    // any cast library", preserving the previous first-match behavior.
+    loadHandlerCode(0, data.scriptId, data.handlerName);
 }
 
 void DebuggerWindow::onResumed() {
@@ -1749,20 +1757,43 @@ void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
 // Movie tree + code view
 // -----------------------------------------------------------------------
 
-void DebuggerWindow::onScriptSelected(int /*castLibNumber*/, int scriptId) {
+void DebuggerWindow::onScriptSelected(int castLibNumber, int scriptId) {
+    currentCastLibNumber_ = castLibNumber;
     currentScriptId_ = scriptId;
-    loadHandlerCode(scriptId, "");
+    currentHandlerName_.clear();
+    loadHandlerCode(castLibNumber, scriptId, "");
 }
 
-void DebuggerWindow::onHandlerSelected(int scriptId, const std::string& handlerName) {
+void DebuggerWindow::onHandlerSelected(int castLibNumber, int scriptId,
+                                       const std::string& handlerName) {
+    currentCastLibNumber_ = castLibNumber;
     currentScriptId_ = scriptId;
     currentHandlerName_ = handlerName;
-    loadHandlerCode(scriptId, handlerName);
+    loadHandlerCode(castLibNumber, scriptId, handlerName);
 }
 
 void DebuggerWindow::onCodeHandlerChanged(const std::string& handlerName) {
     currentHandlerName_ = handlerName;
-    loadHandlerCode(currentScriptId_, handlerName);
+    loadHandlerCode(currentCastLibNumber_, currentScriptId_, handlerName);
+}
+
+void DebuggerWindow::onGoToDeclaration(const DeclarationTarget& target) {
+    currentCastLibNumber_ = target.castLibNumber;
+    currentScriptId_ = target.scriptId;
+    currentHandlerName_ =
+        target.kind == DeclarationKind::Method ? target.handlerName : std::string{};
+    loadHandlerCode(target.castLibNumber, target.scriptId, target.handlerName);
+    if (target.kind == DeclarationKind::Method && !target.handlerName.empty()) {
+        movieTreePanel_->selectHandler(target.castLibNumber, target.scriptId,
+                                       target.handlerName);
+    } else {
+        movieTreePanel_->selectScript(target.castLibNumber, target.scriptId);
+    }
+}
+
+void DebuggerWindow::refreshMovieIndex(const MovieTreeSnapshot& snapshot) {
+    symbolIndex_ = SymbolIndex(snapshot);
+    codeViewPanel_->setSymbolIndex(symbolIndex_);
 }
 
 // -----------------------------------------------------------------------
@@ -1807,7 +1838,8 @@ void DebuggerWindow::updateToolbarState() {
     clearBreakpointsAction_->setEnabled(hasPlayer);
 }
 
-void DebuggerWindow::loadHandlerCode(int scriptId, const std::string& handlerName) {
+void DebuggerWindow::loadHandlerCode(int castLibNumber, int scriptId,
+                                     const std::string& handlerName) {
     auto* player = context_->player();
     if (player == nullptr) return;
 
@@ -1817,6 +1849,7 @@ void DebuggerWindow::loadHandlerCode(int scriptId, const std::string& handlerNam
 
     for (const auto& [number, castLib] : player->castLibManager().castLibs()) {
         if (castLib == nullptr) continue;
+        if (castLibNumber > 0 && number != castLibNumber) continue;
         for (const auto& script : castLib->allScripts()) {
             if (script == nullptr) continue;
             if (script->id().value() != scriptId) continue;
@@ -1838,12 +1871,21 @@ void DebuggerWindow::loadHandlerCode(int scriptId, const std::string& handlerNam
     std::vector<InstructionData> instructions;
     std::vector<DecompiledLineData> decompiledLines;
     std::vector<std::string> handlerNames;
+    std::vector<std::string> argNames;
+    std::vector<std::string> localNames;
 
     for (const auto& handler : foundScript->handlers()) {
         handlerNames.push_back(foundScript->resolveName(handler.nameId));
     }
 
     if (foundHandler != nullptr) {
+        for (const auto nameId : foundHandler->argNameIds) {
+            argNames.push_back(foundScript->resolveName(nameId, foundNames));
+        }
+        for (const auto nameId : foundHandler->localNameIds) {
+            localNames.push_back(foundScript->resolveName(nameId, foundNames));
+        }
+
         for (const auto& instr : foundHandler->instructions) {
             InstructionData id;
             id.offset = instr.offset;
@@ -1867,8 +1909,8 @@ void DebuggerWindow::loadHandlerCode(int scriptId, const std::string& handlerNam
     }
 
     codeViewPanel_->setHandlerCode(
-        scriptId, foundScript->displayName(), handlerName,
-        instructions, decompiledLines, handlerNames);
+        castLibNumber, scriptId, foundScript->displayName(), handlerName,
+        instructions, decompiledLines, handlerNames, argNames, localNames);
     refreshBreakpoints();
 }
 
