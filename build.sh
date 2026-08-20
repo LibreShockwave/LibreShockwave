@@ -282,6 +282,7 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
             libreshockwave_debugger_startup_tests
             libreshockwave_debugger_symbol_index_tests
             libreshockwave_debugger_highlight_tests
+            libreshockwave_debugger_code_view_tests
         )
     fi
 fi
