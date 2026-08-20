@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QContextMenuEvent>
 #include <QEvent>
+#include <QKeySequence>
 #include <QFontMetrics>
 #include <QLabel>
 #include <QMenu>
@@ -214,9 +215,8 @@ bool CodeViewPanel::eventFilter(QObject* obj, QEvent* event) {
         return QWidget::eventFilter(obj, event);
     }
     // Qt's default text menu (Copy / Select All) is shown for a QEvent::ContextMenu,
-    // a separate event from the right-button release.  Intercept it, accept the
-    // event to replace the default, and leave it unaccepted when there is no word
-    // under the cursor so the default menu (still useful for copying) still shows.
+    // a separate event from the right-button release.  Replace it for either code
+    // view with the unified menu (standard actions + "Go to declaration" options).
     if (event->type() == QEvent::ContextMenu) {
         auto* ce = static_cast<QContextMenuEvent*>(event);
         if (obj == bytecodeView_->viewport() &&
@@ -283,9 +283,6 @@ void CodeViewPanel::onHandlerComboChanged(int index) {
 
 bool CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos) {
     QMenu* menu = buildRightClickMenu(view, viewportPos);
-    if (menu == nullptr) {
-        return false;
-    }
     // WA_DeleteOnClose: the menu deletes itself once exec() returns.
     menu->exec(view->viewport()->mapToGlobal(viewportPos));
     return true;
@@ -293,21 +290,45 @@ bool CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewpor
 
 QMenu* CodeViewPanel::buildRightClickMenu(QPlainTextEdit* view,
                                           const QPoint& viewportPos) {
-    // Extract the word under the cursor in the clicked view.
+    auto* menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+
+    // The standard text-editor actions (Undo / Cut / Copy / Paste / Select All),
+    // wired to the editor so the shortcuts and read-only enabled state behave
+    // exactly like Qt's default context menu.
+    const bool writable = !view->isReadOnly();
+    menu->addAction(tr("&Undo"), QKeySequence::Undo, view, &QPlainTextEdit::undo)
+        ->setEnabled(writable);
+    menu->addAction(tr("&Redo"), QKeySequence::Redo, view, &QPlainTextEdit::redo)
+        ->setEnabled(writable);
+    menu->addSeparator();
+    menu->addAction(tr("Cu&t"), QKeySequence::Cut, view, &QPlainTextEdit::cut)
+        ->setEnabled(writable);
+    menu->addAction(tr("&Copy"), QKeySequence::Copy, view, &QPlainTextEdit::copy);
+    menu->addAction(tr("&Paste"), QKeySequence::Paste, view, &QPlainTextEdit::paste)
+        ->setEnabled(writable);
+    menu->addSeparator();
+    menu->addAction(tr("&Select All"), QKeySequence::SelectAll, view,
+                    &QPlainTextEdit::selectAll);
+
+    // Go-to-declaration options, added only when a resolvable word is under the
+    // cursor; dropped otherwise so the normal menu stands on its own.
     QTextCursor cursor = view->cursorForPosition(viewportPos);
     cursor.select(QTextCursor::WordUnderCursor);
     const QString word = cursor.selectedText();
-    if (word.isEmpty()) {
-        return nullptr;
+    if (!word.isEmpty()) {
+        menu->addSeparator();
+        addDeclarationActions(menu, view, word);
     }
-    const QString lower = word.toLower();
+    return menu;
+}
 
-    auto* menu = new QMenu();
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-
+void CodeViewPanel::addDeclarationActions(QMenu* menu, QPlainTextEdit* view,
+                                          const QString& word) {
     if (view == decompiledView_) {
         // Local variables and arguments declared in the current handler
         // jump to their first assignment in this handler's decompiled code.
+        const QString lower = word.toLower();
         if (argNames_.contains(lower) || localNames_.contains(lower)) {
             const bool isArgument = argNames_.contains(lower);
             const int line = findVariableDeclarationLine(lower, isArgument);
@@ -334,8 +355,8 @@ QMenu* CodeViewPanel::buildRightClickMenu(QPlainTextEdit* view,
                 target.kind == DeclarationKind::Method
                     ? QStringLiteral("Go to method")
                     : (target.kind == DeclarationKind::Property
-                          ? QStringLiteral("Go to property")
-                          : QStringLiteral("Go to global"));
+                           ? QStringLiteral("Go to property")
+                           : QStringLiteral("Go to global"));
             const bool isCurrent =
                 target.kind == DeclarationKind::Method &&
                 target.castLibNumber == currentCastLibNumber_ &&
@@ -358,12 +379,6 @@ QMenu* CodeViewPanel::buildRightClickMenu(QPlainTextEdit* view,
                     });
         }
     }
-
-    if (menu->isEmpty()) {
-        menu->addAction(QStringLiteral("No declaration found"))
-            ->setEnabled(false);
-    }
-    return menu;
 }
 
 int CodeViewPanel::findVariableDeclarationLine(const QString& lowerName,

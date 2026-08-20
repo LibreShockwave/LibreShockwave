@@ -1,7 +1,6 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
-#include <QDeadlineTimer>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QTabWidget>
@@ -152,22 +151,22 @@ int main(int argc, char** argv) {
             delete menu;
         }
 
-        // Undeclared word -> "No declaration found".
+        // Undeclared word -> no "Go to declaration" options, just the standard
+        // text-editor menu (so "Select All" stands on its own).
         {
             DecompiledLineData l0;
             l0.text = "call qux";
             l0.bytecodeOffset = 0;
             std::vector<DecompiledLineData> lines = {l0};
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"},
-                                 {}, {});
+                                  {}, {});
             QApplication::processEvents();
             // View line is "  call qux"; "qux" starts at char 7.
             const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
             QMenu* menu = panel.buildRightClickMenu(panel.decompiledView(), pos);
             assert(menu != nullptr);
-            assert(menu->actions().size() == 1);
-            assert(menu->actions().first()->text() == "No declaration found");
-            assert(!menu->actions().first()->isEnabled());
+            assert(menuHas(menu, "Select All"));
+            assert(!menuHas(menu, "Go to"));
             delete menu;
         }
     }
@@ -194,21 +193,8 @@ int main(int argc, char** argv) {
                 return false;
             }
         };
-        const auto waitNoPopup = [](const int timeoutMs) {
-            const QDeadlineTimer deadline(timeoutMs);
-            while (QApplication::activePopupWidget() != nullptr &&
-                   !deadline.hasExpired()) {
-                qApp->processEvents(QEventLoop::WaitForMoreEvents, 10);
-            }
-        };
         MenuSpy spy;
         app.installEventFilter(&spy);
-        // Safety net: close any popup so a nested exec() loop returns.
-        QTimer::singleShot(50, []() {
-            if (QWidget* popup = QApplication::activePopupWidget()) {
-                popup->close();
-            }
-        });
 
         CodeViewPanel panel;
         panel.setSymbolIndex(SymbolIndex{makeSnapshot()});
@@ -222,30 +208,42 @@ int main(int argc, char** argv) {
         l0.bytecodeOffset = 0;
         std::vector<DecompiledLineData> lines = {l0};
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines,
-                             {"foo", "bar"}, {}, {});
+                              {"foo", "bar"}, {}, {});
         QApplication::processEvents();
 
-        // Over the word "bar": only the declaration menu is shown, and the
-        // accepted event suppresses the default text menu.
+        // Send a QEvent::ContextMenu for `pos`. Each call arms its own timer so
+        // the nested exec() loop (from buildRightClickMenu) is always closable —
+        // one timer per shown menu.
+        const auto showContextMenu = [&](const QPoint& pos, bool& accepted) {
+            QTimer::singleShot(50, []() {
+                if (QWidget* popup = QApplication::activePopupWidget()) {
+                    popup->close();
+                }
+            });
+            QContextMenuEvent local(QContextMenuEvent::Mouse, pos, pos);
+            QApplication::sendEvent(panel.decompiledView()->viewport(), &local);
+            accepted = local.isAccepted();
+        };
+
+        // Over the word "bar": the unified menu is shown (accepted), merging the
+        // standard text-editor actions with the declaration option.
         {
             const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
-            QContextMenuEvent ce(QContextMenuEvent::Mouse, pos, pos);
-            QApplication::sendEvent(panel.decompiledView()->viewport(), &ce);
-            waitNoPopup(300);
-            assert(ce.isAccepted());
+            bool accepted = false;
+            showContextMenu(pos, accepted);
+            assert(accepted);
             assert(spy.menus.size() == 1);
             assert(spy.menus.first().contains("Go to method"));
-            assert(!spy.menus.first().contains("Select All"));
+            assert(spy.menus.first().contains("Select All"));
         }
 
-        // Over empty space (the trailing blank line): the unhandled event
-        // falls through to Qt's default text menu, so copying still works.
+        // Over empty space (the trailing blank line): no word under the cursor,
+        // so only the unified standard menu shows (still no "Go to declaration").
         {
             const QPoint pos = charToViewport(panel.decompiledView(), 1, 0);
-            QContextMenuEvent ce(QContextMenuEvent::Mouse, pos, pos);
-            QApplication::sendEvent(panel.decompiledView()->viewport(), &ce);
-            waitNoPopup(300);
-            assert(ce.isAccepted());
+            bool accepted = false;
+            showContextMenu(pos, accepted);
+            assert(accepted);
             assert(spy.menus.size() == 2);
             assert(spy.menus.last().contains("Select All"));
             assert(!spy.menus.last().contains("Go to method"));

@@ -69,13 +69,14 @@ public:
     [[nodiscard]] QPlainTextEdit* bytecodeView() const { return bytecodeView_; }
     [[nodiscard]] QPlainTextEdit* decompiledView() const { return decompiledView_; }
 
-    /// Build the right-click context menu for `view` at `viewportPos`, for
-    /// the word under that position.  Returns nullptr when there is no word.
-    /// The caller takes ownership of the returned menu; it deletes itself
-    /// on close (Qt::WA_DeleteOnClose).  The event filter execs the menu;
-    /// tests build it directly without showing it.
+    /// Build the right-click context menu for `view` at `viewportPos`.  It
+    /// always contains the standard text-editor actions (Undo / Cut / Copy /
+    /// Paste / Select All); the "Go to declaration" options are appended only
+    /// when a resolvable word is under the cursor.  The caller takes ownership
+    /// of the returned menu; it deletes itself on close (Qt::WA_DeleteOnClose).
+    /// The event filter execs the menu; tests build it directly without showing it.
     [[nodiscard]] QMenu* buildRightClickMenu(QPlainTextEdit* view,
-                                             const QPoint& viewportPos);
+                                              const QPoint& viewportPos);
 
     /// Offset of the code line last clicked in the gutter column, or -1.
     /// Used by the window's F9 shortcut when the movie is running.
@@ -107,14 +108,20 @@ private:
     void rebuildDisplay();
     void handleGutterClick(QPlainTextEdit* view, const QPoint& viewportPos,
                             bool isBytecode);
-    /// Build and exec the declaration context menu for the word at
-    /// `viewportPos` (viewport coordinates).  Returns true when a menu was
-    /// shown, false when no word is under the cursor (caller then leaves the
-    /// context-menu event unaccepted so Qt's default menu is shown).
+    /// Build and exec the context menu for the word at `viewportPos` (viewport
+    /// coordinates): the standard text-editor actions plus any "Go to
+    /// declaration" options.  Always returns true; the caller accepts the
+    /// context-menu event so this unified menu replaces Qt's default.
     [[nodiscard]] bool handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos);
     void jumpToDecompiledLine(int line);
     [[nodiscard]] int findVariableDeclarationLine(const QString& lowerName,
                                                   bool isArgument) const;
+    /// Append the "Go to declaration" options for `word` to `menu`: a local
+    /// variable or argument jumps to its first assignment in the current
+    /// handler; methods, properties, and globals resolve across the movie.
+    /// Only called when a word is under the cursor; adds nothing otherwise.
+    void addDeclarationActions(QMenu* menu, QPlainTextEdit* view,
+                               const QString& word);
 
     QTabWidget* tabWidget_;
     QPlainTextEdit* bytecodeView_;
