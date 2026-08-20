@@ -1,11 +1,14 @@
 #include <QAction>
 #include <QApplication>
+#include <QContextMenuEvent>
+#include <QDeadlineTimer>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTimer>
 
 #include "model/SymbolIndex.hpp"
 #include "ui/CodeViewPanel.hpp"
@@ -167,6 +170,89 @@ int main(int argc, char** argv) {
             assert(!menu->actions().first()->isEnabled());
             delete menu;
         }
+    }
+
+    // ---- Real right-click arrives as QEvent::ContextMenu ----
+    // Qt's default text menu (Copy / Select All) is shown in response to
+    // QEvent::ContextMenu, so the filter must accept that event to replace
+    // the default with the declaration menu; with no word under the cursor
+    // it must leave the event unhandled so the default menu still works.
+    {
+        struct MenuSpy : QObject {
+            QStringList menus; // one joined-action-texts entry per shown menu
+            bool eventFilter(QObject* o, QEvent* e) override {
+                if (e->type() == QEvent::Show) {
+                    if (auto* menu = qobject_cast<QMenu*>(o)) {
+                        QStringList texts;
+                        for (const auto* action : menu->actions()) {
+                            if (action->isSeparator()) continue;
+                            texts << action->text();
+                        }
+                        menus << texts.join('|');
+                    }
+                }
+                return false;
+            }
+        };
+        const auto waitNoPopup = [](const int timeoutMs) {
+            const QDeadlineTimer deadline(timeoutMs);
+            while (QApplication::activePopupWidget() != nullptr &&
+                   !deadline.hasExpired()) {
+                QApplication::processEvents();
+                QTest::qWait(10);
+            }
+        };
+        MenuSpy spy;
+        app.installEventFilter(&spy);
+        // Safety net: close any popup so a nested exec() loop returns.
+        QTimer::singleShot(50, []() {
+            if (QWidget* popup = QApplication::activePopupWidget()) {
+                popup->close();
+            }
+        });
+
+        CodeViewPanel panel;
+        panel.setSymbolIndex(SymbolIndex{makeSnapshot()});
+        panel.resize(600, 400);
+        panel.show();
+        QTabWidget* tabs = panel.findChild<QTabWidget*>();
+        assert(tabs != nullptr);
+        tabs->setCurrentWidget(panel.decompiledView());
+        DecompiledLineData l0;
+        l0.text = "call bar";
+        l0.bytecodeOffset = 0;
+        std::vector<DecompiledLineData> lines = {l0};
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines,
+                             {"foo", "bar"}, {}, {});
+        QApplication::processEvents();
+
+        // Over the word "bar": only the declaration menu is shown, and the
+        // accepted event suppresses the default text menu.
+        {
+            const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
+            QContextMenuEvent ce(QContextMenuEvent::Mouse, pos, pos);
+            QApplication::sendEvent(panel.decompiledView()->viewport(), &ce);
+            waitNoPopup(300);
+            assert(ce.isAccepted());
+            assert(spy.menus.size() == 1);
+            assert(spy.menus.first().contains("Go to method"));
+            assert(!spy.menus.first().contains("Select All"));
+        }
+
+        // Over empty space (the trailing blank line): the unhandled event
+        // falls through to Qt's default text menu, so copying still works.
+        {
+            const QPoint pos = charToViewport(panel.decompiledView(), 1, 0);
+            QContextMenuEvent ce(QContextMenuEvent::Mouse, pos, pos);
+            QApplication::sendEvent(panel.decompiledView()->viewport(), &ce);
+            waitNoPopup(300);
+            assert(ce.isAccepted());
+            assert(spy.menus.size() == 2);
+            assert(spy.menus.last().contains("Select All"));
+            assert(!spy.menus.last().contains("Go to method"));
+            assert(!spy.menus.last().contains("No declaration found"));
+        }
+        app.removeEventFilter(&spy);
     }
 
     return 0;

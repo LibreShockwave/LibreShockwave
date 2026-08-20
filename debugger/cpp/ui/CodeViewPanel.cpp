@@ -1,6 +1,7 @@
 #include "CodeViewPanel.hpp"
 
 #include <QAction>
+#include <QContextMenuEvent>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QLabel>
@@ -209,15 +210,24 @@ bool CodeViewPanel::eventFilter(QObject* obj, QEvent* event) {
                 handleGutterClick(decompiledView_, mouse->pos(), false);
                 return true;
             }
-        } else if (mouse->button() == Qt::RightButton) {
-            if (obj == bytecodeView_->viewport()) {
-                handleRightClick(bytecodeView_, mouse->pos());
-                return true;
-            }
-            if (obj == decompiledView_->viewport()) {
-                handleRightClick(decompiledView_, mouse->pos());
-                return true;
-            }
+        }
+        return QWidget::eventFilter(obj, event);
+    }
+    // Qt's default text menu (Copy / Select All) is shown for a QEvent::ContextMenu,
+    // a separate event from the right-button release.  Intercept it, accept the
+    // event to replace the default, and leave it unaccepted when there is no word
+    // under the cursor so the default menu (still useful for copying) still shows.
+    if (event->type() == QEvent::ContextMenu) {
+        auto* ce = static_cast<QContextMenuEvent*>(event);
+        if (obj == bytecodeView_->viewport() &&
+            handleRightClick(bytecodeView_, ce->pos())) {
+            event->accept();
+            return true;
+        }
+        if (obj == decompiledView_->viewport() &&
+            handleRightClick(decompiledView_, ce->pos())) {
+            event->accept();
+            return true;
         }
     }
     return QWidget::eventFilter(obj, event);
@@ -271,12 +281,14 @@ void CodeViewPanel::onHandlerComboChanged(int index) {
     }
 }
 
-void CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos) {
+bool CodeViewPanel::handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos) {
     QMenu* menu = buildRightClickMenu(view, viewportPos);
-    if (menu != nullptr) {
-        // WA_DeleteOnClose: the menu deletes itself once exec() returns.
-        menu->exec(view->mapToGlobal(viewportPos));
+    if (menu == nullptr) {
+        return false;
     }
+    // WA_DeleteOnClose: the menu deletes itself once exec() returns.
+    menu->exec(view->viewport()->mapToGlobal(viewportPos));
+    return true;
 }
 
 QMenu* CodeViewPanel::buildRightClickMenu(QPlainTextEdit* view,

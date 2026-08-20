@@ -93,7 +93,8 @@ signals:
     void goToDeclarationRequested(const DeclarationTarget& target);
 
 protected:
-    /// Intercepts left-clicks in the gutter column and right-clicks for the
+    /// Intercepts left-clicks in the gutter column and the right-click
+    /// QEvent::ContextMenu (replacing Qt's default text menu) for the
     /// declaration context menu of either code view.
     bool eventFilter(QObject* obj, QEvent* event) override;
 
@@ -105,8 +106,12 @@ private slots:
 private:
     void rebuildDisplay();
     void handleGutterClick(QPlainTextEdit* view, const QPoint& viewportPos,
-                           bool isBytecode);
-    void handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos);
+                            bool isBytecode);
+    /// Build and exec the declaration context menu for the word at
+    /// `viewportPos` (viewport coordinates).  Returns true when a menu was
+    /// shown, false when no word is under the cursor (caller then leaves the
+    /// context-menu event unaccepted so Qt's default menu is shown).
+    [[nodiscard]] bool handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos);
     void jumpToDecompiledLine(int line);
     [[nodiscard]] int findVariableDeclarationLine(const QString& lowerName,
                                                   bool isArgument) const;
