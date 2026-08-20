@@ -198,8 +198,7 @@ int main(int argc, char** argv) {
             const QDeadlineTimer deadline(timeoutMs);
             while (QApplication::activePopupWidget() != nullptr &&
                    !deadline.hasExpired()) {
-                QApplication::processEvents();
-                QTest::qWait(10);
+                qApp->processEvents(QEventLoop::WaitForMoreEvents, 10);
             }
         };
         MenuSpy spy;
