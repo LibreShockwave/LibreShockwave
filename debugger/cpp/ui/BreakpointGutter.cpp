@@ -4,10 +4,12 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QGuiApplication>
-#include <QHeaderView>
+#include <QMetaObject>
 #include <QPalette>
 #include <QScrollBar>
 #include <QString>
+#include <QTextBlock>
+#include <QTextDocument>
 #include <QToolButton>
 
 namespace libreshockwave::debugger {
@@ -51,27 +53,29 @@ BreakpointGutter::BreakpointGutter(QPlainTextEdit* editor, QWidget* parent)
     : QWidget(parent),
       editor_(editor) {
 
-    table_ = new QTableWidget(0, 1, this);
-    table_->setFont(editor->font());
     QFontMetrics metrics(editor->font());
     gutterWidth_ = metrics.horizontalAdvance(QLatin1String("●")) + kGutterPadding;
-    rowHeight_ = metrics.lineSpacing();
-    table_->setFixedWidth(gutterWidth_);
-    table_->setColumnWidth(0, gutterWidth_);
-    table_->verticalHeader()->setVisible(false);
-    table_->horizontalHeader()->setVisible(false);
-    table_->setShowGrid(false);
-    table_->setFrameShape(QFrame::NoFrame);
-    table_->setSelectionMode(QAbstractItemView::NoSelection);
-    table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    table_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    fallbackRowHeight_ = metrics.lineSpacing();
+    setFixedWidth(gutterWidth_);
 
-    // Keep the gutter scroll in lockstep with the code viewport.
-    connect(editor_->verticalScrollBar(), &QScrollBar::valueChanged,
-            table_->verticalScrollBar(), &QScrollBar::setValue);
-    connect(table_->verticalScrollBar(), &QScrollBar::valueChanged,
-            editor_->verticalScrollBar(), &QScrollBar::setValue);
+    // All indicators live in one absolutely-positioned container; scrolling
+    // the editor just moves this container, so alignment costs O(1) per tick.
+    rows_ = new QWidget(this);
+    rows_->resize(gutterWidth_, 0);
+
+    connect(editor_->verticalScrollBar(), &QScrollBar::valueChanged, this,
+            [this]() { syncRows(); });
+    connect(editor_->document(), &QTextDocument::contentsChanged, this,
+            [this]() { syncRows(); });
+    editor_->installEventFilter(this);
+}
+
+bool BreakpointGutter::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == editor_ &&
+        (event->type() == QEvent::Show || event->type() == QEvent::Resize)) {
+        syncRows();
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void BreakpointGutter::rebuild(int rowCount, const std::vector<State>& states) {
@@ -79,29 +83,20 @@ void BreakpointGutter::rebuild(int rowCount, const std::vector<State>& states) {
         rowCount = 0;
     }
 
-    while (table_->rowCount() > rowCount) {
-        const int row = table_->rowCount() - 1;
-        delete table_->cellWidget(row, 0);
-        table_->removeRow(row);
-        if (!cells_.empty()) {
-            cells_.pop_back();
-        }
+    while (static_cast<int>(cells_.size()) > rowCount) {
+        delete cells_.back();
+        cells_.pop_back();
     }
-    while (table_->rowCount() < rowCount) {
-        const int row = table_->rowCount();
-        table_->setRowCount(row + 1);
-        table_->setRowHeight(row, rowHeight_);
-        auto* button = new QToolButton(this);
+    while (static_cast<int>(cells_.size()) < rowCount) {
+        const int capturedRow = static_cast<int>(cells_.size());
+        auto* button = new QToolButton(rows_);
         button->setAutoRaise(true);
-        button->setFixedSize(gutterWidth_, rowHeight_);
         button->setFocusPolicy(Qt::NoFocus);
         button->setCursor(Qt::PointingHandCursor);
         button->setToolTip("Toggle breakpoint");
-        const int capturedRow = row;
         connect(button, &QToolButton::clicked, this, [this, capturedRow]() {
             emit rowClicked(capturedRow);
         });
-        table_->setCellWidget(row, 0, button);
         cells_.push_back(button);
     }
 
@@ -114,13 +109,20 @@ void BreakpointGutter::rebuild(int rowCount, const std::vector<State>& states) {
         // Transparent face keeps blank rows invisible; the glyph color carries
         // the theme, and hover/pressed add a subtle highlight for the clickable
         // area without painting a box over the rest of the gutter.
+        // name() (not HexArgb): QSS rejects 8-digit hex and drops the color.
         button->setStyleSheet(
             QStringLiteral(
                 "QToolButton { color: #%1; background: transparent; border: none; } "
                 "QToolButton:hover { background: rgba(128,128,128,48); } "
                 "QToolButton:pressed { background: rgba(128,128,128,96); } ")
-                .arg(indicatorColor(state).name(QColor::HexArgb)));
+                .arg(indicatorColor(state).name()));
     }
+
+    syncRows();
+    // The editor's line geometry may not be final until after the current
+    // event-loop turn (polish, tab activation); re-sync once it settles.
+    QMetaObject::invokeMethod(this, [this]() { syncRows(); },
+                              Qt::QueuedConnection);
 }
 
 BreakpointGutter::State BreakpointGutter::stateAt(int row) const {
@@ -138,11 +140,59 @@ QToolButton* BreakpointGutter::indicatorButton(int row) const {
 }
 
 void BreakpointGutter::resetScroll() {
-    table_->verticalScrollBar()->setValue(0);
+    rows_->move(0, 0);
 }
 
 void BreakpointGutter::setScrollValue(int value) {
-    table_->verticalScrollBar()->setValue(value);
+    rows_->move(0, -value);
+}
+
+void BreakpointGutter::syncRows() {
+    const int n = static_cast<int>(cells_.size());
+
+    // Fallback grid from the editor font: frame + document margin offset the
+    // first line, then one fallback row height per line.
+    const int baseY =
+        editor_->frameWidth() + editor_->document()->documentMargin();
+    std::vector<int> tops(static_cast<size_t>(n), 0);
+    std::vector<int> heights(static_cast<size_t>(n), fallbackRowHeight_);
+    for (int i = 0; i < n; ++i) {
+        tops[static_cast<size_t>(i)] = baseY + i * fallbackRowHeight_;
+    }
+
+    // Prefer the editor's laid-out geometry when it is on screen: each row
+    // anchors to its own line's cursor rect (plus the scroll it was measured
+    // at), so indicator and code line share one source of truth.
+    QTextDocument* doc = editor_->document();
+    if (editor_->isVisible() && n > 0) {
+        const int scroll = editor_->verticalScrollBar()->value();
+        bool allValid = true;
+        for (int i = 0; i < n; ++i) {
+            const QTextBlock block = doc->findBlockByLineNumber(i);
+            if (!block.isValid()) {
+                allValid = false;
+                break;
+            }
+            tops[static_cast<size_t>(i)] =
+                editor_->cursorRect(QTextCursor(block)).top() + scroll;
+        }
+        if (allValid) {
+            for (int i = 0; i + 1 < n; ++i) {
+                heights[static_cast<size_t>(i)] =
+                    tops[static_cast<size_t>(i + 1)] - tops[static_cast<size_t>(i)];
+            }
+        }
+    }
+
+    for (int i = 0; i < n; ++i) {
+        cells_[static_cast<size_t>(i)]->setGeometry(
+            0, tops[static_cast<size_t>(i)], gutterWidth_,
+            heights[static_cast<size_t>(i)]);
+    }
+    rows_->resize(gutterWidth_, n > 0 ? tops[static_cast<size_t>(n - 1)] +
+                                          heights[static_cast<size_t>(n - 1)]
+                                      : 0);
+    rows_->move(0, -editor_->verticalScrollBar()->value());
 }
 
 } // namespace libreshockwave::debugger

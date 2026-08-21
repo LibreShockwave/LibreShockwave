@@ -68,6 +68,7 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
     bytecodeHighlighter_ = new BytecodeHighlighter(bytecodeView_->document());
     {
         auto* bytecodeTab = new QWidget(this);
+        bytecodeTab_ = bytecodeTab;
         auto* bytecodeLayout = new QHBoxLayout(bytecodeTab);
         bytecodeLayout->setContentsMargins(0, 0, 0, 0);
         bytecodeGutter_ = new BreakpointGutter(bytecodeView_, bytecodeTab);
@@ -85,6 +86,7 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
     lingoHighlighter_ = new LingoHighlighter(decompiledView_->document());
     {
         auto* decompiledTab = new QWidget(this);
+        decompiledTab_ = decompiledTab;
         auto* decompiledLayout = new QHBoxLayout(decompiledTab);
         decompiledLayout->setContentsMargins(0, 0, 0, 0);
         decompiledGutter_ = new BreakpointGutter(decompiledView_, decompiledTab);
@@ -268,6 +270,7 @@ void CodeViewPanel::handleGutterRow(int row, bool isBytecode) {
 
 void CodeViewPanel::onTabChanged(int /*index*/) {
     rebuildDisplay();
+    revealLastClickedOffset();
 }
 
 void CodeViewPanel::onHandlerComboChanged(int index) {
@@ -338,7 +341,7 @@ void CodeViewPanel::addDeclarationActions(QMenu* menu, QPlainTextEdit* view,
                              QString::number(line + 1)));
                 connect(action, &QAction::triggered, this,
                         [this, targetLine]() {
-                            jumpToDecompiledLine(targetLine);
+                            revealLine(decompiledView_, targetLine);
                         });
             }
         }
@@ -424,20 +427,14 @@ int CodeViewPanel::findVariableDeclarationLine(const QString& lowerName,
     return -1;
 }
 
-void CodeViewPanel::jumpToDecompiledLine(int line) {
-    if (line < 0 || line >= static_cast<int>(decompiledLines_.size())) {
+void CodeViewPanel::revealLine(QPlainTextEdit* view, int line) {
+    QTextDocument* doc = view->document();
+    QTextBlock block = doc->findBlockByLineNumber(line);
+    if (!block.isValid()) {
         return;
     }
-    tabWidget_->setCurrentWidget(decompiledView_);
-
-    QTextDocument* doc = decompiledView_->document();
-    QTextBlock block = doc->findBlockByLineNumber(line);
-    if (block.isValid()) {
-        QTextCursor cursor(block);
-        cursor.select(QTextCursor::LineUnderCursor);
-        decompiledView_->setTextCursor(cursor);
-        decompiledView_->centerCursor();
-    }
+    view->setTextCursor(QTextCursor(block));
+    view->centerCursor();
 
     // Flash the line.
     QTextCursor selCursor(block);
@@ -445,11 +442,49 @@ void CodeViewPanel::jumpToDecompiledLine(int line) {
     QTextEdit::ExtraSelection selection;
     selection.cursor = selCursor;
     selection.format.setBackground(kFlashBackground);
-    decompiledView_->setExtraSelections({selection});
+    view->setExtraSelections({selection});
     flashTimer_->start();
 }
 
+void CodeViewPanel::revealLastClickedOffset() {
+    if (lastClickedOffset_ < 0) {
+        return;
+    }
+    if (tabWidget_->currentWidget() == bytecodeTab_) {
+        const int row = bytecodeRowForOffset(lastClickedOffset_);
+        if (row >= 0) {
+            revealLine(bytecodeView_, row);
+        }
+    } else {
+        const int row = decompiledRowForOffset(lastClickedOffset_);
+        if (row >= 0) {
+            revealLine(decompiledView_, row);
+        }
+    }
+}
+
+int CodeViewPanel::bytecodeRowForOffset(int offset) const {
+    for (int i = 0; i < static_cast<int>(instructions_.size()); ++i) {
+        if (instructions_[i].offset == offset) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int CodeViewPanel::decompiledRowForOffset(int offset) const {
+    int best = -1;
+    for (int i = 0; i < static_cast<int>(decompiledLines_.size()); ++i) {
+        const int start = decompiledLines_[i].bytecodeOffset;
+        if (start >= 0 && start <= offset) {
+            best = i;
+        }
+    }
+    return best;
+}
+
 void CodeViewPanel::clearFlash() {
+    bytecodeView_->setExtraSelections({});
     decompiledView_->setExtraSelections({});
 }
 

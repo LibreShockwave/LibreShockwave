@@ -122,7 +122,16 @@ private:
     /// declaration" options.  Always returns true; the caller accepts the
     /// context-menu event so this unified menu replaces Qt's default.
     [[nodiscard]] bool handleRightClick(QPlainTextEdit* view, const QPoint& viewportPos);
-    void jumpToDecompiledLine(int line);
+    /// Scroll `view` so document line `line` is centered and flash it briefly.
+    void revealLine(QPlainTextEdit* view, int line);
+    /// After a tab switch, scroll the newly shown view to the code for the
+    /// breakpoint offset last clicked in the other tab, flashing that line.
+    void revealLastClickedOffset();
+    /// Row of the instruction at exactly `offset`, or -1 when absent.
+    [[nodiscard]] int bytecodeRowForOffset(int offset) const;
+    /// Row of the decompiled line covering `offset` (the last line starting
+    /// at or before it), or -1 when no line qualifies.
+    [[nodiscard]] int decompiledRowForOffset(int offset) const;
     [[nodiscard]] int findVariableDeclarationLine(const QString& lowerName,
                                                   bool isArgument) const;
     /// Append the "Go to declaration" options for `word` to `menu`: a local
@@ -133,6 +142,8 @@ private:
                                const QString& word);
 
     QTabWidget* tabWidget_;
+    QWidget* bytecodeTab_{nullptr};     // page hosting the bytecode view
+    QWidget* decompiledTab_{nullptr};   // page hosting the decompiled view
     QPlainTextEdit* bytecodeView_;
     QPlainTextEdit* decompiledView_;
     QComboBox* handlerCombo_;

@@ -1,7 +1,7 @@
 #pragma once
 
+#include <QEvent>
 #include <QPlainTextEdit>
-#include <QTableWidget>
 #include <QToolButton>
 #include <vector>
 
@@ -10,11 +10,12 @@ namespace libreshockwave::debugger {
 /// Left gutter column of the debugger Code view: one real Qt6 indicator widget
 /// per code line (blank, current-line play marker, or breakpoint dot), shown
 /// beside a tab's QPlainTextEdit.  Clicking an indicator toggles the breakpoint
-/// for that line; the gutter scrolls in lockstep with the code viewport.
+/// for that line; the whole indicator column tracks the editor viewport.
 ///
 /// The indicators are QToolButtons, not painted text, so they are real
-/// clickable widgets that never interfere with the code document and keep the
-/// code lines pixel-aligned.
+/// clickable widgets that never interfere with the code document.  Row
+/// geometry comes from the editor's own document layout, so indicators stay
+/// pixel-aligned with their code lines while scrolling.
 ///
 /// Usage:
 ///   BreakpointGutter gutter{view, parent};
@@ -28,7 +29,7 @@ public:
     enum class State { Blank, Current, Breakpoint };
 
     /// Build a gutter whose rows line up with `editor`'s code lines.  The
-    /// gutter takes `editor`'s font so symbol and text heights match.
+    /// gutter takes `editor`'s font so symbol and text widths match.
     explicit BreakpointGutter(QPlainTextEdit* editor, QWidget* parent = nullptr);
 
     /// (Re)build the indicator for every row.  `states` must hold `rowCount`
@@ -44,11 +45,11 @@ public:
     /// breakpoint), or nullptr if `row` is outside the current row count.
     [[nodiscard]] QToolButton* indicatorButton(int row) const;
 
-    /// Reset the gutter scroll to the top (called whenever the code is cleared).
+    /// Move the indicator column back to the top (called when code is cleared).
     void resetScroll();
 
-    /// Set the gutter scroll position to `value` (keeps it in step with the
-    /// code viewport across a rebuild).
+    /// Position the indicator column as if the editor were scrolled to
+    /// `value`; used to restore alignment across a code rebuild.
     void setScrollValue(int value);
 
 signals:
@@ -56,10 +57,18 @@ signals:
     void rowClicked(int row);
 
 private:
+    /// Recompute per-row geometry from the editor's document layout and move
+    /// the indicator column to match the editor's current scroll position.
+    void syncRows();
+
+    /// Re-sync when the editor is shown or resized (its lines only get their
+    /// real geometry once it is on screen) or its document changes.
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
     QPlainTextEdit* editor_;
-    QTableWidget* table_;
+    QWidget* rows_;
     int gutterWidth_{0};
-    int rowHeight_{0};
+    int fallbackRowHeight_{0};
     std::vector<QToolButton*> cells_;
     std::vector<State> states_;
 };

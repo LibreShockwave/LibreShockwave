@@ -1,9 +1,12 @@
+#include <QAbstractTextDocumentLayout>
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QFontMetrics>
 #include <QObject>
+#include <QImage>
 #include <QMenu>
+#include <QScrollBar>
 #include <QPlainTextEdit>
 #include <QTabWidget>
 #include <QTest>
@@ -299,7 +302,9 @@ int main(int argc, char** argv) {
         // document layout is valid for cursorRect()/cursorForPosition().
         QTabWidget* tabs = panel.findChild<QTabWidget*>();
         assert(tabs != nullptr);
-        tabs->setCurrentWidget(panel.decompiledView());
+        // Tab 1 is Decompiled (constructor order); setCurrentWidget() needs
+        // the page widget, not the nested view.
+        tabs->setCurrentIndex(1);
         QApplication::processEvents();
 
         // Method "bar" (a different handler) -> "Go to method".
@@ -387,7 +392,9 @@ int main(int argc, char** argv) {
         panel.show();
         QTabWidget* tabs = panel.findChild<QTabWidget*>();
         assert(tabs != nullptr);
-        tabs->setCurrentWidget(panel.decompiledView());
+        // Tab 1 is Decompiled (constructor order); setCurrentWidget() needs
+        // the page widget, not the nested view.
+        tabs->setCurrentIndex(1);
         DecompiledLineData l0;
         l0.text = "call bar";
         l0.bytecodeOffset = 0;
@@ -435,6 +442,224 @@ int main(int argc, char** argv) {
             assert(!spy.menus.last().contains("No declaration found"));
         }
         app.removeEventFilter(&spy);
+    }
+
+    // ---- The gutter column is visible and paints its indicators ----
+    // Regression: the gutter widget once had no internal layout, so the tab
+    // layout assigned it zero width and no indicator could ever appear.
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        {
+            InstructionData i;
+            i.offset = 0;
+            i.opcode = "pushZero";
+            instrs.push_back(i);
+        }
+        {
+            InstructionData i;
+            i.offset = 4;
+            i.opcode = "ret";
+            instrs.push_back(i);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "on foo";
+            l.bytecodeOffset = -1;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "put 1 into x";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
+                              {"foo"}, {}, {});
+        panel.setBreakpointOffsets({0});
+        panel.resize(600, 400);
+        panel.show();
+        QApplication::processEvents();
+
+        BreakpointGutter* gutter = panel.bytecodeGutter();
+        assert(gutter->isVisible());
+        assert(gutter->width() > 0);
+        QToolButton* bp = gutter->indicatorButton(0);
+        assert(bp != nullptr);
+        assert(bp->isVisible());
+        assert(bp->width() == gutter->width());
+        assert(gutter->indicatorButton(1) != nullptr);
+
+        // The breakpoint glyph really reaches the screen: the grabbed panel
+        // must contain pixels in the theme's breakpoint red (light 0xdc2626
+        // or dark 0xf87171), and not just the default palette text color.
+        const QImage img = panel.grab().toImage();
+        int redPixels = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() > 180 && c.red() - c.green() > 60 &&
+                    c.red() - c.blue() > 60) {
+                    ++redPixels;
+                }
+            }
+        }
+        assert(redPixels > 0);
+    }
+
+    // ---- Indicators stay pixel-aligned with their code lines ----
+    // Each button's top in panel coordinates must match the mapped top of its
+    // line's cursor rect (viewport truth), before and after scrolling.
+    {
+        CodeViewPanel panel;
+        panel.resize(600, 400);
+        panel.show();
+        QTabWidget* tabs = panel.findChild<QTabWidget*>();
+        assert(tabs != nullptr);
+        // Tab 1 is Decompiled (constructor order); setCurrentWidget() needs
+        // the page widget, not the nested view.
+        tabs->setCurrentIndex(1);
+        std::vector<DecompiledLineData> lines;
+        for (int i = 0; i < 40; ++i) {
+            DecompiledLineData l;
+            l.text = QString("line %1").arg(i).toStdString();
+            l.bytecodeOffset = i * 4;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "h", {}, lines, {"h"}, {},
+                              {});
+        QApplication::processEvents();
+
+        QPlainTextEdit* view = panel.decompiledView();
+        QTextDocument* doc = view->document();
+        BreakpointGutter* gutter = panel.decompiledGutter();
+
+        const auto checkAlignment = [&](int row) {
+            const QRect lineRect = view->cursorRect(
+                QTextCursor(doc->findBlockByLineNumber(row)));
+            const int expected =
+                view->viewport()->mapTo(&panel, QPoint(0, 0)).y() + lineRect.top();
+            const int actual =
+                gutter->indicatorButton(row)->mapTo(&panel, QPoint(0, 0)).y();
+            assert(qAbs(actual - expected) <= 1);
+        };
+
+        checkAlignment(0);
+        checkAlignment(5);
+        checkAlignment(10);
+
+        // Scroll down: buttons must follow the viewport exactly.
+        view->verticalScrollBar()->setValue(120);
+        QApplication::processEvents();
+        checkAlignment(10);
+        checkAlignment(15);
+
+        // A row scrolled off the top is no longer visible.
+        assert(!gutter->indicatorButton(0)->isVisible());
+    }
+
+    // ---- Switching tabs reveals the line for the breakpoint just placed ----
+    // A breakpoint clicked in the bytecode tab must scroll to and flash the
+    // decompiled line that covers the same instruction offset, and vice versa.
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        for (int i = 0; i < 3; ++i) {
+            InstructionData instr;
+            instr.offset = i * 4;
+            instr.opcode = "op";
+            instrs.push_back(instr);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "on foo";
+            l.bytecodeOffset = -1;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "put 1 into x";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "put 2 into y";
+            l.bytecodeOffset = 4;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "end";
+            l.bytecodeOffset = 8;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
+                              {"foo"}, {}, {});
+
+        // Click the bytecode gutter row for offset 4, then open Decompiled:
+        // the covering line ("put 2 into y", document line 2) flashes.
+        clickIndicator(panel.bytecodeGutter()->indicatorButton(1),
+                       QPoint(5, 2));
+        QTabWidget* tabs = panel.findChild<QTabWidget*>();
+        assert(tabs != nullptr);
+        tabs->setCurrentIndex(1);
+        QApplication::processEvents();
+
+        const auto selections = panel.decompiledView()->extraSelections();
+        assert(selections.size() == 1);
+        assert(selections.first().cursor.blockNumber() == 2);
+
+        // And back: a breakpoint clicked on decompiled line 1 (offset 0)
+        // reveals bytecode row 0 when switching to the Bytecode tab.
+        clickIndicator(panel.decompiledGutter()->indicatorButton(1),
+                       QPoint(5, 2));
+        tabs->setCurrentIndex(0);
+        QApplication::processEvents();
+        const auto bcSelections = panel.bytecodeView()->extraSelections();
+        assert(bcSelections.size() == 1);
+        assert(bcSelections.first().cursor.blockNumber() == 0);
+    }
+
+    // ---- A mid-statement bytecode offset reveals its whole statement ----
+    // Offset 6 belongs to the statement starting at offset 0; switching to
+    // Decompiled must land on that statement's line, not skip the reveal.
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        for (int i = 0; i < 4; ++i) {
+            InstructionData instr;
+            instr.offset = i * 2;
+            instr.opcode = "op";
+            instrs.push_back(instr);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "on foo";
+            l.bytecodeOffset = -1;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "one big statement";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
+                              {"foo"}, {}, {});
+        clickIndicator(panel.bytecodeGutter()->indicatorButton(3),
+                       QPoint(5, 2));
+        QTabWidget* tabs = panel.findChild<QTabWidget*>();
+        assert(tabs != nullptr);
+        tabs->setCurrentIndex(1);
+        QApplication::processEvents();
+
+        const auto selections = panel.decompiledView()->extraSelections();
+        assert(selections.size() == 1);
+        assert(selections.first().cursor.blockNumber() == 1);
     }
 
     return 0;
