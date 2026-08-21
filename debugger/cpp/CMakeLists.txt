@@ -16,8 +16,8 @@ add_executable(libreshockwave_debugger
     ui/MovieTreePanel.hpp
     ui/CodeViewPanel.cpp
     ui/CodeViewPanel.hpp
-    ui/CodeGutter.cpp
-    ui/CodeGutter.hpp
+    ui/BreakpointGutter.cpp
+    ui/BreakpointGutter.hpp
     ui/VariablesPanel.cpp
     ui/VariablesPanel.hpp
     ui/CallStackPanel.cpp
@@ -50,6 +50,17 @@ else()
     find_package(Qt5 QUIET COMPONENTS Network)
     if(Qt5Network_FOUND)
         set(LIBRESHOCKWAVE_QT_NETWORK_TARGET Qt5::Network)
+    endif()
+endif()
+
+# QTest lives in the Qt Test component; only the code-view test uses it.
+find_package(Qt6 QUIET COMPONENTS Test)
+if(Qt6Test_FOUND)
+    set(LIBRESHOCKWAVE_QT_TEST_TARGET Qt6::Test)
+else()
+    find_package(Qt5 QUIET COMPONENTS Test)
+    if(Qt5Test_FOUND)
+        set(LIBRESHOCKWAVE_QT_TEST_TARGET Qt5::Test)
     endif()
 endif()
 
@@ -118,16 +129,17 @@ if(BUILD_TESTING)
     add_test(NAME libreshockwave_debugger_highlight_tests
              COMMAND libreshockwave_debugger_highlight_tests)
 
-    # Code view panel: current-line marker (the -1 sentinel) and the
-    # right-click "Go to declaration" menu.  The panel is a QWidget, so the
+    # Code view panel: gutter breakpoint state (current-line marker, the -1
+    # structural sentinel, and the red-dot Breakpoint state across both tabs),
+    # the click-to-toggle path, and the right-click "Go to declaration" menu.  The panel is a QWidget, so the
     # test runs under QApplication offscreen; it uses only Qt + the debugger
     # model, so no libreshockwave link is needed.
     add_executable(libreshockwave_debugger_code_view_tests
         code_view_test.cpp
         ui/CodeViewPanel.cpp
         ui/CodeViewPanel.hpp
-        ui/CodeGutter.cpp
-        ui/CodeGutter.hpp
+        ui/BreakpointGutter.cpp
+        ui/BreakpointGutter.hpp
         ui/highlight/GutterHighlighter.cpp
         ui/highlight/GutterHighlighter.hpp
         ui/highlight/DeclarationHighlighting.hpp
@@ -140,7 +152,10 @@ if(BUILD_TESTING)
         model/DebuggerModel.hpp
     )
     target_link_libraries(libreshockwave_debugger_code_view_tests
-        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
+        PRIVATE
+            ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET}
+            ${LIBRESHOCKWAVE_QT_TEST_TARGET}
+        )
     target_include_directories(libreshockwave_debugger_code_view_tests
                                PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_features(libreshockwave_debugger_code_view_tests PRIVATE cxx_std_20)

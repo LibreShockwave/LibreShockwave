@@ -115,7 +115,7 @@ void BytecodeHighlighter::highlightBlock(const QString& text) {
 
         if (detail::kEnableDeclarationHighlighting) {
             const int base = match.capturedStart(4);
-            auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(6));
+            auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(4));
             while (nameMatch.hasNext()) {
                 const auto name = nameMatch.next();
                 if (!declarationNames_.contains(name.captured().toLower())) {

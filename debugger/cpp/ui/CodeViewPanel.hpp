@@ -19,7 +19,7 @@ class QTimer;
 namespace libreshockwave::debugger {
 
 class BytecodeHighlighter;
-class CodeGutter;
+class BreakpointGutter;
 class LingoHighlighter;
 
 /// Bottom panel showing bytecode and decompiled Lingo code with a breakpoint
@@ -27,8 +27,9 @@ class LingoHighlighter;
 /// right-click "Go to declaration" for methods, variables, properties, and
 /// globals.
 ///
-/// Each tab pairs its QPlainTextEdit with a CodeGutter: a Qt6 widget column of
-/// one indicator per line (blank, current-line play marker, or breakpoint dot).
+/// Each tab pairs its QPlainTextEdit with a BreakpointGutter: a Qt6 widget
+/// column of one indicator per line (blank, current-line play marker, or
+/// breakpoint dot), backed by real QToolButtons rather than painted text.
 /// Clicking an indicator toggles a breakpoint at that instruction offset,
 /// whether the movie is running or paused (matching the WASM harness).  The
 /// gutter scrolls in lockstep with the code.  Right-clicking a word in either
@@ -73,8 +74,8 @@ public:
     [[nodiscard]] QPlainTextEdit* decompiledView() const { return decompiledView_; }
 
     /// The gutter indicator column beside each code view.
-    [[nodiscard]] CodeGutter* bytecodeGutter() const { return bytecodeGutter_; }
-    [[nodiscard]] CodeGutter* decompiledGutter() const { return decompiledGutter_; }
+    [[nodiscard]] BreakpointGutter* bytecodeGutter() const { return bytecodeGutter_; }
+    [[nodiscard]] BreakpointGutter* decompiledGutter() const { return decompiledGutter_; }
 
     /// Build the right-click context menu for `view` at `viewportPos`.  It
     /// always contains the standard text-editor actions (Undo / Cut / Copy /
@@ -139,8 +140,8 @@ private:
     BytecodeHighlighter* bytecodeHighlighter_{nullptr};
     LingoHighlighter* lingoHighlighter_{nullptr};
     QTimer* flashTimer_{nullptr};
-    CodeGutter* bytecodeGutter_{nullptr};
-    CodeGutter* decompiledGutter_{nullptr};
+    BreakpointGutter* bytecodeGutter_{nullptr};
+    BreakpointGutter* decompiledGutter_{nullptr};
 
     std::string scriptName_;
     std::string currentHandlerName_;

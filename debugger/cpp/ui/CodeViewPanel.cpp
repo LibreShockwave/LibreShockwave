@@ -15,7 +15,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
-#include "ui/CodeGutter.hpp"
+#include "ui/BreakpointGutter.hpp"
 #include "ui/highlight/BytecodeHighlighter.hpp"
 #include "ui/highlight/LingoHighlighter.hpp"
 
@@ -70,8 +70,8 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
         auto* bytecodeTab = new QWidget(this);
         auto* bytecodeLayout = new QHBoxLayout(bytecodeTab);
         bytecodeLayout->setContentsMargins(0, 0, 0, 0);
-        bytecodeGutter_ = new CodeGutter(bytecodeView_, bytecodeTab);
-        connect(bytecodeGutter_, &CodeGutter::indicatorClicked, this,
+        bytecodeGutter_ = new BreakpointGutter(bytecodeView_, bytecodeTab);
+        connect(bytecodeGutter_, &BreakpointGutter::rowClicked, this,
                 [this](int row) { handleGutterRow(row, true); });
         bytecodeLayout->addWidget(bytecodeGutter_);
         bytecodeLayout->addWidget(bytecodeView_, 1);
@@ -87,8 +87,8 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
         auto* decompiledTab = new QWidget(this);
         auto* decompiledLayout = new QHBoxLayout(decompiledTab);
         decompiledLayout->setContentsMargins(0, 0, 0, 0);
-        decompiledGutter_ = new CodeGutter(decompiledView_, decompiledTab);
-        connect(decompiledGutter_, &CodeGutter::indicatorClicked, this,
+        decompiledGutter_ = new BreakpointGutter(decompiledView_, decompiledTab);
+        connect(decompiledGutter_, &BreakpointGutter::rowClicked, this,
                 [this](int row) { handleGutterRow(row, false); });
         decompiledLayout->addWidget(decompiledGutter_);
         decompiledLayout->addWidget(decompiledView_, 1);
@@ -461,16 +461,16 @@ void CodeViewPanel::rebuildDisplay() {
     // Build bytecode text and per-row gutter indicators.
     {
         QString text;
-        std::vector<CodeGutter::Indicator> modes;
+        std::vector<BreakpointGutter::State> modes;
         modes.reserve(instructions_.size());
         for (const auto& instr : instructions_) {
             // -1 means "no instruction is current" and must never match a line.
             const bool isCurrent = currentInstructionOffset_ >= 0 &&
                                    instr.offset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(instr.offset) > 0;
-            modes.push_back(hasBp ? CodeGutter::Indicator::Breakpoint
-                                  : (isCurrent ? CodeGutter::Indicator::Current
-                                               : CodeGutter::Indicator::Blank));
+            modes.push_back(hasBp ? BreakpointGutter::State::Breakpoint
+                                  : (isCurrent ? BreakpointGutter::State::Current
+                                               : BreakpointGutter::State::Blank));
 
             QString line;
             // Offset
@@ -498,7 +498,7 @@ void CodeViewPanel::rebuildDisplay() {
     // Build decompiled text and per-row gutter indicators.
     {
         QString text;
-        std::vector<CodeGutter::Indicator> modes;
+        std::vector<BreakpointGutter::State> modes;
         modes.reserve(decompiledLines_.size());
         for (const auto& line : decompiledLines_) {
             // Structural lines carry a -1 offset sentinel; -1 also means "no
@@ -507,9 +507,9 @@ void CodeViewPanel::rebuildDisplay() {
             const bool isCurrent = currentInstructionOffset_ >= 0 &&
                                    line.bytecodeOffset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(line.bytecodeOffset) > 0;
-            modes.push_back(hasBp ? CodeGutter::Indicator::Breakpoint
-                                  : (isCurrent ? CodeGutter::Indicator::Current
-                                               : CodeGutter::Indicator::Blank));
+            modes.push_back(hasBp ? BreakpointGutter::State::Breakpoint
+                                  : (isCurrent ? BreakpointGutter::State::Current
+                                               : BreakpointGutter::State::Blank));
 
             QString displayLine;
             displayLine += QString::fromStdString(line.text);

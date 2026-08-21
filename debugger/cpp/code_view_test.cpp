@@ -1,16 +1,20 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QFontMetrics>
+#include <QObject>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QTabWidget>
+#include <QTest>
+#include <QToolButton>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
 
 #include "model/SymbolIndex.hpp"
-#include "ui/CodeGutter.hpp"
+#include "ui/BreakpointGutter.hpp"
 #include "ui/CodeViewPanel.hpp"
 
 #include <cassert>
@@ -46,6 +50,14 @@ bool menuHas(QMenu* menu, const QString& needle) {
         }
     }
     return false;
+}
+
+// Click the gutter's click indicator at pixel `pos`, exercising the real
+// QToolButton whose clicked signal toggles a breakpoint.  Clicking the button
+// itself (not the gutter) delivers the event headlessly, where QTest posts to
+// the named widget rather than hit-testing to its children.
+void clickIndicator(QToolButton* button, QPoint pos) {
+    QTest::mouseClick(button, Qt::LeftButton, Qt::KeyboardModifiers(), pos);
 }
 
 // A movie snapshot with one script (id 100) declaring methods "foo" and "bar",
@@ -88,24 +100,193 @@ int main(int argc, char** argv) {
 
         // Nothing is current (offset -1): no line carries a current indicator.
         {
-            assert(panel.decompiledGutter()->modeAt(0) ==
-                   CodeGutter::Indicator::Blank);
-            assert(panel.decompiledGutter()->modeAt(1) ==
-                   CodeGutter::Indicator::Blank);
-            assert(panel.decompiledGutter()->modeAt(2) ==
-                   CodeGutter::Indicator::Blank);
+            assert(panel.decompiledGutter()->stateAt(0) ==
+                   BreakpointGutter::State::Blank);
+            assert(panel.decompiledGutter()->stateAt(1) ==
+                   BreakpointGutter::State::Blank);
+            assert(panel.decompiledGutter()->stateAt(2) ==
+                   BreakpointGutter::State::Blank);
         }
 
         // Offset 0 current: only that line carries the current indicator.
         panel.setCurrentInstruction(0);
         {
-            assert(panel.decompiledGutter()->modeAt(0) ==
-                   CodeGutter::Indicator::Blank);
-            assert(panel.decompiledGutter()->modeAt(1) ==
-                   CodeGutter::Indicator::Current);
-            assert(panel.decompiledGutter()->modeAt(2) ==
-                   CodeGutter::Indicator::Blank);
+            assert(panel.decompiledGutter()->stateAt(0) ==
+                   BreakpointGutter::State::Blank);
+            assert(panel.decompiledGutter()->stateAt(1) ==
+                   BreakpointGutter::State::Current);
+            assert(panel.decompiledGutter()->stateAt(2) ==
+                   BreakpointGutter::State::Blank);
         }
+    }
+
+    // ---- A breakpoint is keyed by offset, so it maps to a different gutter
+    // row in the bytecode view than in the decompiled view: the per-tab scroll
+    // position differs, but the breakpoint's logical identity (offset) is the
+    // same.  It shows in both gutters and wins over the current marker.
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        {
+            InstructionData i;
+            i.offset = 0;
+            i.opcode = "pushZero";
+            i.argument = 0;
+            instrs.push_back(i);
+        }
+        {
+            InstructionData i;
+            i.offset = 4;
+            i.opcode = "put";
+            i.argument = 1;
+            instrs.push_back(i);
+        }
+        {
+            InstructionData i;
+            i.offset = 8;
+            i.opcode = "ret";
+            i.argument = 0;
+            instrs.push_back(i);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "on foo";
+            l.bytecodeOffset = -1;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "put 1 into x";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "put 2 into y";
+            l.bytecodeOffset = 4;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "end";
+            l.bytecodeOffset = 8;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
+                             {"foo"}, {}, {});
+        panel.setBreakpointOffsets({8});
+
+        // Bytecode view: offset 8 is row 2.
+        assert(panel.bytecodeGutter()->stateAt(2) ==
+               BreakpointGutter::State::Breakpoint);
+        // Decompiled view: the structural "on foo" row shifts offset 8 to row 3.
+        assert(panel.decompiledGutter()->stateAt(3) ==
+               BreakpointGutter::State::Breakpoint);
+
+        // Breakpoint wins over the current-line marker in both tabs.
+        panel.setCurrentInstruction(8);
+        assert(panel.bytecodeGutter()->stateAt(2) ==
+               BreakpointGutter::State::Breakpoint);
+        assert(panel.decompiledGutter()->stateAt(3) ==
+               BreakpointGutter::State::Breakpoint);
+    }
+
+    // ---- Clicking a gutter row places a breakpoint at that line's offset ----
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        {
+            InstructionData i;
+            i.offset = 0;
+            i.opcode = "pushZero";
+            instrs.push_back(i);
+        }
+        {
+            InstructionData i;
+            i.offset = 4;
+            i.opcode = "ret";
+            instrs.push_back(i);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "on foo";
+            l.bytecodeOffset = -1;
+            lines.push_back(l);
+        }
+        {
+            DecompiledLineData l;
+            l.text = "push zero";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
+                              {"foo"}, {}, {});
+
+        int rowH = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
+
+        int scriptId = 0;
+        std::string handler;
+        int offset = -1;
+        int clicks = 0;
+        QObject::connect(&panel, &CodeViewPanel::breakpointToggled, &panel,
+                [&](int s, const std::string& h, int o) {
+                    scriptId = s;
+                    handler = h;
+                    offset = o;
+                    ++clicks;
+                });
+
+        // Clicking the bytecode gutter row for offset 0 toggles there.
+        clickIndicator(panel.bytecodeGutter()->indicatorButton(0),
+                          QPoint(5, rowH / 2));
+        assert(clicks == 1);
+        assert(scriptId == 100);
+        assert(handler == "foo");
+        assert(offset == 0);
+
+        // Clicking the decompiled gutter row 1 (offset 0), past row 0's
+        // structural "on foo", toggles at the same offset.
+        clickIndicator(panel.decompiledGutter()->indicatorButton(1),
+                          QPoint(5, rowH / 2));
+        assert(clicks == 2);
+        assert(offset == 0);
+
+        // Clicking a structural line (offset -1) toggles nothing.
+        clickIndicator(panel.decompiledGutter()->indicatorButton(0),
+                          QPoint(5, rowH / 2));
+        assert(clicks == 2);
+    }
+
+    // ---- Without a handler loaded, clicking the gutter toggles nothing ----
+    {
+        CodeViewPanel panel;
+        std::vector<InstructionData> instrs;
+        {
+            InstructionData i;
+            i.offset = 0;
+            i.opcode = "pushZero";
+            instrs.push_back(i);
+        }
+        std::vector<DecompiledLineData> lines;
+        {
+            DecompiledLineData l;
+            l.text = "push zero";
+            l.bytecodeOffset = 0;
+            lines.push_back(l);
+        }
+        // Overview (no handler): setHandlerCode with an empty handlerName.
+        panel.setHandlerCode(1, 100, "MovieScript 1", "", instrs, lines, {}, {},
+                              {});
+
+        int rowH = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
+        int clicks = 0;
+        QObject::connect(&panel, &CodeViewPanel::breakpointToggled, &panel,
+                [&](int, const std::string&, int) { ++clicks; });
+        clickIndicator(panel.bytecodeGutter()->indicatorButton(0),
+                          QPoint(5, rowH / 2));
+        assert(clicks == 0);
     }
 
     // ---- Right-click "Go to declaration" menu ----
