@@ -16,6 +16,8 @@ add_executable(libreshockwave_debugger
     ui/MovieTreePanel.hpp
     ui/CodeViewPanel.cpp
     ui/CodeViewPanel.hpp
+    ui/CodeGutter.cpp
+    ui/CodeGutter.hpp
     ui/VariablesPanel.cpp
     ui/VariablesPanel.hpp
     ui/CallStackPanel.cpp
@@ -124,6 +126,8 @@ if(BUILD_TESTING)
         code_view_test.cpp
         ui/CodeViewPanel.cpp
         ui/CodeViewPanel.hpp
+        ui/CodeGutter.cpp
+        ui/CodeGutter.hpp
         ui/highlight/GutterHighlighter.cpp
         ui/highlight/GutterHighlighter.hpp
         ui/highlight/DeclarationHighlighting.hpp

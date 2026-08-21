@@ -19,17 +19,20 @@ class QTimer;
 namespace libreshockwave::debugger {
 
 class BytecodeHighlighter;
+class CodeGutter;
 class LingoHighlighter;
 
-/// Bottom panel showing bytecode and decompiled Lingo code with breakpoint
-/// gutter and current-line highlighting, plus syntax highlighting and
+/// Bottom panel showing bytecode and decompiled Lingo code with a breakpoint
+/// gutter and current-line highlight, plus syntax highlighting and
 /// right-click "Go to declaration" for methods, variables, properties, and
 /// globals.
 ///
-/// Breakpoint toggling matches the WASM harness: clicking the gutter column
-/// of a code line toggles a breakpoint at that instruction offset, whether
-/// the movie is running or paused.  Right-clicking a word in either view
-/// offers declaration jumps: handler calls resolve across the whole movie
+/// Each tab pairs its QPlainTextEdit with a CodeGutter: a Qt6 widget column of
+/// one indicator per line (blank, current-line play marker, or breakpoint dot).
+/// Clicking an indicator toggles a breakpoint at that instruction offset,
+/// whether the movie is running or paused (matching the WASM harness).  The
+/// gutter scrolls in lockstep with the code.  Right-clicking a word in either
+/// view offers declaration jumps: handler calls resolve across the whole movie
 /// (via the SymbolIndex), and local variables/arguments jump to their first
 /// assignment in the current handler.
 class CodeViewPanel : public QWidget {
@@ -69,6 +72,10 @@ public:
     [[nodiscard]] QPlainTextEdit* bytecodeView() const { return bytecodeView_; }
     [[nodiscard]] QPlainTextEdit* decompiledView() const { return decompiledView_; }
 
+    /// The gutter indicator column beside each code view.
+    [[nodiscard]] CodeGutter* bytecodeGutter() const { return bytecodeGutter_; }
+    [[nodiscard]] CodeGutter* decompiledGutter() const { return decompiledGutter_; }
+
     /// Build the right-click context menu for `view` at `viewportPos`.  It
     /// always contains the standard text-editor actions (Undo / Cut / Copy /
     /// Paste / Select All); the "Go to declaration" options are appended only
@@ -106,8 +113,9 @@ private slots:
 
 private:
     void rebuildDisplay();
-    void handleGutterClick(QPlainTextEdit* view, const QPoint& viewportPos,
-                            bool isBytecode);
+    /// Map a gutter click at `row` for the bytecode/decompiled tab to its
+    /// instruction offset and toggle a breakpoint there.
+    void handleGutterRow(int row, bool isBytecode);
     /// Build and exec the context menu for the word at `viewportPos` (viewport
     /// coordinates): the standard text-editor actions plus any "Go to
     /// declaration" options.  Always returns true; the caller accepts the
@@ -131,6 +139,8 @@ private:
     BytecodeHighlighter* bytecodeHighlighter_{nullptr};
     LingoHighlighter* lingoHighlighter_{nullptr};
     QTimer* flashTimer_{nullptr};
+    CodeGutter* bytecodeGutter_{nullptr};
+    CodeGutter* decompiledGutter_{nullptr};
 
     std::string scriptName_;
     std::string currentHandlerName_;

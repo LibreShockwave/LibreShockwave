@@ -12,10 +12,10 @@ namespace libreshockwave::debugger {
 
 /// Syntax highlighter for the bytecode view.  Each line follows the fixed
 /// layout built by CodeViewPanel:
-///   [> ]([▶●]|__)NNNN  opcode        arg  ; annotation
+///   NNNN  opcode        arg  ; annotation
 /// The offset, the opcode (colored by category), and the `; annotation`
-/// comment get distinct colors; the gutter marker is shared with the Lingo
-/// view via GutterHighlighter.  Declaration names inside the annotation can
+/// comment get distinct colors; the per-line current/breakpoint indicator
+/// lives in the gutter column.  Declaration names inside the annotation can
 /// receive a single underline through the internal declaration-highlighting
 /// switch, while right-click declaration lookup remains available.
 class BytecodeHighlighter : public GutterHighlighter {

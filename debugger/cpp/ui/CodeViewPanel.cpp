@@ -4,12 +4,10 @@
 #include <QContextMenuEvent>
 #include <QEvent>
 #include <QKeySequence>
-#include <QFontMetrics>
 #include <QLabel>
 #include <QMenu>
-#include <QMouseEvent>
 #include <QRegularExpression>
-#include <QSplitter>
+#include <QScrollBar>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -17,6 +15,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include "ui/CodeGutter.hpp"
 #include "ui/highlight/BytecodeHighlighter.hpp"
 #include "ui/highlight/LingoHighlighter.hpp"
 
@@ -56,7 +55,8 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
 
     layout->addLayout(topBar);
 
-    // Tab widget: bytecode / decompiled
+    // Tab widget: bytecode / decompiled.  Each tab pairs its code view with a
+    // gutter of per-line indicator widgets to its left.
     tabWidget_ = new QTabWidget(this);
     tabWidget_->setTabPosition(QTabWidget::North);
 
@@ -66,14 +66,34 @@ CodeViewPanel::CodeViewPanel(QWidget* parent)
     bytecodeView_->setLineWrapMode(QPlainTextEdit::NoWrap);
     bytecodeView_->setTabStopDistance(32);
     bytecodeHighlighter_ = new BytecodeHighlighter(bytecodeView_->document());
-    tabWidget_->addTab(bytecodeView_, QStringLiteral("Bytecode"));
+    {
+        auto* bytecodeTab = new QWidget(this);
+        auto* bytecodeLayout = new QHBoxLayout(bytecodeTab);
+        bytecodeLayout->setContentsMargins(0, 0, 0, 0);
+        bytecodeGutter_ = new CodeGutter(bytecodeView_, bytecodeTab);
+        connect(bytecodeGutter_, &CodeGutter::indicatorClicked, this,
+                [this](int row) { handleGutterRow(row, true); });
+        bytecodeLayout->addWidget(bytecodeGutter_);
+        bytecodeLayout->addWidget(bytecodeView_, 1);
+        tabWidget_->addTab(bytecodeTab, QStringLiteral("Bytecode"));
+    }
 
     decompiledView_ = new QPlainTextEdit(this);
     decompiledView_->setReadOnly(true);
     decompiledView_->setFont(QFont(QStringLiteral("monospace"), 11));
     decompiledView_->setLineWrapMode(QPlainTextEdit::NoWrap);
     lingoHighlighter_ = new LingoHighlighter(decompiledView_->document());
-    tabWidget_->addTab(decompiledView_, QStringLiteral("Decompiled"));
+    {
+        auto* decompiledTab = new QWidget(this);
+        auto* decompiledLayout = new QHBoxLayout(decompiledTab);
+        decompiledLayout->setContentsMargins(0, 0, 0, 0);
+        decompiledGutter_ = new CodeGutter(decompiledView_, decompiledTab);
+        connect(decompiledGutter_, &CodeGutter::indicatorClicked, this,
+                [this](int row) { handleGutterRow(row, false); });
+        decompiledLayout->addWidget(decompiledGutter_);
+        decompiledLayout->addWidget(decompiledView_, 1);
+        tabWidget_->addTab(decompiledTab, QStringLiteral("Decompiled"));
+    }
 
     flashTimer_ = new QTimer(this);
     flashTimer_->setSingleShot(true);
@@ -197,23 +217,11 @@ void CodeViewPanel::clear() {
 
     bytecodeView_->clear();
     decompiledView_->clear();
+    bytecodeGutter_->rebuild(0, {});
+    decompiledGutter_->rebuild(0, {});
 }
 
 bool CodeViewPanel::eventFilter(QObject* obj, QEvent* event) {
-    if (event->type() == QEvent::MouseButtonRelease) {
-        auto* mouse = static_cast<QMouseEvent*>(event);
-        if (mouse->button() == Qt::LeftButton) {
-            if (obj == bytecodeView_->viewport()) {
-                handleGutterClick(bytecodeView_, mouse->pos(), true);
-                return true;
-            }
-            if (obj == decompiledView_->viewport()) {
-                handleGutterClick(decompiledView_, mouse->pos(), false);
-                return true;
-            }
-        }
-        return QWidget::eventFilter(obj, event);
-    }
     // Qt's default text menu (Copy / Select All) is shown for a QEvent::ContextMenu,
     // a separate event from the right-button release.  Replace it for either code
     // view with the unified menu (standard actions + "Go to declaration" options).
@@ -233,32 +241,21 @@ bool CodeViewPanel::eventFilter(QObject* obj, QEvent* event) {
     return QWidget::eventFilter(obj, event);
 }
 
-void CodeViewPanel::handleGutterClick(QPlainTextEdit* view, const QPoint& viewportPos,
-                                      bool isBytecode) {
+void CodeViewPanel::handleGutterRow(int row, bool isBytecode) {
     // A handler must be displayed to toggle against (matches the WASM
     // harness, which uses the currently selected handler).
     if (currentScriptId_ <= 0 || currentHandlerName_.empty()) {
         return;
     }
 
-    // Only clicks in the gutter column (marker + offset) toggle breakpoints,
-    // so the rest of the line still supports text selection.
-    const QFontMetrics metrics(view->font());
-    const int gutterWidth = metrics.horizontalAdvance(QStringLiteral("  ")) +
-                            metrics.horizontalAdvance(QStringLiteral("0000 ")) + 6;
-    if (viewportPos.x() >= gutterWidth) {
-        return;
-    }
-
-    const int line = view->cursorForPosition(viewportPos).blockNumber();
     int offset = -1;
     if (isBytecode) {
-        if (line >= 0 && line < static_cast<int>(instructions_.size())) {
-            offset = instructions_[line].offset;
+        if (row >= 0 && row < static_cast<int>(instructions_.size())) {
+            offset = instructions_[row].offset;
         }
     } else {
-        if (line >= 0 && line < static_cast<int>(decompiledLines_.size())) {
-            offset = decompiledLines_[line].bytecodeOffset;
+        if (row >= 0 && row < static_cast<int>(decompiledLines_.size())) {
+            offset = decompiledLines_[row].bytecodeOffset;
         }
     }
     if (offset < 0) {
@@ -461,53 +458,48 @@ void CodeViewPanel::rebuildDisplay() {
     // selection (its cursors would otherwise reference stale positions).
     clearFlash();
 
-    // Build bytecode text
+    // Build bytecode text and per-row gutter indicators.
     {
         QString text;
+        std::vector<CodeGutter::Indicator> modes;
+        modes.reserve(instructions_.size());
         for (const auto& instr : instructions_) {
             // -1 means "no instruction is current" and must never match a line.
             const bool isCurrent = currentInstructionOffset_ >= 0 &&
                                    instr.offset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(instr.offset) > 0;
+            modes.push_back(hasBp ? CodeGutter::Indicator::Breakpoint
+                                  : (isCurrent ? CodeGutter::Indicator::Current
+                                               : CodeGutter::Indicator::Blank));
 
             QString line;
-            // Gutter marker
-            if (isCurrent) {
-                line += QStringLiteral("▶ ");
-            } else if (hasBp) {
-                line += QStringLiteral("● ");
-            } else {
-                line += QStringLiteral("  ");
-            }
-
             // Offset
             line += QStringLiteral("%1  ").arg(instr.offset, 4);
-
             // Opcode
             line += QStringLiteral("%1").arg(
                 QString::fromStdString(instr.opcode), -16);
-
             // Argument
             line += QStringLiteral("%1").arg(instr.argument, 6);
-
             // Annotation
             if (!instr.annotation.empty()) {
                 line += QStringLiteral("  ; %1").arg(
                     QString::fromStdString(instr.annotation));
             }
-
-            if (isCurrent) {
-                line = QStringLiteral("> %1").arg(line);
-            }
-
             text += line + QStringLiteral("\n");
         }
         bytecodeView_->setPlainText(text);
+
+        // Keep the gutter's scroll in step with the code across the rebuild.
+        const int scroll = bytecodeView_->verticalScrollBar()->value();
+        bytecodeGutter_->rebuild(static_cast<int>(instructions_.size()), modes);
+        bytecodeGutter_->setScrollValue(scroll);
     }
 
-    // Build decompiled text
+    // Build decompiled text and per-row gutter indicators.
     {
         QString text;
+        std::vector<CodeGutter::Indicator> modes;
+        modes.reserve(decompiledLines_.size());
         for (const auto& line : decompiledLines_) {
             // Structural lines carry a -1 offset sentinel; -1 also means "no
             // current instruction", so both must be guarded or every
@@ -515,25 +507,19 @@ void CodeViewPanel::rebuildDisplay() {
             const bool isCurrent = currentInstructionOffset_ >= 0 &&
                                    line.bytecodeOffset == currentInstructionOffset_;
             const bool hasBp = breakpointOffsets_.count(line.bytecodeOffset) > 0;
+            modes.push_back(hasBp ? CodeGutter::Indicator::Breakpoint
+                                  : (isCurrent ? CodeGutter::Indicator::Current
+                                               : CodeGutter::Indicator::Blank));
 
             QString displayLine;
-            if (isCurrent) {
-                displayLine += QStringLiteral("▶ ");
-            } else if (hasBp) {
-                displayLine += QStringLiteral("● ");
-            } else {
-                displayLine += QStringLiteral("  ");
-            }
-
             displayLine += QString::fromStdString(line.text);
-
-            if (isCurrent) {
-                displayLine = QStringLiteral("> %1").arg(displayLine);
-            }
-
             text += displayLine + QStringLiteral("\n");
         }
         decompiledView_->setPlainText(text);
+
+        const int scroll = decompiledView_->verticalScrollBar()->value();
+        decompiledGutter_->rebuild(static_cast<int>(decompiledLines_.size()), modes);
+        decompiledGutter_->setScrollValue(scroll);
     }
 }
 

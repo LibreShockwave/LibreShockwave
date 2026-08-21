@@ -110,8 +110,6 @@ std::optional<QColor> LingoHighlighter::identifierColor(const QString& lowerName
 }
 
 void LingoHighlighter::highlightBlock(const QString& text) {
-    applyGutterMarker(text);
-
     auto match = tokenRegex_.globalMatch(text);
     while (match.hasNext()) {
         const auto capture = match.next();

@@ -10,6 +10,7 @@
 #include <QTimer>
 
 #include "model/SymbolIndex.hpp"
+#include "ui/CodeGutter.hpp"
 #include "ui/CodeViewPanel.hpp"
 
 #include <cassert>
@@ -85,22 +86,25 @@ int main(int argc, char** argv) {
         std::vector<DecompiledLineData> lines = {l0, l1, l2};
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"}, {}, {});
 
-        // Nothing is current (offset -1): no line may carry the "> " prefix.
+        // Nothing is current (offset -1): no line carries a current indicator.
         {
-            const QStringList rows = panel.decompiledView()->toPlainText().split('\n');
-            assert(rows.size() >= 3);
-            assert(!rows[0].startsWith("> "));
-            assert(!rows[1].startsWith("> "));
-            assert(!rows[2].startsWith("> "));
+            assert(panel.decompiledGutter()->modeAt(0) ==
+                   CodeGutter::Indicator::Blank);
+            assert(panel.decompiledGutter()->modeAt(1) ==
+                   CodeGutter::Indicator::Blank);
+            assert(panel.decompiledGutter()->modeAt(2) ==
+                   CodeGutter::Indicator::Blank);
         }
 
-        // Offset 0 current: only that line carries the "> " prefix.
+        // Offset 0 current: only that line carries the current indicator.
         panel.setCurrentInstruction(0);
         {
-            const QStringList rows = panel.decompiledView()->toPlainText().split('\n');
-            assert(!rows[0].startsWith("> "));
-            assert(rows[1].startsWith("> "));
-            assert(!rows[2].startsWith("> "));
+            assert(panel.decompiledGutter()->modeAt(0) ==
+                   CodeGutter::Indicator::Blank);
+            assert(panel.decompiledGutter()->modeAt(1) ==
+                   CodeGutter::Indicator::Current);
+            assert(panel.decompiledGutter()->modeAt(2) ==
+                   CodeGutter::Indicator::Blank);
         }
     }
 
@@ -126,8 +130,8 @@ int main(int argc, char** argv) {
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines,
                                  {"foo", "bar"}, {}, {});
             QApplication::processEvents();
-            // View line is "  call bar"; "bar" starts at char 7.
-            const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
+            // View line is "call bar"; "bar" starts at char 5.
+            const QPoint pos = charToViewport(panel.decompiledView(), 0, 5);
             QMenu* menu = panel.buildRightClickMenu(panel.decompiledView(), pos);
             assert(menu != nullptr);
             assert(menuHas(menu, "Go to method"));
@@ -141,10 +145,10 @@ int main(int argc, char** argv) {
             l0.bytecodeOffset = 0;
             std::vector<DecompiledLineData> lines = {l0};
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"},
-                                 {}, {"vTotal"});
+                                  {}, {"vTotal"});
             QApplication::processEvents();
-            // View line is "  put 1 into vTotal"; "vTotal" starts at char 13.
-            const QPoint pos = charToViewport(panel.decompiledView(), 0, 13);
+            // View line is "put 1 into vTotal"; "vTotal" starts at char 11.
+            const QPoint pos = charToViewport(panel.decompiledView(), 0, 11);
             QMenu* menu = panel.buildRightClickMenu(panel.decompiledView(), pos);
             assert(menu != nullptr);
             assert(menuHas(menu, "Go to variable declaration"));
@@ -161,8 +165,8 @@ int main(int argc, char** argv) {
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"},
                                   {}, {});
             QApplication::processEvents();
-            // View line is "  call qux"; "qux" starts at char 7.
-            const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
+            // View line is "call qux"; "qux" starts at char 5.
+            const QPoint pos = charToViewport(panel.decompiledView(), 0, 5);
             QMenu* menu = panel.buildRightClickMenu(panel.decompiledView(), pos);
             assert(menu != nullptr);
             assert(menuHas(menu, "Select All"));
@@ -228,7 +232,7 @@ int main(int argc, char** argv) {
         // Over the word "bar": the unified menu is shown (accepted), merging the
         // standard text-editor actions with the declaration option.
         {
-            const QPoint pos = charToViewport(panel.decompiledView(), 0, 7);
+            const QPoint pos = charToViewport(panel.decompiledView(), 0, 5);
             bool accepted = false;
             showContextMenu(pos, accepted);
             assert(accepted);

@@ -32,10 +32,9 @@ const QColor kDarkComment(0x8b, 0x94, 0x9e);
 
 BytecodeHighlighter::BytecodeHighlighter(QTextDocument* document)
     : GutterHighlighter(document),
-      // Groups: 1 = "> " prefix, 2 = gutter marker, 3 = offset, 4 = opcode,
-      // 5 = argument, 6 = "; annotation".
+      // Groups: 1 = offset, 2 = opcode, 3 = argument, 4 = "; annotation".
       lineRegex_(QRegularExpression(
-          R"(^(> )?(▶ |● |  )(\d{4,})  ([A-Za-z][A-Za-z0-9]*)\s+(-?\d+)(  ;.*)?)")) {
+          R"(^(\d{4,})  ([A-Za-z][A-Za-z0-9]*)\s+(-?\d+)(  ;.*)?)")) {
 }
 
 void BytecodeHighlighter::setDeclarationNames(const QSet<QString>& names) {
@@ -96,28 +95,26 @@ void BytecodeHighlighter::highlightBlock(const QString& text) {
         return;
     }
 
-    applyGutterMarker(text);
-
-    if (!match.captured(3).isEmpty()) {
+    if (!match.captured(1).isEmpty()) {
         QTextCharFormat offset;
         offset.setForeground(offsetColor());
-        setFormat(match.capturedStart(3), match.capturedLength(3), offset);
+        setFormat(match.capturedStart(1), match.capturedLength(1), offset);
     }
 
-    if (auto color = categoryColor(match.captured(4))) {
+    if (auto color = categoryColor(match.captured(2))) {
         QTextCharFormat opcode;
         opcode.setForeground(*color);
-        setFormat(match.capturedStart(4), match.capturedLength(4), opcode);
+        setFormat(match.capturedStart(2), match.capturedLength(2), opcode);
     }
 
-    if (!match.captured(6).isEmpty()) {
+    if (!match.captured(4).isEmpty()) {
         QTextCharFormat comment;
         comment.setForeground(commentColor());
         comment.setFontItalic(true);
-        setFormat(match.capturedStart(6), match.capturedLength(6), comment);
+        setFormat(match.capturedStart(4), match.capturedLength(4), comment);
 
         if (detail::kEnableDeclarationHighlighting) {
-            const int base = match.capturedStart(6);
+            const int base = match.capturedStart(4);
             auto nameMatch = kAnnotationIdentifier.globalMatch(match.captured(6));
             while (nameMatch.hasNext()) {
                 const auto name = nameMatch.next();
