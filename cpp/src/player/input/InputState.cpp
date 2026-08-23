@@ -120,7 +120,12 @@ void InputState::setSelStart(int pos) { selStart_ = pos; }
 int InputState::selEnd() const { return selEnd_; }
 void InputState::setSelEnd(int pos) { selEnd_ = pos; }
 
+// Advances once per movie frame (called from Player::executeFrameCycle), so the
+// blink cadence follows the movie tempo instead of host event-loop wake-ups.
 void InputState::incrementCaretBlink() {
+    if (keyboardFocusSprite_ <= 0) {
+        return;
+    }
     ++caretBlinkCounter_;
 }
 

@@ -716,6 +716,7 @@ void Player::executeFrameCycle(bool processUpdates) {
     TickDeadlineGuard deadlineGuard(vm_);
     refreshDebugControllerGlobals();
     (void)inputHandler_.processInputEvents();
+    inputState_.incrementCaretBlink();
     (void)frameContext_.executeFrame();
 
     // If the debug controller paused execution during this frame (breakpoint

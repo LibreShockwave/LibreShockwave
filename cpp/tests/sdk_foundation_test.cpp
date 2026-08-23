@@ -3251,6 +3251,14 @@ void testPlayerInputFoundation() {
     state.resetCaretBlink();
     assert(state.isCaretVisible());
 
+    state.setKeyboardFocusSprite(0);
+    for (int i = 0; i < 16; ++i) {
+        state.incrementCaretBlink();
+    }
+    state.setKeyboardFocusSprite(3);
+    assert(state.isCaretVisible());
+    state.setKeyboardFocusSprite(0);
+
     state.setSelStart(2);
     state.setSelEnd(5);
     assert(state.selStart() == 2);
@@ -3915,6 +3923,15 @@ void testPlayerInputFoundation() {
     assert(editableTextRenderer.lastFieldWidth == 80);
     editableInput.onMouseUp(82, 45);
     assert(editableInput.processInputEvents());
+
+    editableState.setCaretBlinkRate(1);
+    for (int i = 0; i < 4; ++i) {
+        (void)editableInput.processInputEvents();
+    }
+    assert(editableState.isCaretVisible());
+    editableState.incrementCaretBlink();
+    assert(!editableState.isCaretVisible());
+    editableState.resetCaretBlink();
 
     editableField->setDynamicText("abcdef");
     editableState.setSelStart(2);
@@ -5489,6 +5506,18 @@ void testPlayerVmEventDispatchFoundation() {
     assert(player.tick());
     assert(player.vm().getGlobal("timeoutFired").intValue() == 41);
     assert(player.vm().getGlobal("globalTimeout").intValue() == 42);
+
+    player.inputState().setKeyboardFocusSprite(4);
+    player.inputState().setCaretBlinkRate(1);
+    assert(player.inputState().isCaretVisible());
+    for (int i = 0; i < 4; ++i) {
+        (void)player.inputHandler().processInputEvents();
+    }
+    assert(player.inputState().isCaretVisible());
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    assert(player.tick());
+    assert(!player.inputState().isCaretVisible());
+    player.inputState().setKeyboardFocusSprite(0);
 
     player.timeoutManager().clear();
     (void)player.timeoutManager().createTimeout("stop", 0, "unused", timeoutTarget);

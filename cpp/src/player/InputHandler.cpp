@@ -392,10 +392,6 @@ bool InputHandler::processInputEvents() {
         stageRenderer_->spriteRegistry().bumpRevision();
     }
 
-    if (inputState_->keyboardFocusSprite() > 0) {
-        inputState_->incrementCaretBlink();
-    }
-
     return hadEvents;
 }
 
