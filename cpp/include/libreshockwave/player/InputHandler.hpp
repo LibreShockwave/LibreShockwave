@@ -9,6 +9,7 @@
 
 #include "libreshockwave/bitmap/Bitmap.hpp"
 #include "libreshockwave/player/PlayerEvent.hpp"
+#include "libreshockwave/player/input/EditableFieldOverlay.hpp"
 #include "libreshockwave/player/input/InputEvent.hpp"
 #include "libreshockwave/player/render/pipeline/RenderSprite.hpp"
 
@@ -36,34 +37,6 @@ namespace libreshockwave::player {
 
 class InputHandler {
 public:
-    struct CaretInfo {
-        int x{0};
-        int y{0};
-        int height{0};
-
-        friend bool operator==(const CaretInfo&, const CaretInfo&) = default;
-    };
-
-    struct SelectionRect {
-        int x{0};
-        int y{0};
-        int width{0};
-        int height{0};
-
-        friend bool operator==(const SelectionRect&, const SelectionRect&) = default;
-    };
-
-    struct EditableFieldOverlay {
-        std::optional<CaretInfo> caret;
-        std::vector<SelectionRect> selectionRects;
-
-        [[nodiscard]] bool empty() const {
-            return !caret.has_value() && selectionRects.empty();
-        }
-
-        friend bool operator==(const EditableFieldOverlay&, const EditableFieldOverlay&) = default;
-    };
-
     using CurrentFrameSupplier = std::function<int()>;
     using EventDispatcherSupplier = std::function<event::EventDispatcher*()>;
     using HitSpritesSupplier = std::function<std::vector<render::pipeline::RenderSprite>()>;
@@ -98,12 +71,9 @@ public:
     void onBlur();
     void onKeyDown(int directorKeyCode, std::string keyChar, bool shift, bool ctrl, bool alt);
     void onKeyUp(int directorKeyCode, std::string keyChar, bool shift, bool ctrl, bool alt);
-    [[nodiscard]] std::optional<CaretInfo> getCaretInfo() const;
-    [[nodiscard]] std::vector<SelectionRect> getSelectionInfo() const;
-    [[nodiscard]] EditableFieldOverlay editableFieldOverlay() const;
-    static void applyEditableFieldOverlay(bitmap::Bitmap& bitmap, const EditableFieldOverlay& overlay);
-    [[nodiscard]] static bitmap::Bitmap withEditableFieldOverlay(const bitmap::Bitmap& bitmap,
-                                                                 const EditableFieldOverlay& overlay);
+    [[nodiscard]] std::optional<input::CaretInfo> getCaretInfo() const;
+    [[nodiscard]] std::vector<input::SelectionRect> getSelectionInfo() const;
+    [[nodiscard]] input::EditableFieldOverlay editableFieldOverlay() const;
     void onPasteText(std::string pasteText);
     [[nodiscard]] std::optional<std::string> getSelectedText() const;
     [[nodiscard]] std::optional<std::string> cutSelectedText();

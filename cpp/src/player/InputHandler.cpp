@@ -180,7 +180,7 @@ void InputHandler::onKeyUp(int directorKeyCode, std::string keyChar, bool shift,
     inputState_->queueEvent(input::InputEvent::keyUp(directorKeyCode, std::move(keyChar)));
 }
 
-std::optional<InputHandler::CaretInfo> InputHandler::getCaretInfo() const {
+std::optional<input::CaretInfo> InputHandler::getCaretInfo() const {
     if (inputState_ == nullptr || !inputState_->isCaretVisible() || castLibManager_ == nullptr) {
         return std::nullopt;
     }
@@ -212,10 +212,10 @@ std::optional<InputHandler::CaretInfo> InputHandler::getCaretInfo() const {
         return std::nullopt;
     }
 
-    return CaretInfo{focused->sprite.x() + loc[0], focused->sprite.y() + loc[1], lineHeight};
+    return input::CaretInfo{focused->sprite.x() + loc[0], focused->sprite.y() + loc[1], lineHeight};
 }
 
-std::vector<InputHandler::SelectionRect> InputHandler::getSelectionInfo() const {
+std::vector<input::SelectionRect> InputHandler::getSelectionInfo() const {
     if (inputState_ == nullptr || castLibManager_ == nullptr) {
         return {};
     }
@@ -257,72 +257,25 @@ std::vector<InputHandler::SelectionRect> InputHandler::getSelectionInfo() const 
     const int startY = startPos[1];
     const int endY = endPos[1];
     if (startY == endY) {
-        return {SelectionRect{spriteX + startPos[0], spriteY + startY, endPos[0] - startPos[0], lineHeight}};
+        return {input::SelectionRect{spriteX + startPos[0], spriteY + startY, endPos[0] - startPos[0], lineHeight}};
     }
 
-    std::vector<SelectionRect> rects;
-    rects.push_back(SelectionRect{
+    std::vector<input::SelectionRect> rects;
+    rects.push_back(input::SelectionRect{
         spriteX + startPos[0],
         spriteY + startY,
         focused->sprite.width() - startPos[0],
         lineHeight
     });
     for (int midY = startY + lineHeight; midY < endY; midY += lineHeight) {
-        rects.push_back(SelectionRect{spriteX, spriteY + midY, focused->sprite.width(), lineHeight});
+        rects.push_back(input::SelectionRect{spriteX, spriteY + midY, focused->sprite.width(), lineHeight});
     }
-    rects.push_back(SelectionRect{spriteX, spriteY + endY, endPos[0], lineHeight});
+    rects.push_back(input::SelectionRect{spriteX, spriteY + endY, endPos[0], lineHeight});
     return rects;
 }
 
-InputHandler::EditableFieldOverlay InputHandler::editableFieldOverlay() const {
-    return EditableFieldOverlay{getCaretInfo(), getSelectionInfo()};
-}
-
-void InputHandler::applyEditableFieldOverlay(bitmap::Bitmap& bitmap, const EditableFieldOverlay& overlay) {
-    if (overlay.empty() || bitmap.width() <= 0 || bitmap.height() <= 0 || bitmap.pixels().empty()) {
-        return;
-    }
-
-    auto& pixels = bitmap.pixels();
-    const int width = bitmap.width();
-    const int height = bitmap.height();
-
-    for (const auto& rect : overlay.selectionRects) {
-        if (rect.width <= 0 || rect.height <= 0) {
-            continue;
-        }
-        const int x0 = std::max(0, rect.x);
-        const int y0 = std::max(0, rect.y);
-        const int x1 = std::min(width, rect.x + rect.width);
-        const int y1 = std::min(height, rect.y + rect.height);
-        if (x0 >= x1 || y0 >= y1) {
-            continue;
-        }
-        for (int y = y0; y < y1; ++y) {
-            for (int x = x0; x < x1; ++x) {
-                auto& pixel = pixels[static_cast<std::size_t>(y * width + x)];
-                pixel = (pixel & 0xFF000000U) | ((~pixel) & 0x00FFFFFFU);
-            }
-        }
-    }
-
-    if (!overlay.caret.has_value() || overlay.caret->height <= 0 ||
-        overlay.caret->x < 0 || overlay.caret->x >= width) {
-        return;
-    }
-    const int x = overlay.caret->x;
-    const int y0 = std::max(0, overlay.caret->y);
-    const int y1 = std::min(height, overlay.caret->y + overlay.caret->height);
-    for (int y = y0; y < y1; ++y) {
-        pixels[static_cast<std::size_t>(y * width + x)] = 0xFF000000U;
-    }
-}
-
-bitmap::Bitmap InputHandler::withEditableFieldOverlay(const bitmap::Bitmap& bitmap,
-                                                      const EditableFieldOverlay& overlay) {
-    auto result = bitmap.copy();
-    applyEditableFieldOverlay(result, overlay);
-    return result;
+input::EditableFieldOverlay InputHandler::editableFieldOverlay() const {
+    return input::EditableFieldOverlay{getCaretInfo(), getSelectionInfo()};
 }
 
 void InputHandler::onPasteText(std::string pasteText) {

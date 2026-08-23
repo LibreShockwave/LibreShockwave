@@ -125,6 +125,7 @@ add_library(libreshockwave
     src/player/Player.cpp
     src/player/BitmapResolver.cpp
     src/player/CursorManager.cpp
+    src/player/input/EditableFieldOverlay.cpp
     src/player/InputHandler.cpp
     src/player/MovieProperties.cpp
     src/player/SpriteProperties.cpp

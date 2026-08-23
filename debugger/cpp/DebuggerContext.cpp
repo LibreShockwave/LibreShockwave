@@ -722,7 +722,7 @@ void DebuggerContext::runRenderLoop() {
         }
 
         try {
-            const auto frame = snapshot->renderFrame();
+            const auto frame = snapshot->renderPresentableFrame();
             const auto& pixels = frame.pixels();
             if (!firstVisibleFrame) {
                 const bool hasVisiblePixels = std::any_of(

@@ -402,8 +402,7 @@ int renderCurrentFrame(WasmPlayerContext& ctx) {
     }
 
     const auto snapshot = ctx.player->frameSnapshot();
-    auto frame = snapshot.renderFrame();
-    InputHandler::applyEditableFieldOverlay(frame, ctx.player->inputHandler().editableFieldOverlay());
+    auto frame = snapshot.renderPresentableFrame();
     ctx.frameRgba = bitmapToRgba(frame, snapshot.backgroundColor);
     ctx.frameWidth = frame.width();
     ctx.frameHeight = frame.height();

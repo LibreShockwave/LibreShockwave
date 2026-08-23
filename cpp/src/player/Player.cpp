@@ -902,13 +902,17 @@ bool Player::recentScriptErrorIsFresh(std::int64_t maxAgeMs) const {
 
 render::pipeline::FrameSnapshot Player::frameSnapshot() {
     const int frame = currentFrame();
-    return frameRenderPipeline_.renderFrame(
+    auto snapshot = frameRenderPipeline_.renderFrame(
         frame,
         stageRenderer_.stageWidth(),
         stageRenderer_.stageHeight(),
         stageRenderer_.backgroundColor(),
         stageRenderer_.renderableStageImage(),
         "Frame " + std::to_string(frame) + " | " + std::string(name(state_)));
+    // Captured here so hosts composing on other threads read a consistent
+    // caret/selection state frozen at snapshot time.
+    snapshot.editableOverlay = inputHandler_.editableFieldOverlay();
+    return snapshot;
 }
 
 lingo::Datum Player::currentStageImageDatum() {

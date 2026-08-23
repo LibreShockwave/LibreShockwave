@@ -296,6 +296,11 @@ using libreshockwave::player::Player;
 using libreshockwave::player::PlayerEvent;
 using libreshockwave::player::PlayerEventInfo;
 using libreshockwave::player::PlayerState;
+using libreshockwave::player::input::applyEditableFieldOverlay;
+using libreshockwave::player::input::CaretInfo;
+using libreshockwave::player::input::EditableFieldOverlay;
+using libreshockwave::player::input::SelectionRect;
+using libreshockwave::player::input::withEditableFieldOverlay;
 using libreshockwave::player::SpriteProperties;
 using libreshockwave::player::allPlayerEvents;
 using libreshockwave::player::handlerName;
@@ -3917,27 +3922,27 @@ void testPlayerInputFoundation() {
     editableState.resetCaretBlink();
     auto caretInfo = editableInput.getCaretInfo();
     assert(caretInfo.has_value());
-    assert(*caretInfo == (InputHandler::CaretInfo{70, 40, 10}));
+    assert(*caretInfo == (CaretInfo{70, 40, 10}));
 
     editableState.setSelStart(1);
     editableState.setSelEnd(2);
     assert(!editableInput.getCaretInfo().has_value());
-    assert((editableInput.getSelectionInfo() == std::vector<InputHandler::SelectionRect>{
-        InputHandler::SelectionRect{60, 40, 10, 10},
+    assert((editableInput.getSelectionInfo() == std::vector<SelectionRect>{
+        SelectionRect{60, 40, 10, 10},
     }));
 
     editableState.setSelStart(1);
     editableState.setSelEnd(5);
-    assert((editableInput.getSelectionInfo() == std::vector<InputHandler::SelectionRect>{
-        InputHandler::SelectionRect{60, 40, 70, 10},
-        InputHandler::SelectionRect{50, 50, 20, 10},
+    assert((editableInput.getSelectionInfo() == std::vector<SelectionRect>{
+        SelectionRect{60, 40, 70, 10},
+        SelectionRect{50, 50, 20, 10},
     }));
     auto selectionOverlay = editableInput.editableFieldOverlay();
     assert(!selectionOverlay.empty());
     assert(!selectionOverlay.caret.has_value());
-    assert((selectionOverlay.selectionRects == std::vector<InputHandler::SelectionRect>{
-        InputHandler::SelectionRect{60, 40, 70, 10},
-        InputHandler::SelectionRect{50, 50, 20, 10},
+    assert((selectionOverlay.selectionRects == std::vector<SelectionRect>{
+        SelectionRect{60, 40, 70, 10},
+        SelectionRect{50, 50, 20, 10},
     }));
     assert(editableInput.getSelectedText().has_value());
     assert(*editableInput.getSelectedText() == "bcde");
@@ -3945,15 +3950,15 @@ void testPlayerInputFoundation() {
     std::vector<std::uint32_t> overlayPixels(12, 0xFF102030U);
     overlayPixels[4] = 0x80112233U;
     Bitmap overlayBase(4, 3, 32, overlayPixels);
-    InputHandler::EditableFieldOverlay overlayPaint{
-        InputHandler::CaretInfo{2, -1, 4},
+    EditableFieldOverlay overlayPaint{
+        CaretInfo{2, -1, 4},
         {
-            InputHandler::SelectionRect{-1, 1, 3, 1},
-            InputHandler::SelectionRect{3, 2, 5, 1},
-            InputHandler::SelectionRect{1, 0, 0, 2},
+            SelectionRect{-1, 1, 3, 1},
+            SelectionRect{3, 2, 5, 1},
+            SelectionRect{1, 0, 0, 2},
         }
     };
-    auto overlayCopy = InputHandler::withEditableFieldOverlay(overlayBase, overlayPaint);
+    auto overlayCopy = withEditableFieldOverlay(overlayBase, overlayPaint);
     assert(overlayBase.getPixel(2, 0) == 0xFF102030U);
     assert(overlayCopy.getPixel(2, 0) == 0xFF000000U);
     assert(overlayCopy.getPixel(0, 1) == 0x80EEDDCCU);
@@ -18102,6 +18107,29 @@ void testRenderPipelineFoundation() {
     assert(snapshot.stageImage == baked);
     assert(snapshot.bakeTick == 7);
     assert(snapshot.pipelineTrace.steps()[0].stepName == "bake");
+
+    // Presented frames compose the captured editable-field overlay, while
+    // renderFrame() stays clean so Lingo stage-image captures never see
+    // host editing chrome.
+    auto presentedStage = std::make_shared<Bitmap>(4, 3, 32,
+                                                   std::vector<std::uint32_t>(12, 0xFF112233U));
+    FrameSnapshot presentedSnapshot{1, 4, 3, static_cast<int>(0xFF000000U), {}, "presented", presentedStage};
+    const auto plainPresented = presentedSnapshot.renderFrame();
+    assert(plainPresented.getPixel(2, 0) == 0xFF112233U);
+
+    presentedSnapshot.editableOverlay = EditableFieldOverlay{
+        CaretInfo{2, 0, 2},
+        {SelectionRect{0, 2, 4, 1}},
+    };
+    const auto composed = presentedSnapshot.renderPresentableFrame();
+    assert(composed.width() == 4 && composed.height() == 3);
+    assert(composed.getPixel(2, 0) == 0xFF000000U);
+    assert(composed.getPixel(2, 1) == 0xFF000000U);
+    for (int x = 0; x < 4; ++x) {
+        const std::uint32_t source = plainPresented.getPixel(x, 2);
+        assert(composed.getPixel(x, 2) == ((source & 0xFF000000U) | ((~source) & 0x00FFFFFFU)));
+    }
+    assert(presentedSnapshot.renderFrame().getPixel(2, 0) == 0xFF112233U);
 
     auto stageImage = std::make_shared<Bitmap>(1, 1, 32, std::vector<std::uint32_t>{0xFF010203U});
     FrameRenderPipelineContext context(8, 320, 240, 0x00445566, stageImage, "debug");
