@@ -5,6 +5,8 @@
 #include <QPainter>
 #include <QResizeEvent>
 
+#include "libreshockwave/player/input/DirectorKeyCodes.hpp"
+
 namespace libreshockwave::debugger {
 namespace {
 
@@ -157,6 +159,16 @@ static int qtKeyToBrowserKeyCode(int qtKey) {
     }
 }
 
+// Map a Qt key to the Director key code the player InputHandler expects.
+// Qt keys first map to DOM-style browser codes, then through the same
+// DirectorKeyCodes conversion the WASM bridge applies before onKeyDown/onKeyUp.
+// Returns 0 only for Qt keys with no mapping; Director itself uses 0 for
+// valid keys (the letter A), so callers must not treat 0 as "unknown" here.
+static int qtKeyToDirectorKeyCode(int qtKey) {
+    return libreshockwave::player::input::DirectorKeyCodes::fromBrowserKeyCode(
+        qtKeyToBrowserKeyCode(qtKey));
+}
+
 void StageWidget::mouseMoveEvent(QMouseEvent* event) {
     int sx = 0, sy = 0;
     widgetToStage(static_cast<int>(event->position().x()),
@@ -199,12 +211,12 @@ void StageWidget::keyPressEvent(QKeyEvent* event) {
         QWidget::keyPressEvent(event);
         return;
     }
-    const int keyCode = qtKeyToBrowserKeyCode(event->key());
-    if (keyCode == 0 || !inputCallback_) {
+    if (qtKeyToBrowserKeyCode(event->key()) == 0 || !inputCallback_) {
         QWidget::keyPressEvent(event);
         return;
     }
-    inputCallback_(3 /*KeyDown*/, 0, 0, keyCode, event->text().toStdString(),
+    inputCallback_(3 /*KeyDown*/, 0, 0, qtKeyToDirectorKeyCode(event->key()),
+                   event->text().toStdString(),
                    (event->modifiers() & Qt::ShiftModifier) != 0,
                    (event->modifiers() & Qt::ControlModifier) != 0,
                    (event->modifiers() & Qt::AltModifier) != 0,
@@ -216,12 +228,12 @@ void StageWidget::keyReleaseEvent(QKeyEvent* event) {
         QWidget::keyReleaseEvent(event);
         return;
     }
-    const int keyCode = qtKeyToBrowserKeyCode(event->key());
-    if (keyCode == 0 || !inputCallback_) {
+    if (qtKeyToBrowserKeyCode(event->key()) == 0 || !inputCallback_) {
         QWidget::keyReleaseEvent(event);
         return;
     }
-    inputCallback_(4 /*KeyUp*/, 0, 0, keyCode, "",
+    inputCallback_(4 /*KeyUp*/, 0, 0, qtKeyToDirectorKeyCode(event->key()),
+                   "",
                    (event->modifiers() & Qt::ShiftModifier) != 0,
                    (event->modifiers() & Qt::ControlModifier) != 0,
                    (event->modifiers() & Qt::AltModifier) != 0,

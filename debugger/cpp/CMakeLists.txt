@@ -163,4 +163,26 @@ if(BUILD_TESTING)
     set_target_properties(libreshockwave_debugger_code_view_tests PROPERTIES AUTOMOC ON)
     add_test(NAME libreshockwave_debugger_code_view_tests
              COMMAND libreshockwave_debugger_code_view_tests)
+
+    # StageWidget key forwarding: Qt key events must be translated to Director
+    # key codes before reaching the input callback.  Needs the core library
+    # for DirectorKeyCodes; runs under QApplication offscreen.
+    add_executable(libreshockwave_debugger_stage_widget_tests
+        stage_widget_test.cpp
+        ui/StageWidget.cpp
+        ui/StageWidget.hpp
+    )
+    target_link_libraries(libreshockwave_debugger_stage_widget_tests
+        PRIVATE
+            LibreShockwave::libreshockwave
+            ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET}
+            ${LIBRESHOCKWAVE_QT_TEST_TARGET}
+        )
+    target_include_directories(libreshockwave_debugger_stage_widget_tests
+                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features(libreshockwave_debugger_stage_widget_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_stage_widget_tests PRIVATE -UNDEBUG)
+    set_target_properties(libreshockwave_debugger_stage_widget_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME libreshockwave_debugger_stage_widget_tests
+             COMMAND libreshockwave_debugger_stage_widget_tests)
 endif()
