@@ -220,6 +220,11 @@ cmake --build cmake-build-wasm --target libreshockwave_cpp_wasm_dist -j2
 
 Run the test suite with `ctest --test-dir cmake-build-debug --output-on-failure`.
 
+- Do not create new CMake test executables or new top-level test files. All
+  runtime coverage goes into `cpp/tests/sdk_foundation_test.cpp` and all
+  desktop-debugger coverage into `debugger/cpp/debugger_test.cpp`; add test
+  functions there and link any newly needed sources into those existing
+  targets. New suites only fragment `ctest` output and bloat configure time.
 - The full native test binary has a known pre-existing abort around a
   `sdk_foundation_test.cpp` `gcCallbacks == 1` assertion. If it still appears,
   document the exact assertion and run the focused tests that cover the current

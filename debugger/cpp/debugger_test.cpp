@@ -1,32 +1,102 @@
-#include <QAbstractTextDocumentLayout>
+// Desktop debugger unit tests in one binary: startup movie-source selection,
+// symbol index lookups, Lingo/bytecode syntax highlighting, code view panel
+// gutters/menus/reveal behavior, and stage widget key-code forwarding.
+// Add new debugger coverage here instead of creating another test target.
 #include <QAction>
 #include <QApplication>
+#include <QColor>
 #include <QContextMenuEvent>
 #include <QFontMetrics>
-#include <QObject>
 #include <QImage>
+#include <QKeyEvent>
 #include <QMenu>
-#include <QScrollBar>
+#include <QObject>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTest>
-#include <QToolButton>
 #include <QTextBlock>
+#include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QTimer>
+#include <QToolButton>
 
+#include "StartupSession.hpp"
 #include "model/SymbolIndex.hpp"
 #include "ui/BreakpointGutter.hpp"
 #include "ui/CodeViewPanel.hpp"
+#include "ui/StageWidget.hpp"
+#include "ui/highlight/BytecodeHighlighter.hpp"
+#include "ui/highlight/LingoHighlighter.hpp"
 
 #include <cassert>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace libreshockwave::debugger;
 
 namespace {
+
+constexpr int kKeyDown = 3;
+constexpr int kKeyUp = 4;
+
+// QSyntaxHighlighter stores its formats in the block's QTextLayout (the
+// display layer), not in the document's character formats, so the test
+// queries layout format ranges.
+QTextCharFormat formatAt(QTextDocument& doc, int blockNumber, int pos) {
+    const QTextLayout* layout = doc.findBlockByNumber(blockNumber).layout();
+    assert(layout != nullptr);
+    for (const auto& range : layout->formats()) {
+        if (pos >= range.start && pos < range.start + range.length) {
+            return range.format;
+        }
+    }
+    return QTextCharFormat();
+}
+
+bool hasForeground(QTextDocument& doc, int blockNumber, int pos) {
+    return formatAt(doc, blockNumber, pos).foreground().style() != Qt::NoBrush;
+}
+
+QColor charColor(QTextDocument& doc, int blockNumber, int pos) {
+    const QTextCharFormat format = formatAt(doc, blockNumber, pos);
+    assert(format.foreground().style() != Qt::NoBrush);
+    return format.foreground().color();
+}
+
+int underlineStyle(QTextDocument& doc, int blockNumber, int pos) {
+    return formatAt(doc, blockNumber, pos).underlineStyle();
+}
+
+MovieTreeSnapshot makeSymbolSnapshot() {
+    MovieTreeSnapshot snapshot;
+    MovieTreeSnapshot::MovieEntry movie;
+    movie.castLibNumber = 1;
+    movie.name = "test.cct";
+
+    MovieTreeSnapshot::ScriptEntry mainScript;
+    mainScript.scriptId = 1;
+    mainScript.castLibNumber = 1;
+    mainScript.displayName = "MovieScript 1";
+    mainScript.handlers = {{"handleMouseUp"}, {"foo"}};
+    mainScript.propertyNames = {"speed"};
+    mainScript.globalNames = {"gCount"};
+    movie.scripts.push_back(mainScript);
+
+    MovieTreeSnapshot::ScriptEntry behavior;
+    behavior.scriptId = 2;
+    behavior.castLibNumber = 1;
+    behavior.displayName = "Figure Class";
+    behavior.handlers = {{"foo"}, {"draw"}};
+    behavior.propertyNames = {"color"};
+    movie.scripts.push_back(behavior);
+
+    snapshot.movies.push_back(std::move(movie));
+    return snapshot;
+}
 
 // Viewport pixel inside the character at (lineIndex, charInLine) of `view`,
 // so that view->cursorForPosition() (used inside buildRightClickMenu) maps it
@@ -65,7 +135,7 @@ void clickIndicator(QToolButton* button, QPoint pos) {
 
 // A movie snapshot with one script (id 100) declaring methods "foo" and "bar",
 // so right-clicking "bar" resolves to a method that is not the current handler.
-MovieTreeSnapshot makeSnapshot() {
+MovieTreeSnapshot makeCodeViewSnapshot() {
     MovieTreeSnapshot snapshot;
     MovieTreeSnapshot::MovieEntry movie;
     movie.castLibNumber = 1;
@@ -79,13 +149,275 @@ MovieTreeSnapshot makeSnapshot() {
     return snapshot;
 }
 
+struct CapturedKey {
+    int type;
+    int keyCode;
+    std::string text;
+};
+
+class EventSpy {
+public:
+    void record(int type, int stageX, int stageY, int keyCode,
+                const std::string& keyText, bool /*shift*/, bool /*ctrl*/,
+                bool /*alt*/, bool /*rightButton*/) {
+        (void)stageX;
+        (void)stageY;
+        captured_.push_back(CapturedKey{type, keyCode, keyText});
+    }
+
+    const std::vector<CapturedKey>& keys() const { return captured_; }
+    void clear() { captured_.clear(); }
+
+private:
+    std::vector<CapturedKey> captured_;
+};
+
+void attachSpy(StageWidget& widget, EventSpy& spy) {
+    widget.setInputCallback(
+        [&spy](int type, int stageX, int stageY, int keyCode,
+               const std::string& keyText, bool shift, bool ctrl, bool alt,
+               bool rightButton) {
+            spy.record(type, stageX, stageY, keyCode, keyText, shift, ctrl,
+                       alt, rightButton);
+        });
+}
+
+void sendKey(StageWidget& widget, int qtKey, const QString& text) {
+    QKeyEvent press(QEvent::KeyPress, qtKey, Qt::NoModifier, text);
+    QKeyEvent release(QEvent::KeyRelease, qtKey, Qt::NoModifier);
+    QApplication::sendEvent(&widget, &press);
+    QApplication::sendEvent(&widget, &release);
+}
+
 } // namespace
 
-int main(int argc, char** argv) {
-    // Headless: the panel and its document layout render offscreen.
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    QApplication app(argc, argv);
+void testStartupSessionSourceSelection() {
+    assert(select_startup_movie_source(QStringLiteral("movie.dir"),
+                                       QStringLiteral("session.lswdebug")) ==
+           QStringLiteral("movie.dir"));
+    assert(select_startup_movie_source(QString(), QStringLiteral("movie.dcr")) ==
+           QStringLiteral("movie.dcr"));
+    assert(select_startup_movie_source(QStringLiteral("session.lswdebug"),
+                                       QStringLiteral("other.lswdebug"))
+               .isEmpty());
+    assert(select_startup_movie_source(QStringLiteral("SESSION.LSWDEBUG"),
+                                       QStringLiteral("movie.cst")) ==
+           QStringLiteral("movie.cst"));
+}
 
+void testSymbolIndex() {
+    // Empty index.
+    SymbolIndex empty;
+    assert(empty.empty());
+    assert(empty.find("foo", 1).empty());
+    assert(empty.methodNames().empty());
+
+    SymbolIndex index{makeSymbolSnapshot()};
+    assert(!index.empty());
+
+    // Method lookup prefers the given script, snapshot order otherwise.
+    std::vector<DeclarationTarget> methods = index.find("foo", 2);
+    assert(methods.size() == 2);
+    assert(methods[0].kind == DeclarationKind::Method);
+    assert(methods[0].castLibNumber == 1);
+    assert(methods[0].scriptId == 2);
+    assert(methods[0].scriptName == "Figure Class");
+    assert(methods[0].handlerName == "foo");
+    assert(methods[1].scriptId == 1);
+    assert(methods[1].scriptName == "MovieScript 1");
+
+    // Lookup is case-insensitive; preference flips the order.
+    methods = index.find("FOO", 1);
+    assert(methods.size() == 2);
+    assert(methods[0].scriptId == 1);
+    assert(methods[1].scriptId == 2);
+
+    // Property and global targets carry no handler name.
+    auto properties = index.find("speed", 0);
+    assert(properties.size() == 1);
+    assert(properties[0].kind == DeclarationKind::Property);
+    assert(properties[0].scriptId == 1);
+    assert(properties[0].handlerName.empty());
+
+    auto globals = index.find("gcount", 0);
+    assert(globals.size() == 1);
+    assert(globals[0].kind == DeclarationKind::Global);
+    assert(globals[0].scriptId == 1);
+
+    // Unknown names resolve to nothing.
+    assert(index.find("missing", 1).empty());
+
+    // Method names: lower-cased, snapshot order, duplicates removed.
+    const std::vector<std::string>& names = index.methodNames();
+    assert(names.size() == 3);
+    assert(names[0] == "handlemouseup");
+    assert(names[1] == "foo");
+    assert(names[2] == "draw");
+
+    // Declaration names: methods + properties + globals, lower-cased, snapshot
+    // order, duplicates removed.  These are the words the code view underlines
+    // as right-click "Go to declaration" targets.
+    const std::vector<std::string>& declarations = index.declarationNames();
+    assert(declarations.size() == 6);
+    assert(declarations[0] == "handlemouseup");
+    assert(declarations[1] == "foo");
+    assert(declarations[2] == "speed");
+    assert(declarations[3] == "gcount");
+    assert(declarations[4] == "draw");
+    assert(declarations[5] == "color");
+    // An empty index has no declaration names.
+    assert(empty.declarationNames().empty());
+
+    // Scripts sharing an ID across cast libraries stay distinct.
+    MovieTreeSnapshot multi = makeSymbolSnapshot();
+    MovieTreeSnapshot::MovieEntry second;
+    second.castLibNumber = 2;
+    second.name = "extra.cct";
+    MovieTreeSnapshot::ScriptEntry extra;
+    extra.scriptId = 1; // same ID as the first movie's main script
+    extra.castLibNumber = 2;
+    extra.displayName = "MovieScript 2";
+    extra.handlers = {{"foo"}};
+    second.scripts.push_back(extra);
+    multi.movies.push_back(std::move(second));
+
+    SymbolIndex multiIndex{multi};
+    methods = multiIndex.find("foo", 0);
+    assert(methods.size() == 3);
+    assert(methods[0].castLibNumber == 1 && methods[0].scriptId == 1);
+    assert(methods[1].castLibNumber == 1 && methods[1].scriptId == 2);
+    assert(methods[2].castLibNumber == 2 && methods[2].scriptId == 1);
+}
+
+void testHighlighters() {
+    // ---- Lingo view ----
+    {
+        QTextDocument doc;
+        LingoHighlighter highlighter(&doc);
+        highlighter.setMethodNames({"foo"});
+        doc.setPlainText(
+            QStringLiteral("put \"hi there\" into lFoo\n"
+                           "me.foo(#head, 42)\n"
+                           "if lFoo = true then\n"
+                            "on foo(a)"));
+        // The live app relies on the event loop to run the deferred
+        // rehighlight; drive it directly for a deterministic test.
+        highlighter.rehighlight();
+
+        // Block 0: `put "hi there" into lFoo`
+        //  p(0) ... "(4) h(5) ... "(13)  i(15) n t o  l(20) F o o
+        assert(charColor(doc, 0, 0) == LingoHighlighter::keywordColor());
+        assert(charColor(doc, 0, 5) == LingoHighlighter::stringColor());
+        assert(charColor(doc, 0, 15) == LingoHighlighter::keywordColor());
+        assert(!hasForeground(doc, 0, 20)); // lFoo is not a known symbol
+
+        // Block 1: `me.foo(#head, 42)`
+        //  m(0) e . f(3) o o ( # (7) h e a d ,   4(14) 2 )
+        assert(charColor(doc, 1, 0) == LingoHighlighter::builtinColor());
+        assert(charColor(doc, 1, 3) == LingoHighlighter::methodColor());
+        assert(charColor(doc, 1, 7) == LingoHighlighter::symbolColor());
+        assert(charColor(doc, 1, 14) == LingoHighlighter::numberColor());
+
+        // Block 2: `if lFoo = true then`
+        //  i(0) f   l(3) F o o   =   t(10) r u e   t(15) h e n
+        assert(charColor(doc, 2, 0) == LingoHighlighter::keywordColor());
+        assert(!hasForeground(doc, 2, 3));
+        assert(charColor(doc, 2, 10) == LingoHighlighter::builtinColor());
+        assert(charColor(doc, 2, 15) == LingoHighlighter::keywordColor());
+
+        // Block 3: `on foo(a)` — handler keyword and method.
+        assert(charColor(doc, 3, 0) == LingoHighlighter::keywordColor());
+        assert(charColor(doc, 3, 3) == LingoHighlighter::methodColor());
+
+        // Updating the method set recolors without a document rebuild.
+        highlighter.setMethodNames({"bar"});
+        assert(!hasForeground(doc, 1, 3)); // foo is no longer a method
+    }
+
+    // ---- Lingo view: declaration / variable underline data ----
+    {
+        QTextDocument doc;
+        LingoHighlighter highlighter(&doc);
+        // Declaration names are retained for lookup even when underlines are
+        // disabled by the internal debugger switch.
+        highlighter.setDeclarationNames({"foo", "speed", "lfoo"});
+        highlighter.setVariableNames({"lfoo"});
+        doc.setPlainText(
+            QStringLiteral("call foo()\n"      // foo   -> single underline
+                           "put 1 into speed\n" // speed -> single underline
+                           "put 2 into lFoo\n"  // lFoo  -> dotted underline (variable wins)
+                           "put 3 into plain")); // plain -> no underline
+        highlighter.rehighlight();
+
+        // Declaration and variable names are not underlined while disabled.
+        assert(underlineStyle(doc, 0, 5) == QTextCharFormat::NoUnderline);
+        assert(underlineStyle(doc, 1, 11) == QTextCharFormat::NoUnderline);
+        assert(underlineStyle(doc, 2, 11) == QTextCharFormat::NoUnderline);
+        // Block 3: `put 3 into plain` — plain at index 11, no underline.
+        assert(underlineStyle(doc, 3, 11) == QTextCharFormat::NoUnderline);
+    }
+
+    // ---- Bytecode view ----
+    {
+        QTextDocument doc;
+        BytecodeHighlighter highlighter(&doc);
+        // Same layout CodeViewPanel builds: NNNN  <opcode,16><arg,6>[  ; annotation].
+        doc.setPlainText(
+            QStringLiteral("0000  pushZero             0  ; x\n"
+                           "0004  extCall              7  ; foo\n"
+                           "0008  setLocal             2\n"
+                           "0012  jmpIfZ               4\n"
+                           "0016  getGlobal            3\n"
+                           "0020  put                  5\n"));
+        highlighter.rehighlight();
+
+        // Block 0: offset at 0, opcode at 6, ';' of the annotation at 30.
+        assert(charColor(doc, 0, 0) == BytecodeHighlighter::offsetColor());
+        assert(charColor(doc, 0, 6) == BytecodeHighlighter::categoryColor("pushZero"));
+        assert(charColor(doc, 0, 30) == BytecodeHighlighter::commentColor());
+
+        // Block 1: call opcode (control category) at 6, annotation at 30.
+        assert(charColor(doc, 1, 0) == BytecodeHighlighter::offsetColor());
+        assert(charColor(doc, 1, 6) == BytecodeHighlighter::categoryColor("extCall"));
+        assert(charColor(doc, 1, 30) == BytecodeHighlighter::commentColor());
+
+        // Block 2: set* opcode, no annotation.
+        assert(charColor(doc, 2, 6) == BytecodeHighlighter::categoryColor("setLocal"));
+
+        // Block 3: jmp* is control flow.
+        assert(charColor(doc, 3, 6) == BytecodeHighlighter::categoryColor("jmpIfZ"));
+
+        // Block 4: get* opcode.
+        assert(charColor(doc, 4, 6) == BytecodeHighlighter::categoryColor("getGlobal"));
+
+        // Block 5: put opcode.
+        assert(charColor(doc, 5, 6) == BytecodeHighlighter::categoryColor("put"));
+    }
+
+    // ---- Bytecode view: declaration underline data in the annotation ----
+    {
+        QTextDocument doc;
+        BytecodeHighlighter highlighter(&doc);
+        highlighter.setDeclarationNames({"foo"});
+        doc.setPlainText(
+            QStringLiteral("  0000  extCall              7  ; foo\n"
+                           "  0004  pushZero             0  ; bar\n"));
+        highlighter.rehighlight();
+
+        // Declaration names remain loaded for lookup, but are not underlined
+        // while the internal declaration-highlighting switch is disabled.
+        const QTextBlock block0 = doc.findBlockByNumber(0);
+        const int fooPos = block0.text().indexOf(QStringLiteral("; foo")) + 2;
+        assert(fooPos > 0);
+        assert(underlineStyle(doc, 0, fooPos) == QTextCharFormat::NoUnderline);
+        const QTextBlock block1 = doc.findBlockByNumber(1);
+        const int barPos = block1.text().indexOf(QStringLiteral("; bar")) + 2;
+        assert(barPos > 0);
+        assert(underlineStyle(doc, 1, barPos) == QTextCharFormat::NoUnderline);
+    }
+}
+
+void testCodeViewPanel() {
     // ---- Current-line marker must not light up -1 (structural) lines ----
     {
         CodeViewPanel panel;
@@ -295,7 +627,7 @@ int main(int argc, char** argv) {
     // ---- Right-click "Go to declaration" menu ----
     {
         CodeViewPanel panel;
-        panel.setSymbolIndex(SymbolIndex{makeSnapshot()});
+        panel.setSymbolIndex(SymbolIndex{makeCodeViewSnapshot()});
         panel.resize(600, 400);
         panel.show();
         // The decompiled view is the second tab; make it the visible one so its
@@ -384,10 +716,10 @@ int main(int argc, char** argv) {
             }
         };
         MenuSpy spy;
-        app.installEventFilter(&spy);
+        QApplication::instance()->installEventFilter(&spy);
 
         CodeViewPanel panel;
-        panel.setSymbolIndex(SymbolIndex{makeSnapshot()});
+        panel.setSymbolIndex(SymbolIndex{makeCodeViewSnapshot()});
         panel.resize(600, 400);
         panel.show();
         QTabWidget* tabs = panel.findChild<QTabWidget*>();
@@ -441,7 +773,7 @@ int main(int argc, char** argv) {
             assert(!spy.menus.last().contains("Go to method"));
             assert(!spy.menus.last().contains("No declaration found"));
         }
-        app.removeEventFilter(&spy);
+        QApplication::instance()->removeEventFilter(&spy);
     }
 
     // ---- The gutter column is visible and paints its indicators ----
@@ -661,6 +993,139 @@ int main(int argc, char** argv) {
         assert(selections.size() == 1);
         assert(selections.first().cursor.blockNumber() == 1);
     }
+}
 
+void testStageWidgetKeys() {
+    // Enter and Backspace must arrive as Director codes 36 and 51; before the
+    // fix they were forwarded as raw browser codes 13 and 8 and were ignored
+    // by editable-field input handling.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        sendKey(widget, Qt::Key_Return, QStringLiteral("\r"));
+        assert(spy.keys().size() == 2);
+        assert(spy.keys()[0].type == kKeyDown && spy.keys()[0].keyCode == 36);
+        assert(spy.keys()[1].type == kKeyUp && spy.keys()[1].keyCode == 36);
+
+        spy.clear();
+        sendKey(widget, Qt::Key_Backspace, QStringLiteral("\b"));
+        assert(spy.keys().size() == 2);
+        assert(spy.keys()[0].type == kKeyDown && spy.keys()[0].keyCode == 51);
+        assert(spy.keys()[1].type == kKeyUp && spy.keys()[1].keyCode == 51);
+    }
+
+    // Keypad Enter shares the Return code.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
+        QApplication::sendEvent(&widget, &press);
+        assert(spy.keys().size() == 1);
+        assert(spy.keys()[0].keyCode == 36);
+    }
+
+    // Navigation and editing keys use Director codes, not browser codes.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        const std::pair<int, int> arrowCases[] = {
+            {Qt::Key_Left, 123}, {Qt::Key_Right, 124}, {Qt::Key_Up, 126},
+            {Qt::Key_Down, 125}, {Qt::Key_Tab, 48},    {Qt::Key_Escape, 53},
+            {Qt::Key_Space, 49}, {Qt::Key_Delete, 117}, {Qt::Key_F1, 122},
+        };
+        for (const auto& [qtKey, directorCode] : arrowCases) {
+            spy.clear();
+            sendKey(widget, qtKey, QString());
+            assert(spy.keys().size() == 2);
+            assert(spy.keys()[0].type == kKeyDown);
+            assert(spy.keys()[0].keyCode == directorCode);
+            assert(spy.keys()[1].keyCode == directorCode);
+        }
+    }
+
+    // Printable keys keep their character text while the key code becomes the
+    // Director Mac code (letter A -> 0, digit 5 -> 23).
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        sendKey(widget, Qt::Key_A, QStringLiteral("a"));
+        assert(spy.keys().size() == 2);
+        assert(spy.keys()[0].keyCode == 0);
+        assert(spy.keys()[0].text == "a");
+
+        spy.clear();
+        sendKey(widget, Qt::Key_5, QStringLiteral("5"));
+        assert(spy.keys()[0].keyCode == 23);
+        assert(spy.keys()[0].text == "5");
+    }
+
+    // Shifted punctuation (reported as its own Latin-1 key on Linux) must be
+    // forwarded with its text; the code lands in the private printable range
+    // instead of colliding with DOM navigation codes.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        const std::pair<int, QString> symbolCases[] = {
+            {Qt::Key_Exclam, QStringLiteral("!")},
+            {Qt::Key_At, QStringLiteral("@")},
+            {Qt::Key_NumberSign, QStringLiteral("#")},
+            {Qt::Key_Percent, QStringLiteral("%")},
+            {Qt::Key_Ampersand, QStringLiteral("&")},
+            {Qt::Key_Asterisk, QStringLiteral("*")},
+            {Qt::Key_ParenLeft, QStringLiteral("(")},
+            {Qt::Key_Colon, QStringLiteral(":")},
+            {Qt::Key_QuoteDbl, QStringLiteral("\"")},
+            {Qt::Key_Less, QStringLiteral("<")},
+            {Qt::Key_Greater, QStringLiteral(">")},
+            {Qt::Key_Question, QStringLiteral("?")},
+        };
+        for (const auto& [qtKey, text] : symbolCases) {
+            spy.clear();
+            sendKey(widget, qtKey, text);
+            assert(spy.keys().size() == 2);
+            const int expectedCode = 0x2000 + qtKey;
+            assert(spy.keys()[0].type == kKeyDown);
+            assert(spy.keys()[0].keyCode == expectedCode);
+            assert(spy.keys()[0].text == text.toStdString());
+            assert(spy.keys()[1].keyCode == expectedCode);
+        }
+    }
+
+    // Keys with no mapping produce no callback events at all.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        sendKey(widget, Qt::Key_Super_L, QString());
+        assert(spy.keys().empty());
+    }
+
+    // Auto-repeat presses are suppressed like ordinary repeat handling.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        QKeyEvent repeatPress(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier,
+                              QStringLiteral("b"), true);
+        QApplication::sendEvent(&widget, &repeatPress);
+        assert(spy.keys().empty());
+    }
+}
+
+int main(int argc, char** argv) {
+    // Headless: the widgets and document layouts render offscreen.
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication app(argc, argv);
+
+    testStartupSessionSourceSelection();
+    testSymbolIndex();
+    testHighlighters();
+    testCodeViewPanel();
+    testStageWidgetKeys();
     return 0;
 }

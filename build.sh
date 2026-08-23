@@ -279,11 +279,7 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe
             libreshockwave_debugger
-            libreshockwave_debugger_startup_tests
-            libreshockwave_debugger_symbol_index_tests
-            libreshockwave_debugger_highlight_tests
-            libreshockwave_debugger_code_view_tests
-            libreshockwave_debugger_stage_widget_tests
+            libreshockwave_debugger_tests
         )
     fi
 fi

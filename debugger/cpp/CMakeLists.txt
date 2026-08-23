@@ -53,7 +53,8 @@ else()
     endif()
 endif()
 
-# QTest lives in the Qt Test component; only the code-view test uses it.
+# QTest lives in the Qt Test component; the merged debugger tests use it for
+# synthetic mouse clicks.
 find_package(Qt6 QUIET COMPONENTS Test)
 if(Qt6Test_FOUND)
     set(LIBRESHOCKWAVE_QT_TEST_TARGET Qt6::Test)
@@ -78,111 +79,40 @@ target_compile_features(libreshockwave_debugger PRIVATE cxx_std_20)
 set_target_properties(libreshockwave_debugger PROPERTIES AUTOMOC ON)
 
 if(BUILD_TESTING)
-    add_executable(libreshockwave_debugger_startup_tests
+    # All debugger coverage lives in this one binary and test file. Extend
+    # debugger_test.cpp instead of adding new CMake test targets.
+    add_executable(libreshockwave_debugger_tests
         StartupSession.cpp
         StartupSession.hpp
-        startup_session_test.cpp
-    )
-    target_link_libraries(libreshockwave_debugger_startup_tests
-        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
-    target_compile_features(libreshockwave_debugger_startup_tests PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_debugger_startup_tests PRIVATE -UNDEBUG)
-    add_test(NAME libreshockwave_debugger_startup_tests
-             COMMAND libreshockwave_debugger_startup_tests)
-
-    # SymbolIndex is pure C++; Qt Core is linked only because the model
-    # header declares Qt metatypes.
-    add_executable(libreshockwave_debugger_symbol_index_tests
         model/SymbolIndex.cpp
         model/SymbolIndex.hpp
         model/DebuggerModel.hpp
-        symbol_index_test.cpp
-    )
-    target_link_libraries(libreshockwave_debugger_symbol_index_tests
-        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
-    target_include_directories(libreshockwave_debugger_symbol_index_tests
-                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_features(libreshockwave_debugger_symbol_index_tests PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_debugger_symbol_index_tests PRIVATE -UNDEBUG)
-    add_test(NAME libreshockwave_debugger_symbol_index_tests
-             COMMAND libreshockwave_debugger_symbol_index_tests)
-
-    # Highlighter tests drive QSyntaxHighlighter through a QTextDocument.
-    add_executable(libreshockwave_debugger_highlight_tests
-        ui/highlight/GutterHighlighter.cpp
-        ui/highlight/GutterHighlighter.hpp
-        ui/highlight/DeclarationHighlighting.hpp
-        ui/highlight/LingoHighlighter.cpp
-        ui/highlight/LingoHighlighter.hpp
-        ui/highlight/BytecodeHighlighter.cpp
-        ui/highlight/BytecodeHighlighter.hpp
-        model/DebuggerModel.hpp
-        highlight_test.cpp
-    )
-    target_link_libraries(libreshockwave_debugger_highlight_tests
-        PRIVATE ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET})
-    target_include_directories(libreshockwave_debugger_highlight_tests
-                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_features(libreshockwave_debugger_highlight_tests PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_debugger_highlight_tests PRIVATE -UNDEBUG)
-    set_target_properties(libreshockwave_debugger_highlight_tests PROPERTIES AUTOMOC ON)
-    add_test(NAME libreshockwave_debugger_highlight_tests
-             COMMAND libreshockwave_debugger_highlight_tests)
-
-    # Code view panel: gutter breakpoint state (current-line marker, the -1
-    # structural sentinel, and the red-dot Breakpoint state across both tabs),
-    # the click-to-toggle path, and the right-click "Go to declaration" menu.  The panel is a QWidget, so the
-    # test runs under QApplication offscreen; it uses only Qt + the debugger
-    # model, so no libreshockwave link is needed.
-    add_executable(libreshockwave_debugger_code_view_tests
-        code_view_test.cpp
-        ui/CodeViewPanel.cpp
-        ui/CodeViewPanel.hpp
         ui/BreakpointGutter.cpp
         ui/BreakpointGutter.hpp
+        ui/CodeViewPanel.cpp
+        ui/CodeViewPanel.hpp
+        ui/StageWidget.cpp
+        ui/StageWidget.hpp
+        ui/highlight/DeclarationHighlighting.hpp
         ui/highlight/GutterHighlighter.cpp
         ui/highlight/GutterHighlighter.hpp
-        ui/highlight/DeclarationHighlighting.hpp
         ui/highlight/LingoHighlighter.cpp
         ui/highlight/LingoHighlighter.hpp
         ui/highlight/BytecodeHighlighter.cpp
         ui/highlight/BytecodeHighlighter.hpp
-        model/SymbolIndex.cpp
-        model/SymbolIndex.hpp
-        model/DebuggerModel.hpp
+        debugger_test.cpp
     )
-    target_link_libraries(libreshockwave_debugger_code_view_tests
-        PRIVATE
-            ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET}
-            ${LIBRESHOCKWAVE_QT_TEST_TARGET}
-        )
-    target_include_directories(libreshockwave_debugger_code_view_tests
-                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_features(libreshockwave_debugger_code_view_tests PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_debugger_code_view_tests PRIVATE -UNDEBUG)
-    set_target_properties(libreshockwave_debugger_code_view_tests PROPERTIES AUTOMOC ON)
-    add_test(NAME libreshockwave_debugger_code_view_tests
-             COMMAND libreshockwave_debugger_code_view_tests)
-
-    # StageWidget key forwarding: Qt key events must be translated to Director
-    # key codes before reaching the input callback.  Needs the core library
-    # for DirectorKeyCodes; runs under QApplication offscreen.
-    add_executable(libreshockwave_debugger_stage_widget_tests
-        stage_widget_test.cpp
-        ui/StageWidget.cpp
-        ui/StageWidget.hpp
-    )
-    target_link_libraries(libreshockwave_debugger_stage_widget_tests
+    target_link_libraries(libreshockwave_debugger_tests
         PRIVATE
             LibreShockwave::libreshockwave
             ${LIBRESHOCKWAVE_QT_WIDGETS_TARGET}
             ${LIBRESHOCKWAVE_QT_TEST_TARGET}
         )
-    target_include_directories(libreshockwave_debugger_stage_widget_tests
+    target_include_directories(libreshockwave_debugger_tests
                                PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_features(libreshockwave_debugger_stage_widget_tests PRIVATE cxx_std_20)
-    target_compile_options(libreshockwave_debugger_stage_widget_tests PRIVATE -UNDEBUG)
-    set_target_properties(libreshockwave_debugger_stage_widget_tests PROPERTIES AUTOMOC ON)
-    add_test(NAME libreshockwave_debugger_stage_widget_tests
-             COMMAND libreshockwave_debugger_stage_widget_tests)
+    target_compile_features(libreshockwave_debugger_tests PRIVATE cxx_std_20)
+    target_compile_options(libreshockwave_debugger_tests PRIVATE -UNDEBUG)
+    set_target_properties(libreshockwave_debugger_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME libreshockwave_debugger_tests
+             COMMAND libreshockwave_debugger_tests)
 endif()
