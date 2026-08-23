@@ -132,6 +132,39 @@ int main(int argc, char** argv) {
         assert(spy.keys()[0].text == "5");
     }
 
+    // Shifted punctuation (reported as its own Latin-1 key on Linux) must be
+    // forwarded with its text; the code lands in the private printable range
+    // instead of colliding with DOM navigation codes.
+    {
+        EventSpy spy;
+        StageWidget widget;
+        attachSpy(widget, spy);
+        const std::pair<int, QString> symbolCases[] = {
+            {Qt::Key_Exclam, QStringLiteral("!")},
+            {Qt::Key_At, QStringLiteral("@")},
+            {Qt::Key_NumberSign, QStringLiteral("#")},
+            {Qt::Key_Percent, QStringLiteral("%")},
+            {Qt::Key_Ampersand, QStringLiteral("&")},
+            {Qt::Key_Asterisk, QStringLiteral("*")},
+            {Qt::Key_ParenLeft, QStringLiteral("(")},
+            {Qt::Key_Colon, QStringLiteral(":")},
+            {Qt::Key_QuoteDbl, QStringLiteral("\"")},
+            {Qt::Key_Less, QStringLiteral("<")},
+            {Qt::Key_Greater, QStringLiteral(">")},
+            {Qt::Key_Question, QStringLiteral("?")},
+        };
+        for (const auto& [qtKey, text] : symbolCases) {
+            spy.clear();
+            sendKey(widget, qtKey, text);
+            assert(spy.keys().size() == 2);
+            const int expectedCode = 0x2000 + qtKey;
+            assert(spy.keys()[0].type == kKeyDown);
+            assert(spy.keys()[0].keyCode == expectedCode);
+            assert(spy.keys()[0].text == text.toStdString());
+            assert(spy.keys()[1].keyCode == expectedCode);
+        }
+    }
+
     // Keys with no mapping produce no callback events at all.
     {
         EventSpy spy;

@@ -128,11 +128,21 @@ void StageWidget::positionStageSurface() {
                         (height() - stageSize_.height()) / 2);
 }
 
+// Private code base for printable characters with no DOM equivalent (shifted
+// punctuation such as ! @ # % < >). The offset keeps them clear of every
+// special browser/Director code so DirectorKeyCodes passes them through.
+constexpr int kSyntheticPrintableCodeBase = 0x2000;
+
 // Helper: map Qt key to a simple DOM-like keyCode (the WASM bridge pattern)
 static int qtKeyToBrowserKeyCode(int qtKey) {
     if (qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z) return qtKey;
     if (qtKey >= Qt::Key_0 && qtKey <= Qt::Key_9) return qtKey;
     if (qtKey >= Qt::Key_F1 && qtKey <= Qt::Key_F12) return 112 + (qtKey - Qt::Key_F1);
+    // On Linux, Shift+digit arrives as the shifted character's own key
+    // (Qt::Key_Exclam etc.), not Key_1; those Latin-1 printables need this path.
+    if (qtKey > Qt::Key_Space && qtKey <= Qt::Key_ydiaeresis) {
+        return kSyntheticPrintableCodeBase + qtKey;
+    }
     switch (qtKey) {
         case Qt::Key_Return:    return 13;
         case Qt::Key_Enter:     return 13;
@@ -159,11 +169,10 @@ static int qtKeyToBrowserKeyCode(int qtKey) {
     }
 }
 
-// Map a Qt key to the Director key code the player InputHandler expects.
-// Qt keys first map to DOM-style browser codes, then through the same
-// DirectorKeyCodes conversion the WASM bridge applies before onKeyDown/onKeyUp.
-// Returns 0 only for Qt keys with no mapping; Director itself uses 0 for
-// valid keys (the letter A), so callers must not treat 0 as "unknown" here.
+// Map a Qt key to the Director key code the player InputHandler expects, via
+// the same DirectorKeyCodes conversion the WASM bridge applies. Returns 0 only
+// for unmapped Qt keys; Director uses 0 for valid keys (letter A), so callers
+// must not treat 0 as "unknown" here.
 static int qtKeyToDirectorKeyCode(int qtKey) {
     return libreshockwave::player::input::DirectorKeyCodes::fromBrowserKeyCode(
         qtKeyToBrowserKeyCode(qtKey));
