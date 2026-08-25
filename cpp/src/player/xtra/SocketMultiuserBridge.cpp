@@ -457,6 +457,7 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
             if (read == 0) {
                 closeSocket(connection->socketFd);
                 connection->connected = false;
+                connection->protocol.notifyError(instanceId, -2);
                 connection->protocol.notifyDisconnected(instanceId);
                 break;
             }
@@ -471,6 +472,7 @@ std::vector<SocketMultiuserBridge::NetMessage> SocketMultiuserBridge::pollMessag
             closeSocket(connection->socketFd);
             connection->connected = false;
             connection->protocol.notifyError(instanceId, -2);
+            connection->protocol.notifyDisconnected(instanceId);
             break;
         }
 

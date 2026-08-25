@@ -451,9 +451,7 @@ function connectSocket(request) {
     if (sockets.get(request.instanceId) !== entry) return;
     post("socket", { phase: "close", instanceId: request.instanceId, code: event.code || 0, url });
     queueSocketEvent({ kind: "disconnected", instanceId: request.instanceId });
-    if (event.code && event.code !== 1000) {
-      queueSocketEvent({ kind: "error", instanceId: request.instanceId, code: event.code });
-    }
+    queueSocketEvent({ kind: "error", instanceId: request.instanceId, code: event.code && event.code !== 1000 ? event.code : -2 });
     sockets.delete(request.instanceId);
   });
 }
