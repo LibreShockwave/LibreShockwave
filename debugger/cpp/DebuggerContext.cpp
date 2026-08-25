@@ -644,7 +644,14 @@ void DebuggerContext::runLoop() {
         // calls step/continue, while GUI and network event loops remain free.
         if (player_->state() == libreshockwave::player::PlayerState::Playing &&
             Clock::now() >= nextTickAt) {
-            (void)player_->tick();
+            try {
+                (void)player_->tick();
+            } catch (const std::exception& error) {
+                emit errorOccurred(
+                    QStringLiteral("Tick error: %1").arg(QString::fromUtf8(error.what())));
+            } catch (...) {
+                emit errorOccurred(QStringLiteral("Tick error: unknown exception"));
+            }
 
             networkReady_.store(player_->networkReady(), std::memory_order_release);
             if (!quitWorker_.load(std::memory_order_relaxed)) {

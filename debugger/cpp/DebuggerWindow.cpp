@@ -1727,10 +1727,31 @@ void DebuggerWindow::onReplayTimer() {
 
 void DebuggerWindow::onErrorOccurred(const QString& message) {
     statusBar()->showMessage(message, 5000);
-    QMessageBox::warning(this, QStringLiteral("Error"), message);
+    auto *box = new QMessageBox(QMessageBox::Warning, QStringLiteral("Error"), message, QMessageBox::Ok, this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setWindowModality(Qt::NonModal);
+    box->setModal(false);
+    box->show();
+}
+
+static bool isDirectorMovieUrl(const QString& url) {
+    const QString clean =
+        QUrl(url).path().isEmpty()
+            ? QString(url).split(QChar('?')).first().split(QChar('#')).first()
+            : QUrl(url).path();
+    const QString lower = clean.toLower();
+    return lower.endsWith(QStringLiteral(".dcr")) ||
+           lower.endsWith(QStringLiteral(".dir")) ||
+           lower.endsWith(QStringLiteral(".dxr"));
 }
 
 void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
+    if (!isDirectorMovieUrl(url)) {
+        statusBar()->showMessage(
+            QStringLiteral("Navigation to %1 (non-movie) — keeping stage ticking").arg(url),
+            5000);
+        return;
+    }
     pauseReplayForNavigation();
     statusBar()->showMessage(QStringLiteral("Navigating to %1...").arg(url));
 

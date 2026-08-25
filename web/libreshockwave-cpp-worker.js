@@ -525,10 +525,8 @@ async function pumpHostQueues() {
         const url = resolveUrl(nav.url);
         bridgeCall("movie navigation complete", () => api.movieNavigationComplete(handle, nav.taskId));
         if (!isDirectorMovieUrl(url)) {
-          playing = false;
-          clearTimer();
           post("navigation", { url });
-          return;
+          continue;
         }
         await loadMovie(url, true);
       }
@@ -605,18 +603,27 @@ function scheduleTick() {
       }
       if (!tickResult) {
         const message = bridgeCall("last error", () => api.lastError(handle), "");
-        playing = false;
         if (message) {
           post("error", { message, detail: message });
+          await pumpHostQueues();
+          emitDebugMessages();
+          sendFrame();
+          scheduleTick();
+          return;
         }
+        playing = false;
         return;
       }
       await pumpHostQueues();
       emitDebugMessages();
       sendFrame();
     } catch (error) {
-      playing = false;
       post("error", { message: errorMessage(error), detail: errorDetails(error) });
+      try {
+        await pumpHostQueues();
+        emitDebugMessages();
+        sendFrame();
+      } catch {}
     }
     scheduleTick();
   }, Math.max(0, Math.round(nextTickAt - now)));
@@ -705,6 +712,15 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
     scheduleTick();
   } catch (error) {
     post("error", { message: error.message || String(error), detail: errorDetails(error), requestId });
+    if (wasPlaying) {
+      playing = true;
+      try {
+        await pumpHostQueues();
+        emitDebugMessages();
+        sendFrame();
+      } catch {}
+      scheduleTick();
+    }
   } finally {
     emitDebugMessages();
   }
