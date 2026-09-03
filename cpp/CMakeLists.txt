@@ -412,25 +412,7 @@ if(EMSCRIPTEN)
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/../web"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger"
-        # Debugger HTML page
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/../debugger/debug-harness.html"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/debug-harness.html"
-        # Copy dist WASM/JS files into debugger/ so it's self-contained
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-wasm.js"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-wasm.js"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-wasm.wasm"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-wasm.wasm"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-player.js"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-player.js"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/libreshockwave-cpp-worker.js"
-                "${LIBRESHOCKWAVE_WASM_DIST_DIR}/debugger/libreshockwave-cpp-worker.js"
+                "${LIBRESHOCKWASM_DIST_DIR}"
         DEPENDS libreshockwave_cpp_wasm
         VERBATIM
     )

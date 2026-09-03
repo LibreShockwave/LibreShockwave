@@ -102,7 +102,7 @@ per-file `manifest.tsv` when they can be associated with a cast member.
 
 ## Debugger
 
-LibreShockwave includes a Qt desktop debugger and a browser/WASM debugger harness. Both expose movie playback, Lingo bytecode and decompiled code, breakpoints, stepping, call-stack and variable inspection, and watch expressions.
+LibreShockwave includes a Qt desktop debugger that exposes movie playback, Lingo bytecode and decompiled code, breakpoints, stepping, call-stack and variable inspection, and watch expressions.
 
 ### Desktop debugger
 
