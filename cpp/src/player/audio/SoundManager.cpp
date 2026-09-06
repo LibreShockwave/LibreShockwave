@@ -1,6 +1,7 @@
 #include "libreshockwave/player/audio/SoundManager.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 #include "libreshockwave/DirectorFile.hpp"
@@ -131,6 +132,7 @@ void SoundManager::play(int channelNum, const lingo::Datum& args) {
         return;
     }
 
+    fades_[static_cast<std::size_t>(channelNum)].reset();
     setMember(channelNum, *parsed.memberRef);
     const int loopCount = parsed.loopCount.value_or(getLoopCount(channelNum));
     backend_->play(channelNum, *audioData, detectFormat(*audioData), loopCount);
@@ -160,13 +162,17 @@ void SoundManager::playNext(int channelNum) {
 }
 
 void SoundManager::stop(int channelNum) {
-    if (backend_ == nullptr || !isValidChannel(channelNum)) {
+    if (!isValidChannel(channelNum)) {
         return;
     }
-    backend_->stop(channelNum);
+    fades_[static_cast<std::size_t>(channelNum)].reset();
+    if (backend_ != nullptr) {
+        backend_->stop(channelNum);
+    }
 }
 
 void SoundManager::stopAll() {
+    fades_.fill(std::nullopt);
     if (backend_ != nullptr) {
         backend_->stopAll();
     }
@@ -176,9 +182,61 @@ void SoundManager::setVolume(int channelNum, int volume) {
     if (!isValidChannel(channelNum)) {
         return;
     }
+    fades_[static_cast<std::size_t>(channelNum)].reset();
     const int clamped = clampVolume(volume);
     volumes_[static_cast<std::size_t>(channelNum)] = clamped;
     applyVolume(channelNum);
+}
+
+void SoundManager::setClock(Clock clock) {
+    clock_ = std::move(clock);
+}
+
+void SoundManager::fadeIn(int channelNum, int milliseconds) {
+    if (!isValidChannel(channelNum)) {
+        return;
+    }
+    // Director drops the channel to silence at once and brings it back up.
+    const int target = volumes_[static_cast<std::size_t>(channelNum)];
+    startFade(channelNum, 0, target, milliseconds, false);
+}
+
+void SoundManager::fadeOut(int channelNum, int milliseconds) {
+    if (!isValidChannel(channelNum)) {
+        return;
+    }
+    startFade(channelNum, volumes_[static_cast<std::size_t>(channelNum)], 0, milliseconds, true);
+}
+
+void SoundManager::fadeTo(int channelNum, int volume, int milliseconds) {
+    if (!isValidChannel(channelNum)) {
+        return;
+    }
+    const int from = volumes_[static_cast<std::size_t>(channelNum)];
+    startFade(channelNum, from, clampVolume(volume), milliseconds, false);
+}
+
+void SoundManager::updateFades() {
+    const std::int64_t now = nowMs();
+    for (int channel = 1; channel <= MAX_CHANNELS; ++channel) {
+        const auto& fade = fades_[static_cast<std::size_t>(channel)];
+        if (!fade.has_value()) {
+            continue;
+        }
+        const std::int64_t elapsed = std::max<std::int64_t>(0, now - fade->startMs);
+        if (elapsed >= fade->durationMs) {
+            finishFade(channel);
+            continue;
+        }
+        const std::int64_t span = fade->toVolume - fade->fromVolume;
+        volumes_[static_cast<std::size_t>(channel)] =
+            fade->fromVolume + static_cast<int>(span * elapsed / fade->durationMs);
+        applyVolume(channel);
+    }
+}
+
+bool SoundManager::isFading(int channelNum) const {
+    return isValidChannel(channelNum) && fades_[static_cast<std::size_t>(channelNum)].has_value();
 }
 
 int SoundManager::getVolume(int channelNum) const {
@@ -418,6 +476,39 @@ SoundManager::PlayArgs SoundManager::extractPlayArgs(const lingo::Datum& args) {
     }
 
     return result;
+}
+
+void SoundManager::startFade(int channelNum,
+                             int fromVolume,
+                             int toVolume,
+                             int milliseconds,
+                             bool stopAtEnd) {
+    fades_[static_cast<std::size_t>(channelNum)] =
+        Fade{fromVolume, toVolume, nowMs(), milliseconds, stopAtEnd};
+    volumes_[static_cast<std::size_t>(channelNum)] = fromVolume;
+    applyVolume(channelNum);
+    if (milliseconds <= 0) {
+        finishFade(channelNum);
+    }
+}
+
+void SoundManager::finishFade(int channelNum) {
+    auto& slot = fades_[static_cast<std::size_t>(channelNum)];
+    const Fade fade = *slot;
+    slot.reset();
+    volumes_[static_cast<std::size_t>(channelNum)] = fade.toVolume;
+    applyVolume(channelNum);
+    if (fade.stopAtEnd) {
+        stop(channelNum);
+    }
+}
+
+std::int64_t SoundManager::nowMs() const {
+    if (clock_) {
+        return clock_();
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 int SoundManager::effectiveVolume(int channelNum) const {
