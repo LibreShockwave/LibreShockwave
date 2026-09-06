@@ -841,6 +841,14 @@ std::string ilkType(const Datum& datum) {
     }
 }
 
+// The optional millisecond argument of fadeIn/fadeOut/fadeTo, defaulting as Director does.
+int fadeMilliseconds(const std::vector<Datum>& args, std::size_t index) {
+    if (args.size() <= index) {
+        return player::audio::SoundManager::DEFAULT_FADE_MS;
+    }
+    return args[index].intValue();
+}
+
 } // namespace
 
 BuiltinRegistry::BuiltinRegistry() {
@@ -2045,9 +2053,27 @@ Datum SoundBuiltins::handleMethod(BuiltinContext& context,
         }
         return Datum::voidValue();
     }
-    if (equalsIgnoreCase(methodName, "stop") || equalsIgnoreCase(methodName, "fadeout")) {
+    if (equalsIgnoreCase(methodName, "stop")) {
         if (manager != nullptr) {
             manager->stop(channelNum);
+        }
+        return Datum::voidValue();
+    }
+    if (equalsIgnoreCase(methodName, "fadein")) {
+        if (manager != nullptr) {
+            manager->fadeIn(channelNum, fadeMilliseconds(args, 0));
+        }
+        return Datum::voidValue();
+    }
+    if (equalsIgnoreCase(methodName, "fadeout")) {
+        if (manager != nullptr) {
+            manager->fadeOut(channelNum, fadeMilliseconds(args, 0));
+        }
+        return Datum::voidValue();
+    }
+    if (equalsIgnoreCase(methodName, "fadeto")) {
+        if (manager != nullptr && !args.empty()) {
+            manager->fadeTo(channelNum, args[0].intValue(), fadeMilliseconds(args, 1));
         }
         return Datum::voidValue();
     }
@@ -2059,8 +2085,7 @@ Datum SoundBuiltins::handleMethod(BuiltinContext& context,
     }
     if (equalsIgnoreCase(methodName, "pause") || equalsIgnoreCase(methodName, "resume") ||
         equalsIgnoreCase(methodName, "unpause") || equalsIgnoreCase(methodName, "playfile") ||
-        equalsIgnoreCase(methodName, "breakloop") || equalsIgnoreCase(methodName, "rewind") ||
-        equalsIgnoreCase(methodName, "fadein") || equalsIgnoreCase(methodName, "fadeto")) {
+        equalsIgnoreCase(methodName, "breakloop") || equalsIgnoreCase(methodName, "rewind")) {
         return Datum::voidValue();
     }
     if (equalsIgnoreCase(methodName, "playnext")) {
