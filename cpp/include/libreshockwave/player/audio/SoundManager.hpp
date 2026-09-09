@@ -26,6 +26,9 @@ namespace libreshockwave::player::audio {
 class SoundManager {
 public:
     static constexpr int MAX_CHANNELS = 8;
+    // Director's default when fadeIn/fadeOut/fadeTo get no duration.
+    static constexpr int DEFAULT_FADE_MS = 1000;
+    using Clock = std::function<std::int64_t()>;
 
     using AudioResolver = std::function<std::optional<std::vector<std::uint8_t>>(
         const lingo::Datum::CastMemberRef&)>;
@@ -54,6 +57,14 @@ public:
     void stop(int channelNum);
     void stopAll();
     void setVolume(int channelNum, int volume);
+    // Fades ramp the channel volume linearly; updateFades() advances them from the
+    // clock. fadeOut stops the channel at silence; setVolume, play and stop cancel.
+    void setClock(Clock clock);
+    void fadeIn(int channelNum, int milliseconds);
+    void fadeOut(int channelNum, int milliseconds);
+    void fadeTo(int channelNum, int volume, int milliseconds);
+    void updateFades();
+    [[nodiscard]] bool isFading(int channelNum) const;
     [[nodiscard]] int getVolume(int channelNum) const;
     void setLoopCount(int channelNum, int loopCount);
     [[nodiscard]] int getLoopCount(int channelNum) const;
@@ -95,6 +106,21 @@ private:
     };
 
     [[nodiscard]] static PlayArgs extractPlayArgs(const lingo::Datum& args);
+    struct Fade {
+        int fromVolume{0};
+        int toVolume{0};
+        std::int64_t startMs{0};
+        int durationMs{0};
+        bool stopAtEnd{false};
+    };
+
+    void startFade(int channelNum,
+                   int fromVolume,
+                   int toVolume,
+                   int milliseconds,
+                   bool stopAtEnd);
+    void finishFade(int channelNum);
+    [[nodiscard]] std::int64_t nowMs() const;
     [[nodiscard]] int effectiveVolume(int channelNum) const;
     void applyVolume(int channelNum);
     void applyAllVolumes();
@@ -105,6 +131,8 @@ private:
     bool soundKeepDevice_{true};
     bool soundMixMedia_{true};
     std::array<int, MAX_CHANNELS + 1> volumes_{};
+    std::array<std::optional<Fade>, MAX_CHANNELS + 1> fades_{};
+    Clock clock_;
     std::array<int, MAX_CHANNELS + 1> loopCounts_{};
     std::array<int, MAX_CHANNELS + 1> pans_{};
     std::array<int, MAX_CHANNELS + 1> startTimes_{};
