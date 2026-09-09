@@ -732,6 +732,7 @@ void Player::executeFrameCycle(bool processUpdates) {
         timeoutProcessor_();
     }
     xtraManager_.tickAll();
+    soundManager_.updateFades();
     eventDispatcher().dispatchToMovieScripts(PlayerEvent::Idle);
     if (processUpdates) {
         processUpdatingObjects();

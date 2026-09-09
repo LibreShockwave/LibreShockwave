@@ -6971,6 +6971,29 @@ void testBuiltinRegistryFoundation() {
     assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "elapsedTime", {}).intValue() == 37);
     assert(SoundChannelMethodDispatcher::getProperty(&context, *builtinSoundChannel, "currentTime").intValue() == 37);
     assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "stop", {}).isVoid());
+    std::int64_t builtinNow = 5000;
+    builtinSoundManager.setClock([&builtinNow] { return builtinNow; });
+    builtinSoundManager.setVolume(2, 200);
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "fadeOut", {})
+               .isVoid());
+    assert(builtinSoundManager.isFading(2));
+    builtinNow += SoundManager::DEFAULT_FADE_MS / 2;
+    builtinSoundManager.updateFades();
+    assert(builtinSoundManager.getVolume(2) == 100);
+    assert(SoundChannelMethodDispatcher::dispatch(&context,
+                                                  *builtinSoundChannel,
+                                                  "fadeTo",
+                                                  {Datum::of(60), Datum::of(0)}).isVoid());
+    assert(builtinSoundManager.getVolume(2) == 60);
+    assert(SoundChannelMethodDispatcher::dispatch(&context,
+                                                  *builtinSoundChannel,
+                                                  "fadeIn",
+                                                  {Datum::of(0)}).isVoid());
+    assert(builtinSoundManager.getVolume(2) == 60);
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "fadeTo", {})
+               .isVoid());
+    assert(!builtinSoundManager.isFading(2));
+    builtinSoundManager.setClock(nullptr);
     assert(SoundChannelMethodDispatcher::setProperty(&context, *builtinSoundChannel, "volume", Datum::of(300)));
     assert(builtinSoundManager.getVolume(2) == 255);
     assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "pan", {}).intValue() == 0);
@@ -23602,6 +23625,121 @@ void testSoundManagerFoundation() {
     assert(SoundManager::detectFormat(*mp3Playable) == "mp3");
 }
 
+void testSoundManagerFades() {
+    SoundManager manager;
+    RecordingAudioBackend backend;
+    manager.setBackend(&backend);
+    manager.setAudioResolver([](const Datum::CastMemberRef&) {
+        return std::optional<std::vector<std::uint8_t>>{{'R', 'I', 'F', 'F'}};
+    });
+    std::int64_t now = 10000;
+    manager.setClock([&now] { return now; });
+
+    // fadeOut ramps linearly to silence and then stops the channel.
+    manager.play(2, Datum::castMemberRef(CastLibId(1), MemberId(1)));
+    manager.setVolume(2, 200);
+    manager.fadeOut(2, 1000);
+    assert(manager.isFading(2));
+    assert(manager.getVolume(2) == 200);
+    now += 500;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 100);
+    assert(backend.lastVolumeChannel == 2);
+    assert(backend.lastVolume == 100);
+    assert(backend.stopCount == 0);
+    now += 500;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 0);
+    assert(backend.lastVolume == 0);
+    assert(backend.stopCount == 1);
+    assert(backend.lastStopChannel == 2);
+    assert(!manager.isFading(2));
+
+    // fadeTo goes up or down without stopping.
+    manager.setVolume(2, 40);
+    manager.fadeTo(2, 240, 400);
+    now += 200;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 140);
+    now += 200;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 240);
+    assert(!manager.isFading(2));
+    assert(backend.stopCount == 1);
+    manager.fadeTo(2, 999, 100);
+    now += 100;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 255);
+
+    // fadeIn drops to silence at once and climbs back to the channel volume.
+    manager.setVolume(2, 180);
+    manager.fadeIn(2, 1000);
+    assert(manager.getVolume(2) == 0);
+    assert(backend.lastVolume == 0);
+    now += 250;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 45);
+    now += 750;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 180);
+    assert(!manager.isFading(2));
+
+    // The sound level scales what reaches the backend, not the channel volume.
+    manager.setSoundLevel(3);
+    manager.fadeTo(2, 70, 100);
+    now += 100;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 70);
+    assert(backend.lastVolume == 30);
+    manager.setSoundLevel(7);
+
+    // An explicit volume, a new sound, or stop ends a fade where it stands.
+    manager.setVolume(2, 200);
+    manager.fadeOut(2, 1000);
+    manager.setVolume(2, 77);
+    assert(!manager.isFading(2));
+    now += 2000;
+    manager.updateFades();
+    assert(manager.getVolume(2) == 77);
+    assert(backend.stopCount == 1);
+    manager.fadeOut(2, 1000);
+    manager.play(2, Datum::castMemberRef(CastLibId(1), MemberId(1)));
+    assert(!manager.isFading(2));
+    assert(manager.getVolume(2) == 77);
+    manager.fadeOut(2, 1000);
+    manager.stop(2);
+    assert(!manager.isFading(2));
+    assert(backend.stopCount == 2);
+    manager.fadeOut(3, 1000);
+    manager.stopAll();
+    assert(!manager.isFading(3));
+
+    // A zero or negative duration lands on the target at once.
+    manager.setVolume(2, 200);
+    manager.fadeOut(2, 0);
+    assert(!manager.isFading(2));
+    assert(manager.getVolume(2) == 0);
+    assert(backend.stopCount == 3);
+    manager.fadeTo(2, 120, -5);
+    assert(manager.getVolume(2) == 120);
+
+    // Channels outside 1..8 are ignored.
+    manager.fadeOut(0, 100);
+    manager.fadeIn(9, 100);
+    manager.fadeTo(9, 10, 100);
+    assert(!manager.isFading(0));
+    assert(!manager.isFading(9));
+
+    // Without an injected clock the manager keeps time itself.
+    SoundManager realClock;
+    realClock.setBackend(&backend);
+    realClock.setVolume(1, 100);
+    realClock.fadeTo(1, 0, 1000000);
+    realClock.updateFades();
+    assert(realClock.isFading(1));
+    assert(realClock.getVolume(1) >= 99);
+}
+
 void testCastMetadataTypes() {
     assert(libreshockwave::cast::memberTypeFromCode(1) == MemberType::Bitmap);
     assert(libreshockwave::cast::memberTypeFromCode(17) == MemberType::Shockwave3D);
@@ -29152,6 +29290,7 @@ int main(int argc, char** argv) {
     testAudioAndMediaChunks();
     testSoundConverter();
     testSoundManagerFoundation();
+    testSoundManagerFades();
     testCastMetadataTypes();
     testCastInfoParsers();
     testShockwave3DInfoParser();
