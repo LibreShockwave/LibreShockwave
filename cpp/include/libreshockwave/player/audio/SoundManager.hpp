@@ -11,6 +11,7 @@
 
 #include "libreshockwave/lingo/Datum.hpp"
 #include "libreshockwave/player/audio/AudioBackend.hpp"
+#include "libreshockwave/player/audio/SoundQueue.hpp"
 
 namespace libreshockwave {
 class DirectorFile;
@@ -52,8 +53,15 @@ public:
     void setSoundMixMedia(bool mixMedia);
     [[nodiscard]] bool soundMixMedia() const;
     void play(int channelNum, const lingo::Datum& args);
+    // play() with no member: starts the channel's queue. The first entry plays at
+    // once unless a clip is already playing, and updateQueues() plays the rest.
+    void play(int channelNum);
     void queue(int channelNum, const lingo::Datum& args);
+    // Interrupts the current clip with the next queued entry and runs the queue.
     void playNext(int channelNum);
+    // Plays the next entry on every running queue whose clip has ended. Called once
+    // per frame; a queue with nothing left stops running.
+    void updateQueues();
     void stop(int channelNum);
     void stopAll();
     void setVolume(int channelNum, int volume);
@@ -83,6 +91,8 @@ public:
     void setPlaylist(int channelNum, const lingo::Datum& playlist);
     [[nodiscard]] std::vector<lingo::Datum> getPlaylist(int channelNum) const;
     [[nodiscard]] bool isPlaying(int channelNum) const;
+    // Director's isBusy(): playing, or a running queue still has entries waiting.
+    [[nodiscard]] bool isBusy(int channelNum) const;
     [[nodiscard]] int getElapsedTime(int channelNum) const;
 
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> resolveAudioData(const lingo::Datum& memberRef) const;
@@ -120,6 +130,7 @@ private:
                    int milliseconds,
                    bool stopAtEnd);
     void finishFade(int channelNum);
+    void playQueued(int channelNum);
     [[nodiscard]] std::int64_t nowMs() const;
     [[nodiscard]] int effectiveVolume(int channelNum) const;
     void applyVolume(int channelNum);
@@ -140,7 +151,7 @@ private:
     std::array<int, MAX_CHANNELS + 1> loopStartTimes_{};
     std::array<int, MAX_CHANNELS + 1> loopEndTimes_{};
     std::array<std::optional<lingo::Datum::CastMemberRef>, MAX_CHANNELS + 1> memberRefs_{};
-    std::array<std::vector<lingo::Datum>, MAX_CHANNELS + 1> playlists_{};
+    std::array<SoundQueue, MAX_CHANNELS + 1> queues_{};
     std::unordered_map<int, DirectorFile*> castLibFiles_;
     AudioResolver resolver_;
 };
