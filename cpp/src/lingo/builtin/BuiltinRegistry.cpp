@@ -2042,7 +2042,9 @@ Datum SoundBuiltins::handleMethod(BuiltinContext& context,
     const int channelNum = channel.channel;
 
     if (equalsIgnoreCase(methodName, "play")) {
-        if (manager != nullptr && !args.empty()) {
+        if (manager != nullptr && args.empty()) {
+            manager->play(channelNum);
+        } else if (manager != nullptr) {
             manager->play(channelNum, args[0]);
         }
         return Datum::voidValue();
@@ -2095,7 +2097,7 @@ Datum SoundBuiltins::handleMethod(BuiltinContext& context,
         return Datum::voidValue();
     }
     if (equalsIgnoreCase(methodName, "isbusy")) {
-        return boolDatum(manager != nullptr && manager->isPlaying(channelNum));
+        return boolDatum(manager != nullptr && manager->isBusy(channelNum));
     }
     if (equalsIgnoreCase(methodName, "status")) {
         return Datum::of(manager != nullptr && manager->isPlaying(channelNum) ? 1 : 0);

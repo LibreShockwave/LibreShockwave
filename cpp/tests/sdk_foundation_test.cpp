@@ -134,6 +134,7 @@
 #include "libreshockwave/player/audio/AudioBackend.hpp"
 #include "libreshockwave/player/audio/QueuedAudioBackend.hpp"
 #include "libreshockwave/player/audio/SoundManager.hpp"
+#include "libreshockwave/player/audio/SoundQueue.hpp"
 #include "libreshockwave/player/media/QueuedJpegDecoder.hpp"
 #include "libreshockwave/player/behavior/BehaviorInstance.hpp"
 #include "libreshockwave/player/behavior/BehaviorManager.hpp"
@@ -309,6 +310,7 @@ using libreshockwave::player::playerEventFromHandlerName;
 using libreshockwave::player::audio::AudioBackend;
 using libreshockwave::player::audio::QueuedAudioBackend;
 using libreshockwave::player::audio::SoundManager;
+using libreshockwave::player::audio::SoundQueue;
 using libreshockwave::player::media::QueuedJpegDecoder;
 using libreshockwave::player::debug::Breakpoint;
 using libreshockwave::player::debug::BreakpointKey;
@@ -7054,6 +7056,25 @@ void testBuiltinRegistryFoundation() {
     assert(builtinSoundBackend.playCount == playlistPlayCount + 2);
     assert(builtinSoundBackend.lastLoopCount == 0);
     assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "getPlaylist", {}).listValue().count() == 0);
+    const Datum builtinQueuedMember = Datum::castMemberRef(CastLibId(1), MemberId(8));
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "stop", {}).isVoid());
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "queue", {builtinQueuedMember})
+               .isVoid());
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "queue", {builtinQueuedMember})
+               .isVoid());
+    assert(!SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "isBusy", {}).boolValue());
+    const int queuePlayCount = builtinSoundBackend.playCount;
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "play", {}).isVoid());
+    assert(builtinSoundBackend.playCount == queuePlayCount + 1);
+    builtinSoundBackend.playing[2] = false;
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "isBusy", {}).boolValue());
+    builtinSoundManager.updateQueues();
+    assert(builtinSoundBackend.playCount == queuePlayCount + 2);
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "queue", {builtinQueuedMember})
+               .isVoid());
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "stop", {}).isVoid());
+    assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "getPlaylist", {}).listValue().count() == 0);
+    assert(!SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "isBusy", {}).boolValue());
     assert(SoundChannelMethodDispatcher::dispatch(&context, *builtinSoundChannel, "ilk", {}).asSymbol()->name == "instance");
     assert(SoundChannelMethodDispatcher::getProperty(&context, *builtinSoundChannel, "loopCount").intValue() == 1);
     assert(!SoundChannelMethodDispatcher::setProperty(&context, *builtinSoundChannel, "unknown", Datum::of(1)));
@@ -23740,6 +23761,216 @@ void testSoundManagerFades() {
     assert(realClock.getVolume(1) >= 99);
 }
 
+void testSoundQueue() {
+    SoundQueue queue;
+    assert(queue.entries().empty());
+    assert(!queue.popFront().has_value());
+    assert(!queue.isRunning());
+    assert(!queue.hasWaiting());
+
+    // Entries keep their order and are deep copies; a one-element list wrapping a
+    // property list is stored as the property list.
+    auto props = Datum::propList();
+    props.propListValue().put(Datum::symbol("member"), Datum::castMemberRef(CastLibId(1), MemberId(2)));
+    queue.push(Datum::castMemberRef(CastLibId(1), MemberId(1)));
+    queue.push(Datum::list({props}));
+    auto entries = queue.entries();
+    assert(entries.size() == 2);
+    assert(entries[0].asCastMemberRef()->memberNum() == 1);
+    assert(entries[1].isPropList());
+    entries[0] = Datum::of(7);
+    assert(queue.entries()[0].asCastMemberRef()->memberNum() == 1);
+
+    // Queued entries only wait once the queue runs.
+    assert(!queue.hasWaiting());
+    queue.start();
+    assert(queue.isRunning());
+    assert(queue.hasWaiting());
+    auto first = queue.popFront();
+    assert(first.has_value());
+    assert(first->asCastMemberRef()->memberNum() == 1);
+    assert(queue.popFront()->isPropList());
+    assert(!queue.hasWaiting());
+    assert(queue.isRunning());
+    assert(!queue.popFront().has_value());
+
+    // replace() swaps the entries but leaves the running state alone.
+    queue.replace(Datum::list({Datum::castMemberRef(CastLibId(1), MemberId(3)),
+                               Datum::castMemberRef(CastLibId(1), MemberId(4))}));
+    assert(queue.entries().size() == 2);
+    assert(queue.hasWaiting());
+    queue.replace(Datum::castMemberRef(CastLibId(1), MemberId(5)));
+    assert(queue.entries().size() == 1);
+    assert(queue.entries()[0].asCastMemberRef()->memberNum() == 5);
+    queue.replace(Datum::list());
+    assert(queue.entries().empty());
+    queue.push(Datum::castMemberRef(CastLibId(1), MemberId(6)));
+    queue.replace(Datum::voidValue());
+    assert(queue.entries().empty());
+    assert(queue.isRunning());
+
+    queue.push(Datum::castMemberRef(CastLibId(1), MemberId(6)));
+    queue.clear();
+    assert(queue.entries().empty());
+    assert(!queue.isRunning());
+    assert(!queue.hasWaiting());
+}
+
+void testSoundManagerQueue() {
+    constexpr int kUnplayableMember = 9;
+    SoundManager manager;
+    RecordingAudioBackend backend;
+    manager.setBackend(&backend);
+    manager.setAudioResolver([](const Datum::CastMemberRef& ref) -> std::optional<std::vector<std::uint8_t>> {
+        if (ref.memberNum() == kUnplayableMember) {
+            return std::nullopt;
+        }
+        return std::vector<std::uint8_t>{'R', 'I', 'F', 'F', static_cast<std::uint8_t>(ref.memberNum())};
+    });
+    const auto member = [](int number) { return Datum::castMemberRef(CastLibId(1), MemberId(number)); };
+    const auto lastMember = [&backend] { return static_cast<int>(backend.lastAudioData.back()); };
+    const auto endClip = [&backend](int channel) { backend.playing[channel] = false; };
+
+    // queue() alone plays nothing and does not make the channel busy.
+    manager.queue(2, member(1));
+    manager.queue(2, member(2));
+    manager.updateQueues();
+    assert(backend.playCount == 0);
+    assert(!manager.isBusy(2));
+    assert(manager.getPlaylist(2).size() == 2);
+
+    // play() starts the queue; each clip that ends hands over to the next one.
+    manager.play(2);
+    assert(backend.playCount == 1);
+    assert(lastMember() == 1);
+    assert(manager.getMember(2)->memberNum() == 1);
+    assert(manager.getPlaylist(2).size() == 1);
+    assert(manager.isBusy(2));
+    manager.updateQueues();
+    assert(backend.playCount == 1);
+    endClip(2);
+    assert(!manager.isPlaying(2));
+    assert(manager.isBusy(2));
+    manager.updateQueues();
+    assert(backend.playCount == 2);
+    assert(lastMember() == 2);
+    assert(manager.getPlaylist(2).empty());
+    assert(manager.isBusy(2));
+
+    // After the last clip the channel is free, and a later queue() waits for play().
+    endClip(2);
+    assert(!manager.isBusy(2));
+    manager.updateQueues();
+    assert(backend.playCount == 2);
+    manager.queue(2, member(3));
+    manager.updateQueues();
+    assert(backend.playCount == 2);
+    assert(!manager.isBusy(2));
+
+    // stop() empties the queue, so a later play() has nothing to play.
+    const int stopsBefore = backend.stopCount;
+    manager.stop(2);
+    assert(backend.stopCount == stopsBefore + 1);
+    assert(manager.getPlaylist(2).empty());
+    manager.play(2);
+    assert(backend.playCount == 2);
+    manager.queue(2, member(1));
+    manager.queue(2, member(2));
+    manager.play(2);
+    assert(backend.playCount == 3);
+    manager.stop(2);
+    assert(manager.getPlaylist(2).empty());
+    assert(!manager.isBusy(2));
+    manager.updateQueues();
+    assert(backend.playCount == 3);
+
+    // play() does not cut off a sound that is already playing; the queue follows it.
+    manager.play(3, member(1));
+    manager.queue(3, member(2));
+    manager.play(3);
+    assert(backend.playCount == 4);
+    assert(lastMember() == 1);
+    endClip(3);
+    manager.updateQueues();
+    assert(backend.playCount == 5);
+    assert(lastMember() == 2);
+
+    // An entry without playable audio is skipped in the same step.
+    manager.queue(4, member(kUnplayableMember));
+    manager.queue(4, member(3));
+    manager.play(4);
+    assert(backend.playCount == 6);
+    assert(lastMember() == 3);
+    assert(manager.getPlaylist(4).empty());
+    manager.queue(5, member(kUnplayableMember));
+    manager.play(5);
+    assert(backend.playCount == 6);
+    assert(manager.getPlaylist(5).empty());
+    assert(!manager.isBusy(5));
+    manager.play(6);
+    assert(backend.playCount == 6);
+    assert(!manager.isBusy(6));
+
+    // playNext() interrupts with the next entry and keeps the queue running.
+    manager.play(7, member(1));
+    manager.queue(7, member(2));
+    manager.queue(7, member(3));
+    manager.playNext(7);
+    assert(backend.playCount == 8);
+    assert(lastMember() == 2);
+    endClip(7);
+    manager.updateQueues();
+    assert(backend.playCount == 9);
+    assert(lastMember() == 3);
+
+    // A fadeOut that ends stops the channel, and with it the queue.
+    std::int64_t now = 0;
+    manager.setClock([&now] { return now; });
+    manager.queue(8, member(1));
+    manager.queue(8, member(2));
+    manager.play(8);
+    manager.fadeOut(8, SoundManager::DEFAULT_FADE_MS);
+    now += SoundManager::DEFAULT_FADE_MS;
+    manager.updateFades();
+    assert(manager.getPlaylist(8).empty());
+    assert(!manager.isBusy(8));
+    manager.updateQueues();
+    assert(backend.playCount == 10);
+
+    // stopAll() and disabling sound empty every queue.
+    manager.queue(1, member(1));
+    manager.queue(2, member(2));
+    manager.play(1);
+    manager.stopAll();
+    assert(manager.getPlaylist(1).empty());
+    assert(manager.getPlaylist(2).empty());
+    manager.queue(1, member(1));
+    manager.setEnabled(false);
+    assert(manager.getPlaylist(1).empty());
+    const int playsWhileDisabled = backend.playCount;
+    manager.queue(1, member(1));
+    manager.play(1);
+    manager.updateQueues();
+    assert(backend.playCount == playsWhileDisabled);
+    assert(!manager.isBusy(1));
+    manager.setEnabled(true);
+    manager.play(1);
+    assert(backend.playCount == playsWhileDisabled + 1);
+
+    // Invalid channels and a manager without a backend are ignored.
+    manager.play(0);
+    manager.play(9);
+    manager.playNext(9);
+    assert(!manager.isBusy(0));
+    assert(!manager.isBusy(9));
+    SoundManager silent;
+    silent.queue(1, member(1));
+    silent.play(1);
+    silent.updateQueues();
+    assert(!silent.isBusy(1));
+    assert(silent.getPlaylist(1).size() == 1);
+}
+
 void testCastMetadataTypes() {
     assert(libreshockwave::cast::memberTypeFromCode(1) == MemberType::Bitmap);
     assert(libreshockwave::cast::memberTypeFromCode(17) == MemberType::Shockwave3D);
@@ -29291,6 +29522,8 @@ int main(int argc, char** argv) {
     testSoundConverter();
     testSoundManagerFoundation();
     testSoundManagerFades();
+    testSoundQueue();
+    testSoundManagerQueue();
     testCastMetadataTypes();
     testCastInfoParsers();
     testShockwave3DInfoParser();

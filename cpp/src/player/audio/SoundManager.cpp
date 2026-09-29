@@ -23,16 +23,6 @@ lingo::Datum getProp(const lingo::Datum::PropList& props, std::string_view name)
     return props.get(lingo::Datum::of(std::string(name)));
 }
 
-lingo::Datum normalizePlaylistEntry(const lingo::Datum& entry) {
-    if (entry.isList()) {
-        const auto& items = entry.listValue().items();
-        if (items.size() == 1 && items.front().isPropList()) {
-            return items.front().deepCopy();
-        }
-    }
-    return entry.deepCopy();
-}
-
 } // namespace
 
 SoundManager::SoundManager() {
@@ -139,26 +129,41 @@ void SoundManager::play(int channelNum, const lingo::Datum& args) {
     applyVolume(channelNum);
 }
 
+void SoundManager::play(int channelNum) {
+    if (!enabled_ || backend_ == nullptr || !isValidChannel(channelNum)) {
+        return;
+    }
+    queues_[static_cast<std::size_t>(channelNum)].start();
+    if (!backend_->isPlaying(channelNum)) {
+        playQueued(channelNum);
+    }
+}
+
 void SoundManager::queue(int channelNum, const lingo::Datum& args) {
     if (!isValidChannel(channelNum)) {
         return;
     }
-    playlists_[static_cast<std::size_t>(channelNum)].push_back(normalizePlaylistEntry(args));
+    queues_[static_cast<std::size_t>(channelNum)].push(args);
 }
 
 void SoundManager::playNext(int channelNum) {
     if (!enabled_ || backend_ == nullptr || !isValidChannel(channelNum)) {
         return;
     }
+    queues_[static_cast<std::size_t>(channelNum)].start();
+    playQueued(channelNum);
+}
 
-    auto& playlist = playlists_[static_cast<std::size_t>(channelNum)];
-    if (playlist.empty()) {
+void SoundManager::updateQueues() {
+    if (!enabled_ || backend_ == nullptr) {
         return;
     }
-
-    const auto next = playlist.front().deepCopy();
-    playlist.erase(playlist.begin());
-    play(channelNum, next);
+    for (int channel = 1; channel <= MAX_CHANNELS; ++channel) {
+        const auto& queue = queues_[static_cast<std::size_t>(channel)];
+        if (queue.isRunning() && !backend_->isPlaying(channel)) {
+            playQueued(channel);
+        }
+    }
 }
 
 void SoundManager::stop(int channelNum) {
@@ -166,6 +171,7 @@ void SoundManager::stop(int channelNum) {
         return;
     }
     fades_[static_cast<std::size_t>(channelNum)].reset();
+    queues_[static_cast<std::size_t>(channelNum)].clear();
     if (backend_ != nullptr) {
         backend_->stop(channelNum);
     }
@@ -173,6 +179,9 @@ void SoundManager::stop(int channelNum) {
 
 void SoundManager::stopAll() {
     fades_.fill(std::nullopt);
+    for (auto& queue : queues_) {
+        queue.clear();
+    }
     if (backend_ != nullptr) {
         backend_->stopAll();
     }
@@ -321,40 +330,27 @@ std::optional<lingo::Datum::CastMemberRef> SoundManager::getMember(int channelNu
 }
 
 void SoundManager::setPlaylist(int channelNum, const lingo::Datum& playlist) {
-    if (!isValidChannel(channelNum)) {
-        return;
+    if (isValidChannel(channelNum)) {
+        queues_[static_cast<std::size_t>(channelNum)].replace(playlist);
     }
-
-    auto& entries = playlists_[static_cast<std::size_t>(channelNum)];
-    entries.clear();
-    if (playlist.isVoid()) {
-        return;
-    }
-    if (playlist.isList()) {
-        for (const auto& item : playlist.listValue().items()) {
-            entries.push_back(normalizePlaylistEntry(item));
-        }
-        return;
-    }
-    entries.push_back(normalizePlaylistEntry(playlist));
 }
 
 std::vector<lingo::Datum> SoundManager::getPlaylist(int channelNum) const {
     if (!isValidChannel(channelNum)) {
         return {};
     }
-
-    std::vector<lingo::Datum> result;
-    const auto& entries = playlists_[static_cast<std::size_t>(channelNum)];
-    result.reserve(entries.size());
-    for (const auto& entry : entries) {
-        result.push_back(entry.deepCopy());
-    }
-    return result;
+    return queues_[static_cast<std::size_t>(channelNum)].entries();
 }
 
 bool SoundManager::isPlaying(int channelNum) const {
     return enabled_ && backend_ != nullptr && isValidChannel(channelNum) && backend_->isPlaying(channelNum);
+}
+
+bool SoundManager::isBusy(int channelNum) const {
+    if (isPlaying(channelNum)) {
+        return true;
+    }
+    return isValidChannel(channelNum) && queues_[static_cast<std::size_t>(channelNum)].hasWaiting();
 }
 
 int SoundManager::getElapsedTime(int channelNum) const {
@@ -501,6 +497,19 @@ void SoundManager::finishFade(int channelNum) {
     if (fade.stopAtEnd) {
         stop(channelNum);
     }
+}
+
+// Entries that do not resolve to audio are dropped so the next one gets its turn.
+void SoundManager::playQueued(int channelNum) {
+    auto& queue = queues_[static_cast<std::size_t>(channelNum)];
+    do {
+        auto next = queue.popFront();
+        if (!next.has_value()) {
+            queue.clear();
+            return;
+        }
+        play(channelNum, *next);
+    } while (!backend_->isPlaying(channelNum));
 }
 
 std::int64_t SoundManager::nowMs() const {
