@@ -83,14 +83,14 @@ read, fix, and extend it without asking.
 
 These are hard rules. The project owner set them.
 
-1. **C++ naming convention**
-   - Types (class, struct, enum, alias, concept): `PascalCase`
-   - Functions, methods, variables, members: `snake_case`
-   - Private members: trailing underscore (`read_buffer_`)
-   - Namespaces: `snake_case` (`libreshockwave::player::net`)
-   - Files: `PascalCase.hpp` / `PascalCase.cpp`. Match the existing tree
-     (`NetManager.hpp`). Test files use `snake_case_test.cpp`
-     (`sdk_foundation_test.cpp`)
+1. **Naming (Google style)**
+
+   - Types (class/struct/enum/alias/concept): PascalCase
+   - Functions and methods: camelCase
+   - Variables, parameters, members: snake_case; private members with trailing
+     underscore (`buffer_`)
+   - Namespaces: snake_case
+   - Files: `snake_case.hpp` / `snake_case.cpp`; test files `snake_test.cpp`
    - Macros: `SCREAMING_SNAKE_CASE`. Avoid macros where possible.
 2. **No duplicate functions**
    Every piece of logic has exactly one canonical implementation. Shared logic is

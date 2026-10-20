@@ -1,4 +1,4 @@
-set(LIBRESHOCKWAVE_VOLTER_DATA_CPP "${CMAKE_CURRENT_BINARY_DIR}/generated/src/fonts/volter/VolterData.cpp")
+set(LIBRESHOCKWAVE_VOLTER_DATA_CPP "${CMAKE_CURRENT_BINARY_DIR}/generated/src/fonts/volter/volter_data.cpp")
 set(LIBRESHOCKWAVE_VOLTER_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/volter")
 add_custom_command(
     OUTPUT "${LIBRESHOCKWAVE_VOLTER_DATA_CPP}"
@@ -15,7 +15,7 @@ add_custom_command(
 )
 set_source_files_properties("${LIBRESHOCKWAVE_VOLTER_DATA_CPP}" PROPERTIES GENERATED TRUE)
 
-set(LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP "${CMAKE_CURRENT_BINARY_DIR}/generated/src/fonts/PlatformFontData.cpp")
+set(LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP "${CMAKE_CURRENT_BINARY_DIR}/generated/src/fonts/platform_font_data.cpp")
 set(LIBRESHOCKWAVE_PLATFORM_FONT_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts")
 file(GLOB LIBRESHOCKWAVE_PLATFORM_FONT_FILES CONFIGURE_DEPENDS
     "${LIBRESHOCKWAVE_PLATFORM_FONT_RESOURCE_DIR}/mac/*.ttf"
@@ -36,158 +36,158 @@ add_custom_command(
 set_source_files_properties("${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}" PROPERTIES GENERATED TRUE)
 
 add_library(libreshockwave
-    src/DirectorFile.cpp
-    src/W3DFile.cpp
-    src/audio/SoundConverter.cpp
-    src/bitmap/Bitmap.cpp
-    src/bitmap/BitmapColorizer.cpp
-    src/bitmap/BitmapDecoder.cpp
-    src/bitmap/ColorRef.cpp
-    src/bitmap/Drawing.cpp
-    src/bitmap/GifDecoder.cpp
-    src/bitmap/Palette.cpp
-    src/bitmap/PngDecoder.cpp
-    src/cast/BitmapInfo.cpp
-    src/cast/CastMember.cpp
-    src/cast/FilmLoopInfo.cpp
-    src/cast/MemberType.cpp
-    src/cast/ScriptType.cpp
-    src/cast/ShapeInfo.cpp
-    src/cast/Shockwave3DInfo.cpp
-    src/cast/TextInfo.cpp
-    src/cast/XmedStyledText.cpp
-    src/cast/XmedTextParser.cpp
-    src/chunks/BitmapChunk.cpp
-    src/chunks/CastChunk.cpp
-    src/chunks/CastListChunk.cpp
-    src/chunks/CastMemberChunk.cpp
-    src/chunks/ConfigChunk.cpp
-    src/chunks/FontMapChunk.cpp
-    src/chunks/FrameLabelsChunk.cpp
-    src/chunks/KeyTableChunk.cpp
-    src/chunks/MediaChunk.cpp
-    src/chunks/PaletteChunk.cpp
-    src/chunks/RawChunk.cpp
-    src/chunks/ScriptContextChunk.cpp
-    src/chunks/ScriptChunk.cpp
-    src/chunks/ScriptNamesChunk.cpp
-    src/chunks/ScoreChunk.cpp
-    src/chunks/SoundChunk.cpp
-    src/chunks/TextChunk.cpp
-    src/format/AfterburnerReader.cpp
-    src/format/ChunkType.cpp
-    src/format/MoaID.cpp
-    src/format/ScriptFormatUtils.cpp
-    src/font/BdfParser.cpp
-    src/font/BitmapFont.cpp
-    src/font/PfrBitReader.cpp
-    src/font/Pfr1Font.cpp
-    src/font/Pfr1TtfConverter.cpp
-    src/font/TtfBitmapRasterizer.cpp
-    src/fonts/FontDataDecoder.cpp
+    src/director_file.cpp
+    src/w3d_file.cpp
+    src/audio/sound_converter.cpp
+    src/bitmap/bitmap.cpp
+    src/bitmap/bitmap_colorizer.cpp
+    src/bitmap/bitmap_decoder.cpp
+    src/bitmap/color_ref.cpp
+    src/bitmap/drawing.cpp
+    src/bitmap/gif_decoder.cpp
+    src/bitmap/palette.cpp
+    src/bitmap/png_decoder.cpp
+    src/cast/bitmap_info.cpp
+    src/cast/cast_member.cpp
+    src/cast/film_loop_info.cpp
+    src/cast/member_type.cpp
+    src/cast/script_type.cpp
+    src/cast/shape_info.cpp
+    src/cast/shockwave3d_info.cpp
+    src/cast/text_info.cpp
+    src/cast/xmed_styled_text.cpp
+    src/cast/xmed_text_parser.cpp
+    src/chunks/bitmap_chunk.cpp
+    src/chunks/cast_chunk.cpp
+    src/chunks/cast_list_chunk.cpp
+    src/chunks/cast_member_chunk.cpp
+    src/chunks/config_chunk.cpp
+    src/chunks/font_map_chunk.cpp
+    src/chunks/frame_labels_chunk.cpp
+    src/chunks/key_table_chunk.cpp
+    src/chunks/media_chunk.cpp
+    src/chunks/palette_chunk.cpp
+    src/chunks/raw_chunk.cpp
+    src/chunks/script_context_chunk.cpp
+    src/chunks/script_chunk.cpp
+    src/chunks/script_names_chunk.cpp
+    src/chunks/score_chunk.cpp
+    src/chunks/sound_chunk.cpp
+    src/chunks/text_chunk.cpp
+    src/format/afterburner_reader.cpp
+    src/format/chunk_type.cpp
+    src/format/moa_id.cpp
+    src/format/script_format_utils.cpp
+    src/font/bdf_parser.cpp
+    src/font/bitmap_font.cpp
+    src/font/pfr_bit_reader.cpp
+    src/font/pfr1_font.cpp
+    src/font/pfr1_ttf_converter.cpp
+    src/font/ttf_bitmap_rasterizer.cpp
+    src/fonts/font_data_decoder.cpp
     "${LIBRESHOCKWAVE_VOLTER_DATA_CPP}"
     "${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}"
-    src/io/BinaryReader.cpp
-    src/lingo/Datum.cpp
-    src/lingo/LingoValueParser.cpp
-    src/lingo/Opcode.cpp
-    src/lingo/builtin/BuiltinRegistry.cpp
-    src/lingo/decompiler/LingoDecompiler.cpp
-    src/lingo/decompiler/LingoNode.cpp
-    src/lingo/decompiler/LingoNodeTypeScript.cpp
-    src/lingo/decompiler/LingoProperties.cpp
-    src/lingo/vm/AlertHookHandler.cpp
-    src/lingo/vm/DebugConfig.cpp
-    src/lingo/vm/datum/DatumFormatter.cpp
-    src/lingo/vm/ExecutionContext.cpp
-    src/lingo/vm/LingoVM.cpp
-    src/lingo/vm/OpcodeRegistry.cpp
-    src/lingo/vm/PropertyIdMappings.cpp
-    src/lingo/vm/Scope.cpp
-    src/lingo/vm/dispatch/ListMethodDispatcher.cpp
-    src/lingo/vm/dispatch/PropListMethodDispatcher.cpp
-    src/lingo/vm/dispatch/SoundChannelMethodDispatcher.cpp
-    src/lingo/vm/dispatch/StringMethodDispatcher.cpp
-    src/lingo/vm/parse/LingoExpressionParser.cpp
-    src/lingo/vm/trace/ConsoleTracePrinter.cpp
-    src/lingo/vm/trace/InstructionAnnotator.cpp
-    src/lingo/vm/trace/TracingHelper.cpp
-    src/lingo/vm/util/AncestorChainWalker.cpp
-    src/lingo/vm/util/StringChunkUtils.cpp
-    src/lingo/xtra/MultiuserXtra.cpp
-    src/lingo/xtra/XtraManager.cpp
-    src/lingo/xtra/XmlParserXtra.cpp
-    src/lookup/CastMemberLookup.cpp
-    src/lookup/PaletteResolver.cpp
-    src/lookup/ScriptLookup.cpp
-    src/player/PlayerEvent.cpp
-    src/player/PlayerState.cpp
-    src/player/Player.cpp
-    src/player/BitmapResolver.cpp
-    src/player/CursorManager.cpp
-    src/player/input/EditableFieldOverlay.cpp
-    src/player/InputHandler.cpp
-    src/player/MovieProperties.cpp
-    src/player/SpriteProperties.cpp
-    src/player/audio/QueuedAudioBackend.cpp
-    src/player/audio/SoundManager.cpp
-    src/player/audio/SoundQueue.cpp
-    src/player/media/QueuedJpegDecoder.cpp
-    src/player/behavior/BehaviorInstance.cpp
-    src/player/behavior/BehaviorManager.cpp
-    src/player/cast/CastLib.cpp
-    src/player/cast/CastLibManager.cpp
-    src/player/cast/FontRegistry.cpp
-    src/player/cast/MacFontBundle.cpp
-    src/player/cast/WindowsFontBundle.cpp
-    src/player/input/DirectorKeyCodes.cpp
-    src/player/input/HitTester.cpp
-    src/player/input/InputEvent.cpp
-    src/player/input/InputState.cpp
-    src/player/net/NetManager.cpp
-    src/player/net/NetTask.cpp
-    src/player/net/QueuedNetProvider.cpp
-    src/player/debug/Breakpoint.cpp
-    src/player/debug/BreakpointManager.cpp
-    src/player/debug/DebugController.cpp
-    src/player/debug/ExpressionEvaluator.cpp
-    src/player/debug/LifecycleDiagnostics.cpp
-    src/player/debug/WatchExpression.cpp
-    src/player/event/EventDispatcher.cpp
-    src/player/frame/FrameContext.cpp
-    src/player/render/RenderConfig.cpp
-    src/player/render/RenderType.cpp
-    src/player/render/SpriteRegistry.cpp
-    src/player/render/output/SimpleTextRenderer.cpp
-    src/player/render/output/SoftwareFrameRenderer.cpp
-    src/player/render/output/TextRenderer.cpp
-    src/player/render/pipeline/BitmapCache.cpp
-    src/player/render/pipeline/FrameRenderPipeline.cpp
-    src/player/render/pipeline/FrameSnapshot.cpp
-    src/player/render/pipeline/FrameRenderPipelineContext.cpp
-    src/player/render/pipeline/InkProcessor.cpp
-    src/player/render/pipeline/RenderPipelineTrace.cpp
-    src/player/render/pipeline/RenderSprite.cpp
-    src/player/render/pipeline/SpriteBaker.cpp
-    src/player/render/pipeline/StageRenderer.cpp
-    src/player/score/ScoreBehaviorRef.cpp
-    src/player/score/ScoreNavigator.cpp
-    src/player/score/SpriteSpan.cpp
-    src/player/sprite/SpriteState.cpp
-    src/player/timeout/TimeoutManager.cpp
-    src/player/xtra/QueuedMultiuserBridge.cpp
-    src/player/xtra/SocketMultiuserBridge.cpp
-    src/util/AudioCodecUtils.cpp
-    src/util/FileUtil.cpp
-    src/util/StringUtils.cpp
-    src/w3d/W3DEntry.cpp
-    src/w3d/W3DEntryType.cpp
-    src/w3d/W3DMaterial.cpp
-    src/w3d/W3DMeshResource.cpp
-    src/w3d/W3DNode.cpp
-    src/w3d/W3DResourceRef.cpp
-    src/w3d/W3DShape.cpp
-    src/w3d/W3DTexture.cpp
+    src/io/binary_reader.cpp
+    src/lingo/datum.cpp
+    src/lingo/lingo_value_parser.cpp
+    src/lingo/opcode.cpp
+    src/lingo/builtin/builtin_registry.cpp
+    src/lingo/decompiler/lingo_decompiler.cpp
+    src/lingo/decompiler/lingo_node.cpp
+    src/lingo/decompiler/lingo_node_type_script.cpp
+    src/lingo/decompiler/lingo_properties.cpp
+    src/lingo/vm/alert_hook_handler.cpp
+    src/lingo/vm/debug_config.cpp
+    src/lingo/vm/datum/datum_formatter.cpp
+    src/lingo/vm/execution_context.cpp
+    src/lingo/vm/lingo_vm.cpp
+    src/lingo/vm/opcode_registry.cpp
+    src/lingo/vm/property_id_mappings.cpp
+    src/lingo/vm/scope.cpp
+    src/lingo/vm/dispatch/list_method_dispatcher.cpp
+    src/lingo/vm/dispatch/prop_list_method_dispatcher.cpp
+    src/lingo/vm/dispatch/sound_channel_method_dispatcher.cpp
+    src/lingo/vm/dispatch/string_method_dispatcher.cpp
+    src/lingo/vm/parse/lingo_expression_parser.cpp
+    src/lingo/vm/trace/console_trace_printer.cpp
+    src/lingo/vm/trace/instruction_annotator.cpp
+    src/lingo/vm/trace/tracing_helper.cpp
+    src/lingo/vm/util/ancestor_chain_walker.cpp
+    src/lingo/vm/util/string_chunk_utils.cpp
+    src/lingo/xtra/multiuser_xtra.cpp
+    src/lingo/xtra/xtra_manager.cpp
+    src/lingo/xtra/xml_parser_xtra.cpp
+    src/lookup/cast_member_lookup.cpp
+    src/lookup/palette_resolver.cpp
+    src/lookup/script_lookup.cpp
+    src/player/player_event.cpp
+    src/player/player_state.cpp
+    src/player/player.cpp
+    src/player/bitmap_resolver.cpp
+    src/player/cursor_manager.cpp
+    src/player/input/editable_field_overlay.cpp
+    src/player/input_handler.cpp
+    src/player/movie_properties.cpp
+    src/player/sprite_properties.cpp
+    src/player/audio/queued_audio_backend.cpp
+    src/player/audio/sound_manager.cpp
+    src/player/audio/sound_queue.cpp
+    src/player/media/queued_jpeg_decoder.cpp
+    src/player/behavior/behavior_instance.cpp
+    src/player/behavior/behavior_manager.cpp
+    src/player/cast/cast_lib.cpp
+    src/player/cast/cast_lib_manager.cpp
+    src/player/cast/font_registry.cpp
+    src/player/cast/mac_font_bundle.cpp
+    src/player/cast/windows_font_bundle.cpp
+    src/player/input/director_key_codes.cpp
+    src/player/input/hit_tester.cpp
+    src/player/input/input_event.cpp
+    src/player/input/input_state.cpp
+    src/player/net/net_manager.cpp
+    src/player/net/net_task.cpp
+    src/player/net/queued_net_provider.cpp
+    src/player/debug/breakpoint.cpp
+    src/player/debug/breakpoint_manager.cpp
+    src/player/debug/debug_controller.cpp
+    src/player/debug/expression_evaluator.cpp
+    src/player/debug/lifecycle_diagnostics.cpp
+    src/player/debug/watch_expression.cpp
+    src/player/event/event_dispatcher.cpp
+    src/player/frame/frame_context.cpp
+    src/player/render/render_config.cpp
+    src/player/render/render_type.cpp
+    src/player/render/sprite_registry.cpp
+    src/player/render/output/simple_text_renderer.cpp
+    src/player/render/output/software_frame_renderer.cpp
+    src/player/render/output/text_renderer.cpp
+    src/player/render/pipeline/bitmap_cache.cpp
+    src/player/render/pipeline/frame_render_pipeline.cpp
+    src/player/render/pipeline/frame_snapshot.cpp
+    src/player/render/pipeline/frame_render_pipeline_context.cpp
+    src/player/render/pipeline/ink_processor.cpp
+    src/player/render/pipeline/render_pipeline_trace.cpp
+    src/player/render/pipeline/render_sprite.cpp
+    src/player/render/pipeline/sprite_baker.cpp
+    src/player/render/pipeline/stage_renderer.cpp
+    src/player/score/score_behavior_ref.cpp
+    src/player/score/score_navigator.cpp
+    src/player/score/sprite_span.cpp
+    src/player/sprite/sprite_state.cpp
+    src/player/timeout/timeout_manager.cpp
+    src/player/xtra/queued_multiuser_bridge.cpp
+    src/player/xtra/socket_multiuser_bridge.cpp
+    src/util/audio_codec_utils.cpp
+    src/util/file_util.cpp
+    src/util/string_utils.cpp
+    src/w3d/w3d_entry.cpp
+    src/w3d/w3d_entry_type.cpp
+    src/w3d/w3d_material.cpp
+    src/w3d/w3d_mesh_resource.cpp
+    src/w3d/w3d_node.cpp
+    src/w3d/w3d_resource_ref.cpp
+    src/w3d/w3d_shape.cpp
+    src/w3d/w3d_texture.cpp
 )
 
 add_library(LibreShockwave::libreshockwave ALIAS libreshockwave)
@@ -201,13 +201,13 @@ target_include_directories(libreshockwave
 target_compile_features(libreshockwave PUBLIC cxx_std_20)
 
 add_executable(libreshockwave_probe
-    apps/tools/DirectorProbe.cpp
+    apps/tools/director_probe.cpp
 )
 target_link_libraries(libreshockwave_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_asset_extractor
-    apps/tools/AssetExtractor.cpp
+    apps/tools/asset_extractor.cpp
 )
 target_link_libraries(libreshockwave_asset_extractor PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_asset_extractor PRIVATE cxx_std_20)
@@ -219,20 +219,20 @@ if(JPEG_FOUND)
 endif()
 
 add_executable(libreshockwave_render_probe
-    apps/tools/RenderProbe.cpp
+    apps/tools/render_probe.cpp
 )
 target_link_libraries(libreshockwave_render_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_render_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_wasm_bridge_probe
-    apps/wasm/WasmBridge.cpp
-    apps/tools/WasmBridgeProbe.cpp
+    apps/wasm/wasm_bridge.cpp
+    apps/tools/wasm_bridge_probe.cpp
 )
 target_link_libraries(libreshockwave_wasm_bridge_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_wasm_bridge_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_multiuser_probe
-    apps/tools/MultiuserFloodProbe.cpp
+    apps/tools/multiuser_flood_probe.cpp
 )
 target_link_libraries(libreshockwave_multiuser_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_multiuser_probe PRIVATE cxx_std_20)
@@ -298,75 +298,6 @@ if(EMSCRIPTEN)
     set(LIBRESHOCKWAVE_WASM_EXPORTS
         "_malloc"
         "_free"
-        "_lsw_create"
-        "_lsw_destroy"
-        "_lsw_load_movie"
-        "_lsw_set_external_params"
-        "_lsw_set_preload_casts"
-        "_lsw_set_debug_playback_enabled"
-        "_lsw_set_slow_handler_warning_ms"
-        "_lsw_set_tempo_override"
-        "_lsw_tempo"
-        "_lsw_base_tempo"
-        "_lsw_play"
-        "_lsw_pause"
-        "_lsw_stop"
-        "_lsw_tick"
-        "_lsw_render_frame"
-        "_lsw_frame_pixels"
-        "_lsw_frame_byte_length"
-        "_lsw_frame_width"
-        "_lsw_frame_height"
-        "_lsw_frame_info_json"
-        "_lsw_frame_sprites_json"
-        "_lsw_fire_test_error"
-        "_lsw_last_error"
-        "_lsw_poll_debug_messages"
-        "_lsw_drain_debug_messages"
-        "_lsw_poll_fetch_requests"
-        "_lsw_drain_fetch_requests"
-        "_lsw_poll_jpeg_decode_requests"
-        "_lsw_jpeg_decode_complete"
-        "_lsw_poll_movie_navigation_requests"
-        "_lsw_movie_navigation_complete"
-        "_lsw_fetch_complete"
-        "_lsw_fetch_error"
-        "_lsw_poll_multiuser_requests"
-        "_lsw_drain_multiuser_requests"
-        "_lsw_poll_audio_commands"
-        "_lsw_drain_audio_commands"
-        "_lsw_audio_stopped"
-        "_lsw_multiuser_connected"
-        "_lsw_multiuser_disconnected"
-        "_lsw_multiuser_error"
-        "_lsw_multiuser_message_bytes"
-        "_lsw_director_key_from_browser"
-        "_lsw_mouse_move"
-        "_lsw_mouse_down"
-        "_lsw_mouse_up"
-        "_lsw_blur"
-        "_lsw_key_down"
-        "_lsw_key_up"
-        "_lsw_paste_text"
-        "_lsw_selected_text"
-        "_lsw_select_all"
-        "_lsw_cut_selected_text"
-        "_lsw_debug_list_movies_json"
-        "_lsw_debug_list_scripts_json"
-        "_lsw_debug_get_handler_code_json"
-        "_lsw_debug_pause"
-        "_lsw_debug_continue"
-        "_lsw_debug_step_into"
-        "_lsw_debug_step_over"
-        "_lsw_debug_step_out"
-        "_lsw_debug_is_paused"
-        "_lsw_debug_toggle_breakpoint"
-        "_lsw_debug_clear_breakpoints"
-        "_lsw_debug_list_breakpoints_json"
-        "_lsw_debug_get_snapshot_json"
-        "_lsw_debug_add_watch"
-        "_lsw_debug_remove_watch"
-        "_lsw_debug_get_watches_json"
     )
     string(REPLACE ";" "','" LIBRESHOCKWAVE_WASM_EXPORTS_JOINED "${LIBRESHOCKWAVE_WASM_EXPORTS}")
     set(LIBRESHOCKWAVE_WASM_EXPORTS_FLAG "['${LIBRESHOCKWAVE_WASM_EXPORTS_JOINED}']")
@@ -382,8 +313,8 @@ if(EMSCRIPTEN)
     endif()
 
     add_executable(libreshockwave_cpp_wasm
-        apps/wasm/WasmBridge.cpp
-        ../debugger/cpp/DebuggerBridge.cpp
+        apps/wasm/wasm_bridge.cpp
+        ../debugger/cpp/debugger_bridge.cpp
     )
     target_link_libraries(libreshockwave_cpp_wasm PRIVATE LibreShockwave::libreshockwave)
     target_compile_features(libreshockwave_cpp_wasm PRIVATE cxx_std_20)
@@ -413,7 +344,7 @@ if(EMSCRIPTEN)
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/../web"
-                "${LIBRESHOCKWASM_DIST_DIR}"
+                "${LIBRESHOCKWAVE_WASM_DIST_DIR}"
         DEPENDS libreshockwave_cpp_wasm
         VERBATIM
     )

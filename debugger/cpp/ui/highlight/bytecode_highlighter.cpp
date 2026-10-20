@@ -1,0 +1,132 @@
+#include "bytecode_highlighter.hpp"
+
+#include <QTextCharFormat>
+
+#include "declaration_highlighting.hpp"
+
+namespace libreshockwave::debugger {
+
+namespace {
+
+// Identifiers inside the annotation column (handler/property names, e.g.
+// the "stopMovie" of "<stopMovie()>").
+const QRegularExpression kAnnotationIdentifier("[A-Za-z_]\\w*");
+
+// Display-asset colors (VS Code light/dark theme inspired).
+const QColor kLightPush(0x0d, 0x94, 0x88);
+const QColor kLightGet(0x05, 0x50, 0xae);
+const QColor kLightSet(0x6d, 0x28, 0xd9);
+const QColor kLightPut(0xa1, 0x62, 0x07);
+const QColor kLightControl(0xb9, 0x1c, 0x1c);
+const QColor kLightOffset(0x6a, 0x73, 0x7d);
+const QColor kLightComment(0x6a, 0x73, 0x7d);
+const QColor kDarkPush(0x4e, 0xc9, 0xb0);
+const QColor kDarkGet(0x56, 0x9c, 0xd6);
+const QColor kDarkSet(0xc5, 0x86, 0xc0);
+const QColor kDarkPut(0xe3, 0xb3, 0x41);
+const QColor kDarkControl(0xff, 0x7b, 0x72);
+const QColor kDarkOffset(0x8b, 0x94, 0x9e);
+const QColor kDarkComment(0x8b, 0x94, 0x9e);
+
+} // namespace
+
+BytecodeHighlighter::BytecodeHighlighter(QTextDocument* document)
+    : GutterHighlighter(document),
+      // Groups: 1 = offset, 2 = opcode, 3 = argument, 4 = "; annotation".
+      line_regex_(QRegularExpression(
+          R"(^(\d{4,})  ([A-Za-z][A-Za-z0-9]*)\s+(-?\d+)(  ;.*)?)")) {
+}
+
+void BytecodeHighlighter::setDeclarationNames(const QSet<QString>& names) {
+    if (names == declaration_names_) {
+        return;
+    }
+    declaration_names_ = names;
+    rehighlight();
+}
+
+std::optional<QColor> BytecodeHighlighter::categoryColor(const QString& opcode) {
+    const QString lower = opcode.toLower();
+    if (darkBase()) {
+        if (lower.startsWith(QLatin1String("push"))) return kDarkPush;
+        if (lower.startsWith(QLatin1String("get"))) return kDarkGet;
+        if (lower.startsWith(QLatin1String("set"))) return kDarkSet;
+        if (lower.startsWith(QLatin1String("put"))) return kDarkPut;
+        if (lower.startsWith(QLatin1String("jmp")) ||
+            lower.startsWith(QLatin1String("call")) ||
+            lower.endsWith(QLatin1String("call")) ||
+            lower.startsWith(QLatin1String("ret")) ||
+            lower == QLatin1String("endrepeat") ||
+            lower == QLatin1String("endtell") ||
+            lower == QLatin1String("starttell") ||
+            lower == QLatin1String("invalid")) {
+            return kDarkControl;
+        }
+        return std::nullopt;
+    }
+    if (lower.startsWith(QLatin1String("push"))) return kLightPush;
+    if (lower.startsWith(QLatin1String("get"))) return kLightGet;
+    if (lower.startsWith(QLatin1String("set"))) return kLightSet;
+    if (lower.startsWith(QLatin1String("put"))) return kLightPut;
+    if (lower.startsWith(QLatin1String("jmp")) ||
+        lower.startsWith(QLatin1String("call")) ||
+        lower.endsWith(QLatin1String("call")) ||
+        lower.startsWith(QLatin1String("ret")) ||
+        lower == QLatin1String("endrepeat") ||
+        lower == QLatin1String("endtell") ||
+        lower == QLatin1String("starttell") ||
+        lower == QLatin1String("invalid")) {
+        return kLightControl;
+    }
+    return std::nullopt;
+}
+
+QColor BytecodeHighlighter::offsetColor() {
+    return darkBase() ? kDarkOffset : kLightOffset;
+}
+
+QColor BytecodeHighlighter::commentColor() {
+    return darkBase() ? kDarkComment : kLightComment;
+}
+
+void BytecodeHighlighter::highlightBlock(const QString& text) {
+    const auto match = line_regex_.match(text);
+    if (!match.hasMatch()) {
+        return;
+    }
+
+    if (!match.captured(1).isEmpty()) {
+        QTextCharFormat offset;
+        offset.setForeground(offsetColor());
+        setFormat(match.capturedStart(1), match.capturedLength(1), offset);
+    }
+
+    if (auto color = categoryColor(match.captured(2))) {
+        QTextCharFormat opcode;
+        opcode.setForeground(*color);
+        setFormat(match.capturedStart(2), match.capturedLength(2), opcode);
+    }
+
+    if (!match.captured(4).isEmpty()) {
+        QTextCharFormat comment;
+        comment.setForeground(commentColor());
+        comment.setFontItalic(true);
+        setFormat(match.capturedStart(4), match.capturedLength(4), comment);
+
+        if (detail::k_enable_declaration_highlighting) {
+            const int base = match.capturedStart(4);
+            auto name_match = kAnnotationIdentifier.globalMatch(match.captured(4));
+            while (name_match.hasNext()) {
+                const auto name = name_match.next();
+                if (!declaration_names_.contains(name.captured().toLower())) {
+                    continue;
+                }
+                QTextCharFormat underline;
+                underline.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+                setFormat(base + name.capturedStart(), name.capturedLength(), underline);
+            }
+        }
+    }
+}
+
+} // namespace libreshockwave::debugger

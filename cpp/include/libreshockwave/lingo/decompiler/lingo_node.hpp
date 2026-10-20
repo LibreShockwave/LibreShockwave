@@ -1,0 +1,683 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "libreshockwave/lingo/opcode.hpp"
+
+namespace libreshockwave::lingo::decompiler {
+
+class LingoNode;
+class LoopNodeBase;
+
+using NodePtr = std::unique_ptr<LingoNode>;
+
+template <typename T, typename... Args>
+std::unique_ptr<T> makeNode(Args&&... args) {
+    return std::make_unique<T>(std::forward<Args>(args)...);
+}
+
+enum class ValueType {
+    Void,
+    Symbol,
+    VarRef,
+    String,
+    Int,
+    Float,
+    List,
+    ArgList,
+    ArgListNoRet,
+    PropList
+};
+
+class LingoNode {
+public:
+    virtual ~LingoNode() = default;
+
+    [[nodiscard]] virtual std::string toLingo(bool dot) const = 0;
+    [[nodiscard]] virtual std::string toTypeScript() const;
+
+    [[nodiscard]] virtual ValueType valueType() const;
+    [[nodiscard]] virtual int intValue() const;
+    [[nodiscard]] virtual std::string stringValue() const;
+    [[nodiscard]] virtual const std::vector<NodePtr>& argNodes() const;
+    virtual void setValueType(ValueType type);
+
+    [[nodiscard]] LingoNode* parent() const { return parent_; }
+    void setParent(LingoNode* parent) { parent_ = parent; }
+    [[nodiscard]] bool isExpression() const { return is_expression_; }
+    [[nodiscard]] bool isStatement() const { return is_statement_; }
+    [[nodiscard]] bool isLoop() const { return is_loop_; }
+    [[nodiscard]] int bytecodeOffset() const { return bytecode_offset_; }
+    void setBytecodeOffset(int offset) { bytecode_offset_ = offset; }
+
+    [[nodiscard]] LingoNode* ancestorStatement() const;
+    [[nodiscard]] LoopNodeBase* ancestorLoop() const;
+
+    [[nodiscard]] static std::string indent(std::string_view text);
+
+protected:
+    void markExpression() { is_expression_ = true; }
+    void markStatement() { is_statement_ = true; }
+    void markLoop() { is_loop_ = true; }
+    void adopt(const NodePtr& child);
+
+private:
+    LingoNode* parent_ = nullptr;
+    bool is_expression_ = false;
+    bool is_statement_ = false;
+    bool is_loop_ = false;
+    int bytecode_offset_ = -1;
+};
+
+class ErrorNode final : public LingoNode {
+public:
+    ErrorNode();
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+};
+
+class CommentNode final : public LingoNode {
+public:
+    explicit CommentNode(std::string text);
+    [[nodiscard]] const std::string& text() const { return text_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string text_;
+};
+
+class LiteralNode final : public LingoNode {
+public:
+    explicit LiteralNode(int value);
+    explicit LiteralNode(double value);
+    LiteralNode(ValueType type, std::string value);
+    LiteralNode(ValueType type, std::vector<NodePtr> items);
+
+    [[nodiscard]] ValueType valueType() const override;
+    [[nodiscard]] int intValue() const override;
+    [[nodiscard]] double floatValue() const;
+    [[nodiscard]] std::string stringValue() const override;
+    [[nodiscard]] const std::vector<NodePtr>& argNodes() const override;
+    [[nodiscard]] std::vector<NodePtr> takeItems();
+    void setValueType(ValueType type) override;
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    ValueType value_type_ = ValueType::Void;
+    int int_value_ = 0;
+    double float_value_ = 0.0;
+    std::string string_value_;
+    std::vector<NodePtr> items_;
+};
+
+class VarNode final : public LingoNode {
+public:
+    explicit VarNode(std::string name);
+    [[nodiscard]] const std::string& name() const { return name_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string name_;
+};
+
+class InverseOpNode final : public LingoNode {
+public:
+    explicit InverseOpNode(NodePtr operand);
+    [[nodiscard]] const LingoNode& operand() const { return *operand_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr operand_;
+};
+
+class NotOpNode final : public LingoNode {
+public:
+    explicit NotOpNode(NodePtr operand);
+    [[nodiscard]] const LingoNode& operand() const { return *operand_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr operand_;
+};
+
+class BinaryOpNode final : public LingoNode {
+public:
+    BinaryOpNode(Opcode opcode, NodePtr left, NodePtr right);
+    [[nodiscard]] Opcode opcode() const { return opcode_; }
+    [[nodiscard]] const LingoNode& left() const { return *left_; }
+    [[nodiscard]] const LingoNode& right() const { return *right_; }
+    [[nodiscard]] int precedence() const;
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    Opcode opcode_;
+    NodePtr left_;
+    NodePtr right_;
+};
+
+class TheExprNode final : public LingoNode {
+public:
+    explicit TheExprNode(std::string prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const std::string& prop() const { return prop_; }
+
+private:
+    std::string prop_;
+};
+
+class MemberExprNode final : public LingoNode {
+public:
+    MemberExprNode(std::string member_type, NodePtr member_id, NodePtr cast_id = nullptr);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string member_type_;
+    NodePtr member_id_;
+    NodePtr cast_id_;
+};
+
+class ObjPropExprNode final : public LingoNode {
+public:
+    ObjPropExprNode(NodePtr object, std::string prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const LingoNode& object() const { return *object_; }
+    [[nodiscard]] const std::string& prop() const { return prop_; }
+
+private:
+    NodePtr object_;
+    std::string prop_;
+};
+
+class ObjBracketExprNode final : public LingoNode {
+public:
+    ObjBracketExprNode(NodePtr object, NodePtr prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr object_;
+    NodePtr prop_;
+};
+
+class ObjPropIndexExprNode final : public LingoNode {
+public:
+    ObjPropIndexExprNode(NodePtr object, std::string prop, NodePtr index, NodePtr index2 = nullptr);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const LingoNode& object() const { return *object_; }
+    [[nodiscard]] const std::string& prop() const { return prop_; }
+    [[nodiscard]] const LingoNode& index() const { return *index_; }
+    [[nodiscard]] const LingoNode* index2() const { return index2_.get(); }
+
+private:
+    NodePtr object_;
+    std::string prop_;
+    NodePtr index_;
+    NodePtr index2_;
+};
+
+class ThePropExprNode final : public LingoNode {
+public:
+    ThePropExprNode(NodePtr object, std::string prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const LingoNode* object() const { return object_.get(); }
+    [[nodiscard]] const std::string& prop() const { return prop_; }
+
+private:
+    NodePtr object_;
+    std::string prop_;
+};
+
+class ChunkExprNode final : public LingoNode {
+public:
+    ChunkExprNode(int chunk_type, NodePtr first, NodePtr last, NodePtr string);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] int chunkType() const { return chunk_type_; }
+    [[nodiscard]] const LingoNode& first() const { return *first_; }
+    [[nodiscard]] const LingoNode* last() const { return last_.get(); }
+    [[nodiscard]] const LingoNode& string() const { return *string_; }
+
+private:
+    int chunk_type_;
+    NodePtr first_;
+    NodePtr last_;
+    NodePtr string_;
+};
+
+class LastStringChunkExprNode final : public LingoNode {
+public:
+    LastStringChunkExprNode(int chunk_type, NodePtr string);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    int chunk_type_;
+    NodePtr string_;
+};
+
+class StringChunkCountExprNode final : public LingoNode {
+public:
+    StringChunkCountExprNode(int chunk_type, NodePtr string);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    int chunk_type_;
+    NodePtr string_;
+};
+
+class SpriteIntersectsExprNode final : public LingoNode {
+public:
+    SpriteIntersectsExprNode(NodePtr first, NodePtr second);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr first_;
+    NodePtr second_;
+};
+
+class SpriteWithinExprNode final : public LingoNode {
+public:
+    SpriteWithinExprNode(NodePtr first, NodePtr second);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr first_;
+    NodePtr second_;
+};
+
+class MenuPropExprNode final : public LingoNode {
+public:
+    MenuPropExprNode(NodePtr menu_id, int prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr menu_id_;
+    int prop_;
+};
+
+class MenuItemPropExprNode final : public LingoNode {
+public:
+    MenuItemPropExprNode(NodePtr menu_id, NodePtr item_id, int prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr menu_id_;
+    NodePtr item_id_;
+    int prop_;
+};
+
+class SoundPropExprNode final : public LingoNode {
+public:
+    SoundPropExprNode(NodePtr sound_id, int prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr sound_id_;
+    int prop_;
+};
+
+class SpritePropExprNode final : public LingoNode {
+public:
+    SpritePropExprNode(NodePtr sprite_id, int prop);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr sprite_id_;
+    int prop_;
+};
+
+class NewObjNode final : public LingoNode {
+public:
+    NewObjNode(std::string object_type, NodePtr object_args);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string object_type_;
+    NodePtr object_args_;
+};
+
+class ExitStmtNode final : public LingoNode {
+public:
+    ExitStmtNode();
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+};
+
+// Lingo `return <value>` (a value-returning return statement). Distinct from
+// ExitStmtNode (bare `return;`) so the TypeScript emitter can produce
+// `return <value>;` directly. Lingo's bytecode emits this as
+// PUSH_ARG_LIST_NO_RET <arity>; <value-args...>; EXT_CALL return,
+// which the decompiler would otherwise lower to a CallNode("return", ...)
+// statement — that emits as a sanitized `_return(value)` function call in
+// TypeScript (the call's return value is discarded and the handler exits
+// with `undefined`). Materializing the value here lets the TS emitter
+// emit an actual `return` statement.
+class ReturnStmtNode final : public LingoNode {
+public:
+    explicit ReturnStmtNode(NodePtr value);
+    [[nodiscard]] const LingoNode& value() const { return *value_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr value_;
+};
+
+class ExitRepeatStmtNode final : public LingoNode {
+public:
+    ExitRepeatStmtNode();
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+};
+
+class NextRepeatStmtNode final : public LingoNode {
+public:
+    NextRepeatStmtNode();
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+};
+
+class AssignmentStmtNode final : public LingoNode {
+public:
+    AssignmentStmtNode(NodePtr variable, NodePtr value, bool force_verbose = false);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr variable_;
+    NodePtr value_;
+    bool force_verbose_ = false;
+};
+
+class PutStmtNode final : public LingoNode {
+public:
+    PutStmtNode(int put_type, NodePtr variable, NodePtr value);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    int put_type_;
+    NodePtr variable_;
+    NodePtr value_;
+};
+
+class ChunkHiliteStmtNode final : public LingoNode {
+public:
+    explicit ChunkHiliteStmtNode(NodePtr chunk);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr chunk_;
+};
+
+class ChunkDeleteStmtNode final : public LingoNode {
+public:
+    explicit ChunkDeleteStmtNode(NodePtr chunk);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr chunk_;
+};
+
+class WhenStmtNode final : public LingoNode {
+public:
+    WhenStmtNode(int event, std::string script);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    int event_;
+    std::string script_;
+};
+
+class CallNode final : public LingoNode {
+public:
+    CallNode(std::string name, NodePtr arg_list);
+    [[nodiscard]] bool noParens() const;
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+    [[nodiscard]] const std::string& name() const { return name_; }
+
+private:
+    std::string name_;
+    NodePtr arg_list_;
+};
+
+class ObjCallNode final : public LingoNode {
+public:
+    ObjCallNode(std::string name, NodePtr arg_list);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string name_;
+    NodePtr arg_list_;
+};
+
+class ObjCallV4Node final : public LingoNode {
+public:
+    ObjCallV4Node(NodePtr object, NodePtr arg_list);
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr object_;
+    NodePtr arg_list_;
+};
+
+class CaseNode;
+
+class BlockNode final : public LingoNode {
+public:
+    BlockNode();
+    void addChild(NodePtr child);
+    [[nodiscard]] const std::vector<NodePtr>& children() const { return children_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+    int end_pos = -1;
+    CaseNode* current_case = nullptr;
+
+private:
+    std::vector<NodePtr> children_;
+};
+
+class HandlerNode final : public LingoNode {
+public:
+    HandlerNode(std::string handler_name, std::vector<std::string> argument_names, std::vector<std::string> global_names);
+    [[nodiscard]] const std::string& handlerName() const { return handler_name_; }
+    [[nodiscard]] const std::vector<std::string>& argumentNames() const { return argument_names_; }
+    [[nodiscard]] const std::vector<std::string>& globalNames() const { return global_names_; }
+    void setGlobalNames(std::vector<std::string> names) { global_names_ = std::move(names); }
+    void setPropertyNames(std::vector<std::string> names) { property_names_ = std::move(names); }
+    [[nodiscard]] const std::vector<std::string>& propertyNames() const { return property_names_; }
+    [[nodiscard]] BlockNode& block() { return *block_; }
+    [[nodiscard]] const BlockNode& block() const { return *block_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string handler_name_;
+    std::vector<std::string> argument_names_;
+    std::vector<std::string> global_names_;
+    std::vector<std::string> property_names_;
+    std::unique_ptr<BlockNode> block_;
+};
+
+class IfStmtNode final : public LingoNode {
+public:
+    explicit IfStmtNode(NodePtr condition);
+    [[nodiscard]] const LingoNode& condition() const { return *condition_; }
+    [[nodiscard]] BlockNode& trueBlock() { return *block1_; }
+    [[nodiscard]] const BlockNode& trueBlock() const { return *block1_; }
+    [[nodiscard]] BlockNode& falseBlock() { return *block2_; }
+    [[nodiscard]] const BlockNode& falseBlock() const { return *block2_; }
+    void setHasElse(bool has_else) { has_else_ = has_else; }
+    [[nodiscard]] bool hasElse() const { return has_else_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr condition_;
+    std::unique_ptr<BlockNode> block1_;
+    std::unique_ptr<BlockNode> block2_;
+    bool has_else_ = false;
+};
+
+class LoopNodeBase : public LingoNode {
+public:
+    explicit LoopNodeBase(int start_index);
+    [[nodiscard]] int startIndex() const { return start_index_; }
+
+private:
+    int start_index_;
+};
+
+class RepeatWhileStmtNode final : public LoopNodeBase {
+public:
+    RepeatWhileStmtNode(int start_index, NodePtr condition);
+    [[nodiscard]] const LingoNode& condition() const { return *condition_; }
+    [[nodiscard]] BlockNode& block() { return *block_; }
+    [[nodiscard]] const BlockNode& block() const { return *block_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr condition_;
+    std::unique_ptr<BlockNode> block_;
+};
+
+class RepeatWithInStmtNode final : public LoopNodeBase {
+public:
+    RepeatWithInStmtNode(int start_index, std::string variable_name, NodePtr list);
+    [[nodiscard]] const std::string& variableName() const { return variable_name_; }
+    [[nodiscard]] const LingoNode& list() const { return *list_; }
+    [[nodiscard]] BlockNode& block() { return *block_; }
+    [[nodiscard]] const BlockNode& block() const { return *block_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string variable_name_;
+    NodePtr list_;
+    std::unique_ptr<BlockNode> block_;
+};
+
+class RepeatWithToStmtNode final : public LoopNodeBase {
+public:
+    RepeatWithToStmtNode(int start_index, std::string variable_name, NodePtr start, bool up, NodePtr end);
+    [[nodiscard]] const std::string& variableName() const { return variable_name_; }
+    [[nodiscard]] const LingoNode& start() const { return *start_; }
+    [[nodiscard]] bool up() const { return up_; }
+    [[nodiscard]] const LingoNode& end() const { return *end_; }
+    [[nodiscard]] BlockNode& block() { return *block_; }
+    [[nodiscard]] const BlockNode& block() const { return *block_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    std::string variable_name_;
+    NodePtr start_;
+    bool up_;
+    NodePtr end_;
+    std::unique_ptr<BlockNode> block_;
+};
+
+class TellStmtNode final : public LingoNode {
+public:
+    explicit TellStmtNode(NodePtr window);
+    [[nodiscard]] const LingoNode& window() const { return *window_; }
+    [[nodiscard]] BlockNode& block() { return *block_; }
+    [[nodiscard]] const BlockNode& block() const { return *block_; }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr window_;
+    std::unique_ptr<BlockNode> block_;
+};
+
+class CaseNode final : public LingoNode {
+public:
+    static constexpr int EXPECT_POP = 0;
+    static constexpr int EXPECT_OR = 1;
+    static constexpr int EXPECT_NEXT = 2;
+    static constexpr int EXPECT_OTHERWISE = 3;
+
+    CaseNode(NodePtr value, int expect);
+    void setNextOr(std::unique_ptr<CaseNode> next_or);
+    void setNextCase(std::unique_ptr<CaseNode> next_case);
+    void setBlock(std::unique_ptr<BlockNode> block);
+    void setOtherwise(std::unique_ptr<BlockNode> otherwise);
+    [[nodiscard]] const LingoNode& value() const { return *value_; }
+    [[nodiscard]] int expect() const { return expect_; }
+    [[nodiscard]] CaseNode* nextOr() { return next_or_.get(); }
+    [[nodiscard]] const CaseNode* nextOr() const { return next_or_.get(); }
+    [[nodiscard]] CaseNode* nextCase() { return next_case_.get(); }
+    [[nodiscard]] const CaseNode* nextCase() const { return next_case_.get(); }
+    [[nodiscard]] BlockNode* block() { return block_.get(); }
+    [[nodiscard]] const BlockNode* block() const { return block_.get(); }
+    [[nodiscard]] BlockNode* otherwise() { return otherwise_.get(); }
+    [[nodiscard]] const BlockNode* otherwise() const { return otherwise_.get(); }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    NodePtr value_;
+    int expect_;
+    std::unique_ptr<CaseNode> next_or_;
+    std::unique_ptr<CaseNode> next_case_;
+    std::unique_ptr<BlockNode> block_;
+    std::unique_ptr<BlockNode> otherwise_;
+};
+
+class CasesStmtNode final : public LingoNode {
+public:
+    explicit CasesStmtNode(NodePtr value);
+    void setFirstCase(std::unique_ptr<CaseNode> first_case);
+    [[nodiscard]] const LingoNode& value() const { return *value_; }
+    [[nodiscard]] CaseNode* firstCase() { return first_case_.get(); }
+    [[nodiscard]] const CaseNode* firstCase() const { return first_case_.get(); }
+    [[nodiscard]] std::string toLingo(bool dot) const override;
+    [[nodiscard]] std::string toTypeScript() const override;
+
+    int end_pos = -1;
+
+private:
+    NodePtr value_;
+    std::unique_ptr<CaseNode> first_case_;
+};
+
+[[nodiscard]] std::string maybeParenDot(const LingoNode& node, bool dot);
+
+// Whether `node` is a LiteralNode with int value 0. Used by the Lingo and
+// TypeScript emitters for `MemberExprNode` to detect `field(tField)` (no
+// explicit castlib, i.e. castlib = 0 means "use the current castlib stack").
+[[nodiscard]] bool isIntLiteralZero(const LingoNode* node);
+
+} // namespace libreshockwave::lingo::decompiler

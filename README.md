@@ -169,7 +169,7 @@ The C++ API currently loads from memory. Read the file bytes, then call `Directo
 #include <stdexcept>
 #include <vector>
 
-#include "libreshockwave/DirectorFile.hpp"
+#include "libreshockwave/director_file.hpp"
 
 std::vector<std::uint8_t> readFile(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -269,9 +269,9 @@ for (const auto& member : file->castMembers()) {
 #include <fstream>
 #include <memory>
 
-#include "libreshockwave/audio/SoundConverter.hpp"
-#include "libreshockwave/chunks/SoundChunk.hpp"
-#include "libreshockwave/format/ChunkType.hpp"
+#include "libreshockwave/audio/sound_converter.hpp"
+#include "libreshockwave/chunks/sound_chunk.hpp"
+#include "libreshockwave/format/chunk_type.hpp"
 
 for (const auto& member : file->castMembers()) {
     if (!member->isSound()) {
@@ -305,10 +305,10 @@ Director files can embed PFR1 font data inside XMED chunks. LibreShockwave can p
 #include <fstream>
 #include <memory>
 
-#include "libreshockwave/chunks/RawChunk.hpp"
-#include "libreshockwave/font/Pfr1Font.hpp"
-#include "libreshockwave/font/Pfr1TtfConverter.hpp"
-#include "libreshockwave/format/ChunkType.hpp"
+#include "libreshockwave/chunks/raw_chunk.hpp"
+#include "libreshockwave/font/pfr1_font.hpp"
+#include "libreshockwave/font/pfr1_ttf_converter.hpp"
+#include "libreshockwave/format/chunk_type.hpp"
 
 for (const auto& member : file->castMembers()) {
     for (const auto& chunk : file->getLinkedChunksForMember(
@@ -381,7 +381,7 @@ if (auto labels = file->frameLabelsChunk()) {
 ### Frame Example
 
 ```cpp
-#include "libreshockwave/player/Player.hpp"
+#include "libreshockwave/player/player.hpp"
 
 libreshockwave::player::Player player(file);
 player.setExternalParams({

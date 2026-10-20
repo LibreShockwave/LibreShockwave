@@ -51,7 +51,7 @@ endfunction()
 get_filename_component(OUTPUT_DIR "${OUTPUT_FILE}" DIRECTORY)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 file(WRITE "${OUTPUT_FILE}" [[
-#include "libreshockwave/fonts/PlatformFonts.hpp"
+#include "libreshockwave/fonts/platform_fonts.hpp"
 
 #include <array>
 #include <cstdint>

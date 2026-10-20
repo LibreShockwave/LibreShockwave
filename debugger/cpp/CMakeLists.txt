@@ -2,45 +2,45 @@ cmake_minimum_required(VERSION 3.20)
 
 add_executable(libreshockwave_debugger
     main.cpp
-    DebuggerWindow.cpp
-    DebuggerWindow.hpp
-    StartupSession.cpp
-    StartupSession.hpp
-    ExternalParamsDialog.cpp
-    ExternalParamsDialog.hpp
-    DebuggerContext.cpp
-    DebuggerContext.hpp
-    DebugStateBridge.cpp
-    DebugStateBridge.hpp
-    ui/MovieTreePanel.cpp
-    ui/MovieTreePanel.hpp
-    ui/CodeViewPanel.cpp
-    ui/CodeViewPanel.hpp
-    ui/BreakpointGutter.cpp
-    ui/BreakpointGutter.hpp
-    ui/VariablesPanel.cpp
-    ui/VariablesPanel.hpp
-    ui/CallStackPanel.cpp
-    ui/CallStackPanel.hpp
-    ui/WatchPanel.cpp
-    ui/WatchPanel.hpp
-    ui/DebugWindowPanel.cpp
-    ui/DebugWindowPanel.hpp
-    ui/StageWidget.cpp
-    ui/StageWidget.hpp
-    format/DatumFormat.cpp
-    format/DatumFormat.hpp
-    model/DebuggerModel.cpp
-    model/DebuggerModel.hpp
-    model/SymbolIndex.cpp
-    model/SymbolIndex.hpp
-    ui/highlight/GutterHighlighter.cpp
-    ui/highlight/GutterHighlighter.hpp
-    ui/highlight/DeclarationHighlighting.hpp
-    ui/highlight/LingoHighlighter.cpp
-    ui/highlight/LingoHighlighter.hpp
-    ui/highlight/BytecodeHighlighter.cpp
-    ui/highlight/BytecodeHighlighter.hpp
+    debugger_window.cpp
+    debugger_window.hpp
+    startup_session.cpp
+    startup_session.hpp
+    external_params_dialog.cpp
+    external_params_dialog.hpp
+    debugger_context.cpp
+    debugger_context.hpp
+    debug_state_bridge.cpp
+    debug_state_bridge.hpp
+    ui/movie_tree_panel.cpp
+    ui/movie_tree_panel.hpp
+    ui/code_view_panel.cpp
+    ui/code_view_panel.hpp
+    ui/breakpoint_gutter.cpp
+    ui/breakpoint_gutter.hpp
+    ui/variables_panel.cpp
+    ui/variables_panel.hpp
+    ui/call_stack_panel.cpp
+    ui/call_stack_panel.hpp
+    ui/watch_panel.cpp
+    ui/watch_panel.hpp
+    ui/debug_window_panel.cpp
+    ui/debug_window_panel.hpp
+    ui/stage_widget.cpp
+    ui/stage_widget.hpp
+    format/datum_format.cpp
+    format/datum_format.hpp
+    model/debugger_model.cpp
+    model/debugger_model.hpp
+    model/symbol_index.cpp
+    model/symbol_index.hpp
+    ui/highlight/gutter_highlighter.cpp
+    ui/highlight/gutter_highlighter.hpp
+    ui/highlight/declaration_highlighting.hpp
+    ui/highlight/lingo_highlighter.cpp
+    ui/highlight/lingo_highlighter.hpp
+    ui/highlight/bytecode_highlighter.cpp
+    ui/highlight/bytecode_highlighter.hpp
 )
 
 find_package(Qt6 QUIET COMPONENTS Network)
@@ -82,24 +82,24 @@ if(BUILD_TESTING)
     # All debugger coverage lives in this one binary and test file. Extend
     # debugger_test.cpp instead of adding new CMake test targets.
     add_executable(libreshockwave_debugger_tests
-        StartupSession.cpp
-        StartupSession.hpp
-        model/SymbolIndex.cpp
-        model/SymbolIndex.hpp
-        model/DebuggerModel.hpp
-        ui/BreakpointGutter.cpp
-        ui/BreakpointGutter.hpp
-        ui/CodeViewPanel.cpp
-        ui/CodeViewPanel.hpp
-        ui/StageWidget.cpp
-        ui/StageWidget.hpp
-        ui/highlight/DeclarationHighlighting.hpp
-        ui/highlight/GutterHighlighter.cpp
-        ui/highlight/GutterHighlighter.hpp
-        ui/highlight/LingoHighlighter.cpp
-        ui/highlight/LingoHighlighter.hpp
-        ui/highlight/BytecodeHighlighter.cpp
-        ui/highlight/BytecodeHighlighter.hpp
+        startup_session.cpp
+        startup_session.hpp
+        model/symbol_index.cpp
+        model/symbol_index.hpp
+        model/debugger_model.hpp
+        ui/breakpoint_gutter.cpp
+        ui/breakpoint_gutter.hpp
+        ui/code_view_panel.cpp
+        ui/code_view_panel.hpp
+        ui/stage_widget.cpp
+        ui/stage_widget.hpp
+        ui/highlight/declaration_highlighting.hpp
+        ui/highlight/gutter_highlighter.cpp
+        ui/highlight/gutter_highlighter.hpp
+        ui/highlight/lingo_highlighter.cpp
+        ui/highlight/lingo_highlighter.hpp
+        ui/highlight/bytecode_highlighter.cpp
+        ui/highlight/bytecode_highlighter.hpp
         debugger_test.cpp
     )
     target_link_libraries(libreshockwave_debugger_tests

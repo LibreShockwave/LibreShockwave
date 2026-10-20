@@ -3,8 +3,8 @@
 #include <QCommandLineParser>
 #include <QDebug>
 
-#include "DebuggerWindow.hpp"
-#include "model/DebuggerModel.hpp"
+#include "debugger_window.hpp"
+#include "model/debugger_model.hpp"
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
@@ -23,10 +23,10 @@ int main(int argc, char* argv[]) {
         QStringLiteral("LibreShockwave desktop debugger and input recording replay tool"));
     parser.addHelpOption();
     parser.addVersionOption();
-    const QCommandLineOption playOption(
+    const QCommandLineOption play_option(
         {QStringLiteral("p"), QStringLiteral("play")},
         QStringLiteral("start playback after loading the movie (or replay a recording)"));
-    parser.addOption(playOption);
+    parser.addOption(play_option);
     parser.addPositionalArgument(
         QStringLiteral("movie-or-recording"),
         QStringLiteral("Director movie or .lswdebug recording to open"));
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     if (!positional.isEmpty() && !window.openMovie(positional.front())) {
         return 1;
     }
-    if (parser.isSet(playOption)) {
+    if (parser.isSet(play_option)) {
         window.startPlayback();
     }
 

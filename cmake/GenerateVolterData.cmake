@@ -24,7 +24,7 @@ hex_to_initializer("${BOLD_HEX}" BOLD_BYTES)
 get_filename_component(OUTPUT_DIR "${OUTPUT_FILE}" DIRECTORY)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 file(WRITE "${OUTPUT_FILE}" [[
-#include "libreshockwave/fonts/volter/Volter.hpp"
+#include "libreshockwave/fonts/volter/volter.hpp"
 
 #include <array>
 #include <cstdint>

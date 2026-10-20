@@ -23,13 +23,13 @@
 #include <QTimer>
 #include <QToolButton>
 
-#include "StartupSession.hpp"
-#include "model/SymbolIndex.hpp"
-#include "ui/BreakpointGutter.hpp"
-#include "ui/CodeViewPanel.hpp"
-#include "ui/StageWidget.hpp"
-#include "ui/highlight/BytecodeHighlighter.hpp"
-#include "ui/highlight/LingoHighlighter.hpp"
+#include "startup_session.hpp"
+#include "model/symbol_index.hpp"
+#include "ui/breakpoint_gutter.hpp"
+#include "ui/code_view_panel.hpp"
+#include "ui/stage_widget.hpp"
+#include "ui/highlight/bytecode_highlighter.hpp"
+#include "ui/highlight/lingo_highlighter.hpp"
 
 #include <cassert>
 #include <string>
@@ -40,14 +40,14 @@ using namespace libreshockwave::debugger;
 
 namespace {
 
-constexpr int kKeyDown = 3;
-constexpr int kKeyUp = 4;
+constexpr int k_key_down = 3;
+constexpr int k_key_up = 4;
 
 // QSyntaxHighlighter stores its formats in the block's QTextLayout (the
 // display layer), not in the document's character formats, so the test
 // queries layout format ranges.
-QTextCharFormat formatAt(QTextDocument& doc, int blockNumber, int pos) {
-    const QTextLayout* layout = doc.findBlockByNumber(blockNumber).layout();
+QTextCharFormat formatAt(QTextDocument& doc, int block_number, int pos) {
+    const QTextLayout* layout = doc.findBlockByNumber(block_number).layout();
     assert(layout != nullptr);
     for (const auto& range : layout->formats()) {
         if (pos >= range.start && pos < range.start + range.length) {
@@ -57,41 +57,41 @@ QTextCharFormat formatAt(QTextDocument& doc, int blockNumber, int pos) {
     return QTextCharFormat();
 }
 
-bool hasForeground(QTextDocument& doc, int blockNumber, int pos) {
-    return formatAt(doc, blockNumber, pos).foreground().style() != Qt::NoBrush;
+bool hasForeground(QTextDocument& doc, int block_number, int pos) {
+    return formatAt(doc, block_number, pos).foreground().style() != Qt::NoBrush;
 }
 
-QColor charColor(QTextDocument& doc, int blockNumber, int pos) {
-    const QTextCharFormat format = formatAt(doc, blockNumber, pos);
+QColor charColor(QTextDocument& doc, int block_number, int pos) {
+    const QTextCharFormat format = formatAt(doc, block_number, pos);
     assert(format.foreground().style() != Qt::NoBrush);
     return format.foreground().color();
 }
 
-int underlineStyle(QTextDocument& doc, int blockNumber, int pos) {
-    return formatAt(doc, blockNumber, pos).underlineStyle();
+int underlineStyle(QTextDocument& doc, int block_number, int pos) {
+    return formatAt(doc, block_number, pos).underlineStyle();
 }
 
 MovieTreeSnapshot makeSymbolSnapshot() {
     MovieTreeSnapshot snapshot;
     MovieTreeSnapshot::MovieEntry movie;
-    movie.castLibNumber = 1;
+    movie.cast_lib_number = 1;
     movie.name = "test.cct";
 
-    MovieTreeSnapshot::ScriptEntry mainScript;
-    mainScript.scriptId = 1;
-    mainScript.castLibNumber = 1;
-    mainScript.displayName = "MovieScript 1";
-    mainScript.handlers = {{"handleMouseUp"}, {"foo"}};
-    mainScript.propertyNames = {"speed"};
-    mainScript.globalNames = {"gCount"};
-    movie.scripts.push_back(mainScript);
+    MovieTreeSnapshot::ScriptEntry main_script;
+    main_script.script_id = 1;
+    main_script.cast_lib_number = 1;
+    main_script.display_name = "MovieScript 1";
+    main_script.handlers = {{"handleMouseUp"}, {"foo"}};
+    main_script.property_names = {"speed"};
+    main_script.global_names = {"gCount"};
+    movie.scripts.push_back(main_script);
 
     MovieTreeSnapshot::ScriptEntry behavior;
-    behavior.scriptId = 2;
-    behavior.castLibNumber = 1;
-    behavior.displayName = "Figure Class";
+    behavior.script_id = 2;
+    behavior.cast_lib_number = 1;
+    behavior.display_name = "Figure Class";
     behavior.handlers = {{"foo"}, {"draw"}};
-    behavior.propertyNames = {"color"};
+    behavior.property_names = {"color"};
     movie.scripts.push_back(behavior);
 
     snapshot.movies.push_back(std::move(movie));
@@ -103,12 +103,12 @@ MovieTreeSnapshot makeSymbolSnapshot() {
 // back to that character and WordUnderCursor selects the whole word.  Uses
 // cursorRect() of a one-character selection, which returns viewport coords by
 // construction and is font-agnostic.
-QPoint charToViewport(QPlainTextEdit* view, int lineIndex, int charInLine) {
+QPoint charToViewport(QPlainTextEdit* view, int line_index, int char_in_line) {
     QTextDocument* doc = view->document();
-    const QTextBlock block = doc->findBlockByLineNumber(lineIndex);
+    const QTextBlock block = doc->findBlockByLineNumber(line_index);
     assert(block.isValid());
     QTextCursor cursor(block);
-    cursor.setPosition(block.position() + charInLine);
+    cursor.setPosition(block.position() + char_in_line);
     cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor);
     const QRect rect = view->cursorRect(cursor);
     assert(!rect.isEmpty());
@@ -138,11 +138,11 @@ void clickIndicator(QToolButton* button, QPoint pos) {
 MovieTreeSnapshot makeCodeViewSnapshot() {
     MovieTreeSnapshot snapshot;
     MovieTreeSnapshot::MovieEntry movie;
-    movie.castLibNumber = 1;
+    movie.cast_lib_number = 1;
     MovieTreeSnapshot::ScriptEntry script;
-    script.scriptId = 100;
-    script.castLibNumber = 1;
-    script.displayName = "MovieScript 1";
+    script.script_id = 100;
+    script.cast_lib_number = 1;
+    script.display_name = "MovieScript 1";
     script.handlers = {{"foo"}, {"bar"}};
     movie.scripts.push_back(script);
     snapshot.movies.push_back(movie);
@@ -151,18 +151,18 @@ MovieTreeSnapshot makeCodeViewSnapshot() {
 
 struct CapturedKey {
     int type;
-    int keyCode;
+    int key_code;
     std::string text;
 };
 
 class EventSpy {
 public:
-    void record(int type, int stageX, int stageY, int keyCode,
-                const std::string& keyText, bool /*shift*/, bool /*ctrl*/,
+    void record(int type, int stage_x, int stage_y, int key_code,
+                const std::string& key_text, bool /*shift*/, bool /*ctrl*/,
                 bool /*alt*/, bool /*rightButton*/) {
-        (void)stageX;
-        (void)stageY;
-        captured_.push_back(CapturedKey{type, keyCode, keyText});
+        (void)stage_x;
+        (void)stage_y;
+        captured_.push_back(CapturedKey{type, key_code, key_text});
     }
 
     const std::vector<CapturedKey>& keys() const { return captured_; }
@@ -174,17 +174,17 @@ private:
 
 void attachSpy(StageWidget& widget, EventSpy& spy) {
     widget.setInputCallback(
-        [&spy](int type, int stageX, int stageY, int keyCode,
-               const std::string& keyText, bool shift, bool ctrl, bool alt,
-               bool rightButton) {
-            spy.record(type, stageX, stageY, keyCode, keyText, shift, ctrl,
-                       alt, rightButton);
+        [&spy](int type, int stage_x, int stage_y, int key_code,
+               const std::string& key_text, bool shift, bool ctrl, bool alt,
+               bool right_button) {
+            spy.record(type, stage_x, stage_y, key_code, key_text, shift, ctrl,
+                       alt, right_button);
         });
 }
 
-void sendKey(StageWidget& widget, int qtKey, const QString& text) {
-    QKeyEvent press(QEvent::KeyPress, qtKey, Qt::NoModifier, text);
-    QKeyEvent release(QEvent::KeyRelease, qtKey, Qt::NoModifier);
+void sendKey(StageWidget& widget, int qt_key, const QString& text) {
+    QKeyEvent press(QEvent::KeyPress, qt_key, Qt::NoModifier, text);
+    QKeyEvent release(QEvent::KeyRelease, qt_key, Qt::NoModifier);
     QApplication::sendEvent(&widget, &press);
     QApplication::sendEvent(&widget, &release);
 }
@@ -192,15 +192,15 @@ void sendKey(StageWidget& widget, int qtKey, const QString& text) {
 } // namespace
 
 void testStartupSessionSourceSelection() {
-    assert(select_startup_movie_source(QStringLiteral("movie.dir"),
+    assert(selectStartupMovieSource(QStringLiteral("movie.dir"),
                                        QStringLiteral("session.lswdebug")) ==
            QStringLiteral("movie.dir"));
-    assert(select_startup_movie_source(QString(), QStringLiteral("movie.dcr")) ==
+    assert(selectStartupMovieSource(QString(), QStringLiteral("movie.dcr")) ==
            QStringLiteral("movie.dcr"));
-    assert(select_startup_movie_source(QStringLiteral("session.lswdebug"),
+    assert(selectStartupMovieSource(QStringLiteral("session.lswdebug"),
                                        QStringLiteral("other.lswdebug"))
                .isEmpty());
-    assert(select_startup_movie_source(QStringLiteral("SESSION.LSWDEBUG"),
+    assert(selectStartupMovieSource(QStringLiteral("SESSION.LSWDEBUG"),
                                        QStringLiteral("movie.cst")) ==
            QStringLiteral("movie.cst"));
 }
@@ -219,30 +219,30 @@ void testSymbolIndex() {
     std::vector<DeclarationTarget> methods = index.find("foo", 2);
     assert(methods.size() == 2);
     assert(methods[0].kind == DeclarationKind::Method);
-    assert(methods[0].castLibNumber == 1);
-    assert(methods[0].scriptId == 2);
-    assert(methods[0].scriptName == "Figure Class");
-    assert(methods[0].handlerName == "foo");
-    assert(methods[1].scriptId == 1);
-    assert(methods[1].scriptName == "MovieScript 1");
+    assert(methods[0].cast_lib_number == 1);
+    assert(methods[0].script_id == 2);
+    assert(methods[0].script_name == "Figure Class");
+    assert(methods[0].handler_name == "foo");
+    assert(methods[1].script_id == 1);
+    assert(methods[1].script_name == "MovieScript 1");
 
     // Lookup is case-insensitive; preference flips the order.
     methods = index.find("FOO", 1);
     assert(methods.size() == 2);
-    assert(methods[0].scriptId == 1);
-    assert(methods[1].scriptId == 2);
+    assert(methods[0].script_id == 1);
+    assert(methods[1].script_id == 2);
 
     // Property and global targets carry no handler name.
     auto properties = index.find("speed", 0);
     assert(properties.size() == 1);
     assert(properties[0].kind == DeclarationKind::Property);
-    assert(properties[0].scriptId == 1);
-    assert(properties[0].handlerName.empty());
+    assert(properties[0].script_id == 1);
+    assert(properties[0].handler_name.empty());
 
     auto globals = index.find("gcount", 0);
     assert(globals.size() == 1);
     assert(globals[0].kind == DeclarationKind::Global);
-    assert(globals[0].scriptId == 1);
+    assert(globals[0].script_id == 1);
 
     // Unknown names resolve to nothing.
     assert(index.find("missing", 1).empty());
@@ -271,22 +271,22 @@ void testSymbolIndex() {
     // Scripts sharing an ID across cast libraries stay distinct.
     MovieTreeSnapshot multi = makeSymbolSnapshot();
     MovieTreeSnapshot::MovieEntry second;
-    second.castLibNumber = 2;
+    second.cast_lib_number = 2;
     second.name = "extra.cct";
     MovieTreeSnapshot::ScriptEntry extra;
-    extra.scriptId = 1; // same ID as the first movie's main script
-    extra.castLibNumber = 2;
-    extra.displayName = "MovieScript 2";
+    extra.script_id = 1; // same ID as the first movie's main script
+    extra.cast_lib_number = 2;
+    extra.display_name = "MovieScript 2";
     extra.handlers = {{"foo"}};
     second.scripts.push_back(extra);
     multi.movies.push_back(std::move(second));
 
-    SymbolIndex multiIndex{multi};
-    methods = multiIndex.find("foo", 0);
+    SymbolIndex multi_index{multi};
+    methods = multi_index.find("foo", 0);
     assert(methods.size() == 3);
-    assert(methods[0].castLibNumber == 1 && methods[0].scriptId == 1);
-    assert(methods[1].castLibNumber == 1 && methods[1].scriptId == 2);
-    assert(methods[2].castLibNumber == 2 && methods[2].scriptId == 1);
+    assert(methods[0].cast_lib_number == 1 && methods[0].script_id == 1);
+    assert(methods[1].cast_lib_number == 1 && methods[1].script_id == 2);
+    assert(methods[2].cast_lib_number == 2 && methods[2].script_id == 1);
 }
 
 void testHighlighters() {
@@ -407,13 +407,13 @@ void testHighlighters() {
         // Declaration names remain loaded for lookup, but are not underlined
         // while the internal declaration-highlighting switch is disabled.
         const QTextBlock block0 = doc.findBlockByNumber(0);
-        const int fooPos = block0.text().indexOf(QStringLiteral("; foo")) + 2;
-        assert(fooPos > 0);
-        assert(underlineStyle(doc, 0, fooPos) == QTextCharFormat::NoUnderline);
+        const int foo_pos = block0.text().indexOf(QStringLiteral("; foo")) + 2;
+        assert(foo_pos > 0);
+        assert(underlineStyle(doc, 0, foo_pos) == QTextCharFormat::NoUnderline);
         const QTextBlock block1 = doc.findBlockByNumber(1);
-        const int barPos = block1.text().indexOf(QStringLiteral("; bar")) + 2;
-        assert(barPos > 0);
-        assert(underlineStyle(doc, 1, barPos) == QTextCharFormat::NoUnderline);
+        const int bar_pos = block1.text().indexOf(QStringLiteral("; bar")) + 2;
+        assert(bar_pos > 0);
+        assert(underlineStyle(doc, 1, bar_pos) == QTextCharFormat::NoUnderline);
     }
 }
 
@@ -423,13 +423,13 @@ void testCodeViewPanel() {
         CodeViewPanel panel;
         DecompiledLineData l0;
         l0.text = "on foo";
-        l0.bytecodeOffset = -1;
+        l0.bytecode_offset = -1;
         DecompiledLineData l1;
         l1.text = "put 1 into x";
-        l1.bytecodeOffset = 0;
+        l1.bytecode_offset = 0;
         DecompiledLineData l2;
         l2.text = "end";
-        l2.bytecodeOffset = 2;
+        l2.bytecode_offset = 2;
         std::vector<DecompiledLineData> lines = {l0, l1, l2};
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"}, {}, {});
 
@@ -487,25 +487,25 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "on foo";
-            l.bytecodeOffset = -1;
+            l.bytecode_offset = -1;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "put 1 into x";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "put 2 into y";
-            l.bytecodeOffset = 4;
+            l.bytecode_offset = 4;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "end";
-            l.bytecodeOffset = 8;
+            l.bytecode_offset = 8;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
@@ -547,27 +547,27 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "on foo";
-            l.bytecodeOffset = -1;
+            l.bytecode_offset = -1;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "push zero";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
                               {"foo"}, {}, {});
 
-        int rowH = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
+        int row_h = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
 
-        int scriptId = 0;
+        int script_id = 0;
         std::string handler;
         int offset = -1;
         int clicks = 0;
         QObject::connect(&panel, &CodeViewPanel::breakpointToggled, &panel,
                 [&](int s, const std::string& h, int o) {
-                    scriptId = s;
+                    script_id = s;
                     handler = h;
                     offset = o;
                     ++clicks;
@@ -575,22 +575,22 @@ void testCodeViewPanel() {
 
         // Clicking the bytecode gutter row for offset 0 toggles there.
         clickIndicator(panel.bytecodeGutter()->indicatorButton(0),
-                          QPoint(5, rowH / 2));
+                          QPoint(5, row_h / 2));
         assert(clicks == 1);
-        assert(scriptId == 100);
+        assert(script_id == 100);
         assert(handler == "foo");
         assert(offset == 0);
 
         // Clicking the decompiled gutter row 1 (offset 0), past row 0's
         // structural "on foo", toggles at the same offset.
         clickIndicator(panel.decompiledGutter()->indicatorButton(1),
-                          QPoint(5, rowH / 2));
+                          QPoint(5, row_h / 2));
         assert(clicks == 2);
         assert(offset == 0);
 
         // Clicking a structural line (offset -1) toggles nothing.
         clickIndicator(panel.decompiledGutter()->indicatorButton(0),
-                          QPoint(5, rowH / 2));
+                          QPoint(5, row_h / 2));
         assert(clicks == 2);
     }
 
@@ -608,19 +608,19 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "push zero";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         // Overview (no handler): setHandlerCode with an empty handlerName.
         panel.setHandlerCode(1, 100, "MovieScript 1", "", instrs, lines, {}, {},
                               {});
 
-        int rowH = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
+        int row_h = QFontMetrics(panel.bytecodeView()->font()).lineSpacing();
         int clicks = 0;
         QObject::connect(&panel, &CodeViewPanel::breakpointToggled, &panel,
                 [&](int, const std::string&, int) { ++clicks; });
         clickIndicator(panel.bytecodeGutter()->indicatorButton(0),
-                          QPoint(5, rowH / 2));
+                          QPoint(5, row_h / 2));
         assert(clicks == 0);
     }
 
@@ -643,7 +643,7 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l0;
             l0.text = "call bar";
-            l0.bytecodeOffset = 0;
+            l0.bytecode_offset = 0;
             std::vector<DecompiledLineData> lines = {l0};
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines,
                                  {"foo", "bar"}, {}, {});
@@ -660,7 +660,7 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l0;
             l0.text = "put 1 into vTotal";
-            l0.bytecodeOffset = 0;
+            l0.bytecode_offset = 0;
             std::vector<DecompiledLineData> lines = {l0};
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"},
                                   {}, {"vTotal"});
@@ -678,7 +678,7 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l0;
             l0.text = "call qux";
-            l0.bytecodeOffset = 0;
+            l0.bytecode_offset = 0;
             std::vector<DecompiledLineData> lines = {l0};
             panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines, {"foo"},
                                   {}, {});
@@ -729,7 +729,7 @@ void testCodeViewPanel() {
         tabs->setCurrentIndex(1);
         DecompiledLineData l0;
         l0.text = "call bar";
-        l0.bytecodeOffset = 0;
+        l0.bytecode_offset = 0;
         std::vector<DecompiledLineData> lines = {l0};
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", {}, lines,
                               {"foo", "bar"}, {}, {});
@@ -738,7 +738,7 @@ void testCodeViewPanel() {
         // Send a QEvent::ContextMenu for `pos`. Each call arms its own timer so
         // the nested exec() loop (from buildRightClickMenu) is always closable —
         // one timer per shown menu.
-        const auto showContextMenu = [&](const QPoint& pos, bool& accepted) {
+        const auto show_context_menu = [&](const QPoint& pos, bool& accepted) {
             QTimer::singleShot(50, []() {
                 if (QWidget* popup = QApplication::activePopupWidget()) {
                     popup->close();
@@ -754,7 +754,7 @@ void testCodeViewPanel() {
         {
             const QPoint pos = charToViewport(panel.decompiledView(), 0, 5);
             bool accepted = false;
-            showContextMenu(pos, accepted);
+            show_context_menu(pos, accepted);
             assert(accepted);
             assert(spy.menus.size() == 1);
             assert(spy.menus.first().contains("Go to method"));
@@ -766,7 +766,7 @@ void testCodeViewPanel() {
         {
             const QPoint pos = charToViewport(panel.decompiledView(), 1, 0);
             bool accepted = false;
-            showContextMenu(pos, accepted);
+            show_context_menu(pos, accepted);
             assert(accepted);
             assert(spy.menus.size() == 2);
             assert(spy.menus.last().contains("Select All"));
@@ -798,13 +798,13 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "on foo";
-            l.bytecodeOffset = -1;
+            l.bytecode_offset = -1;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "put 1 into x";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
@@ -827,17 +827,17 @@ void testCodeViewPanel() {
         // must contain pixels in the theme's breakpoint red (light 0xdc2626
         // or dark 0xf87171), and not just the default palette text color.
         const QImage img = panel.grab().toImage();
-        int redPixels = 0;
+        int red_pixels = 0;
         for (int y = 0; y < img.height(); ++y) {
             for (int x = 0; x < img.width(); ++x) {
                 const QColor c = img.pixelColor(x, y);
                 if (c.red() > 180 && c.red() - c.green() > 60 &&
                     c.red() - c.blue() > 60) {
-                    ++redPixels;
+                    ++red_pixels;
                 }
             }
         }
-        assert(redPixels > 0);
+        assert(red_pixels > 0);
     }
 
     // ---- Indicators stay pixel-aligned with their code lines ----
@@ -856,7 +856,7 @@ void testCodeViewPanel() {
         for (int i = 0; i < 40; ++i) {
             DecompiledLineData l;
             l.text = QString("line %1").arg(i).toStdString();
-            l.bytecodeOffset = i * 4;
+            l.bytecode_offset = i * 4;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "h", {}, lines, {"h"}, {},
@@ -867,25 +867,25 @@ void testCodeViewPanel() {
         QTextDocument* doc = view->document();
         BreakpointGutter* gutter = panel.decompiledGutter();
 
-        const auto checkAlignment = [&](int row) {
-            const QRect lineRect = view->cursorRect(
+        const auto check_alignment = [&](int row) {
+            const QRect line_rect = view->cursorRect(
                 QTextCursor(doc->findBlockByLineNumber(row)));
             const int expected =
-                view->viewport()->mapTo(&panel, QPoint(0, 0)).y() + lineRect.top();
+                view->viewport()->mapTo(&panel, QPoint(0, 0)).y() + line_rect.top();
             const int actual =
                 gutter->indicatorButton(row)->mapTo(&panel, QPoint(0, 0)).y();
             assert(qAbs(actual - expected) <= 1);
         };
 
-        checkAlignment(0);
-        checkAlignment(5);
-        checkAlignment(10);
+        check_alignment(0);
+        check_alignment(5);
+        check_alignment(10);
 
         // Scroll down: buttons must follow the viewport exactly.
         view->verticalScrollBar()->setValue(120);
         QApplication::processEvents();
-        checkAlignment(10);
-        checkAlignment(15);
+        check_alignment(10);
+        check_alignment(15);
 
         // A row scrolled off the top is no longer visible.
         assert(!gutter->indicatorButton(0)->isVisible());
@@ -907,25 +907,25 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "on foo";
-            l.bytecodeOffset = -1;
+            l.bytecode_offset = -1;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "put 1 into x";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "put 2 into y";
-            l.bytecodeOffset = 4;
+            l.bytecode_offset = 4;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "end";
-            l.bytecodeOffset = 8;
+            l.bytecode_offset = 8;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
@@ -950,9 +950,9 @@ void testCodeViewPanel() {
                        QPoint(5, 2));
         tabs->setCurrentIndex(0);
         QApplication::processEvents();
-        const auto bcSelections = panel.bytecodeView()->extraSelections();
-        assert(bcSelections.size() == 1);
-        assert(bcSelections.first().cursor.blockNumber() == 0);
+        const auto bc_selections = panel.bytecodeView()->extraSelections();
+        assert(bc_selections.size() == 1);
+        assert(bc_selections.first().cursor.blockNumber() == 0);
     }
 
     // ---- A mid-statement bytecode offset reveals its whole statement ----
@@ -971,13 +971,13 @@ void testCodeViewPanel() {
         {
             DecompiledLineData l;
             l.text = "on foo";
-            l.bytecodeOffset = -1;
+            l.bytecode_offset = -1;
             lines.push_back(l);
         }
         {
             DecompiledLineData l;
             l.text = "one big statement";
-            l.bytecodeOffset = 0;
+            l.bytecode_offset = 0;
             lines.push_back(l);
         }
         panel.setHandlerCode(1, 100, "MovieScript 1", "foo", instrs, lines,
@@ -1005,14 +1005,14 @@ void testStageWidgetKeys() {
         attachSpy(widget, spy);
         sendKey(widget, Qt::Key_Return, QStringLiteral("\r"));
         assert(spy.keys().size() == 2);
-        assert(spy.keys()[0].type == kKeyDown && spy.keys()[0].keyCode == 36);
-        assert(spy.keys()[1].type == kKeyUp && spy.keys()[1].keyCode == 36);
+        assert(spy.keys()[0].type == k_key_down && spy.keys()[0].key_code == 36);
+        assert(spy.keys()[1].type == k_key_up && spy.keys()[1].key_code == 36);
 
         spy.clear();
         sendKey(widget, Qt::Key_Backspace, QStringLiteral("\b"));
         assert(spy.keys().size() == 2);
-        assert(spy.keys()[0].type == kKeyDown && spy.keys()[0].keyCode == 51);
-        assert(spy.keys()[1].type == kKeyUp && spy.keys()[1].keyCode == 51);
+        assert(spy.keys()[0].type == k_key_down && spy.keys()[0].key_code == 51);
+        assert(spy.keys()[1].type == k_key_up && spy.keys()[1].key_code == 51);
     }
 
     // Keypad Enter shares the Return code.
@@ -1023,7 +1023,7 @@ void testStageWidgetKeys() {
         QKeyEvent press(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
         QApplication::sendEvent(&widget, &press);
         assert(spy.keys().size() == 1);
-        assert(spy.keys()[0].keyCode == 36);
+        assert(spy.keys()[0].key_code == 36);
     }
 
     // Navigation and editing keys use Director codes, not browser codes.
@@ -1031,18 +1031,18 @@ void testStageWidgetKeys() {
         EventSpy spy;
         StageWidget widget;
         attachSpy(widget, spy);
-        const std::pair<int, int> arrowCases[] = {
+        const std::pair<int, int> arrow_cases[] = {
             {Qt::Key_Left, 123}, {Qt::Key_Right, 124}, {Qt::Key_Up, 126},
             {Qt::Key_Down, 125}, {Qt::Key_Tab, 48},    {Qt::Key_Escape, 53},
             {Qt::Key_Space, 49}, {Qt::Key_Delete, 117}, {Qt::Key_F1, 122},
         };
-        for (const auto& [qtKey, directorCode] : arrowCases) {
+        for (const auto& [qt_key, director_code] : arrow_cases) {
             spy.clear();
-            sendKey(widget, qtKey, QString());
+            sendKey(widget, qt_key, QString());
             assert(spy.keys().size() == 2);
-            assert(spy.keys()[0].type == kKeyDown);
-            assert(spy.keys()[0].keyCode == directorCode);
-            assert(spy.keys()[1].keyCode == directorCode);
+            assert(spy.keys()[0].type == k_key_down);
+            assert(spy.keys()[0].key_code == director_code);
+            assert(spy.keys()[1].key_code == director_code);
         }
     }
 
@@ -1054,12 +1054,12 @@ void testStageWidgetKeys() {
         attachSpy(widget, spy);
         sendKey(widget, Qt::Key_A, QStringLiteral("a"));
         assert(spy.keys().size() == 2);
-        assert(spy.keys()[0].keyCode == 0);
+        assert(spy.keys()[0].key_code == 0);
         assert(spy.keys()[0].text == "a");
 
         spy.clear();
         sendKey(widget, Qt::Key_5, QStringLiteral("5"));
-        assert(spy.keys()[0].keyCode == 23);
+        assert(spy.keys()[0].key_code == 23);
         assert(spy.keys()[0].text == "5");
     }
 
@@ -1070,7 +1070,7 @@ void testStageWidgetKeys() {
         EventSpy spy;
         StageWidget widget;
         attachSpy(widget, spy);
-        const std::pair<int, QString> symbolCases[] = {
+        const std::pair<int, QString> symbol_cases[] = {
             {Qt::Key_Exclam, QStringLiteral("!")},
             {Qt::Key_At, QStringLiteral("@")},
             {Qt::Key_NumberSign, QStringLiteral("#")},
@@ -1084,15 +1084,15 @@ void testStageWidgetKeys() {
             {Qt::Key_Greater, QStringLiteral(">")},
             {Qt::Key_Question, QStringLiteral("?")},
         };
-        for (const auto& [qtKey, text] : symbolCases) {
+        for (const auto& [qt_key, text] : symbol_cases) {
             spy.clear();
-            sendKey(widget, qtKey, text);
+            sendKey(widget, qt_key, text);
             assert(spy.keys().size() == 2);
-            const int expectedCode = 0x2000 + qtKey;
-            assert(spy.keys()[0].type == kKeyDown);
-            assert(spy.keys()[0].keyCode == expectedCode);
+            const int expected_code = 0x2000 + qt_key;
+            assert(spy.keys()[0].type == k_key_down);
+            assert(spy.keys()[0].key_code == expected_code);
             assert(spy.keys()[0].text == text.toStdString());
-            assert(spy.keys()[1].keyCode == expectedCode);
+            assert(spy.keys()[1].key_code == expected_code);
         }
     }
 
@@ -1110,9 +1110,9 @@ void testStageWidgetKeys() {
         EventSpy spy;
         StageWidget widget;
         attachSpy(widget, spy);
-        QKeyEvent repeatPress(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier,
+        QKeyEvent repeat_press(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier,
                               QStringLiteral("b"), true);
-        QApplication::sendEvent(&widget, &repeatPress);
+        QApplication::sendEvent(&widget, &repeat_press);
         assert(spy.keys().empty());
     }
 }
