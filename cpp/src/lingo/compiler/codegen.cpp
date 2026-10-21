@@ -1143,11 +1143,14 @@ void CodeGenerator::emitCall(const std::string& name,
                             bool is_local,
                             bool no_ret) {
     emitArgs(args, no_ret);
-    // A call to a handler in the same script is a LOCAL_CALL (arg = handler index).
-    for (std::size_t i = 0; i < script_->handlers.size(); ++i) {
-        if (script_->handlers[i]->name == name) {
-            emit(Opcode::LOCAL_CALL, static_cast<int>(i));
-            return;
+    // A call to a handler in the same script is a LOCAL_CALL (arg = handler
+    // index). The `new` keyword is a builtin and never a local handler call.
+    if (name != "new") {
+        for (std::size_t i = 0; i < script_->handlers.size(); ++i) {
+            if (script_->handlers[i]->name == name) {
+                emit(Opcode::LOCAL_CALL, static_cast<int>(i));
+                return;
+            }
         }
     }
     if (is_local) {
