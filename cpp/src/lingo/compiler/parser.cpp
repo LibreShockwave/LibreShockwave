@@ -320,6 +320,17 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
             return stmt;
         }
         stmt->value = parseExpression();
+        // `put a, b, c` is a multi-argument call to a handler named put.
+        if (check(TokenType::Comma)) {
+            stmt->kind = Stmt::Kind::Call;
+            stmt->name = "put";
+            stmt->args.push_back(std::move(stmt->value));
+            while (check(TokenType::Comma)) {
+                advance();
+                stmt->args.push_back(parseExpression());
+            }
+            return stmt;
+        }
         if (checkKeyword("into")) {
             advance();
             stmt->kind = Stmt::Kind::Put;
