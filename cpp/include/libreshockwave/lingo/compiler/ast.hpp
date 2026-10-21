@@ -156,6 +156,9 @@ struct Stmt {
     std::vector<std::unique_ptr<Expr>> args; // Call
     std::vector<std::unique_ptr<Stmt>> then_block;
     std::vector<std::unique_ptr<Stmt>> else_block;
+    // True when the source had an `else` keyword, even if its body is empty.
+    // Director still emits the jump over an empty else branch.
+    bool has_else = false;
     std::vector<std::unique_ptr<Stmt>> block;
     bool up = false; // RepeatWithTo: true = "to", false = "down to"
     PutDir put_dir = PutDir::Into;

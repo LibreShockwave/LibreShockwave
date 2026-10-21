@@ -430,7 +430,7 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             emitBlock(stmt.then_block);
             int else_start = -1;
             int then_jump_offset = -1;
-            if (!stmt.else_block.empty()) {
+            if (!stmt.else_block.empty() || stmt.has_else) {
                 then_jump_offset = offset_;
                 emit(Opcode::JMP, 0); // patched to end
                 else_start = offset_;

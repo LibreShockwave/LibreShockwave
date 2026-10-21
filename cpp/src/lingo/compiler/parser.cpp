@@ -379,6 +379,7 @@ std::unique_ptr<Stmt> Parser::parseIf() {
     stmt->then_block = parseBlock("else");
     if (checkKeyword("else")) {
         advance();
+        stmt->has_else = true;
         // `else if` chains: the decompiler prints a nested `if` in the else block.
         if (checkKeyword("if")) {
             auto nested = parseIf();
