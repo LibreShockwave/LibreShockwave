@@ -104,9 +104,14 @@ private:
     // object call. The decompiler prints both forms identically.
     void emitObjPropIndex(const Expr& expr, bool by_ref);
     void emitLvalue(const Expr& expr);
+    // Emits the eight chunk bounds (first/last char, word, item, line) in the
+    // order PUT_CHUNK expects. Missing bounds become PUSH_ZERO.
+    void emitChunkBounds(const Expr& chunk);
+    // Emits a variable reference for PUT and PUT_CHUNK and returns the var_type
+    // nibble that identifies it (1 global, 3 property, 4 arg, 5 local).
+    [[nodiscard]] int emitVarRefForPut(const Expr& variable);
     void emitVarGet(const std::string& name);
     void emitSetForVar(const std::string& name);
-    [[nodiscard]] int varTypeForExpr(const Expr& expr);
     [[nodiscard]] bool isScriptProperty(const std::string& name);
     [[nodiscard]] bool isTopLevelBuiltin(const std::string& name);
     void emitArgs(const std::vector<std::unique_ptr<Expr>>& args, bool no_ret);

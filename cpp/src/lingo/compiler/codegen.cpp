@@ -501,6 +501,12 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
                 emitExpr(*stmt.value);
                 emit(Opcode::PUSH_ARG_LIST_NO_RET, has_second ? 5 : 4);
                 emit(Opcode::OBJ_CALL, nameId("setProp") * mult_);
+            } else if (stmt.variable->kind == Expr::Kind::ChunkExpr) {
+                // `char 1 of x = value` is a PUT_CHUNK with put_type into.
+                emitExpr(*stmt.value);
+                emitChunkBounds(*stmt.variable);
+                const int var_type = emitVarRefForPut(*stmt.variable->source);
+                emit(Opcode::PUT_CHUNK, (1 << 4) | var_type);
             } else {
                 // Fallback: value first, then the lvalue (which emits the SET).
                 emitExpr(*stmt.value);
@@ -510,14 +516,15 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
         }
         case Stmt::Kind::Put: {
             emitExpr(*stmt.value);
-            emitLvalue(*stmt.variable);
             const int put_type = stmt.put_dir == PutDir::Into ? 1
                                  : stmt.put_dir == PutDir::After ? 2 : 3;
             if (stmt.variable->kind == Expr::Kind::ChunkExpr) {
-                const int var_type = varTypeForExpr(*stmt.variable->source);
+                emitChunkBounds(*stmt.variable);
+                const int var_type = emitVarRefForPut(*stmt.variable->source);
                 emit(Opcode::PUT_CHUNK, (put_type << 4) | var_type);
             } else {
-                emit(Opcode::PUT, put_type);
+                const int var_type = emitVarRefForPut(*stmt.variable);
+                emit(Opcode::PUT, (put_type << 4) | var_type);
             }
             break;
         }
@@ -940,25 +947,9 @@ void CodeGenerator::emitLvalue(const Expr& expr) {
             break;
         }
         case Expr::Kind::ChunkExpr: {
-            // A chunk target: push the source, then the 8 chunk values in
-            // order (first_char, last_char, first_word, last_word, first_item,
-            // last_item, first_line, last_line). The PUT opcode is appended by
-            // the caller with the combined put_type + var_type argument.
-            emitExpr(*expr.source);
-            for (const int chunk_id : {1, 2, 3, 4, 5, 6, 7, 8}) {
-                const int type = (chunk_id + 1) / 2; // 1->1, 2->1, 3->2, ...
-                if (expr.chunk_type == type && expr.first) {
-                    if (chunk_id % 2 == 1) {
-                        emitExpr(*expr.first);
-                    } else if (expr.last) {
-                        emitExpr(*expr.last);
-                    } else {
-                        emitNoArg(Opcode::PUSH_ZERO);
-                    }
-                } else {
-                    emitNoArg(Opcode::PUSH_ZERO);
-                }
-            }
+            // A chunk target: the eight bounds, then the source variable ref.
+            emitChunkBounds(expr);
+            (void)emitVarRefForPut(*expr.source);
             break;
         }
         default: {
@@ -967,6 +958,45 @@ void CodeGenerator::emitLvalue(const Expr& expr) {
             break;
         }
     }
+}
+
+void CodeGenerator::emitChunkBounds(const Expr& chunk) {
+    // first_char, last_char, first_word, last_word, first_item, last_item,
+    // first_line, last_line. Missing bounds become PUSH_ZERO.
+    for (const int chunk_id : {1, 2, 3, 4, 5, 6, 7, 8}) {
+        const int type = (chunk_id + 1) / 2; // 1->1, 2->1, 3->2, ...
+        if (chunk.chunk_type == type && chunk.first) {
+            if (chunk_id % 2 == 1) {
+                emitExpr(*chunk.first);
+            } else if (chunk.last) {
+                emitExpr(*chunk.last);
+            } else {
+                emitNoArg(Opcode::PUSH_ZERO);
+            }
+        } else {
+            emitNoArg(Opcode::PUSH_ZERO);
+        }
+    }
+}
+
+int CodeGenerator::emitVarRefForPut(const Expr& variable) {
+    if (variable.kind == Expr::Kind::Var) {
+        const std::string& name = variable.name;
+        if (arg_slot_.count(name)) {
+            emitInt(arg_slot_.at(name));
+            return 4;
+        }
+        if (local_slot_.count(name)) {
+            emitInt(local_slot_.at(name));
+            return 5;
+        }
+        emit(Opcode::PUSH_VAR_REF, nameId(name) * mult_);
+        return isScriptProperty(name) ? 3 : 1;
+    }
+    // Any other target keeps its name in a var-ref so the decompiler can
+    // recover it.
+    emit(Opcode::PUSH_VAR_REF, nameId(variable.name) * mult_);
+    return 3;
 }
 
 void CodeGenerator::emitSetForVar(const std::string& name) {
@@ -985,19 +1015,6 @@ void CodeGenerator::emitSetForVar(const std::string& name) {
     } else {
         emit(Opcode::SET_MOVIE_PROP, nameId(name) * mult_);
     }
-}
-
-int CodeGenerator::varTypeForExpr(const Expr& expr) {
-    // The var_type for a chunk-ref source: 4 for an arg, 5 for a local, 1/2/3
-    // for a simple var (global or property), 6 for a field. The decompiler's
-    // readVar uses these to recover the source var from the stack.
-    if (arg_slot_.count(expr.name)) {
-        return 4;
-    }
-    if (local_slot_.count(expr.name)) {
-        return 5;
-    }
-    return 1;
 }
 
 void CodeGenerator::emitArgs(const std::vector<std::unique_ptr<Expr>>& args,
