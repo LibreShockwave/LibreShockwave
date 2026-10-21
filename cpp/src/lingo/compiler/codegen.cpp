@@ -557,8 +557,10 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
                 emitChunkBounds(*stmt.value);
                 emit(Opcode::DELETE_CHUNK, emitVarRefForPut(*stmt.value->source));
             } else {
-                emitExpr(*stmt.value);
-                emitNoArg(Opcode::DELETE_CHUNK);
+                // `delete <object>` is the object's delete method call.
+                emitReceiver(*stmt.value);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 1);
+                emit(Opcode::OBJ_CALL, nameId("delete") * mult_);
             }
             break;
         case Stmt::Kind::Case:
