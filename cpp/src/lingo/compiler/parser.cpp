@@ -298,16 +298,7 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
         return stmt;
     }
     if (checkKeyword("return")) {
-        advance();
-        auto stmt = std::make_unique<Stmt>();
-        stmt->kind = Stmt::Kind::Return;
-        // A bare `return` has no value; `return <value>` does. The value is an
-        // expression, but a trailing keyword (none expected here) would signal
-        // the bare form. We treat any following expression as the value.
-        if (!checkNewline() && !atEof() && !checkKeyword("end")) {
-            stmt->value = parseExpression();
-        }
-        return stmt;
+        return parseReturn();
     }
     if (checkKeyword("set")) {
         advance();
@@ -446,6 +437,19 @@ std::unique_ptr<Stmt> Parser::parseTell() {
     return stmt;
 }
 
+std::unique_ptr<Stmt> Parser::parseReturn() {
+    expectKeyword("return");
+    auto stmt = std::make_unique<Stmt>();
+    stmt->kind = Stmt::Kind::Return;
+    // A bare `return` has no value; `return <value>` does. The value is an
+    // expression, but a trailing keyword (none expected here) would signal
+    // the bare form. We treat any following expression as the value.
+    if (!checkNewline() && !atEof() && !checkKeyword("end")) {
+        stmt->value = parseExpression();
+    }
+    return stmt;
+}
+
 std::unique_ptr<Stmt> Parser::parseCase() {
     expectKeyword("case");
     auto stmt = std::make_unique<Stmt>();
@@ -478,6 +482,16 @@ std::unique_ptr<Stmt> Parser::parseCase() {
     }
     expectKeyword("end");
     expectKeyword("case");
+    // The decompiler prints an `otherwise` block whose body returns as plain
+    // statements after `end case`, because its branch starts with POP. Attach
+    // the trailing return as the otherwise branch so the bytecode round-trips.
+    skipNewlines();
+    if (checkKeyword("return")) {
+        Stmt::CaseBranch otherwise_branch;
+        otherwise_branch.is_otherwise = true;
+        otherwise_branch.body.push_back(parseReturn());
+        stmt->case_branches.push_back(std::move(otherwise_branch));
+    }
     return stmt;
 }
 

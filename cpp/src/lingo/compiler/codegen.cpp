@@ -83,42 +83,6 @@ bool builtinProp(const std::string& name) {
     return false;
 }
 
-// A case branch whose body returns must pop the case value first: `return`
-// lowers to a one-argument call whose arg list would otherwise capture it.
-bool blockContainsReturn(const std::vector<std::unique_ptr<Stmt>>& block);
-
-bool stmtContainsReturn(const Stmt& stmt) {
-    switch (stmt.kind) {
-        case Stmt::Kind::Return:
-            return true;
-        case Stmt::Kind::If:
-            return blockContainsReturn(stmt.then_block) || blockContainsReturn(stmt.else_block);
-        case Stmt::Kind::RepeatWhile:
-        case Stmt::Kind::RepeatWithIn:
-        case Stmt::Kind::RepeatWithTo:
-        case Stmt::Kind::Tell:
-            return blockContainsReturn(stmt.block);
-        case Stmt::Kind::Case:
-            for (const auto& branch : stmt.case_branches) {
-                if (blockContainsReturn(branch.body)) {
-                    return true;
-                }
-            }
-            return false;
-        default:
-            return false;
-    }
-}
-
-bool blockContainsReturn(const std::vector<std::unique_ptr<Stmt>>& block) {
-    for (const auto& stmt : block) {
-        if (stmtContainsReturn(*stmt)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 } // namespace
 
 CodeGenerator::CodeGenerator(std::unique_ptr<Script> script,
@@ -486,6 +450,11 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             emitRepeatWithTo(stmt);
             break;
         case Stmt::Kind::Return: {
+            // A return inside a case must remove the pending case values before
+            // the return value, or the arg list captures them.
+            if (case_depth_ > 0) {
+                emit(Opcode::POP, case_depth_);
+            }
             if (stmt.value) {
                 emitExpr(*stmt.value);
                 emit(Opcode::PUSH_ARG_LIST_NO_RET, 1);
@@ -1099,6 +1068,7 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
     // or-group use NT_EQ and jump into the body. The last branch falls through
     // to POP, which removes the case value.
     emitExpr(*stmt.condition);
+    ++case_depth_;
 
     struct PendingJump {
         int offset;
@@ -1133,9 +1103,6 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
                 patchJump(jump.offset, body_start - jump.offset);
             }
         }
-        if (blockContainsReturn(branch.body)) {
-            emit(Opcode::POP, 1);
-        }
         emitBlock(branch.body);
         if (branch_index + 1 < stmt.case_branches.size()) {
             end_jumps.push_back(offset_);
@@ -1153,6 +1120,7 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
         patchJump(jump_offset, case_end - jump_offset);
     }
     emit(Opcode::POP, 1);
+    --case_depth_;
 }
 
 // ---------------------------------------------------------------------------

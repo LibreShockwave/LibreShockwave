@@ -60,6 +60,7 @@ private:
     [[nodiscard]] std::unique_ptr<Stmt> parseRepeat();
     [[nodiscard]] std::unique_ptr<Stmt> parseTell();
     [[nodiscard]] std::unique_ptr<Stmt> parseCase();
+    [[nodiscard]] std::unique_ptr<Stmt> parseReturn();
     [[nodiscard]] std::unique_ptr<Expr> parseCaseLabel();
     [[nodiscard]] std::unique_ptr<Stmt> parseWhen();
     [[nodiscard]] std::unique_ptr<Stmt> parseCallOrAssignment();

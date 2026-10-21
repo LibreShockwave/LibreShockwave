@@ -180,6 +180,40 @@ std::shared_ptr<ScriptAsset> recompile(const std::string& text,
     return std::make_shared<ScriptAsset>(generator.compile());
 }
 
+// Names that appear as instruction arguments (name ids) for the asm dump.
+std::string instructionName(const ScriptAsset& asset, const ScriptAsset::Instruction& ins, int mult) {
+    switch (ins.opcode) {
+        case libreshockwave::lingo::Opcode::GET_PROP:
+        case libreshockwave::lingo::Opcode::SET_PROP:
+        case libreshockwave::lingo::Opcode::GET_OBJ_PROP:
+        case libreshockwave::lingo::Opcode::SET_OBJ_PROP:
+        case libreshockwave::lingo::Opcode::GET_CHAINED_PROP:
+        case libreshockwave::lingo::Opcode::GET_MOVIE_PROP:
+        case libreshockwave::lingo::Opcode::SET_MOVIE_PROP:
+        case libreshockwave::lingo::Opcode::GET_TOP_LEVEL_PROP:
+        case libreshockwave::lingo::Opcode::GET_GLOBAL:
+        case libreshockwave::lingo::Opcode::GET_GLOBAL2:
+        case libreshockwave::lingo::Opcode::SET_GLOBAL:
+        case libreshockwave::lingo::Opcode::SET_GLOBAL2:
+        case libreshockwave::lingo::Opcode::EXT_CALL:
+        case libreshockwave::lingo::Opcode::OBJ_CALL:
+        case libreshockwave::lingo::Opcode::THE_BUILTIN:
+        case libreshockwave::lingo::Opcode::NEW_OBJ:
+        case libreshockwave::lingo::Opcode::PUSH_SYMB:
+            break;
+        default:
+            return {};
+    }
+    if (mult <= 0) {
+        return {};
+    }
+    const int index = ins.argument / mult;
+    if (index < 0 || index >= static_cast<int>(asset.names.size())) {
+        return {};
+    }
+    return " <" + asset.names[static_cast<std::size_t>(index)] + ">";
+}
+
 struct Options {
     std::string movie_path;
     std::string script_filter;
@@ -323,6 +357,7 @@ int main(int argc, char** argv) {
             std::cout << "\n";
         }
         if (options.dump_asm) {
+            const int mult = capital_x ? 1 : (version >= 500 ? 8 : 6);
             for (std::size_t h = 0; h < original->handlers.size(); ++h) {
                 const auto& a = original->handlers[h];
                 const bool has_b = h < recompiled->handlers.size();
@@ -331,7 +366,7 @@ int main(int argc, char** argv) {
                           << " vs " << (has_b ? b.instructions.size() : 0) << ") ==" << std::endl;
                 const std::size_t n = std::max(a.instructions.size(), has_b ? b.instructions.size() : 0);
                 for (std::size_t i = 0; i < n; ++i) {
-                    auto fmt = [](const ScriptAsset::Handler& h, std::size_t i) -> std::string {
+                    auto fmt = [&](const ScriptAsset& asset, const ScriptAsset::Handler& h, std::size_t i) -> std::string {
                         if (i >= h.instructions.size()) {
                             return "-";
                         }
@@ -339,10 +374,10 @@ int main(int argc, char** argv) {
                         char buf[64];
                         std::snprintf(buf, sizeof(buf), "@%d raw=0x%02x arg=%d",
                                      ins.offset, ins.raw_opcode, ins.argument);
-                        return buf;
+                        return std::string(buf) + instructionName(asset, ins, mult);
                     };
-                    const std::string sa = fmt(a, i);
-                    const std::string sb = fmt(b, i);
+                    const std::string sa = fmt(*original, a, i);
+                    const std::string sb = fmt(*recompiled, b, i);
                     const char mark = (i < a.instructions.size() && has_b && i < b.instructions.size() &&
                                       a.instructions[i].raw_opcode == b.instructions[i].raw_opcode &&
                                       a.instructions[i].argument == b.instructions[i].argument) ? ' ' : 'X';

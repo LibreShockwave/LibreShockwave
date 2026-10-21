@@ -52,6 +52,9 @@ private:
     std::unordered_set<std::string> declared_names_;
     // Names declared as globals in this script or the current handler.
     std::unordered_set<std::string> global_names_;
+    // Number of case statements whose case value is still on the stack. A
+    // return inside a case pops all of them so the return arg list is clean.
+    int case_depth_ = 0;
 
     // Per-script literal table (in first-use order).
     std::vector<moviesource::ScriptAsset::LiteralEntry> literals_;
