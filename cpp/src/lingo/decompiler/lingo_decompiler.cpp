@@ -1093,7 +1093,15 @@ void LingoDecompiler::translateInstruction(const chunks::ScriptChunk::Instructio
 
         case Opcode::POP:
             for (int count = 0; count < instruction.argument; ++count) {
-                (void)popNode();
+                auto node = popNode();
+                // A discarded value expression is an empty case statement:
+                // Director compiles `case x of end case` as `x; POP 1`.
+                if (count == 0 && dynamic_cast<ErrorNode*>(node.get()) == nullptr &&
+                    node->isExpression()) {
+                    auto cases = std::make_unique<CasesStmtNode>(std::move(node));
+                    cases->setBytecodeOffset(instruction.offset);
+                    block.addChild(std::move(cases));
+                }
             }
             return;
 
