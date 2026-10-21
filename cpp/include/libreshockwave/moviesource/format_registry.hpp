@@ -38,4 +38,8 @@ public:
 // Idempotent. Called explicitly by the library entry points and the debugger.
 void registerDirectorFormat();
 
+// Register the .lsw ZIP format parser. Idempotent. Called by MovieSource::load
+// so both native and WASM builds can open .lsw files.
+void registerLswFormat();
+
 } // namespace libreshockwave::moviesource

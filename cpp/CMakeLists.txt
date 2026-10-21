@@ -130,6 +130,10 @@ add_library(libreshockwave
     src/moviesource/format_registry.cpp
     src/moviesource/json_value.cpp
     src/moviesource/lsw_manifest.cpp
+    src/moviesource/lsw_chunk_builder.cpp
+    src/moviesource/lsw_movie_source.cpp
+    src/moviesource/lsw_movie_source_cast.cpp
+    src/moviesource/lsw_movie_source_score.cpp
     src/moviesource/lsw_script_loader.cpp
     src/moviesource/zip_archive.cpp
     src/moviesource/records/script_asset.cpp

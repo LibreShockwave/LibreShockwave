@@ -5,6 +5,7 @@
 #include <map>
 
 #include "libreshockwave/moviesource/director_movie_source.hpp"
+#include "libreshockwave/moviesource/lsw_movie_source.hpp"
 
 namespace libreshockwave::moviesource {
 
@@ -56,6 +57,14 @@ void registerDirectorFormat() {
             return source;
         });
     }
+}
+
+void registerLswFormat() {
+    FormatRegistry::registerExtension("lsw", [](const std::vector<std::uint8_t>& data) {
+        auto source = std::make_shared<LswMovieSource>();
+        source->load(data);
+        return source;
+    });
 }
 
 } // namespace libreshockwave::moviesource

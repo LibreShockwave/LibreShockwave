@@ -7,11 +7,12 @@ namespace libreshockwave::moviesource {
 
 std::shared_ptr<MovieSource> MovieSource::load(const std::string& name,
                                                 const std::vector<std::uint8_t>& data) {
-    static bool director_registered = [] {
+    static bool formats_registered = [] {
         registerDirectorFormat();
+        registerLswFormat();
         return true;
     }();
-    (void)director_registered;
+    (void)formats_registered;
     const std::string extension = util::fileExtension(name);
     if (extension.empty()) {
         throw MovieSourceLoadError("No file extension for movie source: " + name);
