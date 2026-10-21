@@ -74,8 +74,9 @@ bool fixedPropCode(const std::string& name, int& type, int& id) {
 // This inverts the decompiler's THE_BUILTIN case (which pops the arg list).
 bool builtinProp(const std::string& name) {
     static const char* const kBuiltin[] = {
-        "commandDown", "date", "frame", "mouseH", "mouseV",
-        "paramCount", "result", "stageLeft", "stageRight", "time",
+        "commandDown", "date", "frame", "maxinteger", "mouseH", "mouseV",
+        "paramCount", "result", "stageBottom", "stageLeft", "stageRight",
+        "stageTop", "time",
     };
     for (const auto* b : kBuiltin) {
         if (name == b) { return true; }
@@ -533,8 +534,15 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             emitNoArg(Opcode::HILITE_CHUNK);
             break;
         case Stmt::Kind::Delete:
-            emitExpr(*stmt.value);
-            emitNoArg(Opcode::DELETE_CHUNK);
+            // `delete char 1 to n of x`: the eight bounds, then the source
+            // var-ref, then DELETE_CHUNK with the var_type nibble.
+            if (stmt.value->kind == Expr::Kind::ChunkExpr && stmt.value->source) {
+                emitChunkBounds(*stmt.value);
+                emit(Opcode::DELETE_CHUNK, emitVarRefForPut(*stmt.value->source));
+            } else {
+                emitExpr(*stmt.value);
+                emitNoArg(Opcode::DELETE_CHUNK);
+            }
             break;
         case Stmt::Kind::Case:
             emitCase(stmt);
@@ -695,24 +703,27 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ChunkExpr: {
+            // The eight bounds, then the source, then GET_CHUNK. The
+            // decompiler pops the source first and the bounds in reverse.
+            emitChunkBounds(expr);
             emitExpr(*expr.source);
-            if (expr.last) {
-                emitExpr(*expr.first);
-                emitExpr(*expr.last);
-            } else {
-                emitExpr(*expr.first);
-            }
-            emit(Opcode::GET_CHUNK, expr.chunk_type);
+            emitNoArg(Opcode::GET_CHUNK);
             break;
         }
         case Expr::Kind::LastChunkExpr: {
+            // `the last <chunk> in <string>` is a legacy GET with the chunk
+            // property id (chunk type plus 0x0b) and property type 0x00.
             emitExpr(*expr.source);
-            emit(Opcode::GET_CHUNK, expr.chunk_type + 0x10); // last variant
+            emit(Opcode::PUSH_INT8, expr.chunk_type + 0x0b);
+            emit(Opcode::GET, 0x00);
             break;
         }
         case Expr::Kind::ChunkCountExpr: {
+            // `the number of <chunks> in <string>` is a legacy GET with the
+            // chunk type as the property id and property type 0x01.
             emitExpr(*expr.source);
-            emit(Opcode::GET_CHUNK, expr.chunk_type + 0x20); // count variant
+            emit(Opcode::PUSH_INT8, expr.chunk_type);
+            emit(Opcode::GET, 0x01);
             break;
         }
         case Expr::Kind::SpriteIntersects: {

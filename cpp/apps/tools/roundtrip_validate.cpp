@@ -225,6 +225,7 @@ struct Options {
     bool dump_names = false;
     bool dump_lits = false;
     bool dump_ins = false;
+    bool all_diffs = false;
 };
 
 Options parseOptions(int argc, char** argv) {
@@ -243,6 +244,8 @@ Options parseOptions(int argc, char** argv) {
             options.dump_lits = true;
         } else if (arg == "--dump-ins") {
             options.dump_ins = true;
+        } else if (arg == "--all-diffs") {
+            options.all_diffs = true;
         } else if (!arg.starts_with("--")) {
             options.movie_path = arg;
         }
@@ -398,11 +401,11 @@ int main(int argc, char** argv) {
             std::cerr << "FAIL " << script_name << ": " << diffs.size() << " difference(s)"
                       << std::endl;
             for (const auto& diff : diffs) {
-                if (diffs.size() <= 40) {
+                if (options.all_diffs || diffs.size() <= 40) {
                     std::cerr << "  " << diff.section << ": " << diff.detail << std::endl;
                 }
             }
-            if (diffs.size() > 40) {
+            if (!options.all_diffs && diffs.size() > 40) {
                 std::cerr << "  ... and " << (diffs.size() - 40) << " more" << std::endl;
             }
         }
