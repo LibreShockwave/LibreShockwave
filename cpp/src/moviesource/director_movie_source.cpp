@@ -546,6 +546,11 @@ std::shared_ptr<chunks::CastMemberChunk> DirectorMovieSource::owningCastMemberFo
     return nullptr;
 }
 
+chunks::ScriptChunkType DirectorMovieSource::scriptTypeForChunk(
+    const chunks::ScriptChunk& script) const {
+    return resolvedScriptType(script);
+}
+
 chunks::ScriptChunkType DirectorMovieSource::resolvedScriptType(const chunks::ScriptChunk& script) const {
     if (const auto member = owningCastMemberForScript(script); member) {
         if (const auto member_type = member->getScriptType(); member_type.has_value()) {

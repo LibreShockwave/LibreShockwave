@@ -104,6 +104,11 @@ void LswMovieSource::setBasePath(std::string base_path) { base_path_ = std::move
 
 std::vector<std::shared_ptr<ScriptAsset>> LswMovieSource::scripts() { return scripts_; }
 
+chunks::ScriptChunkType LswMovieSource::scriptTypeForChunk(
+    const chunks::ScriptChunk& script) const {
+    return script.scriptType();
+}
+
 std::vector<std::shared_ptr<chunks::ScriptChunk>> LswMovieSource::scriptChunks() {
     return script_chunks_;
 }

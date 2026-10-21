@@ -28,6 +28,7 @@ class FrameLabelsChunk;
 class Chunk;
 class PaletteChunk;
 class TextChunk;
+enum class ScriptChunkType;
 }
 
 namespace libreshockwave::moviesource {
@@ -68,6 +69,10 @@ public:
 
     // Scripts.
     [[nodiscard]] virtual std::vector<std::shared_ptr<ScriptAsset>> scripts() = 0;
+    // Resolve the script type of a chunk. Director resolves it through the
+    // owning cast member; a format that stores the type directly returns it.
+    [[nodiscard]] virtual chunks::ScriptChunkType scriptTypeForChunk(
+        const chunks::ScriptChunk& script) const = 0;
     [[nodiscard]] virtual std::vector<std::shared_ptr<chunks::ScriptChunk>> scriptChunks() = 0;
     [[nodiscard]] virtual std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesForScript(
         const chunks::ScriptChunk& script) const = 0;

@@ -56,6 +56,8 @@ public:
 
     // Scripts.
     [[nodiscard]] std::vector<std::shared_ptr<ScriptAsset>> scripts() override;
+    [[nodiscard]] chunks::ScriptChunkType scriptTypeForChunk(
+        const chunks::ScriptChunk& script) const override;
     [[nodiscard]] std::vector<std::shared_ptr<chunks::ScriptChunk>> scriptChunks() override;
     [[nodiscard]] std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesForScript(
         const chunks::ScriptChunk& script) const override;

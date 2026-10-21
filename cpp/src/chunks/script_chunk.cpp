@@ -125,7 +125,7 @@ ScriptChunkType ScriptChunk::scriptType() const { return script_type_; }
 
 ScriptChunkType ScriptChunk::resolvedScriptType() const {
     if (file_ != nullptr) {
-        return static_cast<const moviesource::DirectorMovieSource*>(file_)->resolvedScriptType(*this);
+        return file_->scriptTypeForChunk(*this);
     }
     return script_type_;
 }
