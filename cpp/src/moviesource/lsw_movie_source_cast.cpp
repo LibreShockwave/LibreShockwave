@@ -1,5 +1,6 @@
 #include "libreshockwave/moviesource/lsw_movie_source.hpp"
 
+#include "libreshockwave/audio/wav_decoder.hpp"
 #include "libreshockwave/bitmap/png_decoder.hpp"
 
 #include "json_value.hpp"
@@ -282,6 +283,14 @@ std::shared_ptr<SoundAsset> LswMovieSource::soundForMember(
     auto asset = std::make_shared<SoundAsset>();
     asset->codec = "wav";
     asset->audio_data = found->second;
+    if (const auto wav = audio::WavDecoder::decode(found->second)) {
+        asset->sample_rate = wav->sample_rate;
+        asset->channel_count = wav->channel_count;
+        asset->bits_per_sample = wav->bits_per_sample;
+        asset->sample_count = wav->sample_count;
+        asset->audio_data = wav->pcm_data;
+        asset->codec = "raw_pcm";
+    }
     return asset;
 }
 

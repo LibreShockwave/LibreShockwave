@@ -38,6 +38,7 @@ set_source_files_properties("${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}" PROPERTIE
 add_library(libreshockwave
     src/w3d_file.cpp
     src/audio/sound_converter.cpp
+    src/audio/wav_decoder.cpp
     src/bitmap/bitmap.cpp
     src/bitmap/bitmap_colorizer.cpp
     src/bitmap/bitmap_decoder.cpp
