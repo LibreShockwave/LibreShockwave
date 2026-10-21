@@ -1019,21 +1019,19 @@ void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
     emit(Opcode::PUSH_ARG_LIST, 1);
     emit(Opcode::EXT_CALL, nameId("count") * mult_);
     emit(Opcode::PUSH_INT8, 1);
-    emitNoArg(Opcode::PEEK);
     const int top = offset_;
-    emitNoArg(Opcode::PEEK); // 2
-    emitNoArg(Opcode::PEEK); // 1 (the count)
+    emitNoArg(Opcode::PEEK); // 0 (the index)
+    emit(Opcode::PEEK, 2); // the count
     emitNoArg(Opcode::LT_EQ);
     const int cond_offset = offset_;
     emit(Opcode::JMP_IF_Z, 0); // patched to exit
-    emitNoArg(Opcode::PEEK); // 2 (the list)
-    emitNoArg(Opcode::PEEK); // 1 (the index)
+    emit(Opcode::PEEK, 2); // the list
+    emit(Opcode::PEEK, 1); // the index
     emit(Opcode::PUSH_ARG_LIST, 2);
     emit(Opcode::EXT_CALL, nameId("getAt") * mult_);
     emitSetForVar(stmt.loop_var->name);
     emitBlock(stmt.block);
     emit(Opcode::PUSH_INT8, 1);
-    emitNoArg(Opcode::PEEK); // the index
     emitNoArg(Opcode::ADD);
     emit(Opcode::END_REPEAT, offset_ - top); // back to top (positive distance)
     const int exit = offset_;
