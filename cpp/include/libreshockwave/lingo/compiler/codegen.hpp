@@ -55,6 +55,13 @@ private:
     // Number of case statements whose case value is still on the stack. A
     // return inside a case pops all of them so the return arg list is clean.
     int case_depth_ = 0;
+    // Per-loop jump lists for `next repeat` and `exit repeat`. Each loop pushes
+    // a context and patches the recorded JMPs once its targets are known.
+    struct LoopContext {
+        std::vector<int> continue_jumps;
+        std::vector<int> break_jumps;
+    };
+    std::vector<LoopContext> loop_stack_;
 
     // Per-script literal table (in first-use order).
     std::vector<moviesource::ScriptAsset::LiteralEntry> literals_;

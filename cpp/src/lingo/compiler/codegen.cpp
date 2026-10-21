@@ -533,10 +533,18 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             emitCase(stmt);
             break;
         case Stmt::Kind::ExitRepeat:
-            // Handled by the loop lowering (a pending jump target).
+            // `exit repeat` jumps past the loop's END_REPEAT.
+            if (!loop_stack_.empty()) {
+                loop_stack_.back().break_jumps.push_back(offset_);
+                emit(Opcode::JMP, 0);
+            }
             break;
         case Stmt::Kind::NextRepeat:
-            // Handled by the loop lowering (a pending jump target).
+            // `next repeat` jumps to the loop's increment or END_REPEAT.
+            if (!loop_stack_.empty()) {
+                loop_stack_.back().continue_jumps.push_back(offset_);
+                emit(Opcode::JMP, 0);
+            }
             break;
         case Stmt::Kind::Tell:
             emitExpr(*stmt.window);
@@ -1023,14 +1031,23 @@ void CodeGenerator::emitCall(const std::string& name,
 }
 
 void CodeGenerator::emitRepeatWhile(const Stmt& stmt) {
+    loop_stack_.emplace_back();
     const int loop_start = offset_;
     emitExpr(*stmt.condition);
     const int cond_offset = offset_;
     emit(Opcode::JMP_IF_Z, 0); // patched to loop_end
     emitBlock(stmt.block);
-    emit(Opcode::JMP, loop_start - offset_); // back to loop_start
+    const int continue_target = offset_;
+    for (const int jump_offset : loop_stack_.back().continue_jumps) {
+        patchJump(jump_offset, continue_target - jump_offset);
+    }
+    emit(Opcode::END_REPEAT, offset_ - loop_start);
     const int loop_end = offset_;
     patchJump(cond_offset, loop_end - cond_offset);
+    for (const int jump_offset : loop_stack_.back().break_jumps) {
+        patchJump(jump_offset, loop_end - jump_offset);
+    }
+    loop_stack_.pop_back();
 }
 
 void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
@@ -1055,13 +1072,22 @@ void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
     emit(Opcode::PUSH_ARG_LIST, 2);
     emit(Opcode::EXT_CALL, nameId("getAt") * mult_);
     emitSetForVar(stmt.loop_var->name);
+    loop_stack_.emplace_back();
     emitBlock(stmt.block);
+    const int continue_target = offset_;
+    for (const int jump_offset : loop_stack_.back().continue_jumps) {
+        patchJump(jump_offset, continue_target - jump_offset);
+    }
     emit(Opcode::PUSH_INT8, 1);
     emitNoArg(Opcode::ADD);
     emit(Opcode::END_REPEAT, offset_ - top); // back to top (positive distance)
     const int exit = offset_;
     emit(Opcode::POP, 3);
     patchJump(cond_offset, exit - cond_offset);
+    for (const int jump_offset : loop_stack_.back().break_jumps) {
+        patchJump(jump_offset, exit - jump_offset);
+    }
+    loop_stack_.pop_back();
 }
 
 void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
@@ -1077,7 +1103,12 @@ void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
     emitNoArg(stmt.up ? Opcode::LT_EQ : Opcode::GT_EQ);
     const int cond_offset = offset_;
     emit(Opcode::JMP_IF_Z, 0); // patched to exit
+    loop_stack_.emplace_back();
     emitBlock(stmt.block);
+    const int continue_target = offset_;
+    for (const int jump_offset : loop_stack_.back().continue_jumps) {
+        patchJump(jump_offset, continue_target - jump_offset);
+    }
     emit(Opcode::PUSH_INT8, stmt.up ? 1 : -1);
     emitVarGet(stmt.loop_var->name);
     emitNoArg(Opcode::ADD);
@@ -1085,6 +1116,10 @@ void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
     emit(Opcode::END_REPEAT, offset_ - loop_top); // back to loop_top (positive distance)
     const int exit = offset_;
     patchJump(cond_offset, exit - cond_offset);
+    for (const int jump_offset : loop_stack_.back().break_jumps) {
+        patchJump(jump_offset, exit - jump_offset);
+    }
+    loop_stack_.pop_back();
 }
 
 void CodeGenerator::emitCase(const Stmt& stmt) {
