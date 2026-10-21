@@ -43,9 +43,9 @@ bool fixedPropCode(const std::string& name, int& type, int& id) {
         {"beepOn", 0x01}, {"buttonStyle", 0x02}, {"centerStage", 0x03},
         {"checkBoxAccess", 0x04}, {"checkboxType", 0x05}, {"colorDepth", 0x06},
         {"colorQD", 0x07}, {"exitLock", 0x08}, {"fixStageSize", 0x09},
-        {"fullColorPermit", 0x0a}, {"imageDirect", 0x0b}, {"doubleClick", 0x0c},
-        {"key", 0x0d}, {"lastClick", 0x0e}, {"lastEvent", 0x0f},
-        {"keyCode", 0x10}, {"lastKey", 0x11}, {"lastRoll", 0x12},
+        {"fullColorPermit", 0x0a}, {"imageDirect", 0x0b},
+        {"lastClick", 0x0e}, {"lastEvent", 0x0f},
+        {"lastRoll", 0x12},
         {"timeoutLapsed", 0x13}, {"multiSound", 0x14}, {"pauseState", 0x15},
         {"quickTimePresent", 0x16}, {"selEnd", 0x17}, {"selStart", 0x18},
         {"soundEnabled", 0x19}, {"soundLevel", 0x1a}, {"stageColor", 0x1b},
@@ -76,9 +76,10 @@ bool fixedPropCode(const std::string& name, int& type, int& id) {
 // This inverts the decompiler's THE_BUILTIN case (which pops the arg list).
 bool builtinProp(const std::string& name) {
     static const char* const kBuiltin[] = {
-        "commandDown", "date", "frame", "maxinteger", "mouseH", "mouseV",
-        "paramCount", "result", "stageBottom", "stageLeft", "stageRight",
-        "stageTop", "time",
+        "clickOn", "commandDown", "date", "doubleClick", "frame", "key",
+        "keyCode", "lastKey", "maxinteger", "mouseDown", "mouseH", "mouseV",
+        "optionDown", "paramCount", "result", "rollover", "shiftDown",
+        "stageBottom", "stageLeft", "stageRight", "stageTop", "time",
     };
     for (const auto* b : kBuiltin) {
         if (name == b) { return true; }
@@ -430,9 +431,11 @@ void CodeGenerator::collectLocalsExpr(const Expr& expr) {
 }
 
 void CodeGenerator::emitBlock(const std::vector<std::unique_ptr<Stmt>>& block) {
+    ++block_depth_;
     for (const auto& stmt : block) {
         emitStmt(*stmt);
     }
+    --block_depth_;
 }
 
 void CodeGenerator::emitStmt(const Stmt& stmt) {
@@ -483,10 +486,14 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             break;
         }
         case Stmt::Kind::Exit:
-            // `exit` lowers to a no-argument call to the return handler, not to
-            // a bare RET opcode.
-            emit(Opcode::PUSH_ARG_LIST_NO_RET, 0);
-            emit(Opcode::EXT_CALL, nameId("return") * mult_);
+            // A top-level exit is a bare RET. A nested exit is a no-argument
+            // call to the return handler.
+            if (block_depth_ <= 1) {
+                emitNoArg(Opcode::RET);
+            } else {
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 0);
+                emit(Opcode::EXT_CALL, nameId("return") * mult_);
+            }
             break;
         case Stmt::Kind::Assignment: {
             // A simple var: value first, then the SET. A dot/bracket lvalue:

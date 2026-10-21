@@ -30,6 +30,11 @@ ScriptAsset DirectorRecordConverter::toScriptAsset(
     if (names != nullptr) {
         asset.names = names->names();
     }
+    // Property and global name ids must resolve in the name table. Director
+    // leaves stale ids in empty script records; they are not executable.
+    const auto valid_name_id = [&asset](int id) {
+        return id >= 0 && id < static_cast<int>(asset.names.size());
+    };
     asset.handlers.reserve(chunk.handlers().size());
     for (const auto& src : chunk.handlers()) {
         ScriptAsset::Handler handler;
@@ -44,7 +49,10 @@ ScriptAsset DirectorRecordConverter::toScriptAsset(
         handler.arg_name_ids = src.arg_name_ids;
         handler.local_name_ids = src.local_name_ids;
         handler.global_name_ids = src.global_name_ids;
-        handler.global_name_ids = src.global_name_ids;
+        handler.global_name_ids.erase(
+            std::remove_if(handler.global_name_ids.begin(), handler.global_name_ids.end(),
+                           [&valid_name_id](int id) { return !valid_name_id(id); }),
+            handler.global_name_ids.end());
         handler.instructions.reserve(src.instructions.size());
         for (const auto& instr : src.instructions) {
             ScriptAsset::Instruction out;
@@ -67,10 +75,14 @@ ScriptAsset DirectorRecordConverter::toScriptAsset(
         asset.literals.push_back(std::move(literal));
     }
     for (const auto& property : chunk.properties()) {
-        asset.property_name_ids.push_back(property.name_id);
+        if (valid_name_id(property.name_id)) {
+            asset.property_name_ids.push_back(property.name_id);
+        }
     }
     for (const auto& global : chunk.globals()) {
-        asset.global_name_ids.push_back(global.name_id);
+        if (valid_name_id(global.name_id)) {
+            asset.global_name_ids.push_back(global.name_id);
+        }
     }
     asset.raw_bytecode = chunk.rawBytecode();
     return asset;

@@ -77,6 +77,9 @@ private:
     [[nodiscard]] NodePtr readV4Property(int property_type, int property_id);
     [[nodiscard]] int variableMultiplier() const;
     [[nodiscard]] std::string resolveName(int name_id) const;
+    // True when a name id resolves in the script's name table. Stale ids in
+    // empty script records are not printed.
+    [[nodiscard]] bool hasValidName(int name_id) const;
     [[nodiscard]] std::string getArgumentName(int raw_index) const;
     [[nodiscard]] std::string getLocalName(int raw_index) const;
     [[nodiscard]] NodePtr literalToNode(const chunks::ScriptChunk::LiteralEntry& literal) const;

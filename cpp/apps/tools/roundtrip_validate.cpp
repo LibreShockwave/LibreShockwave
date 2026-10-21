@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "libreshockwave/chunks/script_chunk.hpp"
+#include "libreshockwave/chunks/script_names_chunk.hpp"
 #include "libreshockwave/lingo/compiler/codegen.hpp"
 #include "libreshockwave/lingo/compiler/compile_error.hpp"
 #include "libreshockwave/lingo/compiler/lexer.hpp"

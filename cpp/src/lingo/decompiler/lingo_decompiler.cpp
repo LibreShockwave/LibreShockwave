@@ -232,12 +232,18 @@ std::string LingoDecompiler::decompile(const chunks::ScriptChunk& script,
     std::string result = "-- " + format::getScriptTypeName(script.scriptType()) + "\n";
 
     for (const auto& property : script.properties()) {
+        if (!hasValidName(property.name_id)) {
+            continue;
+        }
         result.append("property ");
         result.append(resolveName(property.name_id));
         result.push_back('\n');
     }
 
     for (const auto& global : script.globals()) {
+        if (!hasValidName(global.name_id)) {
+            continue;
+        }
         result.append("global ");
         result.append(resolveName(global.name_id));
         result.push_back('\n');
@@ -340,6 +346,11 @@ std::string LingoDecompiler::resolveName(int name_id) const {
         return names_->getName(name_id);
     }
     return "#" + std::to_string(name_id);
+}
+
+bool LingoDecompiler::hasValidName(int name_id) const {
+    return names_ != nullptr && name_id >= 0 &&
+        name_id < static_cast<int>(names_->names().size());
 }
 
 void LingoDecompiler::initFileInfo(const chunks::ScriptChunk& script) {
@@ -559,12 +570,18 @@ std::unique_ptr<HandlerNode> LingoDecompiler::translateHandler(const chunks::Scr
     std::vector<std::string> handler_globals;
     handler_globals.reserve(handler.global_name_ids.size());
     for (const auto name_id : handler.global_name_ids) {
+        if (!hasValidName(name_id)) {
+            continue;
+        }
         handler_globals.push_back(resolveName(name_id));
     }
     root->setGlobalNames(std::move(handler_globals));
     if (script_ != nullptr) {
         std::vector<std::string> property_names;
         for (const auto& prop : script_->properties()) {
+            if (!hasValidName(prop.name_id)) {
+                continue;
+            }
             const std::string name = resolveName(prop.name_id);
             if (!name.empty()) {
                 property_names.push_back(name);
