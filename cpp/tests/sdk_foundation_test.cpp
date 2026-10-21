@@ -24970,8 +24970,9 @@ void testScriptChunkParser() {
     script_data[194] = 'h';
     script_data[195] = 'i';
     script_data[196] = 0;
-    put_i32(script_data, 198, 4);
-    put_i32(script_data, 202, 0x3FC00000);
+    put_i32(script_data, 198, 8);
+    put_i32(script_data, 202, 0x3FF80000);
+    put_i32(script_data, 206, 0x00000000);
 
     script_data[230] = 0x41;
     script_data[231] = 0xFE;

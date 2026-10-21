@@ -1213,11 +1213,19 @@ void LingoDecompiler::translatePeek(const chunks::ScriptChunk::Instruction& inst
                target_index < static_cast<int>(instructions.size()) &&
                instructions[static_cast<std::size_t>(target_index)].opcode == Opcode::POP) {
         // A POP target is the case end, unless the previous instruction is a
-        // jump past it: then the POP starts an otherwise body that returns.
-        const bool otherwise_body = target_index >= 1 &&
-            instructions[static_cast<std::size_t>(target_index - 1)].opcode == Opcode::JMP &&
-            instructions[static_cast<std::size_t>(target_index - 1)].offset +
-                instructions[static_cast<std::size_t>(target_index - 1)].argument > jump_pos;
+        // jump past it to a later POP: then the POP starts an otherwise body
+        // that returns.
+        bool otherwise_body = false;
+        if (target_index >= 1 &&
+            instructions[static_cast<std::size_t>(target_index - 1)].opcode == Opcode::JMP) {
+            const auto& branch_end = instructions[static_cast<std::size_t>(target_index - 1)];
+            const int branch_end_target = branch_end.offset + branch_end.argument;
+            const int branch_end_index = instructionIndexForOffset(branch_end_target);
+            otherwise_body = branch_end_target > jump_pos &&
+                branch_end_index >= 0 &&
+                branch_end_index < static_cast<int>(instructions.size()) &&
+                instructions[static_cast<std::size_t>(branch_end_index)].opcode == Opcode::POP;
+        }
         expect = otherwise_body ? CaseNode::EXPECT_OTHERWISE : CaseNode::EXPECT_POP;
     }
 
