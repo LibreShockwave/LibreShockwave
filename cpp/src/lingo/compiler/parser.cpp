@@ -134,18 +134,26 @@ std::string Parser::takeIdent() {
 }
 
 bool Parser::isCaseLabelStart() const {
-    const bool is_literal = check(TokenType::Symbol) || check(TokenType::Int) ||
-                            check(TokenType::Float) || check(TokenType::String) ||
-                            check(TokenType::Identifier);
-    // A negative-int label is `-` followed by an int.
-    const bool is_neg_int = check(TokenType::Minus) &&
-                            peekAt(1).is(TokenType::Int);
-    // A case label list is `<label>[, <label>...]:`. The first label is
-    // followed by `:` (single label) or `,` (more labels). Case labels are
-    // always at line-start, and parseBlock skips newlines before calling this.
-    const bool followed_by_delim = peekAt(is_neg_int ? 2 : 1).is(TokenType::Colon) ||
-                                  peekAt(is_neg_int ? 2 : 1).is(TokenType::Comma);
-    return (is_literal || is_neg_int) && followed_by_delim;
+    // A case label is a line whose top-level content ends with `:`. The label
+    // itself may be any expression, so scan to the end of the line and track
+    // bracket depth to ignore colons inside list and property-list literals.
+    int depth = 0;
+    for (std::size_t index = pos_; index < tokens_.size(); ++index) {
+        const auto& token = tokens_[index];
+        if (token.is(TokenType::Newline) || token.is(TokenType::Eof)) {
+            return false;
+        }
+        if (token.is(TokenType::LParen) || token.is(TokenType::LBracket)) {
+            ++depth;
+        } else if (token.is(TokenType::RParen) || token.is(TokenType::RBracket)) {
+            if (depth > 0) {
+                --depth;
+            }
+        } else if (token.is(TokenType::Colon) && depth == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Parser::atEof() const {

@@ -563,8 +563,11 @@ std::unique_ptr<Expr> Parser::parseTheExpr() {
 }
 
 std::unique_ptr<Expr> Parser::finishTheExpr(const std::string& prop) {
-    // `the <prop> of <object>` (ThePropExprNode).
-    if (checkKeyword("of")) {
+    // `the <prop> of <object>` (ThePropExprNode). The `of` belongs to the case
+    // statement when the line ends after it.
+    const bool has_object = checkKeyword("of") && !peekAt(1).is(TokenType::Newline) &&
+        !peekAt(1).is(TokenType::Eof);
+    if (has_object) {
         advance();
         // menu / menuItem / sound / sprite property forms.
         if (checkKeyword("menu")) {
