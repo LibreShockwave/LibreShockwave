@@ -312,6 +312,13 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
     if (checkKeyword("put")) {
         advance();
         auto stmt = std::make_unique<Stmt>();
+        // A bare `put` is a no-argument call (the decompiler prints the
+        // trailing space of the call form).
+        if (checkNewline() || atEof() || checkKeyword("end")) {
+            stmt->kind = Stmt::Kind::Call;
+            stmt->name = "put";
+            return stmt;
+        }
         stmt->value = parseExpression();
         if (checkKeyword("into")) {
             advance();
@@ -486,46 +493,9 @@ std::unique_ptr<Stmt> Parser::parseCase() {
 }
 
 std::unique_ptr<Expr> Parser::parseCaseLabel() {
-    // A case label is a literal: int, float, string, symbol, or a bare word.
-    if (check(TokenType::Minus) && peekAt(1).is(TokenType::Int)) {
-        advance(); // -
-        auto e = Expr::intLit(-std::stoll(cur().text));
-        advance();
-        return e;
-    }
-    if (check(TokenType::Int)) {
-        auto e = Expr::intLit(std::stoll(cur().text));
-        advance();
-        return e;
-    }
-    if (check(TokenType::Float)) {
-        auto e = Expr::floatLit(std::stod(cur().text));
-        advance();
-        return e;
-    }
-    if (check(TokenType::String)) {
-        auto e = Expr::stringLit(cur().text);
-        advance();
-        return e;
-    }
-    if (check(TokenType::Symbol)) {
-        auto e = Expr::symbol(cur().text);
-        advance();
-        return e;
-    }
-    if (check(TokenType::Identifier)) {
-        // A bare word: either a literal (VOID, EMPTY, ...) or a symbol.
-        const std::string word = cur().text;
-        if (auto literal = makeBareWordLiteral(word)) {
-            advance();
-            return literal;
-        }
-        auto e = Expr::symbol(word);
-        advance();
-        return e;
-    }
-    throw CompileError("expected a case label but found " + cur().describe(),
-                      cur().line, cur().column);
+    // A case label is an expression. The decompiler emits literals, symbols,
+    // and compound string expressions such as `"!!" & tKeywords[1]`.
+    return parseExpression();
 }
 
 std::unique_ptr<Stmt> Parser::parseWhen() {
