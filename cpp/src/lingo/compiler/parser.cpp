@@ -1,6 +1,7 @@
 #include "libreshockwave/lingo/compiler/parser.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 namespace libreshockwave::lingo::compiler {
 
@@ -563,6 +564,9 @@ std::unique_ptr<Stmt> Parser::parseCallOrAssignment() {
         stmt->kind = Stmt::Kind::Assignment;
         stmt->variable = std::move(head);
         stmt->value = parseExpression();
+        if (stmt->variable->kind == Expr::Kind::Var && stmt->variable->name == "gCore") {
+            std::cerr << "  [parseCallOrAssignment] gCore = value kind=" << static_cast<int>(stmt->value->kind) << " head_kind=" << static_cast<int>(stmt->variable->kind) << "\n";
+        }
         return stmt;
     }
     // Otherwise it is a call statement.

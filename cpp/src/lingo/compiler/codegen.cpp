@@ -2,6 +2,8 @@
 
 #include <bit>
 #include <cmath>
+#include <execinfo.h>
+#include <iostream>
 
 namespace libreshockwave::lingo::compiler {
 namespace {
@@ -65,6 +67,20 @@ bool fixedPropCode(const std::string& name, int& type, int& id) {
     };
     for (const auto& e : kAnim2) {
         if (name == e.first) { type = 0x08; id = e.second; return true; }
+    }
+    return false;
+}
+
+// A `the <prop>` that is a live builtin (not a fixed prop, not a name-table
+// movie property) is encoded as PUSH_ARG_LIST 0 then THE_BUILTIN <name_id>.
+// This inverts the decompiler's THE_BUILTIN case (which pops the arg list).
+bool builtinProp(const std::string& name) {
+    static const char* const kBuiltin[] = {
+        "commandDown", "date", "frame", "mouseH", "mouseV",
+        "paramCount", "result", "stageLeft", "stageRight", "time",
+    };
+    for (const auto* b : kBuiltin) {
+        if (name == b) { return true; }
     }
     return false;
 }
@@ -134,6 +150,21 @@ void CodeGenerator::emitInt(long long value) {
 }
 
 int CodeGenerator::internString(const std::string& value) {
+    std::cerr << "[internString] len=" << value.size();
+    for (char c : value) std::cerr << " " << std::hex << (int)(unsigned char)c;
+    std::cerr << std::dec << "\n";
+    if (value.size() == 1 && value[0] == '\r') {
+        void* frames[10];
+        const int n = backtrace(frames, 10);
+        std::cerr << "  [backtrace-r] " << n << " frames\n";
+        for (int i = 0; i < n; ++i) std::cerr << "  " << i << ": " << reinterpret_cast<void*>(frames[i]) << "\n";
+    }
+    if (value.empty()) {
+        void* frames[10];
+        const int n = backtrace(frames, 10);
+        std::cerr << "  [backtrace-empty] " << n << " frames\n";
+        for (int i = 0; i < n; ++i) std::cerr << "  " << i << ": " << reinterpret_cast<void*>(frames[i]) << "\n";
+    }
     const auto found = literal_index_.find(value);
     if (found != literal_index_.end()) {
         return found->second;
@@ -447,6 +478,10 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             // A simple var: value first, then the SET. A dot/bracket lvalue:
             // the object first, then the value, then the SET.
             if (stmt.variable->kind == Expr::Kind::Var) {
+                if (stmt.value->kind == Expr::Kind::String && stmt.value->string.value.empty()) {
+                    std::cerr << "  [assignment-empty] var=" << stmt.variable->name
+                              << " value=String(\"\")\n";
+                }
                 emitExpr(*stmt.value);
                 emitSetForVar(stmt.variable->name);
             } else if (stmt.variable->kind == Expr::Kind::ObjPropExpr) {
@@ -529,6 +564,9 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::String: {
+            if (expr.string.value.empty()) {
+                std::cerr << "  [empty-string-expr] interned in emitExpr String case\n";
+            }
             const int index = internString(expr.string.value);
             emit(Opcode::PUSH_CONS, index * mult_);
             break;
@@ -551,8 +589,12 @@ void CodeGenerator::emitExpr(const Expr& expr) {
                 // A fixed prop: PUSH_INT8 <id> then GET <type>.
                 emit(Opcode::PUSH_INT8, id);
                 emit(Opcode::GET, type);
+            } else if (builtinProp(expr.name)) {
+                // A live builtin: PUSH_ARG_LIST 0 then THE_BUILTIN <name_id>.
+                emit(Opcode::PUSH_ARG_LIST, 0);
+                emit(Opcode::THE_BUILTIN, nameId(expr.name) * mult_);
             } else {
-                // A name-table prop: GET_MOVIE_PROP.
+                // A name-table movie property: GET_MOVIE_PROP.
                 emit(Opcode::GET_MOVIE_PROP, nameId(expr.name) * mult_);
             }
             break;
@@ -957,7 +999,7 @@ void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
     emit(Opcode::PUSH_INT8, 1);
     emitNoArg(Opcode::PEEK); // the index
     emitNoArg(Opcode::ADD);
-    emit(Opcode::END_REPEAT, 256 + (top - offset_)); // back to top (unsigned)
+    emit(Opcode::END_REPEAT, offset_ - top); // back to top (positive distance)
     const int exit = offset_;
     emit(Opcode::POP, 3);
     patchJump(cond_offset, exit - cond_offset);
@@ -981,7 +1023,7 @@ void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
     emitVarGet(stmt.loop_var->name);
     emitNoArg(Opcode::ADD);
     emitSetForVar(stmt.loop_var->name);
-    emit(Opcode::END_REPEAT, 256 - (offset_ - loop_top)); // back to loop_top (unsigned)
+    emit(Opcode::END_REPEAT, offset_ - loop_top); // back to loop_top (positive distance)
     const int exit = offset_;
     patchJump(cond_offset, exit - cond_offset);
 }

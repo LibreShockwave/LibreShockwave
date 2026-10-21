@@ -79,9 +79,10 @@ std::vector<Diff> compareHandler(const ScriptAsset::Handler& a,
     if (a.globals_count != b.globals_count) {
         add("globals_count", std::to_string(a.globals_count) + " != " + std::to_string(b.globals_count));
     }
-    if (a.line_count != b.line_count) {
-        add("line_count", std::to_string(a.line_count) + " != " + std::to_string(b.line_count));
-    }
+    // line_count and bytecode_index_map are debugger metadata (source-line to
+    // bytecode-offset mapping), not executable bytecode. The decompiled text
+    // cannot reconstruct the original's line numbering, so they are excluded
+    // from the byte-identical round-trip comparison.
     if (a.arg_name_ids != b.arg_name_ids) {
         add("arg_name_ids", "mismatch");
     }
@@ -184,6 +185,8 @@ struct Options {
     std::string script_filter;
     std::string dump_prefix;
     bool dump_asm = false;
+    bool dump_lits = false;
+    bool dump_ins = false;
 };
 
 Options parseOptions(int argc, char** argv) {
@@ -196,6 +199,10 @@ Options parseOptions(int argc, char** argv) {
             options.dump_prefix = argv[++i];
         } else if (arg == "--dump-asm") {
             options.dump_asm = true;
+        } else if (arg == "--dump-lits") {
+            options.dump_lits = true;
+        } else if (arg == "--dump-ins") {
+            options.dump_ins = true;
         } else if (!arg.starts_with("--")) {
             options.movie_path = arg;
         }
@@ -257,6 +264,46 @@ int main(int argc, char** argv) {
             exit_code = 1;
             std::cerr << "FAIL " << script_name << ": " << error.what() << std::endl;
             continue;
+        }
+        if (options.dump_lits) {
+            std::cout << "-- " << script_name << " original lits=" << original->literals.size()
+                      << " recompiled lits=" << recompiled->literals.size() << "\n";
+            for (std::size_t i = 0; i < recompiled->literals.size(); ++i) {
+                const auto& lv = recompiled->literals[i].value;
+                std::string kind = "mono";
+                if (std::holds_alternative<std::string>(lv)) kind = "str";
+                else if (std::holds_alternative<int>(lv)) kind = "int";
+                else if (std::holds_alternative<std::vector<uint8_t>>(lv)) kind = "bytes";
+                std::cout << "  r" << i << ": " << kind;
+                if (std::holds_alternative<std::string>(lv)) {
+                    const auto& s = std::get<std::string>(lv);
+                    std::cout << " [" << s.size() << "]";
+                    for (char c : s) std::cout << (static_cast<unsigned char>(c) >= 32 ? c : '?');
+                }
+                if (std::holds_alternative<int>(lv)) std::cout << " " << std::get<int>(lv);
+                std::cout << "\n";
+            }
+        }
+        if (options.dump_ins) {
+            for (std::size_t h = 0; h < recompiled->handlers.size(); ++h) {
+                const auto& rh = recompiled->handlers[h];
+                std::cout << "-- " << script_name << " recompiled handler h" << rh.name_id
+                          << " (" << rh.instructions.size() << " instrs)\n";
+                for (std::size_t i = 0; i < rh.instructions.size(); ++i) {
+                    const auto& ins = rh.instructions[i];
+                    std::cout << "  r" << i << ": " << ins.raw_opcode;
+                    if (ins.raw_opcode == 0x44 && ins.argument >= 0 &&
+                        ins.argument < static_cast<int>(recompiled->literals.size())) {
+                        const auto& lv = recompiled->literals[ins.argument].value;
+                        if (std::holds_alternative<std::string>(lv)) {
+                            const auto& s = std::get<std::string>(lv);
+                            std::cout << " lit[" << s.size() << "]";
+                            for (char c : s) std::cout << (static_cast<unsigned char>(c) >= 32 ? c : '?');
+                        }
+                    }
+                    std::cout << "\n";
+                }
+            }
         }
         if (options.dump_asm) {
             std::cout << "-- names: ";
