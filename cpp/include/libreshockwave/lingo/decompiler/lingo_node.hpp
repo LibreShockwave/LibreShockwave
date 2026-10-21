@@ -634,6 +634,10 @@ public:
     void setNextCase(std::unique_ptr<CaseNode> next_case);
     void setBlock(std::unique_ptr<BlockNode> block);
     void setOtherwise(std::unique_ptr<BlockNode> otherwise);
+    // An otherwise-only case has no labels; only its otherwise block is
+    // printed. It comes from `case x of otherwise: ... end case`.
+    void setOtherwiseOnly(bool value) { otherwise_only_ = value; }
+    [[nodiscard]] bool otherwiseOnly() const { return otherwise_only_; }
     [[nodiscard]] const LingoNode& value() const { return *value_; }
     [[nodiscard]] int expect() const { return expect_; }
     [[nodiscard]] CaseNode* nextOr() { return next_or_.get(); }
@@ -650,6 +654,7 @@ public:
 private:
     NodePtr value_;
     int expect_;
+    bool otherwise_only_ = false;
     std::unique_ptr<CaseNode> next_or_;
     std::unique_ptr<CaseNode> next_case_;
     std::unique_ptr<BlockNode> block_;

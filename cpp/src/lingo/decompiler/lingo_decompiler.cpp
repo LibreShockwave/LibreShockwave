@@ -71,8 +71,10 @@ void emitCaseNode(const CaseNode& case_node,
         case_line.append(or_case->value().toLingo(dot_syntax));
         or_case = or_case->nextOr();
     }
-    case_line.push_back(':');
-    lines.push_back(LingoDecompiler::DecompiledLine{prefix + case_line, case_node.bytecodeOffset()});
+    if (!case_node.otherwiseOnly()) {
+        case_line.push_back(':');
+        lines.push_back(LingoDecompiler::DecompiledLine{prefix + case_line, case_node.bytecodeOffset()});
+    }
 
     const auto* branch_case = &case_node;
     while (branch_case->nextOr() != nullptr) {
@@ -984,6 +986,29 @@ void LingoDecompiler::translateInstruction(const chunks::ScriptChunk::Instructio
                         return;
                     }
                 }
+            }
+            // `case x of otherwise: ... end case` with no labeled branches
+            // compiles to an unconditional jump over the otherwise body to the
+            // case-end POP.
+            if (target_index >= 0 && current_handler_ != nullptr &&
+                target_index < static_cast<int>(current_handler_->instructions.size()) &&
+                current_handler_->instructions[static_cast<std::size_t>(target_index)].opcode == Opcode::POP &&
+                current_handler_->instructions[static_cast<std::size_t>(target_index)].argument == 1 &&
+                !stack_.empty()) {
+                auto case_value = popNode();
+                auto cases_stmt = std::make_unique<CasesStmtNode>(std::move(case_value));
+                cases_stmt->setBytecodeOffset(instruction.offset);
+                auto case_node = std::make_unique<CaseNode>(
+                    std::make_unique<ErrorNode>(), CaseNode::EXPECT_OTHERWISE);
+                case_node->setOtherwiseOnly(true);
+                auto otherwise = std::make_unique<BlockNode>();
+                otherwise->end_pos = target_offset;
+                auto* otherwise_block = otherwise.get();
+                case_node->setOtherwise(std::move(otherwise));
+                cases_stmt->setFirstCase(std::move(case_node));
+                block.addChild(std::move(cases_stmt));
+                enterBlock(*otherwise_block);
+                return;
             }
             translation = std::make_unique<CommentNode>("ERROR: Could not identify jmp");
             break;

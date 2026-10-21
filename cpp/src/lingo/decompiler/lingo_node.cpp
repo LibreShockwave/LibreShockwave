@@ -877,14 +877,17 @@ void CaseNode::setOtherwise(std::unique_ptr<BlockNode> otherwise) {
 }
 
 std::string CaseNode::toLingo(bool dot) const {
-    std::string result = value_->toLingo(dot);
-    if (next_or_) {
-        result.append(", ");
-        result.append(next_or_->toLingo(dot));
-    } else {
-        result.append(":\n");
-        if (block_) {
-            result.append(block_->toLingo(dot));
+    std::string result;
+    if (!otherwise_only_) {
+        result = value_->toLingo(dot);
+        if (next_or_) {
+            result.append(", ");
+            result.append(next_or_->toLingo(dot));
+        } else {
+            result.append(":\n");
+            if (block_) {
+                result.append(block_->toLingo(dot));
+            }
         }
     }
     if (next_case_) {
