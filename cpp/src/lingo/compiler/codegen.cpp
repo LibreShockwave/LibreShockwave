@@ -469,7 +469,10 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             break;
         }
         case Stmt::Kind::Exit:
-            emitNoArg(Opcode::RET);
+            // `exit` lowers to a no-argument call to the return handler, not to
+            // a bare RET opcode.
+            emit(Opcode::PUSH_ARG_LIST_NO_RET, 0);
+            emit(Opcode::EXT_CALL, nameId("return") * mult_);
             break;
         case Stmt::Kind::Assignment: {
             // A simple var: value first, then the SET. A dot/bracket lvalue:
