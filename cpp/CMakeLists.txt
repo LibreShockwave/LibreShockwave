@@ -36,7 +36,6 @@ add_custom_command(
 set_source_files_properties("${LIBRESHOCKWAVE_PLATFORM_FONT_DATA_CPP}" PROPERTIES GENERATED TRUE)
 
 add_library(libreshockwave
-    src/director_file.cpp
     src/w3d_file.cpp
     src/audio/sound_converter.cpp
     src/bitmap/bitmap.cpp
@@ -120,6 +119,14 @@ add_library(libreshockwave
     src/lookup/cast_member_lookup.cpp
     src/lookup/palette_resolver.cpp
     src/lookup/script_lookup.cpp
+    src/moviesource/movie_source.cpp
+    src/moviesource/director_movie_source.cpp
+    src/moviesource/director_container_loader.cpp
+    src/moviesource/director_record_converter.cpp
+    src/moviesource/format_registry.cpp
+    src/moviesource/records/script_asset.cpp
+    src/moviesource/records/score_asset.cpp
+    src/moviesource/records/movie_asset.cpp
     src/player/player_event.cpp
     src/player/player_state.cpp
     src/player/player.cpp

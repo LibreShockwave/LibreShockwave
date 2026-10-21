@@ -27,7 +27,7 @@ std::optional<Datum> consumeBuiltinReturnValue(builtin::BuiltinContext& context)
 } // namespace
 
 ExecutionContext::ExecutionContext(Scope& scope,
-                                   chunks::ScriptChunk::Instruction instruction,
+                                   moviesource::ScriptAsset::Instruction instruction,
                                    builtin::BuiltinRegistry* builtins,
                                    builtin::BuiltinContext* builtin_context,
                                    Callbacks callbacks,
@@ -128,18 +128,18 @@ void ExecutionContext::jumpTo(int target_offset) {
     }
 }
 
-const chunks::ScriptChunk::Handler* ExecutionContext::findLocalHandler(int index) const {
+const moviesource::ScriptAsset::Handler* ExecutionContext::findLocalHandler(int index) const {
     const auto* script = scope_->script();
-    if (script == nullptr || index < 0 || index >= static_cast<int>(script->handlers().size())) {
+    if (script == nullptr || index < 0 || index >= static_cast<int>(script->handlers.size())) {
         return nullptr;
     }
-    return &script->handlers()[static_cast<std::size_t>(index)];
+    return &script->handlers[static_cast<std::size_t>(index)];
 }
 
-const std::vector<chunks::ScriptChunk::LiteralEntry>& ExecutionContext::literals() const {
-    static const std::vector<chunks::ScriptChunk::LiteralEntry> empty;
+const std::vector<moviesource::ScriptAsset::LiteralEntry>& ExecutionContext::literals() const {
+    static const std::vector<moviesource::ScriptAsset::LiteralEntry> empty;
     const auto* script = scope_->script();
-    return script != nullptr ? script->literals() : empty;
+    return script != nullptr ? script->literals : empty;
 }
 
 const std::string& ExecutionContext::resolveNameRef(int name_id) const {
@@ -156,7 +156,7 @@ const std::string& ExecutionContext::resolveNameRef(int name_id) const {
         resolved = callbacks_.name_resolver(name_id);
     } else {
         const auto* script = scope_->script();
-        resolved = script != nullptr ? script->resolveName(name_id, nullptr) : "#" + std::to_string(name_id);
+        resolved = script != nullptr ? script->resolveName(name_id) : "#" + std::to_string(name_id);
     }
     auto [inserted, _] = resolved_names_.emplace(name_id, std::move(resolved));
     cached_resolved_name_id_ = name_id;
@@ -175,15 +175,15 @@ std::optional<HandlerRef> ExecutionContext::findHandler(std::string_view name) c
     return std::nullopt;
 }
 
-Datum ExecutionContext::executeHandler(const chunks::ScriptChunk& script,
-                                       const chunks::ScriptChunk::Handler& handler,
+Datum ExecutionContext::executeHandler(const moviesource::ScriptAsset& script,
+                                       const moviesource::ScriptAsset::Handler& handler,
                                        const std::vector<Datum>& args,
                                        const Datum& receiver) const {
     return executeHandler(script, handler, std::span<const Datum>(args), receiver);
 }
 
-Datum ExecutionContext::executeHandler(const chunks::ScriptChunk& script,
-                                       const chunks::ScriptChunk::Handler& handler,
+Datum ExecutionContext::executeHandler(const moviesource::ScriptAsset& script,
+                                       const moviesource::ScriptAsset::Handler& handler,
                                        std::span<const Datum> args,
                                        const Datum& receiver) const {
     return executeHandler(HandlerRef{&script, &handler}, args, receiver);

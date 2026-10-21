@@ -20,18 +20,18 @@ public:
         std::string font_name;
     };
 
-    FontMapChunk(const DirectorFile* file, id::ChunkId id, std::vector<Entry> entries);
+    FontMapChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<Entry> entries);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::vector<Entry>& entries() const;
     [[nodiscard]] std::optional<std::string> fontNameForId(int font_id) const;
 
-    [[nodiscard]] static FontMapChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id);
+    [[nodiscard]] static FontMapChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::vector<Entry> entries_;
 };

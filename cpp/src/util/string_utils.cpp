@@ -2,6 +2,19 @@
 
 namespace libreshockwave::util {
 
+bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        if (std::tolower(static_cast<unsigned char>(lhs[index])) !=
+            std::tolower(static_cast<unsigned char>(rhs[index]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string truncate(std::string_view value, int max_length) {
     if (max_length >= 0 && value.size() <= static_cast<std::size_t>(max_length)) {
         return std::string(value);

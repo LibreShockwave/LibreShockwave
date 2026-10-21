@@ -7,7 +7,10 @@
 #include "libreshockwave/bitmap/palette.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::chunks {
@@ -26,11 +29,11 @@ namespace libreshockwave::player {
 
 class BitmapResolver {
 public:
-    BitmapResolver(std::shared_ptr<DirectorFile> file = nullptr,
+    BitmapResolver(std::shared_ptr<moviesource::MovieSource> file = nullptr,
                    cast::CastLibManager* cast_lib_manager = nullptr,
                    frame::FrameContext* frame_context = nullptr);
 
-    [[nodiscard]] const std::shared_ptr<DirectorFile>& file() const;
+    [[nodiscard]] const std::shared_ptr<moviesource::MovieSource>& file() const;
     void setCastLibManager(cast::CastLibManager* cast_lib_manager);
     void setFrameContext(frame::FrameContext* frame_context);
 
@@ -50,9 +53,9 @@ private:
     [[nodiscard]] std::shared_ptr<const bitmap::Palette> resolveMoviePalette(int frame) const;
     [[nodiscard]] std::shared_ptr<const bitmap::Palette> resolvePaletteCrossFile(
         const std::shared_ptr<chunks::CastMemberChunk>& member,
-        DirectorFile* member_file) const;
+        moviesource::MovieSource* member_file) const;
 
-    std::shared_ptr<DirectorFile> file_;
+    std::shared_ptr<moviesource::MovieSource> file_;
     cast::CastLibManager* cast_lib_manager_{nullptr};
     frame::FrameContext* frame_context_{nullptr};
     mutable std::shared_ptr<const bitmap::Palette> movie_palette_;

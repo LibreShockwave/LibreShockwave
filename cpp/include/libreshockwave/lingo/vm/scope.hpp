@@ -7,43 +7,39 @@
 #include <utility>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
 }
 
-namespace libreshockwave::chunks {
-class ScriptNamesChunk;
 }
 
 namespace libreshockwave::lingo::vm {
 
 class Scope {
 public:
-    Scope(const chunks::ScriptChunk* script,
-          const chunks::ScriptChunk::Handler& handler,
+    Scope(const moviesource::ScriptAsset* script,
+          const moviesource::ScriptAsset::Handler& handler,
           std::vector<Datum> arguments = {},
           Datum receiver = Datum::voidValue(),
           bool first_param_declared_receiver = false,
-          std::shared_ptr<const chunks::ScriptChunk> script_owner = nullptr,
-          std::shared_ptr<const DirectorFile> file_owner = nullptr,
-          std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner = nullptr);
-    Scope(const chunks::ScriptChunk* script,
-          const chunks::ScriptChunk::Handler* handler,
+          std::shared_ptr<const moviesource::ScriptAsset> script_owner = nullptr,
+          std::shared_ptr<const moviesource::MovieSource> file_owner = nullptr);
+    Scope(const moviesource::ScriptAsset* script,
+          const moviesource::ScriptAsset::Handler* handler,
           std::vector<Datum> arguments = {},
           Datum receiver = Datum::voidValue(),
           bool first_param_declared_receiver = false,
-          std::shared_ptr<const chunks::ScriptChunk> script_owner = nullptr,
-          std::shared_ptr<const DirectorFile> file_owner = nullptr,
-          std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner = nullptr);
+          std::shared_ptr<const moviesource::ScriptAsset> script_owner = nullptr,
+          std::shared_ptr<const moviesource::MovieSource> file_owner = nullptr);
 
-    [[nodiscard]] const chunks::ScriptChunk* script() const;
-    [[nodiscard]] const std::shared_ptr<const chunks::ScriptChunk>& scriptOwner() const;
-    [[nodiscard]] const std::shared_ptr<const DirectorFile>& fileOwner() const;
-    [[nodiscard]] const std::shared_ptr<const chunks::ScriptNamesChunk>& scriptNamesOwner() const;
-    [[nodiscard]] const chunks::ScriptChunk::Handler& handler() const;
+    [[nodiscard]] const moviesource::ScriptAsset* script() const;
+    [[nodiscard]] const std::shared_ptr<const moviesource::ScriptAsset>& scriptOwner() const;
+    [[nodiscard]] const std::shared_ptr<const moviesource::MovieSource>& fileOwner() const;
+    [[nodiscard]] const moviesource::ScriptAsset::Handler& handler() const;
     [[nodiscard]] const std::vector<Datum>& arguments() const;
     [[nodiscard]] int displayArgumentCount() const;
     [[nodiscard]] Datum displayArgument(int index) const;
@@ -56,7 +52,7 @@ public:
         return handler_ != nullptr && bytecode_index_ >= 0 &&
                bytecode_index_ < static_cast<int>(handler_->instructions.size());
     }
-    [[nodiscard]] const chunks::ScriptChunk::Instruction* currentInstruction() const {
+    [[nodiscard]] const moviesource::ScriptAsset::Instruction* currentInstruction() const {
         if (!hasMoreInstructions()) {
             return nullptr;
         }
@@ -203,11 +199,10 @@ private:
                                                                        const void* collection_identity,
                                                                        const Datum& collection);
 
-    const chunks::ScriptChunk* script_;
-    std::shared_ptr<const chunks::ScriptChunk> script_owner_;
-    std::shared_ptr<const DirectorFile> file_owner_;
-    std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner_;
-    const chunks::ScriptChunk::Handler* handler_;
+    const moviesource::ScriptAsset* script_;
+    std::shared_ptr<const moviesource::ScriptAsset> script_owner_;
+    std::shared_ptr<const moviesource::MovieSource> file_owner_;
+    const moviesource::ScriptAsset::Handler* handler_;
     std::vector<Datum> arguments_;
     Datum receiver_;
     bool first_param_declared_receiver_;

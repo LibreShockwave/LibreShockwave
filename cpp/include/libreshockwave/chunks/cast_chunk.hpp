@@ -13,18 +13,18 @@ namespace libreshockwave::chunks {
 
 class CastChunk final : public Chunk {
 public:
-    CastChunk(const DirectorFile* file, id::ChunkId id, std::vector<int> member_ids);
+    CastChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<int> member_ids);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::vector<int>& memberIds() const;
     [[nodiscard]] int memberCount() const;
 
-    [[nodiscard]] static CastChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static CastChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::vector<int> member_ids_;
 };

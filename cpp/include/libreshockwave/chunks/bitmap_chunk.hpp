@@ -13,7 +13,7 @@ namespace libreshockwave::chunks {
 
 class BitmapChunk final : public Chunk {
 public:
-    BitmapChunk(const DirectorFile* file,
+    BitmapChunk(const moviesource::MovieSource* file,
                 id::ChunkId id,
                 std::vector<std::uint8_t> data,
                 int width,
@@ -21,7 +21,7 @@ public:
                 int bit_depth,
                 id::PaletteId palette_id);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::vector<std::uint8_t>& data() const;
@@ -30,11 +30,11 @@ public:
     [[nodiscard]] int bitDepth() const;
     [[nodiscard]] id::PaletteId paletteId() const;
 
-    [[nodiscard]] static BitmapChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
-    [[nodiscard]] BitmapChunk withDimensions(const DirectorFile* file, int width, int height, int bit_depth, id::PaletteId palette_id) const;
+    [[nodiscard]] static BitmapChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] BitmapChunk withDimensions(const moviesource::MovieSource* file, int width, int height, int bit_depth, id::PaletteId palette_id) const;
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::vector<std::uint8_t> data_;
     int width_;

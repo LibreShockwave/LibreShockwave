@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 
 namespace libreshockwave::lingo::vm {
 
@@ -21,7 +21,7 @@ public:
         std::vector<Datum> arguments;
         Datum receiver{Datum::voidValue()};
         RuntimeGlobals globals;
-        std::vector<chunks::ScriptChunk::LiteralEntry> literals;
+        std::vector<moviesource::ScriptAsset::LiteralEntry> literals;
         int local_count{0};
         int arg_count{0};
     };

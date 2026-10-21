@@ -27,7 +27,7 @@
 #define LSW_EXPORT(name)
 #endif
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/cast/cast_member.hpp"
 #include "libreshockwave/lingo/vm/opcode_registry.hpp"
@@ -46,7 +46,7 @@
 
 namespace {
 
-using libreshockwave::DirectorFile;
+using libreshockwave::moviesource::MovieSource;
 using libreshockwave::bitmap::Bitmap;
 using libreshockwave::player::InputHandler;
 using libreshockwave::player::Player;
@@ -67,7 +67,7 @@ constexpr int DEFAULT_WASM_SCRIPT_DEADLINE_MS = 60000;
 constexpr int SLOW_WASM_OPERATION_WARNING_MS = 1000;
 
 struct WasmPlayerContext {
-    std::shared_ptr<DirectorFile> file;
+    std::shared_ptr<MovieSource> file;
     std::unique_ptr<QueuedNetProvider> net_provider;
     std::unique_ptr<QueuedMultiuserBridge> multiuser_bridge;
     std::unique_ptr<QueuedAudioBackend> audio_backend;
@@ -754,8 +754,12 @@ std::string frameSpritesJson(WasmPlayerContext& ctx) {
                 out << ",\"authoredXmed\":";
                 auto* file = authored_member->file();
                 if (file != nullptr) {
-                    auto styled = const_cast<DirectorFile*>(file)->getXmedStyledTextForMember(
-                        std::const_pointer_cast<libreshockwave::chunks::CastMemberChunk>(authored_member));
+                    auto* non_const_file = const_cast<MovieSource*>(file);
+                    auto chunk = std::const_pointer_cast<libreshockwave::chunks::CastMemberChunk>(authored_member);
+                    std::optional<libreshockwave::cast::XmedStyledText> styled;
+                    if (auto asset = non_const_file->castMemberAssetForChunk(chunk); asset) {
+                        styled = non_const_file->xmedStyledTextForMember(asset);
+                    }
                     if (styled.has_value()) {
                         out << "{\"alignment\":";
                         appendJsonString(out, styled->alignment);
@@ -1099,7 +1103,7 @@ libreshockwave::player::Player* lswInternalGetPlayer(int handle) {
     return found == contexts.end() ? nullptr : found->second->player.get();
 }
 
-std::shared_ptr<libreshockwave::DirectorFile> lswInternalGetFile(int handle) {
+std::shared_ptr<MovieSource> lswInternalGetFile(int handle) {
     const auto found = contexts.find(handle);
     return found == contexts.end() ? nullptr : found->second->file;
 }
@@ -1129,7 +1133,6 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_destroy") void lswDestroy(int handle) {
                 ctx->player->shutdown();
             });
         }
-        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
         ctx->jpeg_decoder.reset();
     }
     contexts.erase(handle);
@@ -1149,7 +1152,6 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_load_movie") int lswLoadMovie(int handle,
         if (ctx->player != nullptr) {
             ctx->player->shutdown();
         }
-        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
         ctx->player.reset();
         ctx->audio_backend.reset();
         ctx->jpeg_decoder.reset();
@@ -1167,13 +1169,13 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_load_movie") int lswLoadMovie(int handle,
         }
 
         std::vector<std::uint8_t> data(bytes, bytes + byte_count);
-        auto file = DirectorFile::load(data);
+        auto file = MovieSource::load(ctx->movie_source, data);
         file->setBasePath(sourceDirectory(ctx->movie_source));
 
         auto net_provider = std::make_unique<QueuedNetProvider>(ctx->movie_source);
         auto multiuser_bridge = std::make_unique<QueuedMultiuserBridge>();
         auto audio_backend = std::make_unique<QueuedAudioBackend>();
-        auto jpeg_decoder = std::make_unique<QueuedJpegDecoder>();
+        auto jpeg_decoder = std::make_unique<QueuedJpegDecoder>(file.get());
         jpeg_decoder->install();
         auto player = std::make_unique<Player>(file, net_provider.get());
         player->registerMultiuserXtra(*multiuser_bridge);
@@ -1231,12 +1233,10 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_load_movie") int lswLoadMovie(int handle,
         (void)renderCurrentFrame(*ctx);
         return 1;
     } catch (const std::exception& error) {
-        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
         ctx->jpeg_decoder.reset();
         setError(*ctx, error.what());
         return 0;
     } catch (...) {
-        DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
         ctx->jpeg_decoder.reset();
         setError(*ctx, "Unknown load error");
         return 0;

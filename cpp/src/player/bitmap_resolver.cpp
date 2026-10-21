@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
 #include "libreshockwave/cast/bitmap_info.hpp"
 #include "libreshockwave/cast/cast_member.hpp"
@@ -22,19 +22,19 @@ std::shared_ptr<const bitmap::Palette> borrowedPalette(const bitmap::Palette* pa
     return std::shared_ptr<const bitmap::Palette>(palette, [](const bitmap::Palette*) {});
 }
 
-std::shared_ptr<const bitmap::Palette> moviePlatformPalette(const std::shared_ptr<DirectorFile>& file) {
+std::shared_ptr<const bitmap::Palette> moviePlatformPalette(const std::shared_ptr<moviesource::MovieSource>& file) {
     const auto config = file != nullptr ? file->config() : nullptr;
-    const auto* palette = config != nullptr && config->platform() == 2
+    const auto* palette = config != nullptr && config->platform == 2
         ? &bitmap::Palette::systemWinPalette()
         : &bitmap::Palette::systemMacPalette();
     return borrowedPalette(palette);
 }
 
-DirectorFile* mutableFileFor(const std::shared_ptr<chunks::CastMemberChunk>& member) {
+moviesource::MovieSource* mutableFileFor(const std::shared_ptr<chunks::CastMemberChunk>& member) {
     if (!member || member->file() == nullptr) {
         return nullptr;
     }
-    return const_cast<DirectorFile*>(member->file());
+    return const_cast<moviesource::MovieSource*>(member->file());
 }
 
 std::shared_ptr<chunks::CastMemberChunk> borrowedMember(const chunks::CastMemberChunk& member) {
@@ -57,14 +57,14 @@ void applyPaletteRefMetadata(bitmap::Bitmap& bitmap,
 
 } // namespace
 
-BitmapResolver::BitmapResolver(std::shared_ptr<DirectorFile> file,
+BitmapResolver::BitmapResolver(std::shared_ptr<moviesource::MovieSource> file,
                                cast::CastLibManager* cast_lib_manager,
                                frame::FrameContext* frame_context)
     : file_(std::move(file)),
       cast_lib_manager_(cast_lib_manager),
       frame_context_(frame_context) {}
 
-const std::shared_ptr<DirectorFile>& BitmapResolver::file() const {
+const std::shared_ptr<moviesource::MovieSource>& BitmapResolver::file() const {
     return file_;
 }
 
@@ -100,6 +100,12 @@ std::optional<bitmap::Bitmap> BitmapResolver::decodeBitmap(
             effective_palette_override = member_palette_override.get();
         }
     }
+    auto member_asset = [&](moviesource::MovieSource* source) -> std::shared_ptr<moviesource::CastMemberAsset> {
+        if (source == nullptr) {
+            return nullptr;
+        }
+        return source->castMemberAssetForChunk(member);
+    };
     auto with_palette_ref_metadata = [&](std::optional<bitmap::Bitmap> decoded) {
         if (decoded.has_value()) {
             decoded = decoded->copyWithDegenerateNativeAlphaOpaque();
@@ -110,24 +116,24 @@ std::optional<bitmap::Bitmap> BitmapResolver::decodeBitmap(
         return decoded;
     };
 
-    DirectorFile* member_file = mutableFileFor(member);
+    moviesource::MovieSource* member_file = mutableFileFor(member);
     if (member_file != nullptr && effective_palette_override == nullptr && file_ != nullptr && member_file != file_.get() &&
         member->isBitmap()) {
         if (auto cross_file_palette = resolvePaletteCrossFile(member, member_file)) {
-            if (auto decoded = member_file->decodeBitmap(member, cross_file_palette.get())) {
+            if (auto decoded = member_file->decodeBitmap(member_asset(member_file), cross_file_palette.get())) {
                 return with_palette_ref_metadata(std::move(decoded));
             }
         }
     }
 
     if (member_file != nullptr) {
-        if (auto decoded = member_file->decodeBitmap(member, effective_palette_override)) {
+        if (auto decoded = member_file->decodeBitmap(member_asset(member_file), effective_palette_override)) {
             return with_palette_ref_metadata(std::move(decoded));
         }
     }
 
     if (file_ != nullptr && file_.get() != member_file) {
-        if (auto decoded = file_->decodeBitmap(member, effective_palette_override)) {
+        if (auto decoded = file_->decodeBitmap(member_asset(file_.get()), effective_palette_override)) {
             return with_palette_ref_metadata(std::move(decoded));
         }
     }
@@ -139,7 +145,7 @@ std::optional<bitmap::Bitmap> BitmapResolver::decodeBitmap(
             }
             auto source = cast_lib->sourceFile();
             if (source != nullptr && source.get() != member_file && source != file_) {
-                if (auto decoded = source->decodeBitmap(member, effective_palette_override)) {
+                if (auto decoded = source->decodeBitmap(member_asset(source.get()), effective_palette_override)) {
                     return with_palette_ref_metadata(std::move(decoded));
                 }
             }
@@ -186,7 +192,7 @@ std::shared_ptr<const bitmap::Palette> BitmapResolver::resolveMoviePalette(int f
         return nullptr;
     }
 
-    if (auto palette_data = file_->getScorePalette(frame)) {
+    if (auto palette_data = file_->scorePalette(frame)) {
         if (palette_data->cast_member < 0) {
             return borrowedPalette(&bitmap::Palette::builtIn(palette_data->cast_member));
         }
@@ -196,12 +202,12 @@ std::shared_ptr<const bitmap::Palette> BitmapResolver::resolveMoviePalette(int f
     }
 
     auto config = file_->config();
-    if (config != nullptr && config->defaultPaletteMember() != 0) {
-        const int member = config->defaultPaletteMember();
+    if (config != nullptr && config->default_palette_member != 0) {
+        const int member = config->default_palette_member;
         if (member < 0) {
             return borrowedPalette(&bitmap::Palette::builtIn(member));
         }
-        if (auto palette = resolvePaletteByMember(config->defaultPaletteCastLib(), member)) {
+        if (auto palette = resolvePaletteByMember(config->default_palette_cast_lib, member)) {
             return palette;
         }
     }
@@ -211,12 +217,12 @@ std::shared_ptr<const bitmap::Palette> BitmapResolver::resolveMoviePalette(int f
 
 std::shared_ptr<const bitmap::Palette> BitmapResolver::resolvePaletteCrossFile(
     const std::shared_ptr<chunks::CastMemberChunk>& member,
-    DirectorFile* member_file) const {
+    moviesource::MovieSource* member_file) const {
     if (!member || member_file == nullptr || member->specificData().size() < 10) {
         return nullptr;
     }
 
-    const int director_version = member_file->config() != nullptr ? member_file->config()->directorVersion() : 1200;
+    const int director_version = member_file->config() != nullptr ? member_file->config()->director_version : 1200;
     const auto info = libreshockwave::cast::BitmapInfo::parse(member->specificData(), director_version);
     const auto exact_palette = member_file->resolvePaletteExact(info.palette_id);
     if (info.palette_id < 0) {

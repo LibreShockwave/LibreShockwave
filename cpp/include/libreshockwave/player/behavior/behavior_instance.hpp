@@ -8,6 +8,12 @@
 #include "libreshockwave/lingo/datum.hpp"
 #include "libreshockwave/player/score/score_behavior_ref.hpp"
 
+namespace libreshockwave {
+namespace moviesource {
+class MovieSource;
+}
+}
+
 namespace libreshockwave::player::behavior {
 
 class BehaviorInstance {
@@ -15,9 +21,15 @@ public:
     BehaviorInstance(std::shared_ptr<chunks::ScriptChunk> script,
                      score::ScoreBehaviorRef behavior_ref,
                      int sprite_num);
+    BehaviorInstance(std::shared_ptr<chunks::ScriptChunk> script,
+                     score::ScoreBehaviorRef behavior_ref,
+                     int sprite_num,
+                     std::shared_ptr<const moviesource::MovieSource> source_file);
 
     [[nodiscard]] int id() const;
     [[nodiscard]] const std::shared_ptr<chunks::ScriptChunk>& script() const;
+    [[nodiscard]] const std::shared_ptr<const moviesource::MovieSource>& sourceFile() const;
+    void setSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file);
     [[nodiscard]] const score::ScoreBehaviorRef& behaviorRef() const;
     [[nodiscard]] int spriteNum() const;
     [[nodiscard]] bool isFrameBehavior() const;
@@ -40,6 +52,7 @@ private:
 
     int id_{0};
     std::shared_ptr<chunks::ScriptChunk> script_;
+    std::shared_ptr<const moviesource::MovieSource> source_file_;
     score::ScoreBehaviorRef behavior_ref_;
     int sprite_num_{0};
     lingo::Datum receiver_;

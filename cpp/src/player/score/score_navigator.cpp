@@ -4,7 +4,7 @@
 #include <cctype>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/chunks/frame_labels_chunk.hpp"
 #include "libreshockwave/chunks/score_chunk.hpp"
 #include "libreshockwave/lingo/lingo_value_parser.hpp"
@@ -38,7 +38,7 @@ std::string decodeScoreTextEntry(const std::vector<std::uint8_t>& data) {
 
 } // namespace
 
-ScoreNavigator::ScoreNavigator(const DirectorFile* file)
+ScoreNavigator::ScoreNavigator(const moviesource::MovieSource* file)
     : score_(file ? file->scoreChunk() : nullptr),
       labels_(file ? file->frameLabelsChunk() : nullptr) {
     buildSpriteSpans();

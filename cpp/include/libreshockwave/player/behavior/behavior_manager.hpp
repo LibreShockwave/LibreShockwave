@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/player/behavior/behavior_instance.hpp"
 
 namespace libreshockwave::player::behavior {
@@ -14,7 +14,7 @@ class BehaviorManager {
 public:
     using ScriptResolver = std::function<std::shared_ptr<chunks::ScriptChunk>(const score::ScoreBehaviorRef& behavior_ref)>;
 
-    explicit BehaviorManager(DirectorFile* file = nullptr);
+    explicit BehaviorManager(moviesource::MovieSource* file = nullptr);
 
     void setDebugEnabled(bool enabled);
     [[nodiscard]] bool debugEnabled() const;
@@ -28,6 +28,11 @@ public:
         std::shared_ptr<chunks::ScriptChunk> script,
         const score::ScoreBehaviorRef& behavior_ref,
         int channel);
+    [[nodiscard]] std::shared_ptr<BehaviorInstance> createInstanceForScript(
+        std::shared_ptr<chunks::ScriptChunk> script,
+        const score::ScoreBehaviorRef& behavior_ref,
+        int channel,
+        std::shared_ptr<const moviesource::MovieSource> source_file);
     [[nodiscard]] std::shared_ptr<BehaviorInstance> getOrCreateFrameScript(
         const score::ScoreBehaviorRef& behavior_ref,
         int frame);
@@ -35,8 +40,21 @@ public:
         std::shared_ptr<chunks::ScriptChunk> script,
         const score::ScoreBehaviorRef& behavior_ref,
         int frame);
+    [[nodiscard]] std::shared_ptr<BehaviorInstance> getOrCreateFrameScriptForScript(
+        std::shared_ptr<chunks::ScriptChunk> script,
+        const score::ScoreBehaviorRef& behavior_ref,
+        int frame,
+        std::shared_ptr<const moviesource::MovieSource> source_file);
     [[nodiscard]] std::shared_ptr<BehaviorInstance> frameScriptInstance() const;
     void clearFrameScript();
+
+    // Set the source file for all instances. Used by tests and tooling that
+    // build a source without parsing a container.
+    void setSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file);
+
+    // Set the default source file for new instances. Used by tests and tooling
+    // that build a source without parsing a container.
+    void setDefaultSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file);
 
     [[nodiscard]] std::vector<std::shared_ptr<BehaviorInstance>> getInstancesForChannel(int channel) const;
     [[nodiscard]] bool hasInstanceForChannel(int channel, const score::ScoreBehaviorRef& behavior_ref) const;
@@ -57,7 +75,8 @@ private:
     void applyParameters(const std::shared_ptr<BehaviorInstance>& instance,
                          const score::ScoreBehaviorRef& behavior_ref);
 
-    DirectorFile* file_{nullptr};
+    moviesource::MovieSource* file_{nullptr};
+    std::shared_ptr<const moviesource::MovieSource> default_source_file_;
     ScriptResolver script_resolver_;
     ScriptResolver frame_script_resolver_;
     std::map<int, std::shared_ptr<BehaviorInstance>> instances_by_id_;

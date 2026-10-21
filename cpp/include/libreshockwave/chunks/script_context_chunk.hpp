@@ -18,7 +18,7 @@ public:
         int flags;
     };
 
-    ScriptContextChunk(const DirectorFile* file,
+    ScriptContextChunk(const moviesource::MovieSource* file,
                        id::ChunkId id,
                        int unknown1,
                        int unknown2,
@@ -29,7 +29,7 @@ public:
                        int free_ptr,
                        std::vector<ScriptEntry> entries);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] int unknown1() const;
@@ -41,10 +41,10 @@ public:
     [[nodiscard]] int freePtr() const;
     [[nodiscard]] const std::vector<ScriptEntry>& entries() const;
 
-    [[nodiscard]] static ScriptContextChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static ScriptContextChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     int unknown1_;
     int unknown2_;

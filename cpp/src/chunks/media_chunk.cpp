@@ -7,7 +7,7 @@
 
 namespace libreshockwave::chunks {
 
-MediaChunk::MediaChunk(const DirectorFile* file,
+MediaChunk::MediaChunk(const moviesource::MovieSource* file,
                        id::ChunkId id,
                        int sample_rate,
                        int data_size_field,
@@ -22,7 +22,7 @@ MediaChunk::MediaChunk(const DirectorFile* file,
       audio_data_(std::move(audio_data)),
       codec_(std::move(codec)) {}
 
-const DirectorFile* MediaChunk::file() const { return file_; }
+const moviesource::MovieSource* MediaChunk::file() const { return file_; }
 format::ChunkType MediaChunk::type() const { return format::ChunkType::ediM; }
 id::ChunkId MediaChunk::id() const { return id_; }
 int MediaChunk::sampleRate() const { return sample_rate_; }
@@ -46,7 +46,7 @@ SoundChunk MediaChunk::toSoundChunk() const {
     return SoundChunk(file_, id_, sample_rate_, sample_count, bits_per_sample, channel_count, audio_data_, codec_);
 }
 
-MediaChunk MediaChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id) {
+MediaChunk MediaChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id) {
     const auto total_size = reader.bytesLeft();
 
     if (total_size < 4) {

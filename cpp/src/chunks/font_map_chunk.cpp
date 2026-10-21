@@ -4,10 +4,10 @@
 
 namespace libreshockwave::chunks {
 
-FontMapChunk::FontMapChunk(const DirectorFile* file, id::ChunkId id, std::vector<Entry> entries)
+FontMapChunk::FontMapChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<Entry> entries)
     : file_(file), id_(id), entries_(std::move(entries)) {}
 
-const DirectorFile* FontMapChunk::file() const { return file_; }
+const moviesource::MovieSource* FontMapChunk::file() const { return file_; }
 format::ChunkType FontMapChunk::type() const { return format::ChunkType::Fmap; }
 id::ChunkId FontMapChunk::id() const { return id_; }
 const std::vector<FontMapChunk::Entry>& FontMapChunk::entries() const { return entries_; }
@@ -21,7 +21,7 @@ std::optional<std::string> FontMapChunk::fontNameForId(int font_id) const {
     return std::nullopt;
 }
 
-FontMapChunk FontMapChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id) {
+FontMapChunk FontMapChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id) {
     const auto original_order = reader.order();
     reader.setOrder(io::ByteOrder::BigEndian);
 

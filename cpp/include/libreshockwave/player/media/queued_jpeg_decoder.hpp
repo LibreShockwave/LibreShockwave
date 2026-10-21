@@ -5,14 +5,16 @@
 #include <optional>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 
 namespace libreshockwave::player::media {
 
 class QueuedJpegDecoder {
 public:
-    [[nodiscard]] DirectorFile::JpegDecoder decoder();
+    explicit QueuedJpegDecoder(moviesource::MovieSource* source) : source_(source) {}
+
+    [[nodiscard]] moviesource::MovieSource::JpegDecoder decoder();
     void install();
 
     [[nodiscard]] std::optional<libreshockwave::bitmap::Bitmap> decode(
@@ -30,6 +32,7 @@ public:
 private:
     void removePending(int id);
 
+    moviesource::MovieSource* source_;
     std::map<int, std::vector<std::uint8_t>> pending_;
     std::vector<int> pending_order_;
     std::map<int, libreshockwave::bitmap::Bitmap> decoded_;

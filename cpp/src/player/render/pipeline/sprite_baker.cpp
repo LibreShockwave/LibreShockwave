@@ -11,7 +11,7 @@
 #include <string>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/cast/bitmap_info.hpp"
 #include "libreshockwave/cast/cast_member.hpp"
 #include "libreshockwave/cast/film_loop_info.hpp"
@@ -237,37 +237,37 @@ void blitOnto(bitmap::Bitmap& dst, const bitmap::Bitmap& src, int offset_x, int 
     }
 }
 
-DirectorFile* mutableFileFor(const std::shared_ptr<const chunks::CastMemberChunk>& member) {
+moviesource::MovieSource* mutableFileFor(const std::shared_ptr<const chunks::CastMemberChunk>& member) {
     if (member == nullptr || member->file() == nullptr) {
         return nullptr;
     }
-    return const_cast<DirectorFile*>(member->file());
+    return const_cast<moviesource::MovieSource*>(member->file());
 }
 
-std::shared_ptr<chunks::CastMemberChunk> resolveFilmLoopMember(DirectorFile& file, int cast_lib, int member_number) {
-    auto member = file.getCastMemberByNumber(cast_lib, member_number);
+std::shared_ptr<chunks::CastMemberChunk> resolveFilmLoopMember(moviesource::MovieSource& file, int cast_lib, int member_number) {
+    auto member = file.castMemberChunkByNumber(cast_lib, member_number);
     if (member == nullptr && (cast_lib == 0xFFFF || cast_lib == 0)) {
-        member = file.getCastMemberByNumber(1, member_number);
+        member = file.castMemberChunkByNumber(1, member_number);
     }
     if (member == nullptr) {
-        member = file.getCastMemberByIndex(cast_lib, member_number);
+        member = file.castMemberChunkByIndex(cast_lib, member_number);
         if (member == nullptr && (cast_lib == 0xFFFF || cast_lib == 0)) {
-            member = file.getCastMemberByIndex(1, member_number);
+            member = file.castMemberChunkByIndex(1, member_number);
         }
     }
     return member;
 }
 
-int directorVersionFor(const DirectorFile& file) {
-    return file.config() != nullptr ? file.config()->directorVersion() : 1200;
+int directorVersionFor(const moviesource::MovieSource& file) {
+    return file.config() != nullptr ? file.config()->director_version : 1200;
 }
 
-std::string defaultStxtFontName(const DirectorFile& file) {
+std::string defaultStxtFontName(const moviesource::MovieSource& file) {
     const int version = directorVersionFor(file);
     return version > 0 && version <= 1600 ? "Geneva" : "Arial";
 }
 
-bool usesLegacyEmbeddedTextFont(const DirectorFile& file, int font_id, int font_style) {
+bool usesLegacyEmbeddedTextFont(const moviesource::MovieSource& file, int font_id, int font_style) {
     const int version = directorVersionFor(file);
     return font_id == 0 && (font_style & 0x80) != 0 && version > 0 && version <= 1600;
 }
@@ -894,7 +894,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeShockwave3D(const RenderS
         return nullptr;
     }
 
-    auto w3d = file->getW3DFileForMember(std::const_pointer_cast<chunks::CastMemberChunk>(member));
+    auto w3d = file->w3dForMember(file->castMemberAssetForChunk(std::const_pointer_cast<chunks::CastMemberChunk>(member)));
     if (!w3d.has_value()) {
         return nullptr;
     }
@@ -1029,7 +1029,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
     }
 
     if (member->isTextXtra()) {
-        auto styled = file->getXmedStyledTextForMember(std::const_pointer_cast<chunks::CastMemberChunk>(member));
+        auto styled = file->xmedStyledTextForMember(file->castMemberAssetForChunk(std::const_pointer_cast<chunks::CastMemberChunk>(member)));
         if (!styled.has_value() || styled->text.empty()) {
             return nullptr;
         }
@@ -1051,7 +1051,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
         return text_image;
     }
 
-    auto text_chunk = file->getTextForMember(std::const_pointer_cast<chunks::CastMemberChunk>(member));
+    auto text_chunk = file->textForMember(file->castMemberAssetForChunk(std::const_pointer_cast<chunks::CastMemberChunk>(member)));
     if (text_chunk == nullptr) {
         return nullptr;
     }
@@ -1064,9 +1064,9 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
     int run_r = -1;
     int run_g = -1;
     int run_b = -1;
-    if (!text_chunk->runs().empty()) {
-        const auto& run = text_chunk->runs().front();
-        if (auto mapped = file->getFontNameForId(run.font_id); mapped.has_value() && !mapped->empty()) {
+    if (!text_chunk->runs.empty()) {
+        const auto& run = text_chunk->runs.front();
+        if (auto mapped = file->fontNameForId(run.font_id); mapped.has_value() && !mapped->empty()) {
             font_name = *mapped;
         } else if (usesLegacyEmbeddedTextFont(*file, run.font_id, run.font_style)) {
             if (auto embedded = ::libreshockwave::player::cast::FontRegistry::getPreferredDirectorPixelFont();
@@ -1098,7 +1098,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
     std::shared_ptr<bitmap::Bitmap> rendered;
     if (legacy_embedded_text_font) {
         if (auto* simple_renderer = dynamic_cast<output::SimpleTextRenderer*>(text_renderer_)) {
-            rendered = simple_renderer->renderLegacyStxtText(text_chunk->text(),
+            rendered = simple_renderer->renderLegacyStxtText(text_chunk->text,
                                                             render_width,
                                                             height,
                                                             font_name,
@@ -1114,7 +1114,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
         }
     }
     if (rendered == nullptr) {
-        rendered = text_renderer_->renderText(text_chunk->text(),
+        rendered = text_renderer_->renderText(text_chunk->text,
                                              render_width,
                                              height,
                                              font_name,
@@ -1150,8 +1150,8 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedFilmLoop(const 
         return nullptr;
     }
 
-    auto score = file->getScoreForMember(std::const_pointer_cast<chunks::CastMemberChunk>(member));
-    if (score == nullptr || score->frameData().frame_channel_data.empty()) {
+    auto score = file->scoreForMember(file->castMemberAssetForChunk(std::const_pointer_cast<chunks::CastMemberChunk>(member)));
+    if (score == nullptr || score->frame_data.frame_channel_data.empty()) {
         return nullptr;
     }
 
@@ -1162,12 +1162,12 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedFilmLoop(const 
         return nullptr;
     }
 
-    const int frame_count = score->frameData().header.frame_count;
+    const int frame_count = score->frame_data.header.frame_count;
     const int target_frame = frame_count > 0 ? tick_counter_ % frame_count : 0;
     bitmap::Bitmap composite(loop_width, loop_height, 32);
 
-    std::vector<chunks::ScoreChunk::FrameChannelEntry> sub_sprites;
-    for (const auto& entry : score->frameData().frame_channel_data) {
+    std::vector<moviesource::ScoreAsset::FrameChannelEntry> sub_sprites;
+    for (const auto& entry : score->frame_data.frame_channel_data) {
         if (entry.frame_index.value() == target_frame && !entry.data.isEmpty()) {
             sub_sprites.push_back(entry);
         }
@@ -1220,7 +1220,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedFilmLoop(const 
 
 std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
     const std::shared_ptr<chunks::CastMemberChunk>& member,
-    const chunks::ScoreChunk::ChannelData& data) {
+    const moviesource::ScoreAsset::ChannelData& data) {
     if (member == nullptr) {
         return nullptr;
     }
@@ -1371,9 +1371,9 @@ std::shared_ptr<const chunks::CastMemberChunk> SpriteBaker::resolveMaskMember(co
     if (dynamic_member != nullptr && dynamic_member->rawChunk() != nullptr) {
         auto* file = mutableFileFor(dynamic_member->rawChunk());
         if (file != nullptr) {
-            auto mask = file->getCastMemberByNumber(dynamic_member->castLib(), dynamic_member->memberNum() + 1);
+            auto mask = file->castMemberChunkByNumber(dynamic_member->castLib(), dynamic_member->memberNum() + 1);
             if (mask == nullptr && dynamic_member->castLib() != 1) {
-                mask = file->getCastMemberByNumber(1, dynamic_member->memberNum() + 1);
+                mask = file->castMemberChunkByNumber(1, dynamic_member->memberNum() + 1);
             }
             if (mask != nullptr && mask->isBitmap()) {
                 return mask;
@@ -1388,8 +1388,8 @@ std::shared_ptr<const chunks::CastMemberChunk> SpriteBaker::resolveMaskMember(co
 
     auto* file = mutableFileFor(source_member);
     const auto cast_list = file->castList();
-    for (int cast_lib = 1; cast_lib <= static_cast<int>(file->casts().size()); ++cast_lib) {
-        const auto cast = file->getMappedCastChunk(cast_lib);
+    for (int cast_lib = 1; cast_lib <= static_cast<int>(file->castChunks().size()); ++cast_lib) {
+        const auto cast = file->mappedCastChunk(cast_lib);
         if (cast == nullptr) {
             continue;
         }
@@ -1406,11 +1406,11 @@ std::shared_ptr<const chunks::CastMemberChunk> SpriteBaker::resolveMaskMember(co
             return nullptr;
         }
 
-        int min_member = file->config() != nullptr ? file->config()->minMember() : 1;
-        if (cast_list != nullptr && cast_lib - 1 < static_cast<int>(cast_list->entries().size())) {
-            min_member = cast_list->entries()[static_cast<std::size_t>(cast_lib - 1)].min_member;
+        int min_member = file->config() != nullptr ? file->config()->min_member : 1;
+        if (cast_list != nullptr && cast_lib - 1 < static_cast<int>(cast_list->entries.size())) {
+            min_member = cast_list->entries[static_cast<std::size_t>(cast_lib - 1)].min_member;
         }
-        auto mask = file->getCastMemberByNumber(cast_lib, min_member + source_index + 1);
+        auto mask = file->castMemberChunkByNumber(cast_lib, min_member + source_index + 1);
         if (mask != nullptr && mask->isBitmap()) {
             return mask;
         }

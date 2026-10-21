@@ -23,14 +23,14 @@ public:
         int id;
     };
 
-    CastListChunk(const DirectorFile* file,
+    CastListChunk(const moviesource::MovieSource* file,
                   id::ChunkId id,
                   int data_offset,
                   int items_per_entry,
                   int item_count,
                   std::vector<CastListEntry> entries);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] int dataOffset() const;
@@ -38,10 +38,10 @@ public:
     [[nodiscard]] int itemCount() const;
     [[nodiscard]] const std::vector<CastListEntry>& entries() const;
 
-    [[nodiscard]] static CastListChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static CastListChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     int data_offset_;
     int items_per_entry_;

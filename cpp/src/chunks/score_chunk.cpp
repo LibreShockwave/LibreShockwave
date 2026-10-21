@@ -356,7 +356,7 @@ std::vector<ScoreChunk::FrameInterval> parseFrameIntervals(const std::vector<std
     return results;
 }
 
-ScoreChunk createEmptyScore(const DirectorFile* file, id::ChunkId id) {
+ScoreChunk createEmptyScore(const moviesource::MovieSource* file, id::ChunkId id) {
     return ScoreChunk(file, id, ScoreChunk::Header{0, 0, 0, 0, 0, 0}, {}, ScoreChunk::ScoreFrameData::empty(), {});
 }
 
@@ -483,7 +483,7 @@ std::optional<id::MemberId> ScoreChunk::FrameIntervalSecondary::memberId() const
     return std::nullopt;
 }
 
-ScoreChunk::ScoreChunk(const DirectorFile* file,
+ScoreChunk::ScoreChunk(const moviesource::MovieSource* file,
                        id::ChunkId id,
                        Header header,
                        std::vector<std::vector<std::uint8_t>> entries,
@@ -496,7 +496,7 @@ ScoreChunk::ScoreChunk(const DirectorFile* file,
       frame_data_(std::move(frame_data)),
       frame_intervals_(std::move(frame_intervals)) {}
 
-const DirectorFile* ScoreChunk::file() const { return file_; }
+const moviesource::MovieSource* ScoreChunk::file() const { return file_; }
 format::ChunkType ScoreChunk::type() const { return format::ChunkType::VWSC; }
 id::ChunkId ScoreChunk::id() const { return id_; }
 const ScoreChunk::Header& ScoreChunk::header() const { return header_; }
@@ -532,7 +532,7 @@ std::optional<ScoreChunk::PaletteChannelData> ScoreChunk::getFramePalette(int fr
     return result;
 }
 
-ScoreChunk ScoreChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+ScoreChunk ScoreChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     ScopedByteOrder order(reader, io::ByteOrder::BigEndian);
 

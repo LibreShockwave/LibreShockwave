@@ -9,7 +9,7 @@
 namespace libreshockwave::lingo::vm::trace {
 namespace {
 
-std::string literalValueToAnnotation(const chunks::ScriptChunk::LiteralValue& value) {
+std::string literalValueToAnnotation(const moviesource::ScriptAsset::LiteralValue& value) {
     if (const auto* string_value = std::get_if<std::string>(&value)) {
         return *string_value;
     }
@@ -30,10 +30,9 @@ std::string floatArgumentToString(int argument) {
 
 } // namespace
 
-std::string InstructionAnnotator::annotate(const chunks::ScriptChunk& script,
-                                           const chunks::ScriptChunk::Handler* handler,
-                                           const chunks::ScriptChunk::Instruction& instruction,
-                                           const chunks::ScriptNamesChunk* names,
+std::string InstructionAnnotator::annotate(const moviesource::ScriptAsset& script,
+                                           const moviesource::ScriptAsset::Handler* handler,
+                                           const moviesource::ScriptAsset::Instruction& instruction,
                                            bool resolve_names) {
     const int arg = instruction.argument;
     switch (instruction.opcode) {
@@ -44,45 +43,45 @@ std::string InstructionAnnotator::annotate(const chunks::ScriptChunk& script,
         case Opcode::PUSH_FLOAT32:
             return "<" + floatArgumentToString(arg) + ">";
         case Opcode::PUSH_CONS: {
-            const auto& literals = script.literals();
+            const auto& literals = script.literals;
             if (arg >= 0 && arg < static_cast<int>(literals.size())) {
                 return "<" + literalValueToAnnotation(literals[static_cast<std::size_t>(arg)].value) + ">";
             }
             return "<literal#" + std::to_string(arg) + ">";
         }
         case Opcode::PUSH_SYMB:
-            return "<#" + script.resolveName(arg, names) + ">";
+            return "<#" + script.resolveName(arg) + ">";
         case Opcode::GET_LOCAL:
         case Opcode::SET_LOCAL:
             if (resolve_names && handler != nullptr && arg >= 0 &&
                 arg < static_cast<int>(handler->local_name_ids.size())) {
-                return "<" + script.resolveName(handler->local_name_ids[static_cast<std::size_t>(arg)], names) + ">";
+                return "<" + script.resolveName(handler->local_name_ids[static_cast<std::size_t>(arg)]) + ">";
             }
             return "<local" + std::to_string(arg) + ">";
         case Opcode::GET_PARAM:
             if (resolve_names && handler != nullptr && arg >= 0 &&
                 arg < static_cast<int>(handler->arg_name_ids.size())) {
-                return "<" + script.resolveName(handler->arg_name_ids[static_cast<std::size_t>(arg)], names) + ">";
+                return "<" + script.resolveName(handler->arg_name_ids[static_cast<std::size_t>(arg)]) + ">";
             }
             return "<param" + std::to_string(arg) + ">";
         case Opcode::GET_GLOBAL:
         case Opcode::SET_GLOBAL:
         case Opcode::GET_GLOBAL2:
         case Opcode::SET_GLOBAL2:
-            return "<" + script.resolveName(arg, names) + ">";
+            return "<" + script.resolveName(arg) + ">";
         case Opcode::GET_PROP:
         case Opcode::SET_PROP:
-            return "<me." + script.resolveName(arg, names) + ">";
+            return "<me." + script.resolveName(arg) + ">";
         case Opcode::LOCAL_CALL: {
-            const auto& handlers = script.handlers();
+            const auto& handlers = script.handlers;
             if (arg >= 0 && arg < static_cast<int>(handlers.size())) {
-                return "<" + script.getHandlerName(handlers[static_cast<std::size_t>(arg)], names) + "()>";
+                return "<" + script.getHandlerName(handlers[static_cast<std::size_t>(arg)]) + "()>";
             }
             return "<handler#" + std::to_string(arg) + "()>";
         }
         case Opcode::EXT_CALL:
         case Opcode::OBJ_CALL:
-            return "<" + script.resolveName(arg, names) + "()>";
+            return "<" + script.resolveName(arg) + "()>";
         case Opcode::JMP:
         case Opcode::JMP_IF_Z:
             return "<offset " + std::to_string(arg) + " -> " +
@@ -95,10 +94,9 @@ std::string InstructionAnnotator::annotate(const chunks::ScriptChunk& script,
     }
 }
 
-std::string InstructionAnnotator::annotate(const chunks::ScriptChunk& script,
-                                           const chunks::ScriptChunk::Instruction& instruction,
-                                           const chunks::ScriptNamesChunk* names) {
-    return annotate(script, nullptr, instruction, names, false);
+std::string InstructionAnnotator::annotate(const moviesource::ScriptAsset& script,
+                                           const moviesource::ScriptAsset::Instruction& instruction) {
+    return annotate(script, nullptr, instruction, false);
 }
 
 } // namespace libreshockwave::lingo::vm::trace

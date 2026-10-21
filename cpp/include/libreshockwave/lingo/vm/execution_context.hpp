@@ -10,60 +10,54 @@
 #include <utility>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
 #include "libreshockwave/lingo/builtin/builtin_registry.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 #include "libreshockwave/lingo/vm/scope.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
 }
 
-namespace libreshockwave::chunks {
-class ScriptNamesChunk;
 }
 
 namespace libreshockwave::lingo::vm {
 
 struct HandlerRef {
     HandlerRef() = default;
-    HandlerRef(const chunks::ScriptChunk* script_value,
-               const chunks::ScriptChunk::Handler* handler_value,
-               std::shared_ptr<const chunks::ScriptChunk> script_owner_value = nullptr,
-               std::shared_ptr<const DirectorFile> file_owner_value = nullptr,
-               std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner_value = nullptr,
-               chunks::ScriptChunkType script_type_value = chunks::ScriptChunkType::Unknown)
+    HandlerRef(const moviesource::ScriptAsset* script_value,
+               const moviesource::ScriptAsset::Handler* handler_value,
+               std::shared_ptr<const moviesource::ScriptAsset> script_owner_value = nullptr,
+               std::shared_ptr<const moviesource::MovieSource> file_owner_value = nullptr,
+               moviesource::ScriptType script_type_value = moviesource::ScriptType::Unknown)
         : script(script_value),
           handler(handler_value),
           script_owner(std::move(script_owner_value)),
           file_owner(std::move(file_owner_value)),
-          script_names_owner(std::move(script_names_owner_value)),
           script_type(script_type_value) {}
-    HandlerRef(const chunks::ScriptChunk* script_value,
-               const chunks::ScriptChunk::Handler& handler_value,
-               std::shared_ptr<const chunks::ScriptChunk> script_owner_value = nullptr,
-               std::shared_ptr<const DirectorFile> file_owner_value = nullptr,
-               std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner_value = nullptr,
-               chunks::ScriptChunkType script_type_value = chunks::ScriptChunkType::Unknown)
+    HandlerRef(const moviesource::ScriptAsset* script_value,
+               const moviesource::ScriptAsset::Handler& handler_value,
+               std::shared_ptr<const moviesource::ScriptAsset> script_owner_value = nullptr,
+               std::shared_ptr<const moviesource::MovieSource> file_owner_value = nullptr,
+               moviesource::ScriptType script_type_value = moviesource::ScriptType::Unknown)
         : HandlerRef(script_value,
                      &handler_value,
                      std::move(script_owner_value),
                      std::move(file_owner_value),
-                     std::move(script_names_owner_value),
                      script_type_value) {}
 
-    const chunks::ScriptChunk* script{nullptr};
-    const chunks::ScriptChunk::Handler* handler{nullptr};
-    std::shared_ptr<const chunks::ScriptChunk> script_owner;
-    std::shared_ptr<const DirectorFile> file_owner;
-    std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner;
-    chunks::ScriptChunkType script_type{chunks::ScriptChunkType::Unknown};
+    const moviesource::ScriptAsset* script{nullptr};
+    const moviesource::ScriptAsset::Handler* handler{nullptr};
+    std::shared_ptr<const moviesource::ScriptAsset> script_owner;
+    std::shared_ptr<const moviesource::MovieSource> file_owner;
+    moviesource::ScriptType script_type{moviesource::ScriptType::Unknown};
 };
 
 class ExecutionContext {
 public:
-    using HandlerExecutor = std::function<Datum(const chunks::ScriptChunk& script,
-                                                const chunks::ScriptChunk::Handler& handler,
+    using HandlerExecutor = std::function<Datum(const moviesource::ScriptAsset& script,
+                                                const moviesource::ScriptAsset::Handler& handler,
                                                 const std::vector<Datum>& args,
                                                 const Datum& receiver)>;
     using HandlerRefExecutor = std::function<Datum(const HandlerRef& handler,
@@ -98,21 +92,21 @@ public:
     };
 
     ExecutionContext(Scope& scope,
-                     chunks::ScriptChunk::Instruction instruction,
+                     moviesource::ScriptAsset::Instruction instruction,
                      builtin::BuiltinRegistry* builtins = nullptr,
                      builtin::BuiltinContext* builtin_context = nullptr,
                      Callbacks callbacks = {},
                      int variable_multiplier = 1,
                      bool instruction_trace_enabled = false);
 
-    void setInstruction(chunks::ScriptChunk::Instruction instruction) {
+    void setInstruction(moviesource::ScriptAsset::Instruction instruction) {
         instruction_ = instruction;
         argument_ = instruction.argument;
     }
 
     [[nodiscard]] Scope& scope() { return *scope_; }
     [[nodiscard]] const Scope& scope() const { return *scope_; }
-    [[nodiscard]] const chunks::ScriptChunk::Instruction& instruction() const { return instruction_; }
+    [[nodiscard]] const moviesource::ScriptAsset::Instruction& instruction() const { return instruction_; }
     [[nodiscard]] int argument() const { return argument_; }
     [[nodiscard]] int scaledArgument() const {
         if (variable_multiplier_ == 1) {
@@ -150,17 +144,17 @@ public:
     void tracePropertySet(std::string_view prop_name, const Datum& value) const;
 
     void jumpTo(int target_offset);
-    [[nodiscard]] const chunks::ScriptChunk::Handler* findLocalHandler(int index) const;
-    [[nodiscard]] const std::vector<chunks::ScriptChunk::LiteralEntry>& literals() const;
+    [[nodiscard]] const moviesource::ScriptAsset::Handler* findLocalHandler(int index) const;
+    [[nodiscard]] const std::vector<moviesource::ScriptAsset::LiteralEntry>& literals() const;
     [[nodiscard]] const std::string& resolveNameRef(int name_id) const;
     [[nodiscard]] std::string resolveName(int name_id) const;
     [[nodiscard]] std::optional<HandlerRef> findHandler(std::string_view name) const;
-    [[nodiscard]] Datum executeHandler(const chunks::ScriptChunk& script,
-                                       const chunks::ScriptChunk::Handler& handler,
+    [[nodiscard]] Datum executeHandler(const moviesource::ScriptAsset& script,
+                                       const moviesource::ScriptAsset::Handler& handler,
                                        const std::vector<Datum>& args,
                                        const Datum& receiver) const;
-    [[nodiscard]] Datum executeHandler(const chunks::ScriptChunk& script,
-                                       const chunks::ScriptChunk::Handler& handler,
+    [[nodiscard]] Datum executeHandler(const moviesource::ScriptAsset& script,
+                                       const moviesource::ScriptAsset::Handler& handler,
                                        std::span<const Datum> args,
                                        const Datum& receiver) const;
     [[nodiscard]] Datum executeHandler(const HandlerRef& handler,
@@ -183,7 +177,7 @@ public:
 
 private:
     Scope* scope_;
-    chunks::ScriptChunk::Instruction instruction_;
+    moviesource::ScriptAsset::Instruction instruction_;
     int argument_;
     int variable_multiplier_;
     bool instruction_trace_enabled_;

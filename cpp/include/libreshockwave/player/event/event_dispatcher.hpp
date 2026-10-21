@@ -7,16 +7,18 @@
 #include <string_view>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
-#include "libreshockwave/chunks/script_names_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 #include "libreshockwave/player/player_event.hpp"
 #include "libreshockwave/player/behavior/behavior_instance.hpp"
 #include "libreshockwave/player/behavior/behavior_manager.hpp"
 #include "libreshockwave/player/render/sprite_registry.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::player::event {
@@ -32,10 +34,9 @@ struct EventTarget {
     int channel{0};
     std::shared_ptr<behavior::BehaviorInstance> behavior;
     std::optional<lingo::Datum> script_instance;
-    std::shared_ptr<chunks::ScriptChunk> script;
-    std::shared_ptr<const chunks::ScriptNamesChunk> script_names;
-    std::shared_ptr<const DirectorFile> script_owner;
-    chunks::ScriptChunkType script_type{chunks::ScriptChunkType::Unknown};
+    std::shared_ptr<moviesource::ScriptAsset> script;
+    std::shared_ptr<const moviesource::MovieSource> script_owner;
+    moviesource::ScriptType script_type{moviesource::ScriptType::Unknown};
 };
 
 struct HandlerResult {
@@ -54,10 +55,9 @@ public:
         const std::shared_ptr<chunks::ScriptChunk>& script)>;
 
     struct MovieScriptTarget {
-        std::shared_ptr<chunks::ScriptChunk> script;
-        std::shared_ptr<const chunks::ScriptNamesChunk> script_names;
-        std::shared_ptr<const DirectorFile> script_owner;
-        chunks::ScriptChunkType script_type{chunks::ScriptChunkType::Unknown};
+        std::shared_ptr<moviesource::ScriptAsset> script;
+        std::shared_ptr<const moviesource::MovieSource> script_owner;
+        moviesource::ScriptType script_type{moviesource::ScriptType::Unknown};
     };
     using MovieScriptSupplier = std::function<std::vector<MovieScriptTarget>()>;
 

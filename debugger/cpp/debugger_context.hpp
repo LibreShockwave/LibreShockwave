@@ -24,7 +24,9 @@ class QNetworkReply;
 class QTimer;
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
 namespace player {
 class Player;
 namespace render::pipeline {

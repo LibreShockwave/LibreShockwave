@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "libreshockwave/chunks/score_chunk.hpp"
+#include "libreshockwave/moviesource/records/score_asset.hpp"
 #include "libreshockwave/id/ids.hpp"
 #include "libreshockwave/lingo/datum.hpp"
 

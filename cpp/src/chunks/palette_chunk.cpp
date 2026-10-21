@@ -19,10 +19,10 @@ int readPaletteComponent16(io::BinaryReader& reader) {
 
 } // namespace
 
-PaletteChunk::PaletteChunk(const DirectorFile* file, id::ChunkId id, std::vector<std::uint32_t> colors)
+PaletteChunk::PaletteChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<std::uint32_t> colors)
     : file_(file), id_(id), colors_(std::move(colors)) {}
 
-const DirectorFile* PaletteChunk::file() const { return file_; }
+const moviesource::MovieSource* PaletteChunk::file() const { return file_; }
 format::ChunkType PaletteChunk::type() const { return format::ChunkType::CLUT; }
 id::ChunkId PaletteChunk::id() const { return id_; }
 const std::vector<std::uint32_t>& PaletteChunk::colors() const { return colors_; }
@@ -38,7 +38,7 @@ int PaletteChunk::colorCount() const {
     return static_cast<int>(colors_.size());
 }
 
-PaletteChunk PaletteChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+PaletteChunk PaletteChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     const auto color_count = static_cast<int>(reader.bytesLeft() / 6);
     std::vector<std::uint32_t> colors;

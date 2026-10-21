@@ -4,7 +4,7 @@
 #include <chrono>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/audio/sound_converter.hpp"
 #include "libreshockwave/chunks/cast_member_chunk.hpp"
 #include "libreshockwave/chunks/key_table_chunk.hpp"
@@ -32,7 +32,7 @@ SoundManager::SoundManager() {
     loop_counts_[0] = 0;
 }
 
-SoundManager::SoundManager(DirectorFile* source_file) : SoundManager() {
+SoundManager::SoundManager(moviesource::MovieSource* source_file) : SoundManager() {
     setCastLibSourceFile(1, source_file);
 }
 
@@ -48,7 +48,7 @@ void SoundManager::setAudioResolver(AudioResolver resolver) {
     resolver_ = std::move(resolver);
 }
 
-void SoundManager::setCastLibSourceFile(int cast_lib, DirectorFile* source_file) {
+void SoundManager::setCastLibSourceFile(int cast_lib, moviesource::MovieSource* source_file) {
     if (cast_lib <= 0) {
         return;
     }
@@ -59,7 +59,7 @@ void SoundManager::setCastLibSourceFile(int cast_lib, DirectorFile* source_file)
     cast_lib_files_[cast_lib] = source_file;
 }
 
-DirectorFile* SoundManager::castLibSourceFile(int cast_lib) const {
+moviesource::MovieSource* SoundManager::castLibSourceFile(int cast_lib) const {
     const auto found = cast_lib_files_.find(cast_lib);
     return found == cast_lib_files_.end() ? nullptr : found->second;
 }
@@ -376,7 +376,7 @@ std::optional<std::vector<std::uint8_t>> SoundManager::resolveAudioData(
         return std::nullopt;
     }
 
-    auto member = source_file->getCastMemberByNumber(member_ref.cast_lib, member_ref.memberNum());
+    auto member = source_file->castMemberByNumber(member_ref.cast_lib, member_ref.memberNum());
     if (!member) {
         return std::nullopt;
     }
@@ -426,13 +426,14 @@ std::optional<std::vector<std::uint8_t>> SoundManager::convertSoundToPlayable(co
 }
 
 std::shared_ptr<chunks::SoundChunk> SoundManager::findSoundForMember(
-    DirectorFile& dir_file,
-    const std::shared_ptr<chunks::CastMemberChunk>& member) {
+    moviesource::MovieSource& dir_file,
+    const std::shared_ptr<moviesource::CastMemberAsset>& member) {
     if (!member || !dir_file.keyTable()) {
         return nullptr;
     }
 
-    for (const auto& chunk : dir_file.getLinkedChunksForMember(member)) {
+    for (const auto& linked : dir_file.linkedAssetsForMember(member)) {
+        auto chunk = dir_file.chunkById(linked.chunk_id);
         if (auto sound = std::dynamic_pointer_cast<chunks::SoundChunk>(chunk)) {
             return sound;
         }

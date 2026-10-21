@@ -70,12 +70,13 @@ MovieTreeSnapshot MovieTreePanel::buildSnapshot(libreshockwave::player::Player& 
             MovieTreeSnapshot::ScriptEntry script_entry;
             script_entry.script_id = script->id().value();
             script_entry.cast_lib_number = number;
-            script_entry.display_name = script->displayName();
             script_entry.type_name =
                 libreshockwave::format::getScriptTypeName(script->resolvedScriptType());
+            script_entry.display_name =
+                script_entry.type_name + " #" + std::to_string(script->id().value());
             for (const auto& handler : script->handlers()) {
                 script_entry.handlers.push_back(
-                    MovieTreeSnapshot::HandlerEntry{script->resolveName(handler.name_id)});
+                    MovieTreeSnapshot::HandlerEntry{script->resolveName(handler.name_id, names.get())});
             }
             for (const auto& property : script->properties()) {
                 script_entry.property_names.push_back(

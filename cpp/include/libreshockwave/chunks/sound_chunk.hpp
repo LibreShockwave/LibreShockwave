@@ -14,7 +14,7 @@ namespace libreshockwave::chunks {
 
 class SoundChunk final : public Chunk {
 public:
-    SoundChunk(const DirectorFile* file,
+    SoundChunk(const moviesource::MovieSource* file,
                id::ChunkId id,
                int sample_rate,
                int sample_count,
@@ -23,7 +23,7 @@ public:
                std::vector<std::uint8_t> audio_data,
                std::string codec = "raw_pcm");
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] int sampleRate() const;
@@ -36,12 +36,12 @@ public:
     [[nodiscard]] bool isAdpcm() const;
     [[nodiscard]] double durationSeconds() const;
 
-    [[nodiscard]] static SoundChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id);
+    [[nodiscard]] static SoundChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id);
 
 private:
     [[nodiscard]] static std::string detectCodec(const std::vector<std::uint8_t>& data);
 
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     int sample_rate_;
     int sample_count_;

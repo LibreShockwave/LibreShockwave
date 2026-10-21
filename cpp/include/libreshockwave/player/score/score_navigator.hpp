@@ -13,7 +13,10 @@
 #include "libreshockwave/player/score/sprite_span.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::chunks {
@@ -25,7 +28,7 @@ namespace libreshockwave::player::score {
 
 class ScoreNavigator {
 public:
-    explicit ScoreNavigator(const DirectorFile* file);
+    explicit ScoreNavigator(const moviesource::MovieSource* file);
     ScoreNavigator(std::shared_ptr<chunks::ScoreChunk> score,
                    std::shared_ptr<chunks::FrameLabelsChunk> labels);
 

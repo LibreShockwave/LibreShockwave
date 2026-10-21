@@ -12,7 +12,10 @@
 #include "libreshockwave/player/frame/frame_event.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::chunks {
@@ -45,8 +48,8 @@ public:
     using TimeoutEventDispatcher = std::function<void(std::string_view handler_name)>;
     using ScriptNameResolver = std::function<std::string(const std::shared_ptr<chunks::ScriptChunk>& script)>;
 
-    explicit FrameContext(DirectorFile* file = nullptr);
-    FrameContext(DirectorFile* file,
+    explicit FrameContext(moviesource::MovieSource* file = nullptr);
+    FrameContext(moviesource::MovieSource* file,
                  score::ScoreNavigator* navigator,
                  behavior::BehaviorManager* behavior_manager,
                  event::EventDispatcher* event_dispatcher);
@@ -105,7 +108,7 @@ private:
     void logEvent(std::string_view message) const;
     void notifyEvent(PlayerEvent event);
 
-    DirectorFile* file_{nullptr};
+    moviesource::MovieSource* file_{nullptr};
     std::unique_ptr<score::ScoreNavigator> owned_navigator_;
     score::ScoreNavigator* navigator_{nullptr};
     std::unique_ptr<behavior::BehaviorManager> owned_behavior_manager_;

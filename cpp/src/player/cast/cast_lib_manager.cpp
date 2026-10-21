@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/bitmap/bitmap_decoder.hpp"
 #include "libreshockwave/bitmap/gif_decoder.hpp"
@@ -17,6 +17,7 @@
 #include "libreshockwave/cast/cast_member.hpp"
 #include "libreshockwave/cast/xmed_styled_text.hpp"
 #include "libreshockwave/chunks/cast_chunk.hpp"
+#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/chunks/cast_list_chunk.hpp"
 #include "libreshockwave/chunks/cast_member_chunk.hpp"
 #include "libreshockwave/chunks/config_chunk.hpp"
@@ -469,7 +470,7 @@ std::optional<::libreshockwave::cast::XmedStyledText> authoredXmedText(
     if (!source_file) {
         return std::nullopt;
     }
-    return source_file->getXmedStyledTextForMember(member->rawChunk());
+    return source_file->xmedStyledTextForMember(source_file->castMemberAssetForChunk(member->rawChunk()));
 }
 
 void applyTextStyleFromXmed(::libreshockwave::cast::CastMember& target,
@@ -568,12 +569,12 @@ std::optional<lingo::Datum::CastMemberRef> duplicateTargetRefFromArg(const lingo
 
 } // namespace
 
-CastLibManager::CastLibManager(std::shared_ptr<DirectorFile> file,
+CastLibManager::CastLibManager(std::shared_ptr<moviesource::MovieSource> file,
                                CastDataRequestCallback cast_data_request_callback)
     : file_(std::move(file)),
       cast_data_request_callback_(std::move(cast_data_request_callback)) {}
 
-std::shared_ptr<DirectorFile> CastLibManager::file() const {
+std::shared_ptr<moviesource::MovieSource> CastLibManager::file() const {
     return file_;
 }
 
@@ -750,7 +751,7 @@ lingo::Datum CastLibManager::getMemberProp(int cast_lib_number, int member_numbe
         const bool uses_unlinked_palette = info.has_value() && info->palette_id >= 0 && source_file != nullptr &&
             source_file->resolvePaletteExact(info->palette_id) == nullptr;
         const bool host_uses_windows_palette = file_ != nullptr && file_->config() != nullptr &&
-            file_->config()->platform() == 2 && uses_unlinked_palette;
+            file_->config()->platform == 2 && uses_unlinked_palette;
         const bool runtime_needs_host_palette = host_uses_windows_palette && member->runtimeBitmap() != nullptr &&
             isSystemMacPalette(member->runtimeBitmap()->imagePalette()) &&
             member->runtimePaletteOverride() == nullptr;
@@ -766,7 +767,7 @@ lingo::Datum CastLibManager::getMemberProp(int cast_lib_number, int member_numbe
             BitmapResolver resolver(file_, this, nullptr);
             const bitmap::Palette* decode_palette = nullptr;
             const auto runtime_palette_override = member->runtimePaletteOverride();
-            if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform() == 2 &&
+            if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform == 2 &&
                 (uses_unlinked_palette || isSystemMacPalette(runtime_palette_override))) {
                 decode_palette = &bitmap::Palette::systemWinPalette();
             }
@@ -843,7 +844,7 @@ bool CastLibManager::setMemberProp(int cast_lib_number,
         const auto info = member->bitmapInfo();
         const bool is_authored_indexed_bitmap_with_local_palette =
             member->rawChunk() != nullptr && info.has_value() && info->bit_depth <= 8 && info->palette_id >= 0;
-        if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform() == 2 &&
+        if (file_ != nullptr && file_->config() != nullptr && file_->config()->platform == 2 &&
             is_authored_indexed_bitmap_with_local_palette && isSystemMacPalette(resolved_palette)) {
             resolved_palette = borrowedPalette(&bitmap::Palette::systemWinPalette());
             palette_ref_system_name = std::string("systemWin");
@@ -1135,7 +1136,7 @@ std::vector<std::string> CastLibManager::getScriptPropertyNames(int cast_lib_num
         return {};
     }
     auto script = cast_lib->getScript(member_number);
-    return script ? script->getPropertyNames() : std::vector<std::string>{};
+    return script ? script->getPropertyNames(nullptr) : std::vector<std::string>{};
 }
 
 lingo::Datum CastLibManager::createMember(int cast_lib_number, const std::string& member_type) {
@@ -1535,18 +1536,18 @@ void CastLibManager::ensureInitialized() {
     initialized_ = true;
 
     auto cast_list = file_->castList();
-    const auto& casts = file_->casts();
+    const auto& casts = file_->castChunks();
     const auto base_path = file_->basePath();
     (void)base_path;
 
-    if (cast_list && !cast_list->entries().empty()) {
-        for (int index = 0; index < static_cast<int>(cast_list->entries().size()); ++index) {
+    if (cast_list && !cast_list->entries.empty()) {
+        for (int index = 0; index < static_cast<int>(cast_list->entries.size()); ++index) {
             const int cast_lib_number = index + 1;
-            const auto& list_entry = cast_list->entries()[static_cast<std::size_t>(index)];
+            const auto& list_entry = cast_list->entries[static_cast<std::size_t>(index)];
             const bool is_external = !list_entry.path.empty();
             std::shared_ptr<chunks::CastChunk> cast_chunk;
             if (!is_external) {
-                cast_chunk = file_->getMappedCastChunk(cast_lib_number);
+                cast_chunk = file_->mappedCastChunk(cast_lib_number);
             } else if (index < static_cast<int>(casts.size())) {
                 cast_chunk = casts[static_cast<std::size_t>(index)];
             }

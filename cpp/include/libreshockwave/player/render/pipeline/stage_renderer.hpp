@@ -11,7 +11,10 @@
 #include "libreshockwave/player/render/pipeline/render_sprite.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::bitmap {
@@ -38,7 +41,7 @@ public:
         int cast_lib,
         int member_num)>;
 
-    explicit StageRenderer(DirectorFile* file = nullptr);
+    explicit StageRenderer(moviesource::MovieSource* file = nullptr);
 
     [[nodiscard]] SpriteRegistry& spriteRegistry();
     [[nodiscard]] const SpriteRegistry& spriteRegistry() const;
@@ -118,7 +121,7 @@ private:
     [[nodiscard]] static int normalizeTransformAngle(double angle);
     [[nodiscard]] static int expand5Bit(int value);
 
-    DirectorFile* file_{nullptr};
+    moviesource::MovieSource* file_{nullptr};
     SpriteRegistry sprite_registry_;
     int background_color_{0xFFFFFF};
     int default_background_color_{0xFFFFFF};

@@ -13,7 +13,8 @@
 #include <string_view>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
+#include "libreshockwave/chunks/score_chunk.hpp"
 #include "libreshockwave/format/chunk_type.hpp"
 #include "probe_fixture_roots.hpp"
 
@@ -248,22 +249,30 @@ ProbeSummary probeFile(const fs::path& path) {
         throw SkippedFile("not a Director container header: " + printableFourCC(data));
     }
 
-    auto director_file = libreshockwave::DirectorFile::load(data);
+    auto director_file = libreshockwave::moviesource::MovieSource::load(path.filename().string(), data);
     director_file->setBasePath(path.parent_path().string());
 
     const auto score = director_file->scoreChunk();
-    const auto external_casts = director_file->getExternalCastPaths();
+    const auto cast_list = director_file->castList();
+    std::size_t external_casts = 0;
+    if (cast_list) {
+        for (const auto& entry : cast_list->entries) {
+            if (!entry.path.empty()) {
+                ++external_casts;
+            }
+        }
+    }
 
     return ProbeSummary{
         data.size(),
-        director_file->chunks().size(),
+        static_cast<std::size_t>(director_file->chunkCount()),
         director_file->castMembers().size(),
         director_file->castMembers().size(),
         director_file->scripts().size(),
-        director_file->palettes().size(),
+        static_cast<std::size_t>(director_file->paletteCount()),
         score == nullptr ? 0U : static_cast<std::size_t>(std::max(0, score->getChannelCount())),
         score == nullptr ? 0U : static_cast<std::size_t>(std::max(0, score->getFrameCount())),
-        external_casts.size(),
+        external_casts,
         director_file->stageWidth(),
         director_file->stageHeight(),
         director_file->channelCount(),

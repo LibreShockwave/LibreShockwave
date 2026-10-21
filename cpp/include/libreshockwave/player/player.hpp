@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/lingo/vm/lingo_vm.hpp"
 #include "libreshockwave/lingo/xtra/xtra_manager.hpp"
 #include "libreshockwave/player/bitmap_resolver.hpp"
@@ -66,9 +66,9 @@ public:
     using ErrorListener = std::function<void(std::string_view message, std::string_view error_detail)>;
     using CastDataRequestCallback = cast::CastLibManager::CastDataRequestCallback;
 
-    explicit Player(std::shared_ptr<DirectorFile> file = nullptr);
-    Player(std::shared_ptr<DirectorFile> file, net::NetProvider* net_provider);
-    Player(std::shared_ptr<DirectorFile> file,
+    explicit Player(std::shared_ptr<moviesource::MovieSource> file = nullptr);
+    Player(std::shared_ptr<moviesource::MovieSource> file, net::NetProvider* net_provider);
+    Player(std::shared_ptr<moviesource::MovieSource> file,
            net::NetProvider* net_provider,
            CastDataRequestCallback cast_data_request_callback);
     ~Player();
@@ -78,7 +78,7 @@ public:
     Player(Player&&) = delete;
     Player& operator=(Player&&) = delete;
 
-    [[nodiscard]] std::shared_ptr<DirectorFile> file() const;
+    [[nodiscard]] std::shared_ptr<moviesource::MovieSource> file() const;
     [[nodiscard]] frame::FrameContext& frameContext();
     [[nodiscard]] score::ScoreNavigator& navigator();
     [[nodiscard]] behavior::BehaviorManager& behaviorManager();
@@ -169,7 +169,7 @@ public:
 private:
     class PlayerTraceListener;
 
-    Player(std::shared_ptr<DirectorFile> file, bool register_socket_multiuser_xtra);
+    Player(std::shared_ptr<moviesource::MovieSource> file, bool register_socket_multiuser_xtra);
     void wireComponents();
     void prepareMovieFoundation();
     void executeFrameCycle(bool process_updates);
@@ -191,7 +191,7 @@ private:
                                                 std::function<void()> after_load);
     void notifyExternalCastLoaded(int cast_lib_number);
 
-    std::shared_ptr<DirectorFile> file_;
+    std::shared_ptr<moviesource::MovieSource> file_;
     frame::FrameContext frame_context_;
     render::pipeline::StageRenderer stage_renderer_;
     net::NetManager net_manager_;

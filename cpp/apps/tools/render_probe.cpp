@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/cast/cast_member.hpp"
 #include "libreshockwave/cast/member_type.hpp"
@@ -456,7 +456,7 @@ RenderProbeSummary probeFile(const fs::path& path, const RenderProbeOptions& opt
         throw SkippedFile("not a Director container header: " + printableFourCC(data));
     }
 
-    auto director_file = libreshockwave::DirectorFile::load(data);
+    auto director_file = libreshockwave::moviesource::MovieSource::load(path.filename().string(), data);
     director_file->setBasePath(path.parent_path().string());
 
     libreshockwave::player::Player player(director_file);
@@ -513,7 +513,7 @@ RenderProbeSummary probeFile(const fs::path& path, const RenderProbeOptions& opt
         std::cerr << "behavior instances for ch10:";
         for (const auto& inst : player.behaviorManager().getInstancesForChannel(10)) {
             std::cerr << " id=" << inst->id();
-            if (inst->script()) std::cerr << " script=" << inst->script()->scriptName();
+            if (inst->script()) std::cerr << " script=" << director_file->scriptNameForScript(*inst->script());
         }
         std::cerr << "\n";
     }
@@ -614,7 +614,7 @@ RenderProbeSummary probeFile(const fs::path& path, const RenderProbeOptions& opt
     const auto external_cast_stats = countExternalCastStats(player);
     return RenderProbeSummary{
         data.size(),
-        director_file->chunks().size(),
+        static_cast<std::size_t>(director_file->chunkCount()),
         external_cast_stats.external_casts,
         external_cast_stats.loaded_external_casts,
         external_cast_stats.fetched_external_casts,

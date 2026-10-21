@@ -126,14 +126,14 @@ public:
         std::optional<FrameIntervalSecondary> secondary;
     };
 
-    ScoreChunk(const DirectorFile* file,
+    ScoreChunk(const moviesource::MovieSource* file,
                id::ChunkId id,
                Header header,
                std::vector<std::vector<std::uint8_t>> entries,
                ScoreFrameData frame_data,
                std::vector<FrameInterval> frame_intervals);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const Header& header() const;
@@ -147,10 +147,10 @@ public:
     [[nodiscard]] int getFrameTempo(int frame) const;
     [[nodiscard]] std::optional<PaletteChannelData> getFramePalette(int frame) const;
 
-    [[nodiscard]] static ScoreChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static ScoreChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     Header header_;
     std::vector<std::vector<std::uint8_t>> entries_;

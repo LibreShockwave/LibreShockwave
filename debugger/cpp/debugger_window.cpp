@@ -31,12 +31,14 @@
 #include <iostream>
 
 #include "debugger_context.hpp"
+#include "libreshockwave/format/script_format_utils.hpp"
 #include "debug_state_bridge.hpp"
 #include "external_params_dialog.hpp"
 #include "format/datum_format.hpp"
 #include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/decompiler/lingo_decompiler.hpp"
 #include "libreshockwave/lingo/vm/trace/instruction_annotator.hpp"
+#include "libreshockwave/moviesource/director_record_converter.hpp"
 #include "libreshockwave/player/player.hpp"
 #include "libreshockwave/player/cast/cast_lib.hpp"
 #include "libreshockwave/player/cast/cast_lib_manager.hpp"
@@ -1864,6 +1866,11 @@ void DebuggerWindow::loadHandlerCode(int cast_lib_number, int script_id,
     auto* player = context_->player();
     if (player == nullptr) return;
 
+    const auto script_display_name = [](const libreshockwave::chunks::ScriptChunk& script) {
+        const auto type_name = libreshockwave::format::getScriptTypeName(script.resolvedScriptType());
+        return type_name + " #" + std::to_string(script.id().value());
+    };
+
     std::shared_ptr<libreshockwave::chunks::ScriptChunk> found_script;
     const libreshockwave::chunks::ScriptChunk::Handler* found_handler = nullptr;
     const libreshockwave::chunks::ScriptNamesChunk* found_names = nullptr;
@@ -1889,6 +1896,10 @@ void DebuggerWindow::loadHandlerCode(int cast_lib_number, int script_id,
         return;
     }
 
+    const auto found_asset = libreshockwave::moviesource::DirectorRecordConverter::toScriptAsset(
+        *found_script, found_names,
+        static_cast<libreshockwave::moviesource::ScriptType>(found_script->resolvedScriptType()), "");
+
     std::vector<InstructionData> instructions;
     std::vector<DecompiledLineData> decompiled_lines;
     std::vector<std::string> handler_names;
@@ -1896,7 +1907,7 @@ void DebuggerWindow::loadHandlerCode(int cast_lib_number, int script_id,
     std::vector<std::string> local_names;
 
     for (const auto& handler : found_script->handlers()) {
-        handler_names.push_back(found_script->resolveName(handler.name_id));
+        handler_names.push_back(found_script->resolveName(handler.name_id, found_names));
     }
 
     if (found_handler != nullptr) {
@@ -1913,8 +1924,11 @@ void DebuggerWindow::loadHandlerCode(int cast_lib_number, int script_id,
             id.index = found_handler->getInstructionIndex(instr.offset);
             id.opcode = std::string(libreshockwave::lingo::mnemonic(instr.opcode));
             id.argument = instr.argument;
+            const auto& asset_handler = found_asset.handlers.front();
             id.annotation = libreshockwave::lingo::vm::trace::InstructionAnnotator::annotate(
-                *found_script, found_handler, instr, found_names, true);
+                found_asset, &asset_handler,
+                libreshockwave::moviesource::ScriptAsset::Instruction{instr.offset, instr.opcode, instr.raw_opcode, instr.argument},
+                true);
             instructions.push_back(std::move(id));
         }
 
@@ -1930,7 +1944,7 @@ void DebuggerWindow::loadHandlerCode(int cast_lib_number, int script_id,
     }
 
     code_view_panel_->setHandlerCode(
-        cast_lib_number, script_id, found_script->displayName(), handler_name,
+        cast_lib_number, script_id, script_display_name(*found_script), handler_name,
         instructions, decompiled_lines, handler_names, arg_names, local_names);
     refreshBreakpoints();
 }

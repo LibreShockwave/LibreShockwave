@@ -26,7 +26,7 @@ enum class CastMemberScriptType {
 
 class CastMemberChunk final : public Chunk {
 public:
-    CastMemberChunk(const DirectorFile* file,
+    CastMemberChunk(const moviesource::MovieSource* file,
                     id::ChunkId id,
                     cast::MemberType member_type,
                     int info_len,
@@ -38,7 +38,7 @@ public:
                     int reg_point_x,
                     int reg_point_y);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] cast::MemberType memberType() const;
@@ -59,10 +59,10 @@ public:
     [[nodiscard]] bool isTextXtra() const;
     [[nodiscard]] std::optional<CastMemberScriptType> getScriptType() const;
 
-    [[nodiscard]] static CastMemberChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static CastMemberChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     cast::MemberType member_type_;
     int info_len_;

@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
 #include "libreshockwave/lingo/vm/util/string_chunk_utils.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 #include "libreshockwave/player/movie_properties.hpp"
 #include "libreshockwave/player/audio/sound_manager.hpp"
 #include "libreshockwave/player/net/net_manager.hpp"
@@ -24,7 +24,10 @@ class Palette;
 } // namespace libreshockwave::bitmap
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::chunks {
@@ -42,37 +45,32 @@ struct BuiltinContext {
 
     struct ScriptHandlerLocation {
         ScriptHandlerLocation() = default;
-        ScriptHandlerLocation(const chunks::ScriptChunk* script_value,
-                              const chunks::ScriptChunk::Handler* handler_value,
-                              std::shared_ptr<const chunks::ScriptChunk> script_owner_value = nullptr,
-                              std::shared_ptr<const DirectorFile> file_owner_value = nullptr,
-                              std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner_value = nullptr,
-                              chunks::ScriptChunkType script_type_value = chunks::ScriptChunkType::Unknown)
+        ScriptHandlerLocation(const moviesource::ScriptAsset* script_value,
+                              const moviesource::ScriptAsset::Handler* handler_value,
+                              std::shared_ptr<const moviesource::ScriptAsset> script_owner_value = nullptr,
+                              std::shared_ptr<const moviesource::MovieSource> file_owner_value = nullptr,
+                              moviesource::ScriptType script_type_value = moviesource::ScriptType::Unknown)
             : script(script_value),
               handler(handler_value),
               script_owner(std::move(script_owner_value)),
               file_owner(std::move(file_owner_value)),
-              script_names_owner(std::move(script_names_owner_value)),
               script_type(script_type_value) {}
-        ScriptHandlerLocation(const chunks::ScriptChunk* script_value,
-                              const chunks::ScriptChunk::Handler& handler_value,
-                              std::shared_ptr<const chunks::ScriptChunk> script_owner_value = nullptr,
-                              std::shared_ptr<const DirectorFile> file_owner_value = nullptr,
-                              std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner_value = nullptr,
-                              chunks::ScriptChunkType script_type_value = chunks::ScriptChunkType::Unknown)
+        ScriptHandlerLocation(const moviesource::ScriptAsset* script_value,
+                              const moviesource::ScriptAsset::Handler& handler_value,
+                              std::shared_ptr<const moviesource::ScriptAsset> script_owner_value = nullptr,
+                              std::shared_ptr<const moviesource::MovieSource> file_owner_value = nullptr,
+                              moviesource::ScriptType script_type_value = moviesource::ScriptType::Unknown)
             : ScriptHandlerLocation(script_value,
                                     &handler_value,
                                     std::move(script_owner_value),
                                     std::move(file_owner_value),
-                                    std::move(script_names_owner_value),
                                     script_type_value) {}
 
-        const chunks::ScriptChunk* script{nullptr};
-        const chunks::ScriptChunk::Handler* handler{nullptr};
-        std::shared_ptr<const chunks::ScriptChunk> script_owner;
-        std::shared_ptr<const DirectorFile> file_owner;
-        std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner;
-        chunks::ScriptChunkType script_type{chunks::ScriptChunkType::Unknown};
+        const moviesource::ScriptAsset* script{nullptr};
+        const moviesource::ScriptAsset::Handler* handler{nullptr};
+        std::shared_ptr<const moviesource::ScriptAsset> script_owner;
+        std::shared_ptr<const moviesource::MovieSource> file_owner;
+        moviesource::ScriptType script_type{moviesource::ScriptType::Unknown};
     };
 
     using PuppetPaletteHandler = std::function<void(std::optional<Datum> palette_ref)>;

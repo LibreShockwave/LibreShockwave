@@ -11,9 +11,8 @@ namespace libreshockwave::lingo::vm::trace {
 
 TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
     const Scope& scope,
-    const chunks::ScriptChunk::Instruction& instruction,
+    const moviesource::ScriptAsset::Instruction& instruction,
     const RuntimeGlobals& globals,
-    const chunks::ScriptNamesChunk* names,
     bool include_snapshots) const {
     std::vector<Datum> stack_snapshot;
     if (include_snapshots) {
@@ -29,17 +28,16 @@ TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
         instruction.offset,
         std::string(mnemonic(instruction.opcode)),
         instruction.argument,
-        include_snapshots ? buildAnnotation(scope, instruction, names) : std::string(),
+        include_snapshots ? buildAnnotation(scope, instruction) : std::string(),
         scope.stackSize(),
         std::move(stack_snapshot),
-        include_snapshots ? captureLocals(scope, names) : std::unordered_map<std::string, Datum>{},
+        include_snapshots ? captureLocals(scope) : std::unordered_map<std::string, Datum>{},
         include_snapshots ? globals : RuntimeGlobals{},
     };
 }
 
 std::unordered_map<std::string, Datum> TracingHelper::captureLocals(
-    const Scope& scope,
-    const chunks::ScriptNamesChunk* names) const {
+    const Scope& scope) const {
     std::unordered_map<std::string, Datum> locals;
     const auto* script = scope.script();
     if (script == nullptr) {
@@ -48,57 +46,54 @@ std::unordered_map<std::string, Datum> TracingHelper::captureLocals(
 
     const auto& handler = scope.handler();
     for (int index = 0; index < static_cast<int>(handler.arg_name_ids.size()); ++index) {
-        locals[script->resolveName(handler.arg_name_ids[static_cast<std::size_t>(index)], names)] =
+        locals[script->resolveName(handler.arg_name_ids[static_cast<std::size_t>(index)])] =
             scope.getParam(index).deepCopy();
     }
     for (int index = 0; index < static_cast<int>(handler.local_name_ids.size()); ++index) {
-        locals[script->resolveName(handler.local_name_ids[static_cast<std::size_t>(index)], names)] =
+        locals[script->resolveName(handler.local_name_ids[static_cast<std::size_t>(index)])] =
             scope.getLocal(index).deepCopy();
     }
     return locals;
 }
 
 TraceListener::HandlerInfo TracingHelper::buildHandlerInfo(
-    const chunks::ScriptChunk& script,
-    const chunks::ScriptChunk::Handler& handler,
+    const moviesource::ScriptAsset& script,
+    const moviesource::ScriptAsset::Handler& handler,
     std::span<const Datum> args,
     const Datum& receiver,
     const RuntimeGlobals& globals,
-    const chunks::ScriptNamesChunk* names,
     const std::string& script_display_name) const {
     return TraceListener::HandlerInfo{
-        script.getHandlerName(handler, names),
-        script.id().value(),
-        script_display_name.empty() ? "script#" + std::to_string(script.id().value()) : script_display_name,
+        script.getHandlerName(handler),
+        script.chunk_id,
+        script_display_name.empty() ? "script#" + std::to_string(script.chunk_id) : script_display_name,
         std::vector<Datum>(args.begin(), args.end()),
         receiver,
         globals,
-        script.literals(),
+        script.literals,
         handler.local_count,
         handler.arg_count,
     };
 }
 
 TraceListener::HandlerInfo TracingHelper::buildHandlerInfo(
-    const chunks::ScriptChunk& script,
-    const chunks::ScriptChunk::Handler& handler,
+    const moviesource::ScriptAsset& script,
+    const moviesource::ScriptAsset::Handler& handler,
     const std::vector<Datum>& args,
     const Datum& receiver,
     const RuntimeGlobals& globals,
-    const chunks::ScriptNamesChunk* names,
     const std::string& script_display_name) const {
-    return buildHandlerInfo(script, handler, std::span<const Datum>(args), receiver, globals, names, script_display_name);
+    return buildHandlerInfo(script, handler, std::span<const Datum>(args), receiver, globals, script_display_name);
 }
 
 std::string TracingHelper::buildAnnotation(
     const Scope& scope,
-    const chunks::ScriptChunk::Instruction& instruction,
-    const chunks::ScriptNamesChunk* names) const {
+    const moviesource::ScriptAsset::Instruction& instruction) const {
     const auto* script = scope.script();
     if (script == nullptr) {
         return instruction.toString();
     }
-    return InstructionAnnotator::annotate(*script, instruction, names);
+    return InstructionAnnotator::annotate(*script, instruction);
 }
 
 } // namespace libreshockwave::lingo::vm::trace

@@ -10,12 +10,12 @@ std::string KeyTableChunk::KeyTableEntry::fourccString() const {
     return io::BinaryReader::fourCCToString(fourcc);
 }
 
-KeyTableChunk::KeyTableChunk(const DirectorFile* file, id::ChunkId id, std::vector<KeyTableEntry> entries)
+KeyTableChunk::KeyTableChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<KeyTableEntry> entries)
     : file_(file), id_(id), entries_(std::move(entries)) {
     indexEntries();
 }
 
-const DirectorFile* KeyTableChunk::file() const { return file_; }
+const moviesource::MovieSource* KeyTableChunk::file() const { return file_; }
 format::ChunkType KeyTableChunk::type() const { return format::ChunkType::KEYp; }
 id::ChunkId KeyTableChunk::id() const { return id_; }
 const std::vector<KeyTableChunk::KeyTableEntry>& KeyTableChunk::entries() const { return entries_; }
@@ -56,7 +56,7 @@ std::optional<KeyTableChunk::KeyTableEntry> KeyTableChunk::getEntryBySectionId(i
     return std::nullopt;
 }
 
-KeyTableChunk KeyTableChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+KeyTableChunk KeyTableChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     (void)reader.readU16();
     (void)reader.readU16();

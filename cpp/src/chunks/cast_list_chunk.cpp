@@ -54,7 +54,7 @@ const std::vector<std::uint8_t>& itemOrEmpty(const std::vector<std::vector<std::
 
 } // namespace
 
-CastListChunk::CastListChunk(const DirectorFile* file,
+CastListChunk::CastListChunk(const moviesource::MovieSource* file,
                              id::ChunkId id,
                              int data_offset,
                              int items_per_entry,
@@ -67,7 +67,7 @@ CastListChunk::CastListChunk(const DirectorFile* file,
       item_count_(item_count),
       entries_(std::move(entries)) {}
 
-const DirectorFile* CastListChunk::file() const { return file_; }
+const moviesource::MovieSource* CastListChunk::file() const { return file_; }
 format::ChunkType CastListChunk::type() const { return format::ChunkType::MCsL; }
 id::ChunkId CastListChunk::id() const { return id_; }
 int CastListChunk::dataOffset() const { return data_offset_; }
@@ -75,7 +75,7 @@ int CastListChunk::itemsPerEntry() const { return items_per_entry_; }
 int CastListChunk::itemCount() const { return item_count_; }
 const std::vector<CastListChunk::CastListEntry>& CastListChunk::entries() const { return entries_; }
 
-CastListChunk CastListChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+CastListChunk CastListChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     ScopedByteOrder order(reader, io::ByteOrder::BigEndian);
 

@@ -8,7 +8,7 @@
 
 namespace libreshockwave::chunks {
 
-ScriptContextChunk::ScriptContextChunk(const DirectorFile* file,
+ScriptContextChunk::ScriptContextChunk(const moviesource::MovieSource* file,
                                        id::ChunkId id,
                                        int unknown1,
                                        int unknown2,
@@ -29,7 +29,7 @@ ScriptContextChunk::ScriptContextChunk(const DirectorFile* file,
       free_ptr_(free_ptr),
       entries_(std::move(entries)) {}
 
-const DirectorFile* ScriptContextChunk::file() const { return file_; }
+const moviesource::MovieSource* ScriptContextChunk::file() const { return file_; }
 format::ChunkType ScriptContextChunk::type() const { return format::ChunkType::Lctx; }
 id::ChunkId ScriptContextChunk::id() const { return id_; }
 int ScriptContextChunk::unknown1() const { return unknown1_; }
@@ -41,7 +41,7 @@ int ScriptContextChunk::flags() const { return flags_; }
 int ScriptContextChunk::freePtr() const { return free_ptr_; }
 const std::vector<ScriptContextChunk::ScriptEntry>& ScriptContextChunk::entries() const { return entries_; }
 
-ScriptContextChunk ScriptContextChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId chunk_id, int version) {
+ScriptContextChunk ScriptContextChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId chunk_id, int version) {
     (void)version;
     const auto original_order = reader.order();
     reader.setOrder(io::ByteOrder::BigEndian);

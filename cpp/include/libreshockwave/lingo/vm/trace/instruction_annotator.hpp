@@ -2,11 +2,7 @@
 
 #include <string>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
-
-namespace libreshockwave::chunks {
-class ScriptNamesChunk;
-}
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 
 namespace libreshockwave::lingo::vm::trace {
 
@@ -14,14 +10,12 @@ class InstructionAnnotator {
 public:
     InstructionAnnotator() = delete;
 
-    [[nodiscard]] static std::string annotate(const chunks::ScriptChunk& script,
-                                              const chunks::ScriptChunk::Handler* handler,
-                                              const chunks::ScriptChunk::Instruction& instruction,
-                                              const chunks::ScriptNamesChunk* names,
+    [[nodiscard]] static std::string annotate(const moviesource::ScriptAsset& script,
+                                              const moviesource::ScriptAsset::Handler* handler,
+                                              const moviesource::ScriptAsset::Instruction& instruction,
                                               bool resolve_names);
-    [[nodiscard]] static std::string annotate(const chunks::ScriptChunk& script,
-                                              const chunks::ScriptChunk::Instruction& instruction,
-                                              const chunks::ScriptNamesChunk* names = nullptr);
+    [[nodiscard]] static std::string annotate(const moviesource::ScriptAsset& script,
+                                              const moviesource::ScriptAsset::Instruction& instruction);
 };
 
 } // namespace libreshockwave::lingo::vm::trace

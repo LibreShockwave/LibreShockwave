@@ -19,15 +19,20 @@ bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
-EventTarget behaviorTarget(const std::shared_ptr<behavior::BehaviorInstance>& instance,
-                           std::shared_ptr<const chunks::ScriptNamesChunk> names = nullptr) {
+EventTarget behaviorTarget(const std::shared_ptr<behavior::BehaviorInstance>& instance) {
     EventTarget target;
     target.kind = EventTargetKind::Behavior;
     target.channel = instance ? instance->spriteNum() : 0;
     target.behavior = instance;
-    target.script = instance ? instance->script() : nullptr;
-    target.script_names = std::move(names);
-    target.script_type = target.script ? target.script->scriptType() : chunks::ScriptChunkType::Unknown;
+    if (instance) {
+        const auto& script = instance->script();
+        const auto source = instance->sourceFile();
+        if (script && source) {
+            target.script = source->scriptByChunkId(script->id().value());
+            target.script_owner = source;
+            target.script_type = target.script ? target.script->type : moviesource::ScriptType::Unknown;
+        }
+    }
     return target;
 }
 
@@ -216,17 +221,16 @@ void EventDispatcher::dispatchToMovieScripts(std::string_view handler_name, cons
     }
 
     for (const auto& movie : scripts) {
-        const auto script_type = movie.script_type == chunks::ScriptChunkType::Unknown && movie.script
-            ? movie.script->resolvedScriptType()
+        const auto script_type = movie.script_type == moviesource::ScriptType::Unknown && movie.script
+            ? movie.script->type
             : movie.script_type;
-        if (!movie.script || script_type != chunks::ScriptChunkType::MovieScript) {
+        if (!movie.script || script_type != moviesource::ScriptType::MovieScript) {
             continue;
         }
 
         EventTarget target;
         target.kind = EventTargetKind::MovieScript;
         target.script = movie.script;
-        target.script_names = resolveScriptNames(movie.script, movie.script_names);
         target.script_owner = movie.script_owner;
         target.script_type = script_type;
         if (targetResponds(target, handler_name)) {
@@ -316,8 +320,7 @@ bool EventDispatcher::defaultTargetResponds(const EventTarget& target, std::stri
     if (!target.script) {
         return false;
     }
-    auto names = resolveScriptNames(target.script, target.script_names);
-    return names && target.script->findHandler(handler_name, names.get()).has_value();
+    return target.script->findHandler(handler_name).has_value();
 }
 
 std::shared_ptr<const chunks::ScriptNamesChunk> EventDispatcher::resolveScriptNames(

@@ -13,7 +13,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/lingo/datum.hpp"
 #include "libreshockwave/lingo/builtin/builtin_registry.hpp"
 #include "libreshockwave/lingo/vm/alert_hook_handler.hpp"
@@ -21,13 +20,12 @@
 #include "libreshockwave/lingo/vm/opcode_registry.hpp"
 #include "libreshockwave/lingo/vm/scope.hpp"
 #include "libreshockwave/lingo/vm/trace_listener.hpp"
+#include "libreshockwave/moviesource/records/script_asset.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
 }
-
-namespace libreshockwave::chunks {
-class ScriptNamesChunk;
 }
 
 namespace libreshockwave::lingo::vm {
@@ -46,9 +44,9 @@ public:
         friend bool operator==(const CallStackFrame&, const CallStackFrame&) = default;
     };
 
-    explicit LingoVM(DirectorFile* file = nullptr);
+    explicit LingoVM(moviesource::MovieSource* file = nullptr);
 
-    [[nodiscard]] DirectorFile* file() const;
+    [[nodiscard]] moviesource::MovieSource* file() const;
     [[nodiscard]] builtin::BuiltinRegistry& builtinRegistry();
     [[nodiscard]] const builtin::BuiltinRegistry& builtinRegistry() const;
     [[nodiscard]] builtin::BuiltinContext& builtinContext();
@@ -119,7 +117,7 @@ public:
     [[nodiscard]] bool isFlushingDeferredTasks() const;
 
     [[nodiscard]] std::optional<HandlerRef> findHandler(std::string_view handler_name);
-    [[nodiscard]] std::optional<HandlerRef> findHandler(const chunks::ScriptChunk& script,
+    [[nodiscard]] std::optional<HandlerRef> findHandler(const moviesource::ScriptAsset& script,
                                                         std::string_view handler_name) const;
     void invalidateHandlerCache();
 
@@ -130,8 +128,8 @@ public:
     [[nodiscard]] Datum callBuiltin(std::string_view handler_name, const std::vector<Datum>& args = {});
     [[nodiscard]] bool fireAlertHook(std::string_view error_message);
     [[nodiscard]] bool fireAlertHook(std::string_view error_type, std::string_view error_message);
-    [[nodiscard]] Datum executeHandler(const chunks::ScriptChunk& script,
-                                       const chunks::ScriptChunk::Handler& handler,
+    [[nodiscard]] Datum executeHandler(const moviesource::ScriptAsset& script,
+                                       const moviesource::ScriptAsset::Handler& handler,
                                        const std::vector<Datum>& args = {},
                                        const Datum& receiver = Datum::voidValue());
     [[nodiscard]] Datum executeHandler(const HandlerRef& handler,
@@ -143,66 +141,56 @@ public:
 
     [[nodiscard]] static std::string normalizeLookupName(std::string_view name);
     [[nodiscard]] static std::string formatTraceArgument(const Datum& value);
-    [[nodiscard]] static bool isGlobalHandlerScriptType(chunks::ScriptChunkType script_type);
+    [[nodiscard]] static bool isGlobalHandlerScriptType(moviesource::ScriptType script_type);
     [[nodiscard]] static bool shouldSkipDeconstructReentry(
         std::string_view normalized_handler_name,
         const Datum& effective_receiver,
-        const chunks::ScriptChunk& current_script,
+        const moviesource::ScriptAsset& current_script,
         std::string_view existing_normalized_handler_name,
         const Datum& existing_receiver,
-        const chunks::ScriptChunk& existing_script);
+        const moviesource::ScriptAsset& existing_script);
 
 private:
     [[nodiscard]] ExecutionContext::Callbacks callbacksFor(
-        const chunks::ScriptChunk& script,
-        std::shared_ptr<const DirectorFile> file_owner = nullptr,
-        std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner = nullptr);
-    [[nodiscard]] std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesForScript(
-        const chunks::ScriptChunk& script,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const moviesource::ScriptAsset& script,
+        std::shared_ptr<const moviesource::MovieSource> file_owner = nullptr);
     [[nodiscard]] std::string resolveName(
-        const chunks::ScriptChunk& script,
+        const moviesource::ScriptAsset& script,
         int name_id,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     [[nodiscard]] std::string handlerName(
-        const chunks::ScriptChunk& script,
-        const chunks::ScriptChunk::Handler& handler,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const moviesource::ScriptAsset& script,
+        const moviesource::ScriptAsset::Handler& handler,
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     [[nodiscard]] Datum callAncestor(const std::vector<Datum>& args);
     [[nodiscard]] Datum findAncestorForCall(const Datum::ScriptInstanceRef& instance) const;
     [[nodiscard]] std::string scriptDisplayName(
-        const chunks::ScriptChunk& script,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr) const;
+        const moviesource::ScriptAsset& script,
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     [[nodiscard]] TraceListener::HandlerInfo buildHandlerInfo(
-        const chunks::ScriptChunk& script,
-        const chunks::ScriptChunk::Handler& handler,
+        const moviesource::ScriptAsset& script,
+        const moviesource::ScriptAsset::Handler& handler,
         std::span<const Datum> args,
         const Datum& receiver,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     [[nodiscard]] TraceListener::InstructionInfo buildInstructionInfo(
         const Scope& scope,
-        const chunks::ScriptChunk::Instruction& instruction,
+        const moviesource::ScriptAsset::Instruction& instruction,
         bool include_snapshots) const;
     [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(const Scope& scope) const;
     [[nodiscard]] bool handlerDeclaresReceiverAsFirstParam(
-        const chunks::ScriptChunk& script,
-        const chunks::ScriptChunk::Handler& handler,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const moviesource::ScriptAsset& script,
+        const moviesource::ScriptAsset::Handler& handler,
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     [[nodiscard]] bool skipDisabledTraceScriptPrologue(
         Scope& scope,
-        const chunks::ScriptChunk& script,
-        const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
-        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner = nullptr) const;
+        const moviesource::ScriptAsset& script,
+        const std::shared_ptr<const moviesource::MovieSource>& file_owner = nullptr) const;
     void executeInstruction(Scope& scope, ExecutionContext& context, bool trace_instruction);
     [[nodiscard]] std::int64_t currentTimeMillis() const;
     void traceRandomCall(int max, int result);
     void emitTracedHandlerCall(std::string_view handler_name,
-                               const chunks::ScriptChunk& script,
+                               const moviesource::ScriptAsset& script,
                                std::span<const Datum> args);
     void traceOutput(const std::string& line) const;
     void emitConsoleHandlerEnter(const TraceListener::HandlerInfo& info);
@@ -222,16 +210,14 @@ private:
     };
 
     struct HandlerMetadataKey {
-        const chunks::ScriptChunk* script{nullptr};
-        const chunks::ScriptChunk::Handler* handler{nullptr};
-        const DirectorFile* file_owner{nullptr};
-        const chunks::ScriptNamesChunk* script_names_owner{nullptr};
+        const moviesource::ScriptAsset* script{nullptr};
+        const moviesource::ScriptAsset::Handler* handler{nullptr};
+        const moviesource::MovieSource* file_owner{nullptr};
 
         bool operator==(const HandlerMetadataKey& other) const {
             return script == other.script &&
                    handler == other.handler &&
-                   file_owner == other.file_owner &&
-                   script_names_owner == other.script_names_owner;
+                   file_owner == other.file_owner;
         }
     };
 
@@ -239,8 +225,7 @@ private:
         std::size_t operator()(const HandlerMetadataKey& key) const {
             return std::hash<const void*>{}(key.script) ^
                    (std::hash<const void*>{}(key.handler) << 1U) ^
-                   (std::hash<const void*>{}(key.file_owner) << 2U) ^
-                   (std::hash<const void*>{}(key.script_names_owner) << 3U);
+                   (std::hash<const void*>{}(key.file_owner) << 2U);
         }
     };
 
@@ -252,15 +237,13 @@ private:
     };
 
     struct ResolvedNameKey {
-        const chunks::ScriptChunk* script{nullptr};
-        const DirectorFile* file_owner{nullptr};
-        const chunks::ScriptNamesChunk* script_names_owner{nullptr};
+        const moviesource::ScriptAsset* script{nullptr};
+        const moviesource::MovieSource* file_owner{nullptr};
         int name_id{0};
 
         bool operator==(const ResolvedNameKey& other) const {
             return script == other.script &&
                    file_owner == other.file_owner &&
-                   script_names_owner == other.script_names_owner &&
                    name_id == other.name_id;
         }
     };
@@ -269,12 +252,11 @@ private:
         std::size_t operator()(const ResolvedNameKey& key) const {
             return std::hash<const void*>{}(key.script) ^
                    (std::hash<const void*>{}(key.file_owner) << 1U) ^
-                   (std::hash<const void*>{}(key.script_names_owner) << 2U) ^
-                   (std::hash<int>{}(key.name_id) << 3U);
+                   (std::hash<int>{}(key.name_id) << 2U);
         }
     };
 
-    DirectorFile* file_{nullptr};
+    moviesource::MovieSource* file_{nullptr};
     RuntimeGlobals globals_;
     std::map<std::string, Datum> prefs_;
     std::deque<Scope> call_stack_;

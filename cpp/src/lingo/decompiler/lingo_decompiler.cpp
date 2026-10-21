@@ -9,7 +9,7 @@
 #include <string_view>
 #include <variant>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/director_movie_source.hpp"
 #include "libreshockwave/chunks/script_names_chunk.hpp"
 #include "libreshockwave/format/script_format_utils.hpp"
 #include "libreshockwave/lingo/opcode.hpp"

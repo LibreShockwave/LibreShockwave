@@ -21,10 +21,10 @@ bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
 
 } // namespace
 
-FrameLabelsChunk::FrameLabelsChunk(const DirectorFile* file, id::ChunkId id, std::vector<FrameLabel> labels)
+FrameLabelsChunk::FrameLabelsChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<FrameLabel> labels)
     : file_(file), id_(id), labels_(std::move(labels)) {}
 
-const DirectorFile* FrameLabelsChunk::file() const { return file_; }
+const moviesource::MovieSource* FrameLabelsChunk::file() const { return file_; }
 format::ChunkType FrameLabelsChunk::type() const { return format::ChunkType::VWLB; }
 id::ChunkId FrameLabelsChunk::id() const { return id_; }
 const std::vector<FrameLabelsChunk::FrameLabel>& FrameLabelsChunk::labels() const { return labels_; }
@@ -47,7 +47,7 @@ std::string FrameLabelsChunk::getLabelForFrame(int frame_num) const {
     return "";
 }
 
-FrameLabelsChunk FrameLabelsChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+FrameLabelsChunk FrameLabelsChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     reader.setOrder(io::ByteOrder::BigEndian);
     std::vector<FrameLabel> labels;

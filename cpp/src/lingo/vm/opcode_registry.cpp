@@ -150,7 +150,7 @@ void pushImageOperationTrace(std::string entry) {
     image_operation_trace.push_back(std::move(entry));
 }
 
-Datum literalToDatum(const chunks::ScriptChunk::LiteralEntry& literal) {
+Datum literalToDatum(const moviesource::ScriptAsset::LiteralEntry& literal) {
     switch (literal.type) {
         case 1:
             if (const auto* value = std::get_if<std::string>(&literal.value)) {
@@ -1452,7 +1452,6 @@ HandlerRef handlerRefFromLocation(const builtin::BuiltinContext::ScriptHandlerLo
         location.handler,
         location.script_owner,
         location.file_owner,
-        location.script_names_owner,
         location.script_type
     };
 }
@@ -1482,16 +1481,16 @@ Datum safeExecuteHandler(ExecutionContext& context,
 }
 
 Datum safeExecuteHandler(ExecutionContext& context,
-                         const chunks::ScriptChunk& script,
-                         const chunks::ScriptChunk::Handler& handler,
+                         const moviesource::ScriptAsset& script,
+                         const moviesource::ScriptAsset::Handler& handler,
                          const std::vector<Datum>& args,
                          const Datum& receiver) {
     return safeExecuteHandler(context, HandlerRef{&script, &handler}, args, receiver);
 }
 
 Datum safeExecuteHandler(ExecutionContext& context,
-                         const chunks::ScriptChunk& script,
-                         const chunks::ScriptChunk::Handler& handler,
+                         const moviesource::ScriptAsset& script,
+                         const moviesource::ScriptAsset::Handler& handler,
                          std::span<const Datum> args,
                          const Datum& receiver) {
     return safeExecuteHandler(context, HandlerRef{&script, &handler}, args, receiver);
@@ -6446,8 +6445,7 @@ bool localCall(ExecutionContext& context) {
             script,
             target_handler,
             context.scope().scriptOwner(),
-            context.scope().fileOwner(),
-            context.scope().scriptNamesOwner()
+            context.scope().fileOwner()
         },
         args,
         *receiver);
@@ -6730,7 +6728,7 @@ bool canUseImmediatePrimitiveExtCall(ExecutionContext& context, std::string_view
         return true;
     }
     return handler->script != nullptr &&
-           handler->script_type == chunks::ScriptChunkType::Parent &&
+           handler->script_type == moviesource::ScriptType::Parent &&
            context.isBuiltin(handler_name);
 }
 
@@ -7134,8 +7132,8 @@ std::optional<Opcode> setOpcodeForGetOpcode(Opcode opcode) {
     }
 }
 
-bool sameVariableInstruction(const chunks::ScriptChunk::Instruction& lhs,
-                             const chunks::ScriptChunk::Instruction& rhs) {
+bool sameVariableInstruction(const moviesource::ScriptAsset::Instruction& lhs,
+                             const moviesource::ScriptAsset::Instruction& rhs) {
     return lhs.opcode == rhs.opcode && lhs.argument == rhs.argument;
 }
 
@@ -7148,8 +7146,8 @@ bool isIndexedCollectionLoadOpcode(Opcode opcode) {
 
 bool indexedCollectionLoopHeaderMatches(const ExecutionContext& context,
                                         int header_index,
-                                        const chunks::ScriptChunk::Instruction& collection_load,
-                                        const chunks::ScriptChunk::Instruction& index_load) {
+                                        const moviesource::ScriptAsset::Instruction& collection_load,
+                                        const moviesource::ScriptAsset::Instruction& index_load) {
     const auto& handler = context.scope().handler();
     const auto& instructions = handler.instructions;
     if (header_index < 4 || header_index >= static_cast<int>(instructions.size())) {
@@ -7210,8 +7208,8 @@ bool indexedCollectionLoopHeaderMatches(const ExecutionContext& context,
 bool isLoopHeaderForIndexedCollection(const ExecutionContext& context,
                                       int header_index,
                                       int current_index,
-                                      const chunks::ScriptChunk::Instruction& collection_load,
-                                      const chunks::ScriptChunk::Instruction& index_load) {
+                                      const moviesource::ScriptAsset::Instruction& collection_load,
+                                      const moviesource::ScriptAsset::Instruction& index_load) {
     if (current_index <= header_index ||
         !indexedCollectionLoopHeaderMatches(context, header_index, collection_load, index_load)) {
         return false;
@@ -7222,8 +7220,8 @@ bool isLoopHeaderForIndexedCollection(const ExecutionContext& context,
 
 bool loopBodyHasIndexedCollectionGetAt(const ExecutionContext& context,
                                        int header_index,
-                                       const chunks::ScriptChunk::Instruction& collection_load,
-                                       const chunks::ScriptChunk::Instruction& index_load) {
+                                       const moviesource::ScriptAsset::Instruction& collection_load,
+                                       const moviesource::ScriptAsset::Instruction& index_load) {
     const auto& handler = context.scope().handler();
     const auto& instructions = handler.instructions;
     const auto& jmp_if_zero = instructions[static_cast<std::size_t>(header_index)];
@@ -8271,7 +8269,7 @@ bool executeExtCallWithArgsImpl(ExecutionContext& context,
             result = safeExecuteHandler(context, *handler, args, Datum::voidValue());
         }
     } else if (const auto handler = context.findHandler(handler_name)) {
-        if (handler->script != nullptr && handler->script_type == chunks::ScriptChunkType::Parent) {
+        if (handler->script != nullptr && handler->script_type == moviesource::ScriptType::Parent) {
             if (auto builtin_result = context.invokeBuiltinIfPresent(handler_name, vector_args())) {
                 result = std::move(*builtin_result);
             } else {
@@ -8320,7 +8318,7 @@ bool tryImmediateCallBuiltin(ExecutionContext& context,
                              std::string_view handler_name,
                              int arg_count,
                              int next_index,
-                             const chunks::ScriptChunk::Instruction& next_instruction,
+                             const moviesource::ScriptAsset::Instruction& next_instruction,
                              bool no_return) {
     if (!equalsIgnoreCase(handler_name, "call") || arg_count < 2) {
         return false;
@@ -8406,7 +8404,7 @@ bool tryImmediateExtCall(ExecutionContext& context, bool no_return) {
         !equalsIgnoreCase(handler_name, "new")) {
         if (const auto handler = context.findHandler(handler_name);
             handler.has_value() && handler->script != nullptr &&
-            handler->script_type != chunks::ScriptChunkType::Parent) {
+            handler->script_type != moviesource::ScriptType::Parent) {
             std::array<Datum, 8> args_storage{};
             for (int index = arg_count - 1; index >= 0; --index) {
                 args_storage[static_cast<std::size_t>(index)] = context.pop();

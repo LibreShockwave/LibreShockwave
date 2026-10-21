@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "libreshockwave/chunks/score_chunk.hpp"
+#include "libreshockwave/moviesource/records/score_asset.hpp"
 #include "libreshockwave/player/sprite/sprite_state.hpp"
 
 namespace libreshockwave::player::render {

@@ -158,7 +158,7 @@ target_compile_features(my_tool PRIVATE cxx_std_20)
 
 ### Load File Example
 
-The C++ API currently loads from memory. Read the file bytes, then call `DirectorFile::load`.
+The C++ API currently loads from memory. Read the file bytes, then call `MovieSource::load`. The file name selects the parser via the format registry.
 
 ```cpp
 #include <cstdint>
@@ -169,7 +169,7 @@ The C++ API currently loads from memory. Read the file bytes, then call `Directo
 #include <stdexcept>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 
 std::vector<std::uint8_t> readFile(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -184,7 +184,7 @@ std::vector<std::uint8_t> readFile(const std::filesystem::path& path) {
 
 int main(int argc, char** argv) {
     const std::filesystem::path moviePath = argc > 1 ? argv[1] : "movie.dcr";
-    auto file = libreshockwave::DirectorFile::load(readFile(moviePath));
+    auto file = libreshockwave::moviesource::MovieSource::load(moviePath.string(), readFile(moviePath));
     file->setBasePath(moviePath.parent_path().string());
 
     std::cout << file->stageWidth() << "x" << file->stageHeight()

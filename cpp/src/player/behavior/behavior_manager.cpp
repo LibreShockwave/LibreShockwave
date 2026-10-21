@@ -18,7 +18,7 @@ std::string parameterKey(const lingo::Datum& key) {
 
 } // namespace
 
-BehaviorManager::BehaviorManager(DirectorFile* file) : file_(file) {}
+BehaviorManager::BehaviorManager(moviesource::MovieSource* file) : file_(file) {}
 
 void BehaviorManager::setDebugEnabled(bool enabled) {
     debug_enabled_ = enabled;
@@ -45,11 +45,20 @@ std::shared_ptr<BehaviorInstance> BehaviorManager::createInstanceForScript(
     std::shared_ptr<chunks::ScriptChunk> script,
     const score::ScoreBehaviorRef& behavior_ref,
     int channel) {
+    return createInstanceForScript(std::move(script), behavior_ref, channel, default_source_file_);
+}
+
+std::shared_ptr<BehaviorInstance> BehaviorManager::createInstanceForScript(
+    std::shared_ptr<chunks::ScriptChunk> script,
+    const score::ScoreBehaviorRef& behavior_ref,
+    int channel,
+    std::shared_ptr<const moviesource::MovieSource> source_file) {
     if (!script) {
         return nullptr;
     }
 
-    auto instance = std::make_shared<BehaviorInstance>(std::move(script), behavior_ref, channel);
+    auto instance = std::make_shared<BehaviorInstance>(
+        std::move(script), behavior_ref, channel, std::move(source_file));
     applyParameters(instance, behavior_ref);
     instances_by_id_[instance->id()] = instance;
     instances_by_channel_[channel].push_back(instance);
@@ -67,6 +76,14 @@ std::shared_ptr<BehaviorInstance> BehaviorManager::getOrCreateFrameScriptForScri
     std::shared_ptr<chunks::ScriptChunk> script,
     const score::ScoreBehaviorRef& behavior_ref,
     int frame) {
+    return getOrCreateFrameScriptForScript(std::move(script), behavior_ref, frame, default_source_file_);
+}
+
+std::shared_ptr<BehaviorInstance> BehaviorManager::getOrCreateFrameScriptForScript(
+    std::shared_ptr<chunks::ScriptChunk> script,
+    const score::ScoreBehaviorRef& behavior_ref,
+    int frame,
+    std::shared_ptr<const moviesource::MovieSource> source_file) {
     if (frame_script_instance_ && frame_script_frame_ == frame) {
         return frame_script_instance_;
     }
@@ -75,7 +92,7 @@ std::shared_ptr<BehaviorInstance> BehaviorManager::getOrCreateFrameScriptForScri
         removeInstance(frame_script_instance_);
     }
 
-    frame_script_instance_ = createInstanceForScript(std::move(script), behavior_ref, 0);
+    frame_script_instance_ = createInstanceForScript(std::move(script), behavior_ref, 0, std::move(source_file));
     frame_script_frame_ = frame;
     return frame_script_instance_;
 }
@@ -90,6 +107,19 @@ void BehaviorManager::clearFrameScript() {
         frame_script_instance_.reset();
         frame_script_frame_ = -1;
     }
+}
+
+void BehaviorManager::setSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file) {
+    for (const auto& [id, instance] : instances_by_id_) {
+        instance->setSourceFile(source_file);
+    }
+    if (frame_script_instance_) {
+        frame_script_instance_->setSourceFile(source_file);
+    }
+}
+
+void BehaviorManager::setDefaultSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file) {
+    default_source_file_ = std::move(source_file);
 }
 
 std::vector<std::shared_ptr<BehaviorInstance>> BehaviorManager::getInstancesForChannel(int channel) const {
@@ -192,11 +222,11 @@ std::shared_ptr<chunks::ScriptChunk> BehaviorManager::findScript(const score::Sc
         return nullptr;
     }
 
-    auto member = file_->getCastMemberByNumber(behavior_ref.castLib(), behavior_ref.castMember());
+    auto member = file_->castMemberByNumber(behavior_ref.castLib(), behavior_ref.castMember());
     if (member && member->isScript()) {
-        auto script = file_->getScriptForCastMember(member, file_->getMappedCastChunk(behavior_ref.castLib()));
+        auto script = file_->scriptChunkForCastMember(member);
         if (!script) {
-            script = selectBehaviorScript(file_->getScriptsByContextId(member->scriptId()));
+            script = selectBehaviorScript(file_->scriptChunksByContextId(member->script_id));
         }
         if (script) {
             return script;
@@ -223,8 +253,8 @@ std::shared_ptr<chunks::ScriptChunk> BehaviorManager::selectBehaviorScript(
 bool BehaviorManager::usesLegacyDuplicateScriptContexts() const {
     return file_ != nullptr &&
            file_->config() != nullptr &&
-           file_->config()->directorVersion() > 0 &&
-           file_->config()->directorVersion() <= 1600;
+           file_->config()->director_version > 0 &&
+           file_->config()->director_version <= 1600;
 }
 
 void BehaviorManager::applyParameters(const std::shared_ptr<BehaviorInstance>& instance,

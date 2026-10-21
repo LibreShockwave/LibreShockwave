@@ -23,9 +23,9 @@ public:
         [[nodiscard]] std::string fourccString() const;
     };
 
-    KeyTableChunk(const DirectorFile* file, id::ChunkId id, std::vector<KeyTableEntry> entries);
+    KeyTableChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<KeyTableEntry> entries);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::vector<KeyTableEntry>& entries() const;
@@ -34,13 +34,13 @@ public:
     [[nodiscard]] std::optional<id::ChunkId> getOwnerCastId(id::ChunkId section_id) const;
     [[nodiscard]] std::optional<KeyTableEntry> getEntryBySectionId(id::ChunkId section_id) const;
 
-    [[nodiscard]] static KeyTableChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static KeyTableChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
     static int sanitizeChunkId(int value);
     void indexEntries();
 
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::vector<KeyTableEntry> entries_;
     std::unordered_map<int, std::vector<KeyTableEntry>> entries_by_owner_;

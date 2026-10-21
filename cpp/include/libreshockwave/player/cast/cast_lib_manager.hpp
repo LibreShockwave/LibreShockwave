@@ -14,7 +14,10 @@
 #include "libreshockwave/player/cast/cast_lib.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::cast {
@@ -40,10 +43,10 @@ public:
     using CastDataRequestCallback = std::function<void(int cast_lib_number, const std::string& file_name)>;
     using MemberSlotRetiredCallback = std::function<void(int cast_lib_number, int member_number)>;
 
-    explicit CastLibManager(std::shared_ptr<DirectorFile> file,
+    explicit CastLibManager(std::shared_ptr<moviesource::MovieSource> file,
                             CastDataRequestCallback cast_data_request_callback = {});
 
-    [[nodiscard]] std::shared_ptr<DirectorFile> file() const;
+    [[nodiscard]] std::shared_ptr<moviesource::MovieSource> file() const;
 
     [[nodiscard]] std::shared_ptr<CastLib> getCastLib(int cast_lib_number);
     [[nodiscard]] std::shared_ptr<CastLib> getCastLibByNameInternal(const std::string& name);
@@ -131,7 +134,7 @@ private:
         const lingo::Datum& identifier,
         int cast_lib_number);
 
-    std::shared_ptr<DirectorFile> file_;
+    std::shared_ptr<moviesource::MovieSource> file_;
     std::map<int, std::shared_ptr<CastLib>> cast_libs_;
     std::unordered_map<std::string, std::vector<std::uint8_t>> cast_data_cache_;
     std::map<int, std::string> pending_external_loads_;

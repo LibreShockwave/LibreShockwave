@@ -27,6 +27,9 @@
 #include <variant>
 #include <vector>
 
+#include "libreshockwave/moviesource/records/script_asset.hpp"
+#include "libreshockwave/moviesource/director_record_converter.hpp"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -36,7 +39,8 @@
 #include <zlib.h>
 #endif
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
+#include "libreshockwave/moviesource/director_movie_source.hpp"
 #include "libreshockwave/w3d_file.hpp"
 #include "libreshockwave/audio/sound_converter.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
@@ -189,6 +193,38 @@
 #include "libreshockwave/util/file_util.hpp"
 #include "libreshockwave/util/string_utils.hpp"
 
+namespace {
+
+libreshockwave::moviesource::ScriptAsset makeScriptAsset(int chunk_id,
+                                         libreshockwave::moviesource::ScriptType type,
+                                         std::vector<libreshockwave::moviesource::ScriptAsset::Handler> handlers,
+                                         std::vector<libreshockwave::moviesource::ScriptAsset::LiteralEntry> literals) {
+    libreshockwave::moviesource::ScriptAsset asset;
+    asset.chunk_id = chunk_id;
+    asset.type = type;
+    asset.handlers = std::move(handlers);
+    asset.literals = std::move(literals);
+    return asset;
+}
+
+libreshockwave::chunks::ScriptChunk makeScriptChunk(int chunk_id,
+                                         libreshockwave::chunks::ScriptChunkType type,
+                                         std::vector<libreshockwave::chunks::ScriptChunk::Handler> handlers,
+                                         std::vector<libreshockwave::chunks::ScriptChunk::LiteralEntry> literals) {
+    return libreshockwave::chunks::ScriptChunk(nullptr,
+                                              libreshockwave::id::ChunkId(chunk_id),
+                                              type,
+                                              0,
+                                              std::move(handlers),
+                                              std::move(literals),
+                                              {},
+                                              {},
+                                              {});
+}
+
+} // namespace
+
+
 using libreshockwave::format::ChunkInfo;
 using libreshockwave::format::AfterburnerReader;
 using libreshockwave::format::ChunkType;
@@ -200,7 +236,14 @@ using libreshockwave::font::Pfr1Font;
 using libreshockwave::font::Pfr1TtfConverter;
 using libreshockwave::font::TtfBitmapRasterizer;
 using libreshockwave::fonts::FontDataDecoder;
-using libreshockwave::DirectorFile;
+using libreshockwave::moviesource::DirectorMovieSource;
+using libreshockwave::moviesource::MovieSource;
+using libreshockwave::moviesource::ScriptAsset;
+using libreshockwave::moviesource::CastMemberAsset;
+using libreshockwave::moviesource::CastListAsset;
+using libreshockwave::moviesource::ConfigAsset;
+using libreshockwave::moviesource::ScoreAsset;
+using libreshockwave::moviesource::TextAsset;
 using libreshockwave::W3DFile;
 using libreshockwave::audio::SoundConverter;
 using libreshockwave::id::CastLibId;
@@ -1273,8 +1316,8 @@ void testUtilityFormatting() {
     assert(libreshockwave::util::escapeForDisplay("a\\b\nc\rd\te") == "a\\\\b\\nc\\rd\\te");
     assert(libreshockwave::util::escapeHtml("A&B<C>D") == "A&amp;B&lt;C&gt;D");
 
-    using LiteralEntry = ScriptChunk::LiteralEntry;
-    using LiteralValue = ScriptChunk::LiteralValue;
+    using LiteralEntry = libreshockwave::chunks::ScriptChunk::LiteralEntry;
+    using LiteralValue = libreshockwave::chunks::ScriptChunk::LiteralValue;
     assert(libreshockwave::format::getLiteralTypeName(1) == "string");
     assert(libreshockwave::format::getLiteralTypeName(5) == "type5");
     assert(libreshockwave::format::getLiteralTypeNameShort(9) == "float");
@@ -1998,7 +2041,7 @@ void testLingoDecompilerNodeFoundation() {
                                   "caseExpressionOps",
                                   "jsOps",
                                   "literalOps"});
-    ScriptChunk::Handler bytecode_handler{
+    libreshockwave::chunks::ScriptChunk::Handler bytecode_handler{
         0,
         0,
         0,
@@ -2010,16 +2053,16 @@ void testLingoDecompilerNodeFoundation() {
         {1},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 7},
-            ScriptChunk::Instruction{2, Opcode::SET_PROP, 0x50, 2},
-            ScriptChunk::Instruction{4, Opcode::GET_PARAM, 0x4B, 0},
-            ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{8, Opcode::ADD, 0x05, 0},
-            ScriptChunk::Instruction{9, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
-            ScriptChunk::Instruction{13, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
-            ScriptChunk::Instruction{15, Opcode::EXT_CALL, 0x57, 5},
-            ScriptChunk::Instruction{17, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::SET_PROP, 0x50, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::GET_PARAM, 0x4B, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::ADD, 0x05, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{15, Opcode::EXT_CALL, 0x57, 5},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::RET, 0x01, 0}
         },
         {{0, 0}, {2, 1}, {4, 2}, {6, 3}, {8, 4}, {9, 5}, {11, 6}, {13, 7}, {15, 8}, {17, 9}}
     };
@@ -2077,7 +2120,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(bytecode_mapping.lines[3].bytecode_offset == 15);
     assert(bytecode_mapping.lines[4].bytecode_offset == -1);
 
-    ScriptChunk::Handler unknown_literal_handler{
+    libreshockwave::chunks::ScriptChunk::Handler unknown_literal_handler{
         script_names.findName("literalOps"),
         0,
         0,
@@ -2089,9 +2132,9 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 0},
-            ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{4, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::RET, 0x01, 0}
         },
         {{0, 0}, {2, 1}, {4, 2}}
     };
@@ -2100,7 +2143,7 @@ void testLingoDecompilerNodeFoundation() {
                                      ScriptChunkType::MovieScript,
                                      0,
                                      {unknown_literal_handler},
-                                     {ScriptChunk::LiteralEntry{12, 0, std::vector<std::uint8_t>{1, 2, 3}, 0.0}},
+                                     {libreshockwave::chunks::ScriptChunk::LiteralEntry{12, 0, std::vector<std::uint8_t>{1, 2, 3}, 0.0}},
                                      {},
                                      {},
                                      {});
@@ -2109,7 +2152,7 @@ void testLingoDecompilerNodeFoundation() {
            "  localOne = \"[bytes:3]\"\n"
            "end");
 
-    ScriptChunk::Handler js_handler{
+    libreshockwave::chunks::ScriptChunk::Handler js_handler{
         script_names.findName("jsOps"),
         0,
         0,
@@ -2121,8 +2164,8 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {},
         {
-            ScriptChunk::Instruction{0, Opcode::CALL_JAVASCRIPT, 0x26, 0},
-            ScriptChunk::Instruction{1, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::CALL_JAVASCRIPT, 0x26, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{1, Opcode::RET, 0x01, 0}
         },
         {}
     };
@@ -2131,7 +2174,7 @@ void testLingoDecompilerNodeFoundation() {
                          ScriptChunkType::MovieScript,
                          0,
                          {js_handler},
-                         {ScriptChunk::LiteralEntry{1, 0, std::string("window.alert('ok')"), 0.0}},
+                         {libreshockwave::chunks::ScriptChunk::LiteralEntry{1, 0, std::string("window.alert('ok')"), 0.0}},
                          {},
                          {},
                          {});
@@ -2154,11 +2197,11 @@ void testLingoDecompilerNodeFoundation() {
     assert(js_mapping.lines[2].bytecode_offset == -1);
     assert(js_mapping.lines[3].bytecode_offset == -1);
 
-    ScriptChunk::Handler unresolved_handler = bytecode_handler;
+    libreshockwave::chunks::ScriptChunk::Handler unresolved_handler = bytecode_handler;
     unresolved_handler.name_id = 99;
     assert(decompiler.decompileHandler(unresolved_handler, script, &script_names).starts_with("on #99 argOne\n"));
 
-    ScriptChunk::Handler chunk_handler{
+    libreshockwave::chunks::ScriptChunk::Handler chunk_handler{
         7,
         0,
         0,
@@ -2170,56 +2213,56 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 5},
-            ScriptChunk::Instruction{2, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{4, Opcode::GET_FIELD, 0x1B, 0},
-            ScriptChunk::Instruction{5, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 5},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::GET_FIELD, 0x1B, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{5, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{7, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 0x25},
-            ScriptChunk::Instruction{11, Opcode::GET, 0x5C, 0x06},
-            ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{7, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 0x25},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::GET, 0x5C, 0x06},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{17, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{19, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{21, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{23, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{25, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{27, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{29, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{31, Opcode::PUSH_VAR_REF, 0x46, 6},
-            ScriptChunk::Instruction{33, Opcode::GET_CHUNK, 0x17, 0},
-            ScriptChunk::Instruction{34, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{21, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{23, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{25, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{27, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{29, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{31, Opcode::PUSH_VAR_REF, 0x46, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{33, Opcode::GET_CHUNK, 0x17, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{34, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{36, Opcode::PUSH_CONS, 0x44, 0},
-            ScriptChunk::Instruction{38, Opcode::PUSH_VAR_REF, 0x46, 6},
-            ScriptChunk::Instruction{40, Opcode::PUT, 0x59, 0x11},
+            libreshockwave::chunks::ScriptChunk::Instruction{36, Opcode::PUSH_CONS, 0x44, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{38, Opcode::PUSH_VAR_REF, 0x46, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{40, Opcode::PUT, 0x59, 0x11},
 
-            ScriptChunk::Instruction{42, Opcode::PUSH_CONS, 0x44, 8},
-            ScriptChunk::Instruction{44, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{46, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{48, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{50, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{52, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{54, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{56, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{58, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{60, Opcode::PUSH_VAR_REF, 0x46, 6},
-            ScriptChunk::Instruction{62, Opcode::PUT_CHUNK, 0x5A, 0x21},
+            libreshockwave::chunks::ScriptChunk::Instruction{42, Opcode::PUSH_CONS, 0x44, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{44, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{46, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{48, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{50, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{52, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{54, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{56, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{58, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{60, Opcode::PUSH_VAR_REF, 0x46, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{62, Opcode::PUT_CHUNK, 0x5A, 0x21},
 
-            ScriptChunk::Instruction{64, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{66, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{68, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{70, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{72, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{74, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{76, Opcode::PUSH_INT8, 0x41, 4},
-            ScriptChunk::Instruction{78, Opcode::PUSH_INT8, 0x41, 0},
-            ScriptChunk::Instruction{80, Opcode::PUSH_VAR_REF, 0x46, 6},
-            ScriptChunk::Instruction{82, Opcode::DELETE_CHUNK, 0x5B, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{64, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{66, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{68, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{70, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{72, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{74, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{76, Opcode::PUSH_INT8, 0x41, 4},
+            libreshockwave::chunks::ScriptChunk::Instruction{78, Opcode::PUSH_INT8, 0x41, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{80, Opcode::PUSH_VAR_REF, 0x46, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{82, Opcode::DELETE_CHUNK, 0x5B, 1},
 
-            ScriptChunk::Instruction{84, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{84, Opcode::RET, 0x01, 0}
         },
         {}
     };
@@ -2229,8 +2272,8 @@ void testLingoDecompilerNodeFoundation() {
                             0,
                             {chunk_handler},
                             {
-                                ScriptChunk::LiteralEntry{1, 0, std::string("Hi"), 0.0},
-                                ScriptChunk::LiteralEntry{1, 0, std::string("!"), 0.0}
+                                libreshockwave::chunks::ScriptChunk::LiteralEntry{1, 0, std::string("Hi"), 0.0},
+                                libreshockwave::chunks::ScriptChunk::LiteralEntry{1, 0, std::string("!"), 0.0}
                             },
                             {},
                             {},
@@ -2255,7 +2298,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(chunk_mapping.lines[5].bytecode_offset == 62);
     assert(chunk_mapping.lines[6].bytecode_offset == 82);
 
-    ScriptChunk::Handler object_handler{
+    libreshockwave::chunks::ScriptChunk::Handler object_handler{
         17,
         0,
         0,
@@ -2267,64 +2310,64 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{2, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{4, Opcode::PUSH_ARG_LIST, 0x43, 2},
-            ScriptChunk::Instruction{6, Opcode::OBJ_CALL, 0x67, 8},
-            ScriptChunk::Instruction{8, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_ARG_LIST, 0x43, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::OBJ_CALL, 0x67, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{10, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{12, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 99},
-            ScriptChunk::Instruction{16, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 3},
-            ScriptChunk::Instruction{18, Opcode::OBJ_CALL, 0x67, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{10, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{12, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 99},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{18, Opcode::OBJ_CALL, 0x67, 9},
 
-            ScriptChunk::Instruction{20, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{22, Opcode::PUSH_SYMB, 0x45, 18},
-            ScriptChunk::Instruction{24, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{26, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{28, Opcode::PUSH_ARG_LIST, 0x43, 4},
-            ScriptChunk::Instruction{30, Opcode::OBJ_CALL, 0x67, 10},
-            ScriptChunk::Instruction{32, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{20, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{22, Opcode::PUSH_SYMB, 0x45, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{24, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{26, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{28, Opcode::PUSH_ARG_LIST, 0x43, 4},
+            libreshockwave::chunks::ScriptChunk::Instruction{30, Opcode::OBJ_CALL, 0x67, 10},
+            libreshockwave::chunks::ScriptChunk::Instruction{32, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{34, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{36, Opcode::PUSH_SYMB, 0x45, 18},
-            ScriptChunk::Instruction{38, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{40, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{42, Opcode::PUSH_INT8, 0x41, 44},
-            ScriptChunk::Instruction{44, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 5},
-            ScriptChunk::Instruction{46, Opcode::OBJ_CALL, 0x67, 11},
+            libreshockwave::chunks::ScriptChunk::Instruction{34, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{36, Opcode::PUSH_SYMB, 0x45, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{38, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{40, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{42, Opcode::PUSH_INT8, 0x41, 44},
+            libreshockwave::chunks::ScriptChunk::Instruction{44, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 5},
+            libreshockwave::chunks::ScriptChunk::Instruction{46, Opcode::OBJ_CALL, 0x67, 11},
 
-            ScriptChunk::Instruction{48, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{50, Opcode::PUSH_SYMB, 0x45, 18},
-            ScriptChunk::Instruction{52, Opcode::PUSH_ARG_LIST, 0x43, 2},
-            ScriptChunk::Instruction{54, Opcode::OBJ_CALL, 0x67, 12},
-            ScriptChunk::Instruction{56, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{48, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{50, Opcode::PUSH_SYMB, 0x45, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{52, Opcode::PUSH_ARG_LIST, 0x43, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{54, Opcode::OBJ_CALL, 0x67, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{56, Opcode::SET_LOCAL, 0x52, 0},
 
-            ScriptChunk::Instruction{58, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{60, Opcode::PUSH_CONS, 0x44, 0},
-            ScriptChunk::Instruction{62, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
-            ScriptChunk::Instruction{64, Opcode::OBJ_CALL, 0x67, 13},
+            libreshockwave::chunks::ScriptChunk::Instruction{58, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{60, Opcode::PUSH_CONS, 0x44, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{62, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{64, Opcode::OBJ_CALL, 0x67, 13},
 
-            ScriptChunk::Instruction{66, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{68, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
-            ScriptChunk::Instruction{70, Opcode::OBJ_CALL, 0x67, 14},
+            libreshockwave::chunks::ScriptChunk::Instruction{66, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{68, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{70, Opcode::OBJ_CALL, 0x67, 14},
 
-            ScriptChunk::Instruction{72, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{74, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
-            ScriptChunk::Instruction{76, Opcode::OBJ_CALL, 0x67, 15},
+            libreshockwave::chunks::ScriptChunk::Instruction{72, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{74, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{76, Opcode::OBJ_CALL, 0x67, 15},
 
-            ScriptChunk::Instruction{78, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{80, Opcode::PUSH_INT8, 0x41, 5},
-            ScriptChunk::Instruction{82, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
-            ScriptChunk::Instruction{84, Opcode::OBJ_CALL, 0x67, 16},
+            libreshockwave::chunks::ScriptChunk::Instruction{78, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{80, Opcode::PUSH_INT8, 0x41, 5},
+            libreshockwave::chunks::ScriptChunk::Instruction{82, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{84, Opcode::OBJ_CALL, 0x67, 16},
 
-            ScriptChunk::Instruction{86, Opcode::PUSH_SYMB, 0x45, 18},
-            ScriptChunk::Instruction{88, Opcode::PUSH_INT8, 0x41, 8},
-            ScriptChunk::Instruction{90, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
-            ScriptChunk::Instruction{92, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{94, Opcode::OBJ_CALL_V4, 0x58, 1},
-            ScriptChunk::Instruction{96, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{86, Opcode::PUSH_SYMB, 0x45, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{88, Opcode::PUSH_INT8, 0x41, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{90, Opcode::PUSH_ARG_LIST_NO_RET, 0x42, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{92, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{94, Opcode::OBJ_CALL_V4, 0x58, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{96, Opcode::RET, 0x01, 0}
         },
         {}
     };
@@ -2333,7 +2376,7 @@ void testLingoDecompilerNodeFoundation() {
                              ScriptChunkType::MovieScript,
                              0,
                              {object_handler},
-                             {ScriptChunk::LiteralEntry{1, 0, std::string("Tail"), 0.0}},
+                             {libreshockwave::chunks::ScriptChunk::LiteralEntry{1, 0, std::string("Tail"), 0.0}},
                              {},
                              {},
                              {});
@@ -2365,7 +2408,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(object_mapping.lines[9].bytecode_offset == 84);
     assert(object_mapping.lines[10].bytecode_offset == 94);
 
-    ScriptChunk::Handler if_handler{
+    libreshockwave::chunks::ScriptChunk::Handler if_handler{
         19,
         0,
         0,
@@ -2377,25 +2420,20 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
-            ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 8},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{10, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{12, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{10, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{12, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk if_script(nullptr,
-                         ChunkId(504),
-                         ScriptChunkType::MovieScript,
-                         0,
-                         {if_handler},
-                         {},
-                         {},
-                         {},
-                         {});
+    auto if_script = makeScriptChunk(504,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {if_handler},
+                                  {});
     assert(decompiler.decompileHandler(if_script.handlers().front(), if_script, &script_names) ==
            "on ifOps\n"
            "  if readyFlag then\n"
@@ -2404,7 +2442,7 @@ void testLingoDecompilerNodeFoundation() {
            "  localOne = 2\n"
            "end");
 
-    ScriptChunk::Handler else_handler{
+    libreshockwave::chunks::ScriptChunk::Handler else_handler{
         20,
         0,
         0,
@@ -2416,28 +2454,23 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
-            ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 8},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{8, Opcode::JMP, 0x53, 6},
-            ScriptChunk::Instruction{10, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{12, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{18, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::JMP, 0x53, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{10, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{12, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{18, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk else_script(nullptr,
-                           ChunkId(505),
-                           ScriptChunkType::MovieScript,
-                           0,
-                           {else_handler},
-                           {},
-                           {},
-                           {},
-                           {});
+    auto else_script = makeScriptChunk(505,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {else_handler},
+                                  {});
     assert(decompiler.decompileHandler(else_script.handlers().front(), else_script, &script_names) ==
            "on elseOps\n"
            "  if readyFlag then\n"
@@ -2469,7 +2502,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(else_mapping.lines[6].bytecode_offset == 16);
     assert(else_mapping.lines[7].bytecode_offset == -1);
 
-    ScriptChunk::Handler repeat_while_handler{
+    libreshockwave::chunks::ScriptChunk::Handler repeat_while_handler{
         22,
         0,
         0,
@@ -2481,25 +2514,20 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
-            ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
-            ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{18, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{18, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk repeat_while_script(nullptr,
-                                  ChunkId(506),
-                                  ScriptChunkType::MovieScript,
-                                  0,
+    auto repeat_while_script = makeScriptChunk(506,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
                                   {repeat_while_handler},
-                                  {},
-                                  {},
-                                  {},
                                   {});
     assert(decompiler.decompileHandler(repeat_while_script.handlers().front(), repeat_while_script, &script_names) ==
            "on loopOps\n"
@@ -2526,7 +2554,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(repeat_while_mapping.lines[4].bytecode_offset == 16);
     assert(repeat_while_mapping.lines[5].bytecode_offset == -1);
 
-    ScriptChunk::Handler to_loop_handler{
+    libreshockwave::chunks::ScriptChunk::Handler to_loop_handler{
         26,
         0,
         0,
@@ -2538,32 +2566,27 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {25, 4},
         {
-            ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
-            ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{8, Opcode::LT_EQ, 0x0D, 0},
-            ScriptChunk::Instruction{9, Opcode::JMP_IF_Z, 0x55, 19},
-            ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
-            ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 8},
-            ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{17, Opcode::GET_LOCAL, 0x4C, 0},
-            ScriptChunk::Instruction{19, Opcode::ADD, 0x05, 0},
-            ScriptChunk::Instruction{20, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{22, Opcode::END_REPEAT, 0x54, 18},
-            ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::LT_EQ, 0x0D, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::JMP_IF_Z, 0x55, 19},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::GET_LOCAL, 0x4C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::ADD, 0x05, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{20, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{22, Opcode::END_REPEAT, 0x54, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk to_loop_script(nullptr,
-                             ChunkId(509),
-                             ScriptChunkType::MovieScript,
-                             0,
-                             {to_loop_handler},
-                             {},
-                             {},
-                             {},
-                             {});
+    auto to_loop_script = makeScriptChunk(509,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {to_loop_handler},
+                                  {});
     assert(decompiler.decompileHandler(to_loop_script.handlers().front(), to_loop_script, &script_names) ==
            "on toLoopOps\n"
            "  repeat with loopVar = 1 to 3\n"
@@ -2586,7 +2609,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(to_loop_mapping.lines[3].bytecode_offset == -1);
     assert(to_loop_mapping.lines[4].bytecode_offset == -1);
 
-    ScriptChunk::Handler down_loop_handler{
+    libreshockwave::chunks::ScriptChunk::Handler down_loop_handler{
         27,
         0,
         0,
@@ -2598,32 +2621,27 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {25, 4},
         {
-            ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 3},
-            ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
-            ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{8, Opcode::GT_EQ, 0x11, 0},
-            ScriptChunk::Instruction{9, Opcode::JMP_IF_Z, 0x55, 19},
-            ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
-            ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 8},
-            ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, -1},
-            ScriptChunk::Instruction{17, Opcode::GET_LOCAL, 0x4C, 0},
-            ScriptChunk::Instruction{19, Opcode::ADD, 0x05, 0},
-            ScriptChunk::Instruction{20, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{22, Opcode::END_REPEAT, 0x54, 18},
-            ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::GT_EQ, 0x11, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::JMP_IF_Z, 0x55, 19},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::SET_LOCAL, 0x52, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{15, Opcode::PUSH_INT8, 0x41, -1},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::GET_LOCAL, 0x4C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::ADD, 0x05, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{20, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{22, Opcode::END_REPEAT, 0x54, 18},
+            libreshockwave::chunks::ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk down_loop_script(nullptr,
-                               ChunkId(510),
-                               ScriptChunkType::MovieScript,
-                               0,
-                               {down_loop_handler},
-                               {},
-                               {},
-                               {},
-                               {});
+    auto down_loop_script = makeScriptChunk(510,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {down_loop_handler},
+                                  {});
     assert(decompiler.decompileHandler(down_loop_script.handlers().front(), down_loop_script, &script_names) ==
            "on downLoopOps\n"
            "  repeat with loopVar = 3 down to 1\n"
@@ -2631,7 +2649,7 @@ void testLingoDecompilerNodeFoundation() {
            "  end repeat\n"
            "end");
 
-    ScriptChunk::Handler in_loop_handler{
+    libreshockwave::chunks::ScriptChunk::Handler in_loop_handler{
         30,
         0,
         0,
@@ -2643,39 +2661,34 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {29, 4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 28},
-            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{4, Opcode::PUSH_ARG_LIST, 0x43, 1},
-            ScriptChunk::Instruction{6, Opcode::EXT_CALL, 0x57, 12},
-            ScriptChunk::Instruction{8, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{10, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{12, Opcode::PEEK, 0x64, 2},
-            ScriptChunk::Instruction{14, Opcode::LT_EQ, 0x0D, 0},
-            ScriptChunk::Instruction{15, Opcode::JMP_IF_Z, 0x55, 25},
-            ScriptChunk::Instruction{17, Opcode::PEEK, 0x64, 2},
-            ScriptChunk::Instruction{19, Opcode::PEEK, 0x64, 1},
-            ScriptChunk::Instruction{21, Opcode::PUSH_ARG_LIST, 0x43, 2},
-            ScriptChunk::Instruction{23, Opcode::EXT_CALL, 0x57, 8},
-            ScriptChunk::Instruction{25, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{27, Opcode::PUSH_INT8, 0x41, 9},
-            ScriptChunk::Instruction{29, Opcode::SET_LOCAL, 0x52, 8},
-            ScriptChunk::Instruction{31, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{33, Opcode::ADD, 0x05, 0},
-            ScriptChunk::Instruction{34, Opcode::END_REPEAT, 0x54, 24},
-            ScriptChunk::Instruction{40, Opcode::POP, 0x65, 3},
-            ScriptChunk::Instruction{42, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 28},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_ARG_LIST, 0x43, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::EXT_CALL, 0x57, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{10, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{12, Opcode::PEEK, 0x64, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::LT_EQ, 0x0D, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{15, Opcode::JMP_IF_Z, 0x55, 25},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::PEEK, 0x64, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::PEEK, 0x64, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{21, Opcode::PUSH_ARG_LIST, 0x43, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{23, Opcode::EXT_CALL, 0x57, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{25, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{27, Opcode::PUSH_INT8, 0x41, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{29, Opcode::SET_LOCAL, 0x52, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{31, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{33, Opcode::ADD, 0x05, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{34, Opcode::END_REPEAT, 0x54, 24},
+            libreshockwave::chunks::ScriptChunk::Instruction{40, Opcode::POP, 0x65, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{42, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk in_loop_script(nullptr,
-                             ChunkId(511),
-                             ScriptChunkType::MovieScript,
-                             0,
-                             {in_loop_handler},
-                             {},
-                             {},
-                             {},
-                             {});
+    auto in_loop_script = makeScriptChunk(511,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {in_loop_handler},
+                                  {});
     assert(decompiler.decompileHandler(in_loop_script.handlers().front(), in_loop_script, &script_names) ==
            "on inLoopOps\n"
            "  repeat with itemVar in itemsList\n"
@@ -2698,7 +2711,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(in_loop_mapping.lines[3].bytecode_offset == -1);
     assert(in_loop_mapping.lines[4].bytecode_offset == -1);
 
-    ScriptChunk::Handler tell_handler{
+    libreshockwave::chunks::ScriptChunk::Handler tell_handler{
         31,
         0,
         0,
@@ -2710,24 +2723,19 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 6},
-            ScriptChunk::Instruction{2, Opcode::START_TELL, 0x1C, 0},
-            ScriptChunk::Instruction{3, Opcode::PUSH_INT8, 0x41, 5},
-            ScriptChunk::Instruction{5, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{7, Opcode::END_TELL, 0x1D, 0},
-            ScriptChunk::Instruction{8, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 6},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::START_TELL, 0x1C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{3, Opcode::PUSH_INT8, 0x41, 5},
+            libreshockwave::chunks::ScriptChunk::Instruction{5, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{7, Opcode::END_TELL, 0x1D, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk tell_script(nullptr,
-                           ChunkId(512),
-                           ScriptChunkType::MovieScript,
-                           0,
-                           {tell_handler},
-                           {},
-                           {},
-                           {},
-                           {});
+    auto tell_script = makeScriptChunk(512,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {tell_handler},
+                                  {});
     assert(decompiler.decompileHandler(tell_script.handlers().front(), tell_script, &script_names) ==
            "on tellOps\n"
            "  tell fieldRef\n"
@@ -2750,7 +2758,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(tell_mapping.lines[3].bytecode_offset == -1);
     assert(tell_mapping.lines[4].bytecode_offset == -1);
 
-    ScriptChunk::Handler case_handler{
+    libreshockwave::chunks::ScriptChunk::Handler case_handler{
         33,
         0,
         0,
@@ -2762,35 +2770,30 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
-            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::EQ, 0x0F, 0},
-            ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 7},
-            ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 10},
-            ScriptChunk::Instruction{11, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{13, Opcode::JMP, 0x53, 15},
-            ScriptChunk::Instruction{14, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{16, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{18, Opcode::EQ, 0x0F, 0},
-            ScriptChunk::Instruction{19, Opcode::JMP_IF_Z, 0x55, 7},
-            ScriptChunk::Instruction{21, Opcode::PUSH_INT8, 0x41, 20},
-            ScriptChunk::Instruction{23, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{25, Opcode::JMP, 0x53, 3},
-            ScriptChunk::Instruction{26, Opcode::POP, 0x65, 1},
-            ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::EQ, 0x0F, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 10},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::JMP, 0x53, 15},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{18, Opcode::EQ, 0x0F, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::JMP_IF_Z, 0x55, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{21, Opcode::PUSH_INT8, 0x41, 20},
+            libreshockwave::chunks::ScriptChunk::Instruction{23, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{25, Opcode::JMP, 0x53, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{26, Opcode::POP, 0x65, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{28, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk case_script(nullptr,
-                           ChunkId(513),
-                           ScriptChunkType::MovieScript,
-                           0,
-                           {case_handler},
-                           {},
-                           {},
-                           {},
-                           {});
+    auto case_script = makeScriptChunk(513,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {case_handler},
+                                  {});
     assert(decompiler.decompileHandler(case_script.handlers().front(), case_script, &script_names) ==
            "on caseOps\n"
            "  case caseValue of\n"
@@ -2823,7 +2826,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(case_mapping.lines[6].bytecode_offset == -1);
     assert(case_mapping.lines[7].bytecode_offset == -1);
 
-    ScriptChunk::Handler case_otherwise_handler{
+    libreshockwave::chunks::ScriptChunk::Handler case_otherwise_handler{
         34,
         0,
         0,
@@ -2835,30 +2838,25 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
-            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::EQ, 0x0F, 0},
-            ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 7},
-            ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 10},
-            ScriptChunk::Instruction{11, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{13, Opcode::JMP, 0x53, 9},
-            ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 99},
-            ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{22, Opcode::POP, 0x65, 1},
-            ScriptChunk::Instruction{24, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::EQ, 0x0F, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::PUSH_INT8, 0x41, 10},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::JMP, 0x53, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::PUSH_INT8, 0x41, 99},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{22, Opcode::POP, 0x65, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{24, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk case_otherwise_script(nullptr,
-                                    ChunkId(514),
-                                    ScriptChunkType::MovieScript,
-                                    0,
-                                    {case_otherwise_handler},
-                                    {},
-                                    {},
-                                    {},
-                                    {});
+    auto case_otherwise_script = makeScriptChunk(514,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {case_otherwise_handler},
+                                  {});
     assert(decompiler.decompileHandler(case_otherwise_script.handlers().front(), case_otherwise_script, &script_names) ==
            "on caseOtherwiseOps\n"
            "  case caseValue of\n"
@@ -2870,7 +2868,7 @@ void testLingoDecompilerNodeFoundation() {
            "  end case\n"
            "end");
 
-    ScriptChunk::Handler case_or_handler{
+    libreshockwave::chunks::ScriptChunk::Handler case_or_handler{
         35,
         0,
         0,
@@ -2882,32 +2880,27 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
-            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{6, Opcode::NT_EQ, 0x0E, 0},
-            ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 9},
-            ScriptChunk::Instruction{9, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 2},
-            ScriptChunk::Instruction{13, Opcode::EQ, 0x0F, 0},
-            ScriptChunk::Instruction{14, Opcode::JMP_IF_Z, 0x55, 7},
-            ScriptChunk::Instruction{16, Opcode::PUSH_INT8, 0x41, 12},
-            ScriptChunk::Instruction{18, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{20, Opcode::JMP, 0x53, 3},
-            ScriptChunk::Instruction{21, Opcode::POP, 0x65, 1},
-            ScriptChunk::Instruction{23, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::NT_EQ, 0x0E, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{7, Opcode::JMP_IF_Z, 0x55, 9},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{11, Opcode::PUSH_INT8, 0x41, 2},
+            libreshockwave::chunks::ScriptChunk::Instruction{13, Opcode::EQ, 0x0F, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::JMP_IF_Z, 0x55, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::PUSH_INT8, 0x41, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{18, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{20, Opcode::JMP, 0x53, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{21, Opcode::POP, 0x65, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{23, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk case_or_script(nullptr,
-                             ChunkId(515),
-                             ScriptChunkType::MovieScript,
-                             0,
-                             {case_or_handler},
-                             {},
-                             {},
-                             {},
-                             {});
+    auto case_or_script = makeScriptChunk(515,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {case_or_handler},
+                                  {});
     assert(decompiler.decompileHandler(case_or_script.handlers().front(), case_or_script, &script_names) ==
            "on caseOrOps\n"
            "  case caseValue of\n"
@@ -2934,7 +2927,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(case_or_mapping.lines[4].bytecode_offset == -1);
     assert(case_or_mapping.lines[5].bytecode_offset == -1);
 
-    ScriptChunk::Handler case_expression_handler{
+    libreshockwave::chunks::ScriptChunk::Handler case_expression_handler{
         script_names.findName("caseExpressionOps"),
         0,
         0,
@@ -2946,30 +2939,25 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {4},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
-            ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
-            ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
-            ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 1},
-            ScriptChunk::Instruction{8, Opcode::ADD, 0x05, 0},
-            ScriptChunk::Instruction{9, Opcode::EQ, 0x0F, 0},
-            ScriptChunk::Instruction{10, Opcode::JMP_IF_Z, 0x55, 7},
-            ScriptChunk::Instruction{12, Opcode::PUSH_INT8, 0x41, 42},
-            ScriptChunk::Instruction{14, Opcode::SET_LOCAL, 0x52, 0},
-            ScriptChunk::Instruction{16, Opcode::JMP, 0x53, 3},
-            ScriptChunk::Instruction{17, Opcode::POP, 0x65, 1},
-            ScriptChunk::Instruction{19, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 32},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::PEEK, 0x64, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::GET_LOCAL, 0x4C, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{6, Opcode::PUSH_INT8, 0x41, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::ADD, 0x05, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{9, Opcode::EQ, 0x0F, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{10, Opcode::JMP_IF_Z, 0x55, 7},
+            libreshockwave::chunks::ScriptChunk::Instruction{12, Opcode::PUSH_INT8, 0x41, 42},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::SET_LOCAL, 0x52, 0},
+            libreshockwave::chunks::ScriptChunk::Instruction{16, Opcode::JMP, 0x53, 3},
+            libreshockwave::chunks::ScriptChunk::Instruction{17, Opcode::POP, 0x65, 1},
+            libreshockwave::chunks::ScriptChunk::Instruction{19, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk case_expression_script(nullptr,
-                                     ChunkId(516),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {case_expression_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto case_expression_script = makeScriptChunk(516,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {case_expression_handler},
+                                  {});
     assert(decompiler.decompileHandler(case_expression_script.handlers().front(), case_expression_script, &script_names) ==
            "on caseExpressionOps\n"
            "  case caseValue of\n"
@@ -2996,7 +2984,7 @@ void testLingoDecompilerNodeFoundation() {
     assert(case_expression_mapping.lines[4].bytecode_offset == -1);
     assert(case_expression_mapping.lines[5].bytecode_offset == -1);
 
-    ScriptChunk::Handler next_loop_handler{
+    libreshockwave::chunks::ScriptChunk::Handler next_loop_handler{
         23,
         0,
         0,
@@ -3008,23 +2996,18 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
-            ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
-            ScriptChunk::Instruction{4, Opcode::JMP, 0x53, 4},
-            ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
-            ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::JMP, 0x53, 4},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk next_loop_script(nullptr,
-                               ChunkId(507),
-                               ScriptChunkType::MovieScript,
-                               0,
-                               {next_loop_handler},
-                               {},
-                               {},
-                               {},
-                               {});
+    auto next_loop_script = makeScriptChunk(507,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {next_loop_handler},
+                                  {});
     assert(decompiler.decompileHandler(next_loop_script.handlers().front(), next_loop_script, &script_names) ==
            "on nextLoopOps\n"
            "  repeat while readyFlag\n"
@@ -3032,7 +3015,7 @@ void testLingoDecompilerNodeFoundation() {
            "  end repeat\n"
            "end");
 
-    ScriptChunk::Handler exit_loop_handler{
+    libreshockwave::chunks::ScriptChunk::Handler exit_loop_handler{
         24,
         0,
         0,
@@ -3044,23 +3027,18 @@ void testLingoDecompilerNodeFoundation() {
         {},
         {},
         {
-            ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
-            ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
-            ScriptChunk::Instruction{4, Opcode::JMP, 0x53, 10},
-            ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
-            ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
+            libreshockwave::chunks::ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 21},
+            libreshockwave::chunks::ScriptChunk::Instruction{2, Opcode::JMP_IF_Z, 0x55, 12},
+            libreshockwave::chunks::ScriptChunk::Instruction{4, Opcode::JMP, 0x53, 10},
+            libreshockwave::chunks::ScriptChunk::Instruction{8, Opcode::END_REPEAT, 0x54, 8},
+            libreshockwave::chunks::ScriptChunk::Instruction{14, Opcode::RET, 0x01, 0}
         },
         {}
     };
-    ScriptChunk exit_loop_script(nullptr,
-                               ChunkId(508),
-                               ScriptChunkType::MovieScript,
-                               0,
-                               {exit_loop_handler},
-                               {},
-                               {},
-                               {},
-                               {});
+    auto exit_loop_script = makeScriptChunk(508,
+                                  libreshockwave::chunks::ScriptChunkType::MovieScript,
+                                  {exit_loop_handler},
+                                  {});
     assert(decompiler.decompileHandler(exit_loop_script.handlers().front(), exit_loop_script, &script_names) ==
            "on exitLoopOps\n"
            "  repeat while readyFlag\n"
@@ -4417,7 +4395,7 @@ void testPlayerFacadeFoundation() {
         return data;
     };
 
-    auto file = std::make_shared<DirectorFile>(ByteOrder::BigEndian, false, 0, ChunkType::MV93);
+    std::shared_ptr<MovieSource> file = std::make_shared<DirectorMovieSource>();
     file->setBasePath("/movies/example.dir");
 
     Player player(file);
@@ -5051,7 +5029,7 @@ void testPlayerFacadeFoundation() {
     append_i16(labels_data, 6);
     append_i32(labels_data, 11);
     labels_data.insert(labels_data.end(), {'I', 'n', 't', 'r', 'o', 0, 'F', 'i', 'n', 'a', 'l'});
-    auto labeled_file = DirectorFile::load(build_rifx({{"VWLB", labels_data}}));
+    auto labeled_file = MovieSource::load("test.dir", build_rifx({{"VWLB", labels_data}}));
     assert(labeled_file != nullptr);
     Player labeled_player(labeled_file);
     assert(labeled_player.getFrameForLabel("intro") == 3);
@@ -5392,7 +5370,7 @@ void testPlayerVmEventDispatchFoundation() {
     put_set_global_handler_bytecode(timeout_script_data, 555, 41, 21);
     put_return_int_handler_bytecode(timeout_script_data, 560, 73);
 
-    auto file = DirectorFile::load(build_rifx({
+    auto file = MovieSource::load("test.dir", build_rifx({
         {"Lnam", names_data},
         {"Lscr", script_data},
         {"CAS*", cast_data},
@@ -5448,7 +5426,8 @@ void testPlayerVmEventDispatchFoundation() {
     player.vm().clearGlobals();
 
     const auto direct_call_target = Datum::scriptInstance("direct-call-target", Datum::CastMemberRef{1, 1});
-    assert(player.vm().callBuiltin("call", {Datum::symbol("directResult"), direct_call_target}).intValue() == 73);
+    const int direct_call_result = player.vm().callBuiltin("call", {Datum::symbol("directResult"), direct_call_target}).intValue();
+    assert(direct_call_result == 73);
     auto inherited_call_target = Datum::scriptInstance("inherited-call-target", Datum::CastMemberRef{1, 999});
     auto inherited_ancestor = Datum::scriptInstance("inherited-ancestor", Datum::CastMemberRef{1, 1});
     inherited_call_target.scriptInstanceValue().setAncestor(inherited_ancestor.scriptInstancePtr());
@@ -5605,7 +5584,7 @@ void testMoviePropertiesFoundation() {
     assert(props.getMovieProp("timeoutScript").stringValue().empty());
     assert(props.getMovieProp("unknownMovieProp").isVoid());
 
-    DirectorFile empty_file(ByteOrder::BigEndian, false, 0, ChunkType::RIFX);
+    DirectorMovieSource empty_file;
     empty_file.setBasePath("/movies/example.dir");
     props.setFile(&empty_file);
     assert(props.getMovieProp("name").stringValue() == "example.dir");
@@ -8305,16 +8284,18 @@ void testQueuedMultiuserBridgeFoundation() {
     assert(!smus.isConnected(3));
 }
 
+
+
 void testLingoVmScopeAndExecutionContextFoundation() {
     auto make_handler = [](int name_id, int local_count, std::vector<int> offsets) {
-        std::vector<ScriptChunk::Instruction> instructions;
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions;
         std::unordered_map<int, int> index_map;
         for (std::size_t index = 0; index < offsets.size(); ++index) {
             const int offset = offsets[index];
             index_map[offset] = static_cast<int>(index);
-            instructions.push_back(ScriptChunk::Instruction{offset, Opcode::PUSH_INT8, 0x41, offset + 1});
+            instructions.push_back(libreshockwave::moviesource::ScriptAsset::Instruction{offset, Opcode::PUSH_INT8, 0x41, offset + 1});
         }
-        return ScriptChunk::Handler{name_id,
+        return libreshockwave::moviesource::ScriptAsset::Handler{name_id,
                                     0,
                                     static_cast<int>(instructions.size()),
                                     0,
@@ -8332,17 +8313,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto other_handler = make_handler(99, 0, {0});
     auto direct_provider_handler = make_handler(133, 0, {0});
     auto ancestor_provider_handler = make_handler(134, 0, {0});
-    ScriptChunk script(nullptr,
-                       ChunkId(700),
-                       ScriptChunkType::MovieScript,
-                       0,
-                       {handler, other_handler, direct_provider_handler, ancestor_provider_handler},
-                       {ScriptChunk::LiteralEntry{1, 0, std::string("hello"), 0.0},
-                        ScriptChunk::LiteralEntry{4, 0, 42, 0.0},
-                        ScriptChunk::LiteralEntry{9, 0, std::string("1.5"), 1.5}},
-                       {},
-                       {},
-                       {});
+    auto script = makeScriptAsset(700,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {handler, other_handler, direct_provider_handler, ancestor_provider_handler},
+                                  {libreshockwave::moviesource::ScriptAsset::LiteralEntry{1, 0, std::string("hello"), 0.0},
+                                   libreshockwave::moviesource::ScriptAsset::LiteralEntry{4, 0, 42, 0.0},
+                                   libreshockwave::moviesource::ScriptAsset::LiteralEntry{9, 0, std::string("1.5"), 1.5}});
 
     Scope scope(&script, handler, {Datum::of(1), Datum::of(2)});
     assert(scope.script() == &script);
@@ -8429,7 +8405,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(first_param_me_scope.displayArgumentCount() == 1);
     assert(first_param_me_scope.displayArgument(0).intValue() == 7);
 
-    ScriptChunk::Handler trace_handler{
+    libreshockwave::moviesource::ScriptAsset::Handler trace_handler{
         20,
         0,
         2,
@@ -8440,24 +8416,20 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         0,
         {7, 8},
         {9},
-        {ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, 5},
-         ScriptChunk::Instruction{1, Opcode::GET_LOCAL, 0x4C, 0}},
+        {libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_INT8, 0x41, 5},
+         libreshockwave::moviesource::ScriptAsset::Instruction{1, Opcode::GET_LOCAL, 0x4C, 0}},
         {{0, 0}, {1, 1}},
     };
-    ScriptChunk trace_script(nullptr,
-                            ChunkId(701),
-                            ScriptChunkType::MovieScript,
-                            0,
-                            {trace_handler},
-                            {ScriptChunk::LiteralEntry{1, 0, std::string("trace literal"), 0.0}},
-                            {},
-                            {},
-                            {});
     std::vector<std::string> trace_names(21);
     trace_names[7] = "firstArg";
     trace_names[8] = "secondArg";
     trace_names[9] = "traceLocal";
     trace_names[20] = "traceHandler";
+    auto trace_script = makeScriptAsset(701,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
+                                       {trace_handler},
+                                       {libreshockwave::moviesource::ScriptAsset::LiteralEntry{1, 0, std::string("trace literal"), 0.0}});
+    trace_script.names = trace_names;
     ScriptNamesChunk trace_script_names(nullptr, ChunkId(702), trace_names);
 
     Scope trace_scope(&trace_script, trace_handler, {Datum::of(10), Datum::of(11)});
@@ -8468,11 +8440,11 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     }
     libreshockwave::lingo::vm::RuntimeGlobals trace_globals{{"globalScore", Datum::of(77)}};
     TracingHelper tracing_helper;
-    const auto locals_snapshot = tracing_helper.captureLocals(trace_scope, &trace_script_names);
+    const auto locals_snapshot = tracing_helper.captureLocals(trace_scope);
     assert(locals_snapshot.at("firstArg").intValue() == 10);
     assert(locals_snapshot.at("secondArg").intValue() == 99);
     assert(locals_snapshot.at("traceLocal").listValue().items()[0].intValue() == 44);
-    assert(tracing_helper.buildAnnotation(trace_scope, trace_handler.instructions[1], &trace_script_names) ==
+    assert(tracing_helper.buildAnnotation(trace_scope, trace_handler.instructions[1]) ==
            "<local0>");
     const auto instruction_info =
         tracing_helper.buildInstructionInfo(trace_scope, trace_handler.instructions[0], trace_globals, &trace_script_names);
@@ -8492,7 +8464,6 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                                             {Datum::of(10), Datum::of(99)},
                                                             receiver,
                                                             trace_globals,
-                                                            &trace_script_names,
                                                             "Trace Display");
     assert(handler_info.handler_name == "traceHandler");
     assert(handler_info.script_id == 701);
@@ -8934,11 +8905,11 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         }
         return std::nullopt;
     };
-    callbacks.handler_executor = [](const ScriptChunk& called_script,
-                                   const ScriptChunk::Handler& called_handler,
+    callbacks.handler_executor = [](const libreshockwave::moviesource::ScriptAsset& called_script,
+                                   const libreshockwave::moviesource::ScriptAsset::Handler& called_handler,
                                    const std::vector<Datum>& args,
                                    const Datum& receiver_arg) {
-        assert(called_script.id().value() == 700);
+        assert(called_script.chunk_id == 700);
         assert(receiver_arg.isVoid() || receiver_arg.type() == DatumType::ScriptInstanceRef);
         if (!args.empty() && args[0].isString() && args[0].stringValue() == "throw") {
             throw LingoException("call failed");
@@ -8998,7 +8969,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(context.formatCallStack() == "stack");
     assert(std::string(context.error("boom").what()) == "boom");
 
-    context.setInstruction(ScriptChunk::Instruction{20, Opcode::PUSH_INT8, 0x41, 8});
+    context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{20, Opcode::PUSH_INT8, 0x41, 8});
     assert(context.argument() == 8);
     assert(context.scaledArgument() == 4);
     assert(context.instructionOffset() == 20);
@@ -9078,25 +9049,20 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto explicit_me_caller = make_handler(300, 0, {0});
     auto explicit_me_target = make_handler(301, 0, {0});
     explicit_me_target.arg_name_ids = {156};
-    ScriptChunk explicit_me_script(nullptr,
-                                 ChunkId(703),
-                                 ScriptChunkType::Parent,
-                                 0,
-                                 {explicit_me_caller, explicit_me_target},
-                                 {},
-                                 {},
-                                 {},
-                                 {});
+    auto explicit_me_script = makeScriptAsset(703,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {explicit_me_caller, explicit_me_target},
+                                  {});
     const Datum explicit_receiver = Datum::scriptInstance("explicitReceiver");
     bool explicit_me_call_checked = false;
     ExecutionContext::Callbacks explicit_me_callbacks = callbacks;
     explicit_me_callbacks.handler_executor = [&explicit_me_call_checked, &explicit_receiver](
-                                              const ScriptChunk& called_script,
-                                              const ScriptChunk::Handler& called_handler,
+                                              const libreshockwave::moviesource::ScriptAsset& called_script,
+                                              const libreshockwave::moviesource::ScriptAsset::Handler& called_handler,
                                               const std::vector<Datum>& args,
                                               const Datum& receiver_arg) {
         explicit_me_call_checked = true;
-        assert(called_script.id().value() == 703);
+        assert(called_script.chunk_id == 703);
         assert(called_handler.name_id == 301);
         assert(receiver_arg == explicit_receiver);
         assert(args.size() == 1);
@@ -9106,7 +9072,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     Scope explicit_me_scope(&explicit_me_script, explicit_me_caller, {}, explicit_receiver);
     ExecutionContext explicit_me_context(
         explicit_me_scope,
-        ScriptChunk::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
+        libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
         &registry,
         &builtin_context,
         explicit_me_callbacks);
@@ -9121,21 +9087,21 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                   std::vector<std::pair<Opcode, int>> ops,
                                   int local_count,
                                   std::vector<int> arg_name_ids) {
-        std::vector<ScriptChunk::Instruction> instructions;
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions;
         std::unordered_map<int, int> index_map;
         instructions.reserve(ops.size());
         for (std::size_t index = 0; index < ops.size(); ++index) {
             const int offset = static_cast<int>(index);
             const auto [opcode, argument] = ops[index];
             index_map[offset] = static_cast<int>(index);
-            instructions.push_back(ScriptChunk::Instruction{
+            instructions.push_back(libreshockwave::moviesource::ScriptAsset::Instruction{
                 offset,
                 opcode,
                 libreshockwave::lingo::code(opcode),
                 argument
             });
         }
-        return ScriptChunk::Handler{name_id,
+        return libreshockwave::moviesource::ScriptAsset::Handler{name_id,
                                     0,
                                     static_cast<int>(instructions.size()),
                                     0,
@@ -9179,15 +9145,6 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         },
         0,
         {181, 184});
-    ScriptChunk broker_script(nullptr,
-                             ChunkId(704),
-                             ScriptChunkType::Behavior,
-                             0,
-                             {route_store_handler, broker_read_client_handler},
-                             {},
-                             {ScriptChunk::PropertyEntry{180}},
-                             {},
-                             {});
     std::vector<std::string> broker_names(187);
     broker_names[64] = "getAt";
     broker_names[65] = "setAt";
@@ -9198,24 +9155,27 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     broker_names[184] = "tEvent";
     broker_names[185] = "storeRoute";
     broker_names[186] = "readClient";
+    auto broker_script = makeScriptAsset(704,
+                                       libreshockwave::moviesource::ScriptType::Behavior,
+                                       {route_store_handler, broker_read_client_handler},
+                                       {});
+    broker_script.names = broker_names;
     auto broker_script_names = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(705), broker_names);
     auto event_broker = Datum::scriptInstance("Route Behavior", Datum::CastMemberRef{7, 3});
     event_broker.scriptInstanceValue().setProperty("pRoutes", Datum::propList());
     LingoVM broker_vm;
     const HandlerRef broker_register_ref{
         &broker_script,
-        &broker_script.handlers()[0],
+        &broker_script.handlers[0],
         nullptr,
         nullptr,
-        broker_script_names,
-        ScriptChunkType::Behavior};
+        libreshockwave::moviesource::ScriptType::Behavior};
     const HandlerRef broker_read_client_ref{
         &broker_script,
-        &broker_script.handlers()[1],
+        &broker_script.handlers[1],
         nullptr,
         nullptr,
-        broker_script_names,
-        ScriptChunkType::Behavior};
+        libreshockwave::moviesource::ScriptType::Behavior};
     assert(broker_vm.executeHandler(broker_register_ref,
                                    {Datum::symbol("eventProcDefault"),
                                     Datum::of(std::string("client-one")),
@@ -9250,15 +9210,11 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     sprite_register_names[187] = "callSpriteStore";
     sprite_register_names[188] = "tSprite";
     auto sprite_register_script_names = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(706), sprite_register_names);
-    ScriptChunk sprite_register_script(nullptr,
-                                     ChunkId(707),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {sprite_register_caller_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto sprite_register_script = makeScriptAsset(707,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {sprite_register_caller_handler},
+                                  {});
+    sprite_register_script.names = sprite_register_names;
     SpriteRegistry broker_sprite_registry;
     SpriteProperties broker_sprite_props(&broker_sprite_registry);
     auto broker_sprite = broker_sprite_registry.getOrCreateDynamic(51);
@@ -9279,22 +9235,20 @@ void testLingoVmScopeAndExecutionContextFoundation() {
             sprite_register_finder_called = true;
             return libreshockwave::lingo::builtin::BuiltinContext::ScriptHandlerLocation{
                 &broker_script,
-                broker_script.handlers()[0],
+                broker_script.handlers[0],
                 nullptr,
                 nullptr,
-                broker_script_names,
-                ScriptChunkType::Behavior
+                libreshockwave::moviesource::ScriptType::Behavior
             };
         }
         return std::nullopt;
     };
     const HandlerRef sprite_register_ref{
         &sprite_register_script,
-        &sprite_register_script.handlers()[0],
+        &sprite_register_script.handlers[0],
         nullptr,
         nullptr,
-        sprite_register_script_names,
-        ScriptChunkType::MovieScript};
+        libreshockwave::moviesource::ScriptType::MovieScript};
     assert(sprite_register_vm.executeHandler(sprite_register_ref,
                                            {Datum::spriteRef(ChannelId(51)),
                                             Datum::symbol("eventProcDefault"),
@@ -9351,21 +9305,17 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         },
         1,
         {181, 182, 183, 184});
-    ScriptChunk default_route_script(nullptr,
-                                   ChunkId(708),
-                                   ScriptChunkType::Behavior,
-                                   0,
-                                   {default_route_register_handler},
-                                   {},
-                                   {ScriptChunk::PropertyEntry{180}},
-                                   {},
-                                   {});
     std::vector<std::string> default_route_names = broker_names;
     default_route_names.resize(189);
     default_route_names[21] = "voidp";
     default_route_names[23] = "count";
     default_route_names[24] = "getPropAt";
     default_route_names[25] = "setAt";
+    auto default_route_script = makeScriptAsset(708,
+                                       libreshockwave::moviesource::ScriptType::Behavior,
+                                       {default_route_register_handler},
+                                       {});
+    default_route_script.names = default_route_names;
     auto default_route_script_names = std::make_shared<ScriptNamesChunk>(nullptr, ChunkId(709), default_route_names);
     auto default_route_instance = Datum::scriptInstance("Route Behavior", Datum::CastMemberRef{7, 3});
     auto proc_template = Datum::propList();
@@ -9379,11 +9329,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     LingoVM default_route_vm;
     const HandlerRef default_route_register_ref{
         &default_route_script,
-        &default_route_script.handlers()[0],
+        &default_route_script.handlers[0],
         nullptr,
         nullptr,
-        default_route_script_names,
-        ScriptChunkType::Behavior};
+        libreshockwave::moviesource::ScriptType::Behavior};
     assert(default_route_vm.executeHandler(default_route_register_ref,
                                          {Datum::voidValue(),
                                           Datum::of(std::string("window-object")),
@@ -9419,36 +9368,36 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(PropertyIdMappings::getSoundPropName(0x08) == "unknown_sound_prop_8");
 
     Scope op_scope(&script, handler, {});
-    ExecutionContext op_context(op_scope, ScriptChunk::Instruction{0, Opcode::PUSH_ZERO, 0x03, 0});
+    ExecutionContext op_context(op_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_ZERO, 0x03, 0});
     assert(opcode_registry.execute(Opcode::PUSH_ZERO, op_context));
     assert(op_context.pop().intValue() == 0);
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, -7});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_INT8, 0x41, -7});
     assert(opcode_registry.execute(Opcode::PUSH_INT8, op_context));
     assert(op_context.pop().intValue() == -7);
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_INT16, 0x6E, 300});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_INT16, 0x6E, 300});
     assert(opcode_registry.execute(Opcode::PUSH_INT16, op_context));
     assert(op_context.pop().intValue() == 300);
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_FLOAT32, 0x71, std::bit_cast<int>(1.25F)});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_FLOAT32, 0x71, std::bit_cast<int>(1.25F)});
     assert(opcode_registry.execute(Opcode::PUSH_FLOAT32, op_context));
     assert(std::fabs(op_context.pop().floatValue() - 1.25F) < 0.0001F);
 
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 0});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 0});
     assert(opcode_registry.execute(Opcode::PUSH_CONS, op_context));
     assert(op_context.pop().stringValue() == "hello");
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 1});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 1});
     assert(opcode_registry.execute(Opcode::PUSH_CONS, op_context));
     assert(op_context.pop().intValue() == 42);
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 2});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 2});
     assert(opcode_registry.execute(Opcode::PUSH_CONS, op_context));
     assert(std::fabs(op_context.pop().floatValue() - 1.5F) < 0.0001F);
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 99});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 99});
     assert(opcode_registry.execute(Opcode::PUSH_CONS, op_context));
     assert(op_context.pop().isVoid());
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_SYMB, 0x45, 123});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_SYMB, 0x45, 123});
     assert(opcode_registry.execute(Opcode::PUSH_SYMB, op_context));
     assert(op_context.pop().asSymbol()->name == "#123");
 
-    op_context.setInstruction(ScriptChunk::Instruction{0,
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                       Opcode::PUSH_CHUNK_VAR_REF,
                                                       libreshockwave::lingo::code(Opcode::PUSH_CHUNK_VAR_REF),
                                                       libreshockwave::id::code(VarType::LOCAL)});
@@ -9467,12 +9416,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     op_context.push(Datum::of(1));
     op_context.push(Datum::of(2));
     op_context.push(Datum::of(3));
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::POP, 0x65, 2});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::POP, 0x65, 2});
     assert(opcode_registry.execute(Opcode::POP, op_context));
     assert(op_context.pop().intValue() == 1);
     op_context.push(Datum::of(4));
     op_context.push(Datum::of(5));
-    op_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PEEK, 0x64, 1});
+    op_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PEEK, 0x64, 1});
     assert(opcode_registry.execute(Opcode::PEEK, op_context));
     assert(op_context.pop().intValue() == 4);
     assert(op_context.pop().intValue() == 5);
@@ -9490,7 +9439,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
     Scope new_obj_scope(&script, handler, {});
     ExecutionContext new_obj_context(new_obj_scope,
-                                   ScriptChunk::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
+                                   libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
                                    &registry,
                                    &builtin_context,
                                    callbacks);
@@ -9503,7 +9452,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     new_obj_context.push(Datum::argList({Datum::symbol("fallbackScript")}));
     assert(opcode_registry.execute(Opcode::NEW_OBJ, new_obj_context));
     assert(new_obj_context.pop().scriptInstanceValue().scriptName() == "fallbackScript");
-    new_obj_context.setInstruction(ScriptChunk::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 75});
+    new_obj_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 75});
     new_obj_context.push(Datum::argList({Datum::symbol("notScript")}));
     assert(opcode_registry.execute(Opcode::NEW_OBJ, new_obj_context));
     assert(new_obj_context.pop().isVoid());
@@ -9524,12 +9473,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         return std::nullopt;
     };
     ExecutionContext::Callbacks direct_script_ref_new_obj_callbacks = callbacks;
-    direct_script_ref_new_obj_callbacks.handler_executor = [&direct_script_ref_new_handler_calls](const ScriptChunk& called_script,
-                                                                                       const ScriptChunk::Handler&,
+    direct_script_ref_new_obj_callbacks.handler_executor = [&direct_script_ref_new_handler_calls](const libreshockwave::moviesource::ScriptAsset& called_script,
+                                                                                       const libreshockwave::moviesource::ScriptAsset::Handler&,
                                                                                        const std::vector<Datum>& args,
                                                                                        const Datum& receiver_arg) {
         ++direct_script_ref_new_handler_calls;
-        assert(called_script.id().value() == 700);
+        assert(called_script.chunk_id == 700);
         assert(args.size() == 1);
         assert(args.front().intValue() == 101);
         assert(receiver_arg.type() == DatumType::ScriptInstanceRef);
@@ -9539,7 +9488,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         return Datum::voidValue();
     };
     ExecutionContext direct_script_ref_new_obj_context(new_obj_scope,
-                                                  ScriptChunk::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
+                                                  libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
                                                   &registry,
                                                   &builtin_context,
                                                   direct_script_ref_new_obj_callbacks);
@@ -9577,12 +9526,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         return std::nullopt;
     };
     ExecutionContext::Callbacks resolved_new_obj_callbacks = callbacks;
-    resolved_new_obj_callbacks.handler_executor = [&fallback_new_handler_calls](const ScriptChunk& called_script,
-                                                                         const ScriptChunk::Handler&,
+    resolved_new_obj_callbacks.handler_executor = [&fallback_new_handler_calls](const libreshockwave::moviesource::ScriptAsset& called_script,
+                                                                         const libreshockwave::moviesource::ScriptAsset::Handler&,
                                                                          const std::vector<Datum>& args,
                                                                          const Datum& receiver_arg) {
         ++fallback_new_handler_calls;
-        assert(called_script.id().value() == 700);
+        assert(called_script.chunk_id == 700);
         assert(args.size() == 1);
         assert(args.front().intValue() == 77);
         assert(receiver_arg.type() == DatumType::ScriptInstanceRef);
@@ -9593,7 +9542,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
     Scope resolved_new_obj_scope(&script, handler, {});
     ExecutionContext resolved_new_obj_context(resolved_new_obj_scope,
-                                           ScriptChunk::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
+                                           libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::NEW_OBJ, libreshockwave::lingo::code(Opcode::NEW_OBJ), 74},
                                            &registry,
                                            &builtin_context,
                                            resolved_new_obj_callbacks);
@@ -9611,7 +9560,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope variable_scope(&script, handler, {Datum::of(11), Datum::of(22)});
     ExecutionContext variable_context(variable_scope,
-                                     ScriptChunk::Instruction{0, Opcode::SET_LOCAL, libreshockwave::lingo::code(Opcode::SET_LOCAL), 2},
+                                     libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_LOCAL, libreshockwave::lingo::code(Opcode::SET_LOCAL), 2},
                                      &registry,
                                      &builtin_context,
                                      callbacks,
@@ -9619,25 +9568,25 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     variable_context.push(Datum::of(123));
     assert(opcode_registry.execute(Opcode::SET_LOCAL, variable_context));
     assert(variable_scope.getLocal(1).intValue() == 123);
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_LOCAL, libreshockwave::lingo::code(Opcode::GET_LOCAL), 2});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_LOCAL, libreshockwave::lingo::code(Opcode::GET_LOCAL), 2});
     assert(opcode_registry.execute(Opcode::GET_LOCAL, variable_context));
     assert(variable_context.pop().intValue() == 123);
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_PARAM, libreshockwave::lingo::code(Opcode::SET_PARAM), 0});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_PARAM, libreshockwave::lingo::code(Opcode::SET_PARAM), 0});
     variable_context.push(Datum::of(44));
     assert(opcode_registry.execute(Opcode::SET_PARAM, variable_context));
     assert(variable_scope.getParam(0).intValue() == 44);
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_PARAM, libreshockwave::lingo::code(Opcode::GET_PARAM), 0});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_PARAM, libreshockwave::lingo::code(Opcode::GET_PARAM), 0});
     assert(opcode_registry.execute(Opcode::GET_PARAM, variable_context));
     assert(variable_context.pop().intValue() == 44);
     globals.clear();
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_GLOBAL, libreshockwave::lingo::code(Opcode::SET_GLOBAL), 42});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_GLOBAL, libreshockwave::lingo::code(Opcode::SET_GLOBAL), 42});
     variable_context.push(Datum::of(std::string("scoreValue")));
     assert(opcode_registry.execute(Opcode::SET_GLOBAL, variable_context));
     assert(globals["globalName"].stringValue() == "scoreValue");
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_GLOBAL2, libreshockwave::lingo::code(Opcode::GET_GLOBAL2), 42});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_GLOBAL2, libreshockwave::lingo::code(Opcode::GET_GLOBAL2), 42});
     assert(opcode_registry.execute(Opcode::GET_GLOBAL2, variable_context));
     assert(variable_context.pop().stringValue() == "scoreValue");
-    variable_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_GLOBAL2, libreshockwave::lingo::code(Opcode::SET_GLOBAL2), 43});
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_GLOBAL2, libreshockwave::lingo::code(Opcode::SET_GLOBAL2), 43});
     variable_context.push(Datum::of(77));
     assert(opcode_registry.execute(Opcode::SET_GLOBAL2, variable_context));
     assert(globals["globalName2"].intValue() == 77);
@@ -9645,7 +9594,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto put_argument = [](int put_type, VarType var_type) {
         return (put_type << 4) | libreshockwave::id::code(var_type);
     };
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(1, VarType::LOCAL)});
@@ -9653,7 +9602,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     variable_context.push(Datum::of(2));
     assert(opcode_registry.execute(Opcode::PUT, variable_context));
     assert(variable_scope.getLocal(1).stringValue() == "fresh");
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(3, VarType::LOCAL)});
@@ -9661,7 +9610,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     variable_context.push(Datum::of(2));
     assert(opcode_registry.execute(Opcode::PUT, variable_context));
     assert(variable_scope.getLocal(1).stringValue() == "pre-fresh");
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(2, VarType::LOCAL)});
@@ -9670,7 +9619,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::PUT, variable_context));
     assert(variable_scope.getLocal(1).stringValue() == "pre-fresh-post");
 
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(1, VarType::PARAM)});
@@ -9679,7 +9628,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::PUT, variable_context));
     assert(variable_scope.getParam(0).intValue() == 88);
 
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(1, VarType::GLOBAL)});
@@ -9687,7 +9636,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     variable_context.push(Datum::of(42));
     assert(opcode_registry.execute(Opcode::PUT, variable_context));
     assert(globals["globalName"].stringValue() == "A");
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(2, VarType::GLOBAL)});
@@ -9699,7 +9648,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     Datum put_receiver = Datum::scriptInstance("putReceiver");
     Scope put_property_scope(&script, handler, {}, put_receiver);
     ExecutionContext put_property_context(put_property_scope,
-                                        ScriptChunk::Instruction{0,
+                                        libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                  Opcode::PUT,
                                                                  libreshockwave::lingo::code(Opcode::PUT),
                                                                  put_argument(1, VarType::PROPERTY)},
@@ -9710,7 +9659,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     put_property_context.push(Datum::of(50));
     assert(opcode_registry.execute(Opcode::PUT, put_property_context));
     assert(put_receiver.scriptInstanceValue().getProperty("health").stringValue() == "hp");
-    put_property_context.setInstruction(ScriptChunk::Instruction{0,
+    put_property_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                Opcode::PUT,
                                                                libreshockwave::lingo::code(Opcode::PUT),
                                                                put_argument(3, VarType::PROPERTY)});
@@ -9741,7 +9690,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         last_field_value = value;
         field_backing = value;
     };
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(1, VarType::FIELD)});
@@ -9753,7 +9702,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(last_field_cast_lib == 2);
     assert(last_field_value == "field-new");
     assert(field_backing == "field-new");
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT,
                                                             libreshockwave::lingo::code(Opcode::PUT),
                                                             put_argument(2, VarType::FIELD)});
@@ -9777,7 +9726,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                    int first_line,
                                    int last_line) {
         variable_scope.setLocal(1, Datum::of(std::move(value)));
-        variable_context.setInstruction(ScriptChunk::Instruction{0,
+        variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                 Opcode::DELETE_CHUNK,
                                                                 libreshockwave::lingo::code(Opcode::DELETE_CHUNK),
                                                                 libreshockwave::id::code(VarType::LOCAL)});
@@ -9813,7 +9762,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                 int first_line,
                                 int last_line) {
         variable_scope.setLocal(1, Datum::of(std::move(value)));
-        variable_context.setInstruction(ScriptChunk::Instruction{0,
+        variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                 Opcode::PUT_CHUNK,
                                                                 libreshockwave::lingo::code(Opcode::PUT_CHUNK),
                                                                 put_argument(put_type, VarType::LOCAL)});
@@ -9884,7 +9833,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
 
     variable_scope.setParam(0, Datum::of(std::string("abcdef")));
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::DELETE_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::DELETE_CHUNK),
                                                             libreshockwave::id::code(VarType::PARAM)});
@@ -9893,7 +9842,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::DELETE_CHUNK, variable_context));
     assert(variable_scope.getParam(0).stringValue() == "aef");
     variable_scope.setParam(0, Datum::of(std::string("abcd")));
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::PUT_CHUNK),
                                                             put_argument(1, VarType::PARAM)});
@@ -9904,7 +9853,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(variable_scope.getParam(0).stringValue() == "aXXd");
 
     globals["globalName"] = Datum::of(std::string("abcd"));
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::DELETE_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::DELETE_CHUNK),
                                                             libreshockwave::id::code(VarType::GLOBAL)});
@@ -9913,7 +9862,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::DELETE_CHUNK, variable_context));
     assert(globals["globalName"].stringValue() == "ad");
     globals["globalName"] = Datum::of(std::string("abcd"));
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::PUT_CHUNK),
                                                             put_argument(1, VarType::GLOBAL)});
@@ -9924,7 +9873,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(globals["globalName"].stringValue() == "aXXd");
 
     put_receiver.scriptInstanceValue().setProperty("health", Datum::of(std::string("abcd")));
-    put_property_context.setInstruction(ScriptChunk::Instruction{0,
+    put_property_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                Opcode::DELETE_CHUNK,
                                                                libreshockwave::lingo::code(Opcode::DELETE_CHUNK),
                                                                libreshockwave::id::code(VarType::PROPERTY)});
@@ -9933,7 +9882,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::DELETE_CHUNK, put_property_context));
     assert(put_receiver.scriptInstanceValue().getProperty("health").stringValue() == "ad");
     put_receiver.scriptInstanceValue().setProperty("health", Datum::of(std::string("abcd")));
-    put_property_context.setInstruction(ScriptChunk::Instruction{0,
+    put_property_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                Opcode::PUT_CHUNK,
                                                                libreshockwave::lingo::code(Opcode::PUT_CHUNK),
                                                                put_argument(1, VarType::PROPERTY)});
@@ -9944,7 +9893,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(put_receiver.scriptInstanceValue().getProperty("health").stringValue() == "aXXd");
 
     field_backing = "abcd";
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::DELETE_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::DELETE_CHUNK),
                                                             libreshockwave::id::code(VarType::FIELD)});
@@ -9958,7 +9907,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(last_field_cast_lib == 3);
     assert(field_backing == "ad");
     field_backing = "abcd";
-    variable_context.setInstruction(ScriptChunk::Instruction{0,
+    variable_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                             Opcode::PUT_CHUNK,
                                                             libreshockwave::lingo::code(Opcode::PUT_CHUNK),
                                                             put_argument(1, VarType::FIELD)});
@@ -9976,14 +9925,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     builtin_context.field_setter = {};
 
     Scope list_scope(&script, handler, {});
-    ExecutionContext list_context(list_scope, ScriptChunk::Instruction{0, Opcode::PUSH_ARG_LIST, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST), 3});
+    ExecutionContext list_context(list_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_ARG_LIST, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST), 3});
     list_context.push(Datum::of(1));
     list_context.push(Datum::of(std::string("two")));
     list_context.push(Datum::of(3));
     assert(opcode_registry.execute(Opcode::PUSH_ARG_LIST, list_context));
     assert(list_context.peek().type() == DatumType::ArgList);
     assert(list_context.peek().argListValue().args()[1].stringValue() == "two");
-    list_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_LIST, libreshockwave::lingo::code(Opcode::PUSH_LIST), 0});
+    list_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_LIST, libreshockwave::lingo::code(Opcode::PUSH_LIST), 0});
     assert(opcode_registry.execute(Opcode::PUSH_LIST, list_context));
     const Datum linear_list = list_context.pop();
     assert(linear_list.listValue().count() == 3);
@@ -9991,14 +9940,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope single_list_scope(&script, handler, {});
     ExecutionContext single_list_context(single_list_scope,
-                                       ScriptChunk::Instruction{0, Opcode::PUSH_LIST, libreshockwave::lingo::code(Opcode::PUSH_LIST), 0});
+                                       libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_LIST, libreshockwave::lingo::code(Opcode::PUSH_LIST), 0});
     single_list_context.push(Datum::of(8));
     assert(opcode_registry.execute(Opcode::PUSH_LIST, single_list_context));
     assert(single_list_context.pop().listValue().getAt(1).intValue() == 8);
 
     Scope prop_list_scope(&script, handler, {});
     ExecutionContext prop_list_context(prop_list_scope,
-                                     ScriptChunk::Instruction{0, Opcode::PUSH_ARG_LIST_NO_RET, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST_NO_RET), 6});
+                                     libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_ARG_LIST_NO_RET, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST_NO_RET), 6});
     prop_list_context.push(Datum::symbol("name"));
     prop_list_context.push(Datum::of(std::string("first")));
     prop_list_context.push(Datum::symbol("name"));
@@ -10008,7 +9957,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(opcode_registry.execute(Opcode::PUSH_ARG_LIST_NO_RET, prop_list_context));
     assert(prop_list_context.peek().type() == DatumType::ArgListNoRet);
     assert(prop_list_context.peek().argListNoRetValue().args().size() == 6);
-    prop_list_context.setInstruction(ScriptChunk::Instruction{0, Opcode::PUSH_PROP_LIST, libreshockwave::lingo::code(Opcode::PUSH_PROP_LIST), 0});
+    prop_list_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_PROP_LIST, libreshockwave::lingo::code(Opcode::PUSH_PROP_LIST), 0});
     assert(opcode_registry.execute(Opcode::PUSH_PROP_LIST, prop_list_context));
     const Datum prop_list = prop_list_context.pop();
     assert(prop_list.propListValue().properties().size() == 3);
@@ -10019,11 +9968,11 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     Datum receiver_instance = Datum::scriptInstance("behavior");
     receiver_instance.scriptInstanceValue().setProperty("health", Datum::of(10));
     Scope property_scope(&script, handler, {}, receiver_instance);
-    ExecutionContext property_context(property_scope, ScriptChunk::Instruction{0, Opcode::GET_PROP, libreshockwave::lingo::code(Opcode::GET_PROP), 50},
+    ExecutionContext property_context(property_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_PROP, libreshockwave::lingo::code(Opcode::GET_PROP), 50},
                                      &registry, &builtin_context, callbacks);
     assert(opcode_registry.execute(Opcode::GET_PROP, property_context));
     assert(property_context.pop().intValue() == 10);
-    property_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_PROP, libreshockwave::lingo::code(Opcode::SET_PROP), 50});
+    property_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_PROP, libreshockwave::lingo::code(Opcode::SET_PROP), 50});
     property_context.push(Datum::of(11));
     variable_traces.clear();
     assert(opcode_registry.execute(Opcode::SET_PROP, property_context));
@@ -10035,7 +9984,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto receiver_ancestor = Datum::scriptInstance("receiverParent");
     receiver_ancestor.scriptInstanceValue().setProperty("shared", Datum::of(33));
     receiver_instance.scriptInstanceValue().setProperty("ancestor", receiver_ancestor);
-    property_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_PROP, libreshockwave::lingo::code(Opcode::SET_PROP), 126});
+    property_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_PROP, libreshockwave::lingo::code(Opcode::SET_PROP), 126});
     property_context.push(Datum::voidValue());
     variable_traces.clear();
     assert(opcode_registry.execute(Opcode::SET_PROP, property_context));
@@ -10049,7 +9998,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto run_object_property_get = [&](Datum object, int name_id) {
         Scope object_scope(&script, handler, {});
         ExecutionContext object_context(object_scope,
-                                       ScriptChunk::Instruction{0, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), name_id},
+                                       libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), name_id},
                                        &registry,
                                        &builtin_context,
                                        callbacks);
@@ -10121,7 +10070,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(run_object_property_get(object_prop_list, 50).intValue() == 1);
     Scope set_object_scope(&script, handler, {});
     ExecutionContext set_object_context(set_object_scope,
-                                      ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 50},
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 50},
                                       &registry,
                                       &builtin_context,
                                       callbacks);
@@ -10143,7 +10092,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         set_cast_lib_property_value = value;
         return true;
     };
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 123});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 123});
     set_object_context.push(Datum::castLibRef(CastLibId(3)));
     set_object_context.push(Datum::of(std::string("Updated Cast")));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10154,7 +10103,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Datum set_object_instance = Datum::scriptInstance("setObject");
     variable_traces.clear();
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 50});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 50});
     set_object_context.push(set_object_instance);
     set_object_context.push(Datum::of(123));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10166,7 +10115,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto set_object_ancestor = Datum::scriptInstance("setObjectParent");
     set_object_ancestor.scriptInstanceValue().setProperty("shared", Datum::of(31));
     set_object_instance.scriptInstanceValue().setProperty("ancestor", set_object_ancestor);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 126});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 126});
     set_object_context.push(set_object_instance);
     set_object_context.push(Datum::of(777));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10191,7 +10140,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         set_cast_member_property_value = value;
         return true;
     };
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 123});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 123});
     set_object_context.push(object_member_ref);
     set_object_context.push(Datum::of(std::string("table")));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10201,25 +10150,25 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     builtin_context.cast_member_property_setter = {};
 
     Datum object_property_point = Datum::intPoint(9, 8);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 52});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 52});
     set_object_context.push(object_property_point);
     set_object_context.push(Datum::of(14));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_point.asIntPoint()->x == 14);
     assert(object_property_point.asIntPoint()->y == 8);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 84});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 84});
     set_object_context.push(object_property_point);
     set_object_context.push(Datum::of(std::string("15")));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_point.asIntPoint()->y == 15);
 
     Datum object_property_rect = Datum::intRect(1, 2, 3, 4);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 130});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 130});
     set_object_context.push(object_property_rect);
     set_object_context.push(Datum::of(7.9F));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_rect.asIntRect()->left == 7);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 131});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 131});
     set_object_context.push(object_property_rect);
     set_object_context.push(Datum::castLibRef(CastLibId(10)));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10229,7 +10178,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     const Datum object_property_timer = object_property_timeouts.createTimeout("propTimer", 500, "tick", Datum::voidValue());
     builtin_context.timeout_manager = &object_property_timeouts;
     assert(run_object_property_get(object_property_timer, 124).intValue() == 500);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 124});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 124});
     set_object_context.push(object_property_timer);
     set_object_context.push(Datum::of(250));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10246,13 +10195,13 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(run_object_property_get(Datum::soundRef(), 140).boolValue());
     assert(run_object_property_get(Datum::soundRef(), 56).asSymbol()->name == "sound");
     assert(run_object_property_get(Datum::soundChannel(4), 86).intValue() == 80);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 86});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 86});
     set_object_context.push(Datum::soundChannel(4));
     set_object_context.push(Datum::of(300));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_sound_manager.getVolume(4) == 255);
     assert(run_object_property_get(Datum::soundChannel(4), 86).intValue() == 255);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 137});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 137});
     set_object_context.push(Datum::soundRef());
     set_object_context.push(Datum::FALSE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10262,7 +10211,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     set_object_context.push(Datum::TRUE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_sound_manager.isEnabled());
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 138});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 138});
     set_object_context.push(Datum::soundRef());
     set_object_context.push(Datum::of(5));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10272,12 +10221,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     set_object_context.push(Datum::of(99));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_property_sound_manager.getSoundLevel() == 7);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 139});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 139});
     set_object_context.push(Datum::soundRef());
     set_object_context.push(Datum::FALSE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(!object_property_sound_manager.soundKeepDevice());
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 140});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 140});
     set_object_context.push(Datum::soundRef());
     set_object_context.push(Datum::FALSE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10286,7 +10235,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     auto image_set_bitmap = std::make_shared<Bitmap>(1, 1, 32);
     assert(!image_set_bitmap->isNativeAlpha());
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 98});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 98});
     set_object_context.push(Datum::imageRef(image_set_bitmap));
     set_object_context.push(Datum::TRUE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10306,7 +10255,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         }
         return BuiltinContext::ResolvedPalette{new_image_palette, Datum::CastMemberRef{5, 6}, std::nullopt};
     };
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 99});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 99});
     set_object_context.push(Datum::imageRef(indexed_image_set_bitmap));
     set_object_context.push(Datum::castMemberRef(CastLibId(5), MemberId(6)));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10346,47 +10295,47 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(run_object_property_get(Datum::stageRef(), 81).intValue() == 0x224466);
     assert(run_object_property_get(Datum::spriteRef(ChannelId(9)), 83).intValue() == 44);
     assert(run_object_property_get(Datum::of(9), 83).intValue() == 44);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 80});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 80});
     set_object_context.push(Datum::movieRef());
     set_object_context.push(Datum::of(std::string("|")));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("itemDelimiter").stringValue() == "|");
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 144});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 144});
     set_object_context.push(Datum::movieRef());
     set_object_context.push(Datum::TRUE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("centerStage").boolValue());
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 145});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 145});
     set_object_context.push(Datum::movieRef());
     set_object_context.push(Datum::of(2));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("buttonStyle").intValue() == 2);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 146});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 146});
     set_object_context.push(Datum::movieRef());
     set_object_context.push(Datum::of(512));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("preLoadRAM").intValue() == 512);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 153});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 153});
     set_object_context.push(Datum::playerRef());
     set_object_context.push(Datum::TRUE);
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("switchColorDepth").boolValue());
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 154});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 154});
     set_object_context.push(Datum::playerRef());
     set_object_context.push(Datum::of(640));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getMovieProp("timeoutLength").intValue() == 640);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 82});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 82});
     set_object_context.push(Datum::stageRef());
     set_object_context.push(Datum::of(std::string("Main Stage")));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_movie_props.getStageProp("title").stringValue() == "Main Stage");
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 84});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 84});
     set_object_context.push(Datum::spriteRef(ChannelId(9)));
     set_object_context.push(Datum::of(66));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
     assert(object_sprite_props.getSpriteProp(9, "locV").intValue() == 66);
-    set_object_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 83});
+    set_object_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_OBJ_PROP, libreshockwave::lingo::code(Opcode::SET_OBJ_PROP), 83});
     set_object_context.push(Datum::of(9));
     set_object_context.push(Datum::of(77));
     assert(opcode_registry.execute(Opcode::SET_OBJ_PROP, set_object_context));
@@ -10396,87 +10345,87 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope chained_scope(&script, handler, {});
     ExecutionContext chained_context(chained_scope,
-                                    ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 78},
+                                    libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 78},
                                     &registry,
                                     &builtin_context,
                                     callbacks);
     chained_context.push(Datum::list({Datum::of(4), Datum::of(5)}));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 5);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 51});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 51});
     chained_context.push(Datum::list({Datum::of(4), Datum::of(5)}));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 2);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 53});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 53});
     chained_context.push(Datum::list({Datum::of(4), Datum::of(5)}));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 54});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 54});
     chained_context.push(Datum::of(std::string("abc")));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 3);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 127});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 127});
     chained_context.push(Datum::of(std::string("right=a*\r\nleft=b")));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 52});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 52});
     chained_context.push(Datum::intPoint(6, 7));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 6);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
     chained_context.push(Datum::intPoint(6, 7));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 55});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 55});
     chained_context.push(Datum::colorRef(200, 20, 10));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 200);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
     chained_context.push(Datum::colorRef(200, 20, 10));
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
     Datum chained_props = Datum::propList();
     chained_props.propListValue().properties().emplace_back(Datum::symbol("health"), Datum::of(31));
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 50});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 50});
     chained_context.push(chained_props);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 31);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 51});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 51});
     chained_context.push(chained_props);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 1);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 53});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 53});
     chained_context.push(chained_props);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
     Datum chained_instance = Datum::scriptInstance("chained");
     chained_instance.scriptInstanceValue().setProperty("health", Datum::of(41));
     chained_instance.scriptInstanceValue().setProperty("1", Datum::of(99));
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 50});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 50});
     chained_context.push(chained_instance);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().intValue() == 41);
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 56});
     chained_context.push(chained_instance);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
-    chained_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 132});
+    chained_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_CHAINED_PROP, libreshockwave::lingo::code(Opcode::GET_CHAINED_PROP), 132});
     chained_context.push(chained_instance);
     assert(opcode_registry.execute(Opcode::GET_CHAINED_PROP, chained_context));
     assert(chained_context.pop().isVoid());
 
     Scope top_level_scope(&script, handler, {});
     ExecutionContext top_level_context(top_level_scope,
-                                     ScriptChunk::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 76},
+                                     libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 76},
                                      &registry,
                                      &builtin_context,
                                      callbacks);
     assert(opcode_registry.execute(Opcode::GET_TOP_LEVEL_PROP, top_level_context));
     assert(top_level_context.pop().type() == DatumType::PlayerRef);
-    top_level_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 77});
+    top_level_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 77});
     assert(opcode_registry.execute(Opcode::GET_TOP_LEVEL_PROP, top_level_context));
     assert(top_level_context.pop().type() == DatumType::MovieRef);
-    top_level_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 136});
+    top_level_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_TOP_LEVEL_PROP, libreshockwave::lingo::code(Opcode::GET_TOP_LEVEL_PROP), 136});
     assert(opcode_registry.execute(Opcode::GET_TOP_LEVEL_PROP, top_level_context));
     const auto top_level_sound = top_level_context.pop();
     assert(top_level_sound.asSoundRef() != nullptr);
@@ -10485,7 +10434,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto run_legacy_get = [&](int property_type, Datum target, int property_id) {
         Scope legacy_get_scope(&script, handler, {});
         ExecutionContext legacy_get_context(legacy_get_scope,
-                                          ScriptChunk::Instruction{0, Opcode::GET, libreshockwave::lingo::code(Opcode::GET), property_type},
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET, libreshockwave::lingo::code(Opcode::GET), property_type},
                                           &registry,
                                           &builtin_context,
                                           callbacks);
@@ -10506,7 +10455,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope legacy_set_scope(&script, handler, {});
     ExecutionContext legacy_set_context(legacy_set_scope,
-                                      ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x00},
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x00},
                                       &registry,
                                       &builtin_context,
                                       callbacks);
@@ -10514,7 +10463,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     legacy_set_context.push(Datum::of(0x01));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
     assert(legacy_set_scope.stackSize() == 0);
-    legacy_set_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x06});
+    legacy_set_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x06});
     legacy_set_context.push(Datum::of(7));
     legacy_set_context.push(Datum::of(std::string("spriteValue")));
     legacy_set_context.push(Datum::of(0x01));
@@ -10592,7 +10541,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
     assert(run_legacy_get(0x08, Datum::of(5), 0x02).intValue() == 7);
     assert(run_legacy_get(0x08, Datum::of(6), 0x02).intValue() == 0);
-    legacy_set_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x00});
+    legacy_set_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x00});
     legacy_set_context.push(Datum::of(8));
     legacy_set_context.push(Datum::of(0x00));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
@@ -10617,19 +10566,19 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     legacy_set_context.push(Datum::of(0x05));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
     assert(legacy_movie_props.getMovieProp("timeoutScript").stringValue() == "legacy timeout");
-    legacy_set_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x06});
+    legacy_set_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x06});
     legacy_set_context.push(Datum::of(5));
     legacy_set_context.push(Datum::of(44));
     legacy_set_context.push(Datum::of(0x0D));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
     assert(legacy_sprite_props.getSpriteProp(5, "locH").intValue() == 44);
-    legacy_set_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x04});
+    legacy_set_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x04});
     legacy_set_context.push(Datum::of(2));
     legacy_set_context.push(Datum::of(99));
     legacy_set_context.push(Datum::of(0x01));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
     assert(legacy_sound_manager.getVolume(2) == 99);
-    legacy_set_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x07});
+    legacy_set_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET, libreshockwave::lingo::code(Opcode::SET), 0x07});
     legacy_set_context.push(Datum::of(5));
     legacy_set_context.push(Datum::of(0x1A));
     assert(opcode_registry.execute(Opcode::SET, legacy_set_context));
@@ -10714,7 +10663,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope field_scope(&script, handler, {});
     ExecutionContext field_context(field_scope,
-                                  ScriptChunk::Instruction{0, Opcode::GET_FIELD, libreshockwave::lingo::code(Opcode::GET_FIELD), 0},
+                                  libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_FIELD, libreshockwave::lingo::code(Opcode::GET_FIELD), 0},
                                   &registry,
                                   &builtin_context,
                                   callbacks);
@@ -10766,26 +10715,26 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     Scope security_ctor_scope(&script, handler, {});
     ExecutionContext security_ctor_context(
         security_ctor_scope,
-        ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 122},
+        libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 122},
         &registry,
         &builtin_context,
         callbacks);
     security_ctor_context.push(Datum::argList({Datum::of(std::string("SecurityCode"))}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, security_ctor_context));
     security_ctor_context.setInstruction(
-        ScriptChunk::Instruction{1, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), 90});
+        libreshockwave::moviesource::ScriptAsset::Instruction{1, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), 90});
     assert(opcode_registry.execute(Opcode::GET_OBJ_PROP, security_ctor_context));
     assert(security_ctor_context.peek().intValue() == 6);
     security_ctor_context.setInstruction(
-        ScriptChunk::Instruction{2, Opcode::PUSH_ARG_LIST, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST), 1});
+        libreshockwave::moviesource::ScriptAsset::Instruction{2, Opcode::PUSH_ARG_LIST, libreshockwave::lingo::code(Opcode::PUSH_ARG_LIST), 1});
     assert(opcode_registry.execute(Opcode::PUSH_ARG_LIST, security_ctor_context));
     security_ctor_context.setInstruction(
-        ScriptChunk::Instruction{3, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 91});
+        libreshockwave::moviesource::ScriptAsset::Instruction{3, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 91});
     assert(opcode_registry.execute(Opcode::EXT_CALL, security_ctor_context));
     assert(security_ctor_context.peek().asCastLibRef() != nullptr);
     assert(security_ctor_context.peek().asCastLibRef()->cast_lib == 6);
     security_ctor_context.setInstruction(
-        ScriptChunk::Instruction{4, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), 123});
+        libreshockwave::moviesource::ScriptAsset::Instruction{4, Opcode::GET_OBJ_PROP, libreshockwave::lingo::code(Opcode::GET_OBJ_PROP), 123});
     assert(opcode_registry.execute(Opcode::GET_OBJ_PROP, security_ctor_context));
     assert(security_ctor_context.pop().stringValue() == "SecurityCast");
     assert(security_ctor_scope.stackSize() == 0);
@@ -10796,41 +10745,41 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope movie_prop_scope(&script, handler, {});
     ExecutionContext movie_prop_context(movie_prop_scope,
-                                      ScriptChunk::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 57},
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 57},
                                       &registry,
                                       &builtin_context,
                                       callbacks);
     assert(opcode_registry.execute(Opcode::GET_MOVIE_PROP, movie_prop_context));
     assert(std::fabs(movie_prop_context.pop().floatValue() - 3.14159F) < 0.001F);
-    movie_prop_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 58});
+    movie_prop_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 58});
     assert(opcode_registry.execute(Opcode::GET_MOVIE_PROP, movie_prop_context));
     assert(movie_prop_context.pop().stringValue() == " ");
-    movie_prop_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::SET_MOVIE_PROP), 57});
+    movie_prop_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::SET_MOVIE_PROP), 57});
     movie_prop_context.push(Datum::of(1));
     assert(opcode_registry.execute(Opcode::SET_MOVIE_PROP, movie_prop_context));
     MovieProperties opcode_movie_props;
     opcode_movie_props.setEffectiveFrameSupplier([]() { return 12; });
     builtin_context.movie_properties = &opcode_movie_props;
-    movie_prop_context.setInstruction(ScriptChunk::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 79});
+    movie_prop_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::GET_MOVIE_PROP), 79});
     assert(opcode_registry.execute(Opcode::GET_MOVIE_PROP, movie_prop_context));
     assert(movie_prop_context.pop().intValue() == 12);
-    movie_prop_context.setInstruction(ScriptChunk::Instruction{0, Opcode::SET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::SET_MOVIE_PROP), 80});
+    movie_prop_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::SET_MOVIE_PROP, libreshockwave::lingo::code(Opcode::SET_MOVIE_PROP), 80});
     movie_prop_context.push(Datum::of(std::string("|")));
     assert(opcode_registry.execute(Opcode::SET_MOVIE_PROP, movie_prop_context));
     assert(opcode_movie_props.getMovieProp("itemDelimiter").stringValue() == "|");
 
     Scope the_scope(&script, handler, {Datum::of(1), Datum::of(2)});
     the_scope.setReturnValue(Datum::of(std::string("done")));
-    ExecutionContext the_context(the_scope, ScriptChunk::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 59},
+    ExecutionContext the_context(the_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 59},
                                 &registry, &builtin_context, callbacks);
     the_context.push(Datum::argList({}));
     assert(opcode_registry.execute(Opcode::THE_BUILTIN, the_context));
     assert(the_context.pop().intValue() == 2);
-    the_context.setInstruction(ScriptChunk::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 60});
+    the_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 60});
     the_context.push(Datum::argList({}));
     assert(opcode_registry.execute(Opcode::THE_BUILTIN, the_context));
     assert(the_context.pop().stringValue() == "done");
-    the_context.setInstruction(ScriptChunk::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 79});
+    the_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::THE_BUILTIN, libreshockwave::lingo::code(Opcode::THE_BUILTIN), 79});
     the_context.push(Datum::argList({}));
     assert(opcode_registry.execute(Opcode::THE_BUILTIN, the_context));
     assert(the_context.pop().intValue() == 12);
@@ -10838,7 +10787,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope local_call_scope(&script, handler, {});
     ExecutionContext local_call_context(local_call_scope,
-                                      ScriptChunk::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
                                       &registry,
                                       &builtin_context,
                                       callbacks);
@@ -10848,7 +10797,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope local_no_ret_scope(&script, handler, {});
     ExecutionContext local_no_ret_context(local_no_ret_scope,
-                                       ScriptChunk::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
+                                       libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::LOCAL_CALL, libreshockwave::lingo::code(Opcode::LOCAL_CALL), 1},
                                        &registry,
                                        &builtin_context,
                                        callbacks);
@@ -10858,40 +10807,40 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope ext_call_scope(&script, handler, {});
     ExecutionContext ext_call_context(ext_call_scope,
-                                    ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61},
+                                    libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61},
                                     &registry,
                                     &builtin_context,
                                     callbacks);
     ext_call_context.push(Datum::argList({Datum::of(1), Datum::of(2)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().stringValue() == "exec:99:2");
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 62});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 62});
     ext_call_context.push(Datum::argList({Datum::of(-5)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().intValue() == 5);
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 63});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 63});
     ext_call_context.push(Datum::argList({}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().stringValue() == " ");
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 158});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 158});
     ext_call_context.push(Datum::argList({Datum::of(0x0F), Datum::of(0x33)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().intValue() == 0x3C);
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 163});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 163});
     ext_call_context.push(Datum::argList({Datum::of(std::string("15")), Datum::of(0x33)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().intValue() == 0x03);
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 159});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 159});
     ext_call_context.push(Datum::argList({Datum::of(std::string(1, static_cast<char>(0xF2)))}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().intValue() == 0xF2);
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 160});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 160});
     ext_call_context.push(Datum::argList({Datum::of(0xF2)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     const std::string ext_byte_string = ext_call_context.pop().stringValue();
     assert(ext_byte_string.size() == 1);
     assert(static_cast<unsigned char>(ext_byte_string.front()) == 0xF2);
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 161});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 161});
     ext_call_context.push(Datum::argList({Datum::symbol("door")}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().stringValue() == "door");
@@ -10901,14 +10850,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
         assert(max == 7);
         return 4;
     };
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 162});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 162});
     ext_call_context.push(Datum::argList({Datum::of(7)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().intValue() == 4);
     assert(ext_random_calls == 1);
     builtin_context.random_int_handler = {};
     Datum ext_add_list = Datum::list({Datum::of(1)});
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 164});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 164});
     ext_call_context.push(Datum::argList({ext_add_list, Datum::of(2)}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().isVoid());
@@ -10917,7 +10866,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope ext_no_ret_scope(&script, handler, {});
     ExecutionContext ext_no_ret_context(ext_no_ret_scope,
-                                     ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61},
+                                     libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61},
                                      &registry,
                                      &builtin_context,
                                      callbacks);
@@ -10929,7 +10878,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     builtin_context.return_value = Datum::voidValue();
     Scope ext_return_scope(&script, handler, {});
     ExecutionContext ext_return_context(ext_return_scope,
-                                      ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 155},
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 155},
                                       &registry,
                                       &builtin_context,
                                       callbacks);
@@ -10943,12 +10892,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(builtin_context.return_value.isVoid());
 
     auto make_immediate_ext_handler = [](Opcode push_opcode, int arg_count, int handler_name_id) {
-        std::vector<ScriptChunk::Instruction> instructions{
-            ScriptChunk::Instruction{0, push_opcode, libreshockwave::lingo::code(push_opcode), arg_count},
-            ScriptChunk::Instruction{1, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), handler_name_id}
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions{
+            libreshockwave::moviesource::ScriptAsset::Instruction{0, push_opcode, libreshockwave::lingo::code(push_opcode), arg_count},
+            libreshockwave::moviesource::ScriptAsset::Instruction{1, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), handler_name_id}
         };
         std::unordered_map<int, int> index_map{{0, 0}, {1, 1}};
-        return ScriptChunk::Handler{200,
+        return libreshockwave::moviesource::ScriptAsset::Handler{200,
                                     0,
                                     static_cast<int>(instructions.size()),
                                     0,
@@ -10963,15 +10912,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
 
     auto immediate_builtin_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 62);
-    ScriptChunk immediate_builtin_script(nullptr,
-                                       ChunkId(704),
-                                       ScriptChunkType::MovieScript,
-                                       0,
-                                       {immediate_builtin_handler},
-                                       {},
-                                       {},
-                                       {},
-                                       {});
+    auto immediate_builtin_script = makeScriptAsset(704,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_builtin_handler},
+                                  {});
     Scope immediate_builtin_scope(&immediate_builtin_script, immediate_builtin_handler, {});
     ExecutionContext immediate_builtin_context(immediate_builtin_scope,
                                              immediate_builtin_handler.instructions[0],
@@ -10984,15 +10928,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_builtin_context.pop().intValue() == 9);
 
     auto immediate_char_to_num_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 159);
-    ScriptChunk immediate_char_to_num_script(nullptr,
-                                         ChunkId(724),
-                                         ScriptChunkType::MovieScript,
-                                         0,
-                                         {immediate_char_to_num_handler},
-                                         {},
-                                         {},
-                                         {},
-                                         {});
+    auto immediate_char_to_num_script = makeScriptAsset(724,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_char_to_num_handler},
+                                  {});
     Scope immediate_char_to_num_scope(&immediate_char_to_num_script, immediate_char_to_num_handler, {});
     ExecutionContext immediate_char_to_num_context(immediate_char_to_num_scope,
                                                immediate_char_to_num_handler.instructions[0],
@@ -11005,15 +10944,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_char_to_num_context.pop().intValue() == 65);
 
     auto immediate_num_to_char_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 160);
-    ScriptChunk immediate_num_to_char_script(nullptr,
-                                         ChunkId(725),
-                                         ScriptChunkType::MovieScript,
-                                         0,
-                                         {immediate_num_to_char_handler},
-                                         {},
-                                         {},
-                                         {},
-                                         {});
+    auto immediate_num_to_char_script = makeScriptAsset(725,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_num_to_char_handler},
+                                  {});
     Scope immediate_num_to_char_scope(&immediate_num_to_char_script, immediate_num_to_char_handler, {});
     ExecutionContext immediate_num_to_char_context(immediate_num_to_char_scope,
                                                immediate_num_to_char_handler.instructions[0],
@@ -11026,15 +10960,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_num_to_char_context.pop().stringValue() == "B");
 
     auto immediate_bit_and_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 2, 163);
-    ScriptChunk immediate_bit_and_script(nullptr,
-                                      ChunkId(726),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {immediate_bit_and_handler},
-                                      {},
-                                      {},
-                                      {},
-                                      {});
+    auto immediate_bit_and_script = makeScriptAsset(726,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_bit_and_handler},
+                                  {});
     Scope immediate_bit_and_scope(&immediate_bit_and_script, immediate_bit_and_handler, {});
     ExecutionContext immediate_bit_and_context(immediate_bit_and_scope,
                                             immediate_bit_and_handler.instructions[0],
@@ -11061,15 +10990,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     expose_authored_char_to_num_handler = false;
 
     auto immediate_bit_or_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 2, 167);
-    ScriptChunk immediate_bit_or_script(nullptr,
-                                     ChunkId(727),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {immediate_bit_or_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto immediate_bit_or_script = makeScriptAsset(727,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_bit_or_handler},
+                                  {});
     Scope immediate_bit_or_scope(&immediate_bit_or_script, immediate_bit_or_handler, {});
     ExecutionContext immediate_bit_or_context(immediate_bit_or_scope,
                                            immediate_bit_or_handler.instructions[0],
@@ -11083,15 +11007,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_bit_or_context.pop().intValue() == 0x3F);
 
     auto immediate_integer_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 168);
-    ScriptChunk immediate_integer_script(nullptr,
-                                       ChunkId(728),
-                                       ScriptChunkType::MovieScript,
-                                       0,
-                                       {immediate_integer_handler},
-                                       {},
-                                       {},
-                                       {},
-                                       {});
+    auto immediate_integer_script = makeScriptAsset(728,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_integer_handler},
+                                  {});
     Scope immediate_integer_scope(&immediate_integer_script, immediate_integer_handler, {});
     ExecutionContext immediate_integer_context(immediate_integer_scope,
                                              immediate_integer_handler.instructions[0],
@@ -11104,15 +11023,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_integer_context.pop().intValue() == 255);
 
     auto immediate_min_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 2, 169);
-    ScriptChunk immediate_min_script(nullptr,
-                                   ChunkId(729),
-                                   ScriptChunkType::MovieScript,
-                                   0,
-                                   {immediate_min_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto immediate_min_script = makeScriptAsset(729,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_min_handler},
+                                  {});
     Scope immediate_min_scope(&immediate_min_script, immediate_min_handler, {});
     ExecutionContext immediate_min_context(immediate_min_scope,
                                          immediate_min_handler.instructions[0],
@@ -11126,15 +11040,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(std::fabs(immediate_min_context.pop().floatValue() - 2.5F) < 0.0001F);
 
     auto immediate_max_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 170);
-    ScriptChunk immediate_max_script(nullptr,
-                                   ChunkId(730),
-                                   ScriptChunkType::MovieScript,
-                                   0,
-                                   {immediate_max_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto immediate_max_script = makeScriptAsset(730,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_max_handler},
+                                  {});
     Scope immediate_max_scope(&immediate_max_script, immediate_max_handler, {});
     ExecutionContext immediate_max_context(immediate_max_scope,
                                          immediate_max_handler.instructions[0],
@@ -11147,15 +11056,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_max_context.pop().intValue() == 9);
 
     auto immediate_listp_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 171);
-    ScriptChunk immediate_listp_script(nullptr,
-                                     ChunkId(734),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {immediate_listp_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto immediate_listp_script = makeScriptAsset(734,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_listp_handler},
+                                  {});
     Scope immediate_listp_scope(&immediate_listp_script, immediate_listp_handler, {});
     ExecutionContext immediate_listp_context(immediate_listp_scope,
                                            immediate_listp_handler.instructions[0],
@@ -11168,15 +11072,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_listp_context.pop().boolValue());
 
     auto immediate_voidp_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 172);
-    ScriptChunk immediate_voidp_script(nullptr,
-                                     ChunkId(735),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {immediate_voidp_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto immediate_voidp_script = makeScriptAsset(735,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_voidp_handler},
+                                  {});
     Scope immediate_voidp_scope(&immediate_voidp_script, immediate_voidp_handler, {});
     ExecutionContext immediate_voidp_context(immediate_voidp_scope,
                                            immediate_voidp_handler.instructions[0],
@@ -11189,15 +11088,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_voidp_context.pop().boolValue());
 
     auto immediate_abs_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 173);
-    ScriptChunk immediate_abs_script(nullptr,
-                                   ChunkId(736),
-                                   ScriptChunkType::MovieScript,
-                                   0,
-                                   {immediate_abs_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto immediate_abs_script = makeScriptAsset(736,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_abs_handler},
+                                  {});
     Scope immediate_abs_scope(&immediate_abs_script, immediate_abs_handler, {});
     ExecutionContext immediate_abs_context(immediate_abs_scope,
                                          immediate_abs_handler.instructions[0],
@@ -11210,15 +11104,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_abs_context.pop().intValue() == 12);
 
     auto immediate_new_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 94);
-    ScriptChunk immediate_new_script(nullptr,
-                                   ChunkId(739),
-                                   ScriptChunkType::MovieScript,
-                                   0,
-                                   {immediate_new_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto immediate_new_script = makeScriptAsset(739,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_new_handler},
+                                  {});
     int immediate_new_property_lookups = 0;
     builtin_context.script_property_names_resolver = [&immediate_new_property_lookups](int cast_lib, int member_num) {
         ++immediate_new_property_lookups;
@@ -11269,15 +11158,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     builtin_context.script_property_names_resolver = {};
 
     auto immediate_count_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 70);
-    ScriptChunk immediate_count_script(nullptr,
-                                     ChunkId(705),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {immediate_count_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto immediate_count_script = makeScriptAsset(705,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_count_handler},
+                                  {});
     Scope immediate_count_scope(&immediate_count_script, immediate_count_handler, {});
     ExecutionContext immediate_count_context(immediate_count_scope,
                                            immediate_count_handler.instructions[0],
@@ -11290,15 +11174,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_count_context.pop().intValue() == 3);
 
     auto immediate_length_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 1, 165);
-    ScriptChunk immediate_length_script(nullptr,
-                                      ChunkId(710),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {immediate_length_handler},
-                                      {},
-                                      {},
-                                      {},
-                                      {});
+    auto immediate_length_script = makeScriptAsset(710,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_length_handler},
+                                  {});
     Scope immediate_length_scope(&immediate_length_script, immediate_length_handler, {});
     ExecutionContext immediate_length_context(immediate_length_scope,
                                             immediate_length_handler.instructions[0],
@@ -11310,15 +11189,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_length_context.pop().intValue() == 6);
 
     auto immediate_chars_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 3, 166);
-    ScriptChunk immediate_chars_script(nullptr,
-                                     ChunkId(711),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {immediate_chars_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
+    auto immediate_chars_script = makeScriptAsset(711,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_chars_handler},
+                                  {});
     Scope immediate_chars_scope(&immediate_chars_script, immediate_chars_handler, {});
     ExecutionContext immediate_chars_context(immediate_chars_scope,
                                            immediate_chars_handler.instructions[0],
@@ -11332,15 +11206,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_chars_context.pop().stringValue() == "bcd");
 
     auto immediate_bit_xor_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 2, 158);
-    ScriptChunk immediate_bit_xor_script(nullptr,
-                                      ChunkId(708),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {immediate_bit_xor_handler},
-                                      {},
-                                      {},
-                                      {},
-                                      {});
+    auto immediate_bit_xor_script = makeScriptAsset(708,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_bit_xor_handler},
+                                  {});
     Scope immediate_bit_xor_scope(&immediate_bit_xor_script, immediate_bit_xor_handler, {});
     ExecutionContext immediate_bit_xor_context(immediate_bit_xor_scope,
                                             immediate_bit_xor_handler.instructions[0],
@@ -11354,15 +11223,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Datum immediate_add_list = Datum::list({Datum::of(5)});
     auto immediate_add_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST_NO_RET, 2, 164);
-    ScriptChunk immediate_add_script(nullptr,
-                                   ChunkId(709),
-                                   ScriptChunkType::MovieScript,
-                                   0,
-                                   {immediate_add_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto immediate_add_script = makeScriptAsset(709,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_add_handler},
+                                  {});
     Scope immediate_add_scope(&immediate_add_script, immediate_add_handler, {});
     ExecutionContext immediate_add_context(immediate_add_scope,
                                          immediate_add_handler.instructions[0],
@@ -11377,12 +11241,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_add_list.listValue().getAt(2).intValue() == 6);
 
     auto make_immediate_obj_handler = [](Opcode push_opcode, int arg_count, int method_name_id) {
-        std::vector<ScriptChunk::Instruction> instructions{
-            ScriptChunk::Instruction{0, push_opcode, libreshockwave::lingo::code(push_opcode), arg_count},
-            ScriptChunk::Instruction{1, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), method_name_id}
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions{
+            libreshockwave::moviesource::ScriptAsset::Instruction{0, push_opcode, libreshockwave::lingo::code(push_opcode), arg_count},
+            libreshockwave::moviesource::ScriptAsset::Instruction{1, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), method_name_id}
         };
         std::unordered_map<int, int> index_map{{0, 0}, {1, 1}};
-        return ScriptChunk::Handler{201,
+        return libreshockwave::moviesource::ScriptAsset::Handler{201,
                                     0,
                                     static_cast<int>(instructions.size()),
                                     0,
@@ -11397,15 +11261,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     };
 
     auto immediate_string_get_prop_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 3, 67);
-    ScriptChunk immediate_string_get_prop_script(nullptr,
-                                             ChunkId(712),
-                                             ScriptChunkType::MovieScript,
-                                             0,
-                                             {immediate_string_get_prop_handler},
-                                             {},
-                                             {},
-                                             {},
-                                             {});
+    auto immediate_string_get_prop_script = makeScriptAsset(712,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_string_get_prop_handler},
+                                  {});
     Scope immediate_string_get_prop_scope(&immediate_string_get_prop_script, immediate_string_get_prop_handler, {});
     ExecutionContext immediate_string_get_prop_context(immediate_string_get_prop_scope,
                                                    immediate_string_get_prop_handler.instructions[0],
@@ -11443,15 +11302,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_missing_char_get_prop_context.pop().stringValue().empty());
 
     auto immediate_string_char_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 2, 69);
-    ScriptChunk immediate_string_char_script(nullptr,
-                                          ChunkId(713),
-                                          ScriptChunkType::MovieScript,
-                                          0,
-                                          {immediate_string_char_handler},
-                                          {},
-                                          {},
-                                          {},
-                                          {});
+    auto immediate_string_char_script = makeScriptAsset(713,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_string_char_handler},
+                                  {});
     Scope immediate_string_char_scope(&immediate_string_char_script, immediate_string_char_handler, {});
     ExecutionContext immediate_string_char_context(immediate_string_char_scope,
                                                 immediate_string_char_handler.instructions[0],
@@ -11475,15 +11329,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_string_missing_char_context.pop().stringValue().empty());
 
     auto immediate_string_line_count_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 2, 70);
-    ScriptChunk immediate_string_line_count_script(nullptr,
-                                               ChunkId(740),
-                                               ScriptChunkType::MovieScript,
-                                               0,
-                                               {immediate_string_line_count_handler},
-                                               {},
-                                               {},
-                                               {},
-                                               {});
+    auto immediate_string_line_count_script = makeScriptAsset(740,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_string_line_count_handler},
+                                  {});
     Scope immediate_string_line_count_scope(&immediate_string_line_count_script, immediate_string_line_count_handler, {});
     ExecutionContext immediate_string_line_count_context(immediate_string_line_count_scope,
                                                      immediate_string_line_count_handler.instructions[0],
@@ -11560,15 +11409,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(builtin_context.field_line_index_cache.size() == 2);
 
     auto immediate_prop_list_extra_arg_get_at_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 3, 64);
-    ScriptChunk immediate_prop_list_extra_arg_get_at_script(nullptr,
-                                                     ChunkId(713),
-                                                     ScriptChunkType::MovieScript,
-                                                     0,
-                                                     {immediate_prop_list_extra_arg_get_at_handler},
-                                                     {},
-                                                     {},
-                                                     {},
-                                                     {});
+    auto immediate_prop_list_extra_arg_get_at_script = makeScriptAsset(713,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_prop_list_extra_arg_get_at_handler},
+                                  {});
     Scope immediate_prop_list_extra_arg_get_at_scope(&immediate_prop_list_extra_arg_get_at_script,
                                               immediate_prop_list_extra_arg_get_at_handler,
                                               {});
@@ -11593,15 +11437,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .intValue() == 37);
 
     auto immediate_prop_list_numeric_get_at_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 2, 64);
-    ScriptChunk immediate_prop_list_numeric_get_at_script(nullptr,
-                                                    ChunkId(741),
-                                                    ScriptChunkType::MovieScript,
-                                                    0,
-                                                    {immediate_prop_list_numeric_get_at_handler},
-                                                    {},
-                                                    {},
-                                                    {},
-                                                    {});
+    auto immediate_prop_list_numeric_get_at_script = makeScriptAsset(741,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_prop_list_numeric_get_at_handler},
+                                  {});
     auto numeric_prop_list = Datum::propList();
     numeric_prop_list.propListValue().putTyped(Datum::symbol("first"), Datum::of(17));
     numeric_prop_list.propListValue().putTyped(Datum::of(std::string("9")), Datum::of(99));
@@ -11634,15 +11473,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_prop_list_string_fallback_get_at_context.pop().intValue() == 99);
 
     auto immediate_script_nested_get_at_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 3, 64);
-    ScriptChunk immediate_script_nested_get_at_script(nullptr,
-                                                 ChunkId(737),
-                                                 ScriptChunkType::MovieScript,
-                                                 0,
-                                                 {immediate_script_nested_get_at_handler},
-                                                 {},
-                                                 {},
-                                                 {},
-                                                 {});
+    auto immediate_script_nested_get_at_script = makeScriptAsset(737,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_script_nested_get_at_handler},
+                                  {});
     Scope immediate_script_nested_get_at_scope(&immediate_script_nested_get_at_script,
                                           immediate_script_nested_get_at_handler,
                                           {});
@@ -11661,15 +11495,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_script_nested_get_at_context.pop().intValue() == 22);
 
     auto immediate_script_nested_set_at_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST_NO_RET, 4, 65);
-    ScriptChunk immediate_script_nested_set_at_script(nullptr,
-                                                 ChunkId(738),
-                                                 ScriptChunkType::MovieScript,
-                                                 0,
-                                                 {immediate_script_nested_set_at_handler},
-                                                 {},
-                                                 {},
-                                                 {},
-                                                 {});
+    auto immediate_script_nested_set_at_script = makeScriptAsset(738,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_script_nested_set_at_handler},
+                                  {});
     Scope immediate_script_nested_set_at_scope(&immediate_script_nested_set_at_script,
                                           immediate_script_nested_set_at_handler,
                                           {});
@@ -11690,15 +11519,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(nested_set_script.scriptInstanceValue().getProperty("pDigits").listValue().getAt(2).intValue() == 44);
 
     auto immediate_prop_list_count_key_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 2, 70);
-    ScriptChunk immediate_prop_list_count_key_script(nullptr,
-                                                ChunkId(714),
-                                                ScriptChunkType::MovieScript,
-                                                0,
-                                                {immediate_prop_list_count_key_handler},
-                                                {},
-                                                {},
-                                                {},
-                                                {});
+    auto immediate_prop_list_count_key_script = makeScriptAsset(714,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_prop_list_count_key_handler},
+                                  {});
     Scope immediate_prop_list_count_key_scope(&immediate_prop_list_count_key_script,
                                          immediate_prop_list_count_key_handler,
                                          {});
@@ -11713,15 +11537,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_prop_list_count_key_context.pop().intValue() == 1);
 
     auto immediate_prop_list_get_prop_ref_indexed_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 3, 92);
-    ScriptChunk immediate_prop_list_get_prop_ref_indexed_script(nullptr,
-                                                         ChunkId(715),
-                                                         ScriptChunkType::MovieScript,
-                                                         0,
-                                                         {immediate_prop_list_get_prop_ref_indexed_handler},
-                                                         {},
-                                                         {},
-                                                         {},
-                                                         {});
+    auto immediate_prop_list_get_prop_ref_indexed_script = makeScriptAsset(715,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_prop_list_get_prop_ref_indexed_handler},
+                                  {});
     Scope immediate_prop_list_get_prop_ref_indexed_scope(&immediate_prop_list_get_prop_ref_indexed_script,
                                                   immediate_prop_list_get_prop_ref_indexed_handler,
                                                   {});
@@ -11741,15 +11560,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                .intValue() == 37);
 
     auto immediate_handler_no_ret_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST_NO_RET, 1, 61);
-    ScriptChunk immediate_handler_no_ret_script(nullptr,
-                                            ChunkId(706),
-                                            ScriptChunkType::MovieScript,
-                                            0,
-                                            {immediate_handler_no_ret_handler},
-                                            {},
-                                            {},
-                                            {},
-                                            {});
+    auto immediate_handler_no_ret_script = makeScriptAsset(706,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_handler_no_ret_handler},
+                                  {});
     Scope immediate_handler_no_ret_scope(&immediate_handler_no_ret_script, immediate_handler_no_ret_handler, {});
     ExecutionContext immediate_handler_no_ret_context(immediate_handler_no_ret_scope,
                                                   immediate_handler_no_ret_handler.instructions[0],
@@ -11761,15 +11575,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(immediate_handler_no_ret_scope.stackSize() == 0);
 
     auto immediate_return_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST_NO_RET, 1, 155);
-    ScriptChunk immediate_return_script(nullptr,
-                                      ChunkId(707),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {immediate_return_handler},
-                                      {},
-                                      {},
-                                      {},
-                                      {});
+    auto immediate_return_script = makeScriptAsset(707,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_return_handler},
+                                  {});
     Scope immediate_return_scope(&immediate_return_script, immediate_return_handler, {});
     ExecutionContext immediate_return_context(immediate_return_scope,
                                             immediate_return_handler.instructions[0],
@@ -11799,7 +11608,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(traced_immediate_context.pop().intValue() == 4);
 
     error_state = false;
-    ext_call_context.setInstruction(ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61});
+    ext_call_context.setInstruction(libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 61});
     ext_call_context.push(Datum::argList({Datum::of(std::string("throw"))}));
     assert(opcode_registry.execute(Opcode::EXT_CALL, ext_call_context));
     assert(ext_call_context.pop().isVoid());
@@ -11808,7 +11617,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto run_obj_call = [&](int name_id, std::vector<Datum> args, bool no_return = false) {
         Scope object_call_scope(&script, handler, {});
         ExecutionContext object_call_context(object_call_scope,
-                                           ScriptChunk::Instruction{0, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), name_id},
+                                           libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), name_id},
                                            &registry,
                                            &builtin_context,
                                            callbacks);
@@ -11862,7 +11671,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     Scope direct_script_instance_scope(&script, handler, {});
     ExecutionContext direct_script_instance_context(
         direct_script_instance_scope,
-        ScriptChunk::Instruction{0, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), 0},
+        libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::OBJ_CALL, libreshockwave::lingo::code(Opcode::OBJ_CALL), 0},
         &registry,
         &builtin_context,
         callbacks);
@@ -12124,15 +11933,10 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                                            "getProp",
                                            {Datum::symbol("rect"), Datum::of(4)}).intValue() == 2);
     auto immediate_image_get_prop_handler = make_immediate_obj_handler(Opcode::PUSH_ARG_LIST, 3, 67);
-    ScriptChunk immediate_image_get_prop_script(nullptr,
-                                            ChunkId(740),
-                                            ScriptChunkType::MovieScript,
-                                            0,
-                                            {immediate_image_get_prop_handler},
-                                            {},
-                                            {},
-                                            {},
-                                            {});
+    auto immediate_image_get_prop_script = makeScriptAsset(740,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {immediate_image_get_prop_handler},
+                                  {});
     Scope immediate_image_get_prop_scope(&immediate_image_get_prop_script, immediate_image_get_prop_handler, {});
     ExecutionContext immediate_image_get_prop_context(immediate_image_get_prop_scope,
                                                    immediate_image_get_prop_handler.instructions[0],
@@ -13924,7 +13728,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     Scope receiver_style_scope(&script, handler, {});
     ExecutionContext receiver_style_context(receiver_style_scope,
-                                          ScriptChunk::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 64},
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, libreshockwave::lingo::code(Opcode::EXT_CALL), 64},
                                           &registry,
                                           &builtin_context,
                                           callbacks);
@@ -14169,14 +13973,14 @@ void testLingoVmScopeAndExecutionContextFoundation() {
 
     auto run_unary = [&](Opcode opcode, Datum value) {
         Scope unary_scope(&script, handler, {});
-        ExecutionContext unary_context(unary_scope, ScriptChunk::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0});
+        ExecutionContext unary_context(unary_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0});
         unary_context.push(std::move(value));
         assert(opcode_registry.execute(opcode, unary_context));
         return unary_context.pop();
     };
     auto run_binary = [&](Opcode opcode, Datum a, Datum b) {
         Scope binary_scope(&script, handler, {});
-        ExecutionContext binary_context(binary_scope, ScriptChunk::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0});
+        ExecutionContext binary_context(binary_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0});
         binary_context.push(std::move(a));
         binary_context.push(std::move(b));
         assert(opcode_registry.execute(opcode, binary_context));
@@ -14193,7 +13997,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
                            int last_line) {
         Scope chunk_scope(&script, handler, {});
         ExecutionContext chunk_context(chunk_scope,
-                                      ScriptChunk::Instruction{0,
+                                      libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                Opcode::GET_CHUNK,
                                                                libreshockwave::lingo::code(Opcode::GET_CHUNK),
                                                                0},
@@ -14346,7 +14150,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     auto run_sprite_collision_opcode = [&](Opcode opcode, Datum first, Datum second) {
         Scope sprite_scope(&script, handler, {});
         ExecutionContext sprite_context(sprite_scope,
-                                       ScriptChunk::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0},
+                                       libreshockwave::moviesource::ScriptAsset::Instruction{0, opcode, libreshockwave::lingo::code(opcode), 0},
                                        &registry,
                                        &builtin_context,
                                        callbacks);
@@ -14368,38 +14172,38 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(!run_unary(Opcode::NOT, Datum::of(3)).boolValue());
 
     Scope ret_scope(&script, handler, {});
-    ExecutionContext ret_context(ret_scope, ScriptChunk::Instruction{0, Opcode::RET, 0x01, 0});
+    ExecutionContext ret_context(ret_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::RET, 0x01, 0});
     ret_context.push(Datum::of(std::string("returned")));
     assert(opcode_registry.execute(Opcode::RET, ret_context));
     assert(ret_scope.returned());
     assert(ret_scope.returnValue().stringValue() == "returned");
 
     Scope factory_scope(&script, handler, {});
-    ExecutionContext factory_context(factory_scope, ScriptChunk::Instruction{0, Opcode::RET_FACTORY, 0x02, 0});
+    ExecutionContext factory_context(factory_scope, libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::RET_FACTORY, 0x02, 0});
     assert(opcode_registry.execute(Opcode::RET_FACTORY, factory_context));
     assert(factory_scope.returned());
     assert(factory_scope.returnValue().isVoid());
 
     Scope jump_scope(&script, handler, {});
-    ExecutionContext jump_context(jump_scope, ScriptChunk::Instruction{5, Opcode::JMP, 0x53, 5});
+    ExecutionContext jump_context(jump_scope, libreshockwave::moviesource::ScriptAsset::Instruction{5, Opcode::JMP, 0x53, 5});
     assert(!opcode_registry.execute(Opcode::JMP, jump_context));
     assert(jump_scope.bytecodeIndex() == 2);
 
     Scope jump_zero_scope(&script, handler, {});
-    ExecutionContext jump_zero_context(jump_zero_scope, ScriptChunk::Instruction{5, Opcode::JMP_IF_Z, 0x55, 5});
+    ExecutionContext jump_zero_context(jump_zero_scope, libreshockwave::moviesource::ScriptAsset::Instruction{5, Opcode::JMP_IF_Z, 0x55, 5});
     jump_zero_context.push(Datum::of(0));
     assert(!opcode_registry.execute(Opcode::JMP_IF_Z, jump_zero_context));
     assert(jump_zero_scope.bytecodeIndex() == 2);
 
     Scope no_jump_scope(&script, handler, {});
-    ExecutionContext no_jump_context(no_jump_scope, ScriptChunk::Instruction{5, Opcode::JMP_IF_Z, 0x55, 5});
+    ExecutionContext no_jump_context(no_jump_scope, libreshockwave::moviesource::ScriptAsset::Instruction{5, Opcode::JMP_IF_Z, 0x55, 5});
     no_jump_context.push(Datum::of(1));
     assert(opcode_registry.execute(Opcode::JMP_IF_Z, no_jump_context));
     assert(no_jump_scope.bytecodeIndex() == 0);
 
     Scope repeat_scope(&script, handler, {});
     repeat_scope.setBytecodeIndex(2);
-    ExecutionContext repeat_context(repeat_scope, ScriptChunk::Instruction{10, Opcode::END_REPEAT, 0x54, 10});
+    ExecutionContext repeat_context(repeat_scope, libreshockwave::moviesource::ScriptAsset::Instruction{10, Opcode::END_REPEAT, 0x54, 10});
     assert(!opcode_registry.execute(Opcode::END_REPEAT, repeat_context));
     assert(repeat_scope.bytecodeIndex() == 0);
 
@@ -14418,21 +14222,21 @@ void testLingoVmRuntimeFoundation() {
                           std::vector<std::pair<Opcode, int>> ops,
                           int local_count = 0,
                           std::vector<int> arg_name_ids = {}) {
-        std::vector<ScriptChunk::Instruction> instructions;
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions;
         std::unordered_map<int, int> index_map;
         instructions.reserve(ops.size());
         for (std::size_t index = 0; index < ops.size(); ++index) {
             const int offset = static_cast<int>(index);
             const auto [opcode, argument] = ops[index];
             index_map[offset] = static_cast<int>(index);
-            instructions.push_back(ScriptChunk::Instruction{
+            instructions.push_back(libreshockwave::moviesource::ScriptAsset::Instruction{
                 offset,
                 opcode,
                 static_cast<int>(opcode),
                 argument
             });
         }
-        return ScriptChunk::Handler{
+        return libreshockwave::moviesource::ScriptAsset::Handler{
             name_id,
             0,
             static_cast<int>(instructions.size()),
@@ -14464,34 +14268,24 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::RET, 0}
     });
 
-    ScriptChunk script(nullptr,
-                       ChunkId(960),
-                       ScriptChunkType::MovieScript,
-                       0,
-                       {return_handler, global_handler, param_handler, stack_handler, step_limit_handler},
-                       {},
-                       {},
-                       {},
-                       {});
+    auto script = makeScriptAsset(960,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {return_handler, global_handler, param_handler, stack_handler, step_limit_handler},
+                                  {});
 
     LingoVM vm;
     assert(vm.file() == nullptr);
     assert(vm.callStackDepth() == 0);
     assert(vm.currentScope() == nullptr);
     assert(vm.formatCallStack() == "Lingo call stack: (empty)");
-    assert(LingoVM::isGlobalHandlerScriptType(ScriptChunkType::MovieScript));
-    assert(LingoVM::isGlobalHandlerScriptType(ScriptChunkType::Parent));
-    assert(!LingoVM::isGlobalHandlerScriptType(ScriptChunkType::Behavior));
+    assert(LingoVM::isGlobalHandlerScriptType(libreshockwave::moviesource::ScriptType::MovieScript));
+    assert(LingoVM::isGlobalHandlerScriptType(libreshockwave::moviesource::ScriptType::Parent));
+    assert(!LingoVM::isGlobalHandlerScriptType(libreshockwave::moviesource::ScriptType::Behavior));
 
-    ScriptChunk ancestor_script(nullptr,
-                               ChunkId(962),
-                               ScriptChunkType::Parent,
-                               0,
-                               {},
-                               {},
-                               {},
-                               {},
-                               {});
+    auto ancestor_script = makeScriptAsset(962,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {},
+                                  {});
     const auto deconstruct_receiver = Datum::scriptInstance("cleanup");
     const auto other_deconstruct_receiver = Datum::scriptInstance("cleanup");
     assert(LingoVM::shouldSkipDeconstructReentry("deconstruct",
@@ -14593,17 +14387,14 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::GET_LOCAL, 8},
         {Opcode::RET, 0}
     }, 2);
-    DirectorFile director8_file(ByteOrder::BigEndian, false, 800, ChunkType::MV93);
-    ScriptChunk director8_script(&director8_file,
-                                ChunkId(961),
-                                ScriptChunkType::MovieScript,
-                                0,
-                                {scaled_local_handler},
-                                {},
-                                {},
-                                {},
-                                {});
-    assert(vm.executeHandler(director8_script, scaled_local_handler).intValue() == 42);
+    auto director8_script = makeScriptAsset(961,
+                                           libreshockwave::moviesource::ScriptType::MovieScript,
+                                           {scaled_local_handler},
+                                           {});
+    auto director8_file_owner = std::make_shared<libreshockwave::moviesource::DirectorMovieSource>();
+    assert(vm.executeHandler(libreshockwave::lingo::vm::HandlerRef{&director8_script, &scaled_local_handler, nullptr, director8_file_owner},
+                            std::vector<Datum>(),
+                            Datum::voidValue()).intValue() == 42);
 
     auto trace_prologue_handler = make_handler(0, {
         {Opcode::GET_MOVIE_PROP, 1},
@@ -14622,42 +14413,34 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::PUSH_INT8, 42},
         {Opcode::RET, 0}
     });
-    ScriptChunk trace_prologue_script(nullptr,
-                                    ChunkId(962),
-                                    ScriptChunkType::MovieScript,
-                                    0,
-                                    {trace_prologue_handler},
-                                    {},
-                                    {},
-                                    {},
-                                    {});
-    auto trace_prologue_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(963),
-        std::vector<std::string>{
-            "tracePrologue",
-            "traceScript",
-            "return",
-            "_movie",
-            "_player"
-        });
+    auto trace_prologue_script = makeScriptAsset(962,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {trace_prologue_handler},
+                                  {});
+    trace_prologue_script.names = {
+        "tracePrologue",
+        "traceScript",
+        "return",
+        "_movie",
+        "_player"
+    };
     MovieProperties trace_prologue_movie;
     LingoVM trace_prologue_vm;
     trace_prologue_vm.builtinContext().movie_properties = &trace_prologue_movie;
     assert(trace_prologue_vm.executeHandler(
         HandlerRef{&trace_prologue_script,
-                   &trace_prologue_script.handlers().front(),
+                   &trace_prologue_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   trace_prologue_names}).intValue() == 42);
+                   }).intValue() == 42);
     assert(trace_prologue_movie.getMovieProp("traceScript").intValue() == 0);
     assert(trace_prologue_movie.setMovieProp("traceScript", Datum::TRUE));
     assert(trace_prologue_vm.executeHandler(
         HandlerRef{&trace_prologue_script,
-                   &trace_prologue_script.handlers().front(),
+                   &trace_prologue_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   trace_prologue_names}).intValue() == 0);
+                   }).intValue() == 0);
     assert(trace_prologue_movie.getMovieProp("traceScript").intValue() == 1);
 
     auto indexed_mutation_handler = make_handler(30, {
@@ -14689,27 +14472,19 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::GET_GLOBAL, 2},
         {Opcode::RET, 0}
     }, 2);
-    ScriptChunk indexed_mutation_script(nullptr,
-                                      ChunkId(963),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {indexed_mutation_handler},
-                                      {},
-                                      {},
-                                      {ScriptChunk::GlobalEntry{1}, ScriptChunk::GlobalEntry{2}},
-                                      {});
-    auto indexed_mutation_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(964),
-        std::vector<std::string>{
-            "snapshotLoop",
-            "tasks",
-            "seen",
-            "count",
-            "getAt",
-            "append",
-            "deleteAt"
-        });
+    auto indexed_mutation_script = makeScriptAsset(963,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
+                                       {indexed_mutation_handler},
+                                       {});
+    indexed_mutation_script.names = {
+        "snapshotLoop",
+        "tasks",
+        "seen",
+        "count",
+        "getAt",
+        "append",
+        "deleteAt"
+    };
     Datum task_list = Datum::propList();
     task_list.propListValue().properties().emplace_back(Datum::symbol("a"), Datum::of(10));
     task_list.propListValue().properties().emplace_back(Datum::symbol("b"), Datum::of(20));
@@ -14720,10 +14495,10 @@ void testLingoVmRuntimeFoundation() {
     indexed_mutation_vm.setGlobal("seen", Datum::list());
     const Datum indexed_mutation_result = indexed_mutation_vm.executeHandler(
         HandlerRef{&indexed_mutation_script,
-                   &indexed_mutation_script.handlers().front(),
+                   &indexed_mutation_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   indexed_mutation_names});
+                   });
     const auto& indexed_mutation_seen = indexed_mutation_result.listValue().items();
     assert(indexed_mutation_seen.size() == 4);
     assert(indexed_mutation_seen[0].intValue() == 10);
@@ -14765,30 +14540,20 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::GET_GLOBAL, 3},
         {Opcode::RET, 0}
     }, 3);
-    ScriptChunk indexed_prop_pair_script(nullptr,
-                                      ChunkId(965),
-                                      ScriptChunkType::MovieScript,
-                                      0,
-                                      {indexed_prop_pair_handler},
-                                      {},
-                                      {},
-                                      {ScriptChunk::GlobalEntry{1},
-                                       ScriptChunk::GlobalEntry{2},
-                                       ScriptChunk::GlobalEntry{3}},
-                                      {});
-    auto indexed_prop_pair_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(966),
-        std::vector<std::string>{
-            "snapshotPropPairLoop",
-            "params",
-            "seenKeys",
-            "seenValues",
-            "count",
-            "getPropAt",
-            "append",
-            "getAt"
-        });
+    auto indexed_prop_pair_script = makeScriptAsset(965,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
+                                       {indexed_prop_pair_handler},
+                                       {});
+    indexed_prop_pair_script.names = {
+        "snapshotPropPairLoop",
+        "params",
+        "seenKeys",
+        "seenValues",
+        "count",
+        "getPropAt",
+        "append",
+        "getAt"
+    };
     Datum param_props = Datum::propList();
     param_props.propListValue().properties().emplace_back(Datum::symbol("string"), Datum::of(std::string("alpha")));
     param_props.propListValue().properties().emplace_back(Datum::symbol("integer"), Datum::of(42));
@@ -14798,10 +14563,10 @@ void testLingoVmRuntimeFoundation() {
     indexed_prop_pair_vm.setGlobal("seenValues", Datum::list());
     const Datum indexed_prop_pair_result = indexed_prop_pair_vm.executeHandler(
         HandlerRef{&indexed_prop_pair_script,
-                   &indexed_prop_pair_script.handlers().front(),
+                   &indexed_prop_pair_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   indexed_prop_pair_names});
+                   });
     const auto& indexed_prop_pair_keys = indexed_prop_pair_vm.getGlobal("seenKeys").listValue().items();
     const auto& indexed_prop_pair_values = indexed_prop_pair_result.listValue().items();
     assert(indexed_prop_pair_keys.size() == 2);
@@ -14830,34 +14595,26 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::OBJ_CALL, 5},
         {Opcode::RET, 0}
     });
-    ScriptChunk fast_list_mutation_script(nullptr,
-                                       ChunkId(967),
-                                       ScriptChunkType::MovieScript,
-                                       0,
+    auto fast_list_mutation_script = makeScriptAsset(967,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
                                        {fast_list_mutation_handler},
-                                       {},
-                                       {},
-                                       {ScriptChunk::GlobalEntry{1}},
                                        {});
-    auto fast_list_mutation_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(968),
-        std::vector<std::string>{
-            "fastListMutation",
-            "items",
-            "append",
-            "addAt",
-            "deleteAt",
-            "duplicate"
-        });
+    fast_list_mutation_script.names = {
+        "fastListMutation",
+        "items",
+        "append",
+        "addAt",
+        "deleteAt",
+        "duplicate"
+    };
     LingoVM fast_list_mutation_vm;
     fast_list_mutation_vm.setGlobal("items", Datum::list({Datum::of(1), Datum::of(2)}));
     Datum fast_list_duplicate = fast_list_mutation_vm.executeHandler(
         HandlerRef{&fast_list_mutation_script,
-                   &fast_list_mutation_script.handlers().front(),
+                   &fast_list_mutation_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   fast_list_mutation_names});
+                   });
     auto& fast_list_items = fast_list_mutation_vm.getGlobal("items").listValue().items();
     assert(fast_list_items.size() == 3);
     assert(fast_list_items[0].intValue() == 1);
@@ -14881,34 +14638,26 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::OBJ_CALL, 3},
         {Opcode::RET, 0}
     });
-    ScriptChunk script_instance_nested_set_prop_script(nullptr,
-                                                  ChunkId(980),
-                                                  ScriptChunkType::MovieScript,
-                                                  0,
-                                                  {script_instance_nested_set_prop_handler},
-                                                  {ScriptChunk::LiteralEntry{1, 0, std::string("data"), 0.0}},
-                                                  {},
-                                                  {ScriptChunk::GlobalEntry{1}},
-                                                  {});
-    auto script_instance_nested_set_prop_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(981),
-        std::vector<std::string>{
-            "scriptInstanceNestedSetProp",
-            "box",
-            "setProp",
-            "getProp"
-        });
+    auto script_instance_nested_set_prop_script = makeScriptAsset(980,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
+                                       {script_instance_nested_set_prop_handler},
+                                       {libreshockwave::moviesource::ScriptAsset::LiteralEntry{1, 0, std::string("data"), 0.0}});
+    script_instance_nested_set_prop_script.names = {
+        "scriptInstanceNestedSetProp",
+        "box",
+        "setProp",
+        "getProp"
+    };
     LingoVM script_instance_nested_set_prop_vm;
     Datum script_instance_box = Datum::scriptInstance("box");
     script_instance_box.scriptInstanceValue().setProperty("data", Datum::list({Datum::of(1), Datum::of(2), Datum::of(3)}));
     script_instance_nested_set_prop_vm.setGlobal("box", script_instance_box);
     const Datum script_instance_nested_set_prop_result = script_instance_nested_set_prop_vm.executeHandler(
         HandlerRef{&script_instance_nested_set_prop_script,
-                   &script_instance_nested_set_prop_script.handlers().front(),
+                   &script_instance_nested_set_prop_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   script_instance_nested_set_prop_names});
+                   });
     assert(script_instance_nested_set_prop_result.intValue() == 99);
     const Datum updated_script_instance_box = script_instance_nested_set_prop_vm.getGlobal("box");
     const auto& updated_script_instance_data =
@@ -14933,33 +14682,23 @@ void testLingoVmRuntimeFoundation() {
     auto outer_get_props_handler = make_handler(35, {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}}, 0, {6});
     auto group_get_offer_handler = make_handler(36, {{Opcode::GET_GLOBAL, 7}, {Opcode::RET, 0}});
     auto offer_get_name_handler = make_handler(37, {{Opcode::PUSH_CONS, 0}, {Opcode::RET, 0}});
-    ScriptChunk nested_object_call_script(nullptr,
-                                       ChunkId(982),
-                                       ScriptChunkType::Parent,
-                                       0,
+    auto nested_object_call_script = makeScriptAsset(982,
+                                       libreshockwave::moviesource::ScriptType::Parent,
                                        {nested_object_call_handler,
                                         outer_get_props_handler,
                                         group_get_offer_handler,
                                         offer_get_name_handler},
-                                       {ScriptChunk::LiteralEntry{1, 0, std::string("item-code"), 0.0}},
-                                       {},
-                                       {ScriptChunk::GlobalEntry{1},
-                                        ScriptChunk::GlobalEntry{2},
-                                        ScriptChunk::GlobalEntry{7}},
-                                       {});
-    auto nested_object_call_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(983),
-        std::vector<std::string>{
-            "nestedObjectCall",
-            "outer",
-            "group",
-            "getOffer",
-            "getName",
-            "getProps",
-            "name",
-            "offer"
-        });
+                                       {libreshockwave::moviesource::ScriptAsset::LiteralEntry{1, 0, std::string("item-code"), 0.0}});
+    nested_object_call_script.names = {
+        "nestedObjectCall",
+        "outer",
+        "group",
+        "getOffer",
+        "getName",
+        "getProps",
+        "name",
+        "offer"
+    };
     LingoVM nested_object_call_vm;
     Datum outer_object = Datum::scriptInstance("outer", Datum::CastMemberRef{10, 1});
     Datum group_object = Datum::scriptInstance("group", Datum::CastMemberRef{10, 2});
@@ -14969,7 +14708,7 @@ void testLingoVmRuntimeFoundation() {
     nested_object_call_vm.setGlobal("offer", offer_object);
     std::vector<std::string> nested_object_call_trace;
     nested_object_call_vm.builtinContext().script_handler_finder =
-        [&nested_object_call_script, nested_object_call_names, &nested_object_call_trace](
+        [&nested_object_call_script, &nested_object_call_trace](
             int cast_lib,
             int member_num,
             const std::string& handler_name)
@@ -14979,38 +14718,32 @@ void testLingoVmRuntimeFoundation() {
         if (cast_lib == 10 && member_num == 1 && handler_name == "getProps") {
             return BuiltinContext::ScriptHandlerLocation{
                 &nested_object_call_script,
-                &nested_object_call_script.handlers()[1],
+                &nested_object_call_script.handlers[1],
                 nullptr,
-                nullptr,
-                nested_object_call_names,
-                ScriptChunkType::Parent};
+                nullptr,                libreshockwave::moviesource::ScriptType::Parent};
         }
         if (cast_lib == 10 && member_num == 2 && handler_name == "getOffer") {
             return BuiltinContext::ScriptHandlerLocation{
                 &nested_object_call_script,
-                &nested_object_call_script.handlers()[2],
+                &nested_object_call_script.handlers[2],
                 nullptr,
-                nullptr,
-                nested_object_call_names,
-                ScriptChunkType::Parent};
+                nullptr,                libreshockwave::moviesource::ScriptType::Parent};
         }
         if (cast_lib == 10 && member_num == 3 && handler_name == "getName") {
             return BuiltinContext::ScriptHandlerLocation{
                 &nested_object_call_script,
-                &nested_object_call_script.handlers()[3],
+                &nested_object_call_script.handlers[3],
                 nullptr,
-                nullptr,
-                nested_object_call_names,
-                ScriptChunkType::Parent};
+                nullptr,                libreshockwave::moviesource::ScriptType::Parent};
         }
         return std::nullopt;
     };
     const Datum nested_object_call_result = nested_object_call_vm.executeHandler(
         HandlerRef{&nested_object_call_script,
-                   &nested_object_call_script.handlers().front(),
+                   &nested_object_call_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   nested_object_call_names});
+                   });
     assert(nested_object_call_result.stringValue() == "item-code");
     assert((nested_object_call_trace == std::vector<std::string>{
         "10:2:getOffer",
@@ -15024,15 +14757,10 @@ void testLingoVmRuntimeFoundation() {
         {Opcode::GET, 0},
         {Opcode::RET, 0}
     });
-    ScriptChunk legacy_chunk_property_script(nullptr,
-                                          ChunkId(984),
-                                          ScriptChunkType::MovieScript,
-                                          0,
-                                          {legacy_last_char_handler},
-                                          {ScriptChunk::LiteralEntry{1, 0, std::string("leftwall target*"), 0.0}},
-                                          {},
-                                          {},
-                                          {});
+    auto legacy_chunk_property_script = makeScriptAsset(984,
+                                       libreshockwave::moviesource::ScriptType::MovieScript,
+                                       {legacy_last_char_handler},
+                                       {libreshockwave::moviesource::ScriptAsset::LiteralEntry{1, 0, std::string("leftwall target*"), 0.0}});
     auto legacy_chunk_property_names = std::make_shared<ScriptNamesChunk>(
         nullptr,
         ChunkId(985),
@@ -15045,42 +14773,27 @@ void testLingoVmRuntimeFoundation() {
     assert(legacy_chunk_movie.setMovieProp("itemDelimiter", Datum::of(std::string("="))));
     assert(legacy_chunk_property_vm.executeHandler(
                HandlerRef{&legacy_chunk_property_script,
-                          &legacy_chunk_property_script.handlers()[0],
+                          &legacy_chunk_property_script.handlers[0],
                           nullptr,
                           nullptr,
-                          legacy_chunk_property_names})
+                          })
                .stringValue() == "*");
 
     auto child_ancestor_handler = make_handler(6, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}});
     auto parent_ancestor_handler = make_handler(7, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}});
     auto grand_ancestor_handler = make_handler(8, {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}}, 0, {9});
-    ScriptChunk child_call_ancestor_script(nullptr,
-                                        ChunkId(970),
-                                        ScriptChunkType::Parent,
-                                        0,
-                                        {child_ancestor_handler},
-                                        {},
-                                        {},
-                                        {},
-                                        {});
-    ScriptChunk parent_call_ancestor_script(nullptr,
-                                         ChunkId(971),
-                                         ScriptChunkType::Parent,
-                                         0,
-                                         {parent_ancestor_handler},
-                                         {},
-                                         {},
-                                         {},
-                                         {});
-    ScriptChunk grand_call_ancestor_script(nullptr,
-                                        ChunkId(972),
-                                        ScriptChunkType::Parent,
-                                        0,
-                                        {grand_ancestor_handler},
-                                        {},
-                                        {},
-                                        {},
-                                        {});
+    auto child_call_ancestor_script = makeScriptAsset(970,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {child_ancestor_handler},
+                                  {});
+    auto parent_call_ancestor_script = makeScriptAsset(971,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {parent_ancestor_handler},
+                                  {});
+    auto grand_call_ancestor_script = makeScriptAsset(972,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {grand_ancestor_handler},
+                                  {});
     Datum child_instance = Datum::scriptInstance("child", Datum::CastMemberRef{1, 10});
     Datum parent_instance = Datum::scriptInstance("parent", Datum::CastMemberRef{2, 20});
     Datum grand_instance = Datum::scriptInstance("grand", Datum::CastMemberRef{3, 30});
@@ -15124,7 +14837,7 @@ void testLingoVmRuntimeFoundation() {
         const auto* active_scope = ancestor_vm.currentScope();
         assert(active_scope != nullptr);
         assert(active_scope->receiver() == child_instance);
-        const int script_id = active_scope->script()->id().value();
+        const int script_id = active_scope->script()->chunk_id;
         if (script_id == 970) {
             assert(active_scope->displayArgumentCount() == 0);
         } else {
@@ -15166,26 +14879,18 @@ void testLingoVmRuntimeFoundation() {
                                               {{Opcode::GET_PARAM, 0}, {Opcode::RET, 0}},
                                               0,
                                               {1});
-    ScriptChunk object_argument_script(nullptr,
-                                     ChunkId(963),
-                                     ScriptChunkType::MovieScript,
-                                     0,
-                                     {object_argument_handler},
-                                     {},
-                                     {},
-                                     {},
-                                     {});
-    auto object_argument_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(962),
-        std::vector<std::string>{"objectArgument", "tObject"});
+    auto object_argument_script = makeScriptAsset(963,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {object_argument_handler},
+                                  {});
+    object_argument_script.names = {"objectArgument", "tObject"};
     LingoVM object_argument_vm;
     const auto object_argument_result = object_argument_vm.executeHandler(
         HandlerRef{&object_argument_script,
-                   &object_argument_script.handlers().front(),
+                   &object_argument_script.handlers.front(),
                    nullptr,
                    nullptr,
-                   object_argument_names},
+                   },
         {implicit_receiver, Datum::of(std::string("message"))});
     assert(object_argument_result.type() == DatumType::ScriptInstanceRef);
 
@@ -15195,27 +14900,19 @@ void testLingoVmRuntimeFoundation() {
                                            {{Opcode::GET_PARAM, 1}, {Opcode::RET, 0}},
                                            0,
                                            {1, 2});
-    ScriptChunk this_receiver_script(nullptr,
-                                   ChunkId(964),
-                                   ScriptChunkType::Parent,
-                                   0,
-                                   {this_receiver_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
-    auto this_receiver_names = std::make_shared<ScriptNamesChunk>(
-        nullptr,
-        ChunkId(965),
-        std::vector<std::string>{"receiverHandler", "this", "value"});
+    auto this_receiver_script = makeScriptAsset(964,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {this_receiver_handler},
+                                  {});
+    this_receiver_script.names = {"receiverHandler", "this", "value"};
     const auto this_receiver = Datum::scriptInstance("this-receiver");
     LingoVM this_receiver_vm;
     assert(this_receiver_vm.executeHandler(
                HandlerRef{&this_receiver_script,
-                          &this_receiver_script.handlers().front(),
+                          &this_receiver_script.handlers.front(),
                           nullptr,
                           nullptr,
-                          this_receiver_names},
+                          },
                {Datum::of(9)},
                this_receiver)
                .intValue() == 9);
@@ -15224,15 +14921,10 @@ void testLingoVmRuntimeFoundation() {
     auto inner_param_builtin_handler = make_handler(7, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}}, 0, {20, 21});
     auto outer_param_builtin_handler = make_handler(8, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}}, 0, {22});
     auto receiver_param_builtin_handler = make_handler(9, {{Opcode::PUSH_ZERO, 0}, {Opcode::RET, 0}}, 0, {26});
-    ScriptChunk param_builtin_script(nullptr,
-                                   ChunkId(963),
-                                   ScriptChunkType::Parent,
-                                   0,
-                                   {inner_param_builtin_handler, outer_param_builtin_handler, receiver_param_builtin_handler},
-                                   {},
-                                   {},
-                                   {},
-                                   {});
+    auto param_builtin_script = makeScriptAsset(963,
+                                  libreshockwave::moviesource::ScriptType::Parent,
+                                  {inner_param_builtin_handler, outer_param_builtin_handler, receiver_param_builtin_handler},
+                                  {});
     LingoVM param_builtin_vm;
     const auto param_builtin_receiver = Datum::scriptInstance("param-receiver");
     param_builtin_vm.opcodeRegistry().registerHandler(Opcode::PUSH_ZERO, [&](ExecutionContext& context) {
@@ -15493,15 +15185,10 @@ void testLingoVmRuntimeFoundation() {
     }
     long_ops.emplace_back(Opcode::RET, 0);
     auto long_handler = make_handler(6, std::move(long_ops));
-    ScriptChunk long_script(nullptr,
-                           ChunkId(961),
-                           ScriptChunkType::MovieScript,
-                           0,
-                           {long_handler},
-                           {},
-                           {},
-                           {},
-                           {});
+    auto long_script = makeScriptAsset(961,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {long_handler},
+                                  {});
     auto install_noop_push_zero = [](LingoVM& target, int& calls) {
         target.opcodeRegistry().registerHandler(Opcode::PUSH_ZERO, [&calls](ExecutionContext&) {
             ++calls;
@@ -16434,7 +16121,7 @@ void testScoreNavigationFoundation() {
     assert(ScoreNavigator::resolveMarkerFrame({1, 5, 10}, 2, 0) == 1);
     assert(ScoreNavigator::resolveMarkerFrame({1, 5, 10}, 2, -1) == 0);
 
-    const DirectorFile* no_file = nullptr;
+    const MovieSource* no_file = nullptr;
     ScoreNavigator empty_navigator(no_file);
     assert(empty_navigator.getFrameCount() == 0);
     assert(empty_navigator.getAllSpans().empty());
@@ -17122,7 +16809,7 @@ void testSpritePropertiesFoundation() {
     assert(!props.setSpriteProp(7, "unknownSpriteProperty", Datum::of(1)));
 }
 
-std::shared_ptr<ScriptChunk> makeBehaviorScript(int id, ScriptChunkType type = ScriptChunkType::Behavior) {
+std::shared_ptr<ScriptChunk> makeBehaviorScript(int id, ScriptChunkType type = libreshockwave::chunks::ScriptChunkType::Behavior) {
     return std::make_shared<ScriptChunk>(nullptr,
                                          ChunkId(id),
                                          type,
@@ -17134,7 +16821,7 @@ std::shared_ptr<ScriptChunk> makeBehaviorScript(int id, ScriptChunkType type = S
                                          std::vector<std::uint8_t>{});
 }
 
-std::shared_ptr<ScriptChunk> makeScriptWithHandlers(int id, ScriptChunkType type, std::vector<int> handler_name_ids) {
+std::shared_ptr<ScriptChunk> makeScriptWithHandlers(int id, ScriptChunkType type, std::vector<int> handler_name_ids, const libreshockwave::moviesource::MovieSource* file = nullptr) {
     std::vector<ScriptChunk::Handler> handlers;
     handlers.reserve(handler_name_ids.size());
     for (int name_id : handler_name_ids) {
@@ -17153,7 +16840,7 @@ std::shared_ptr<ScriptChunk> makeScriptWithHandlers(int id, ScriptChunkType type
             {}
         });
     }
-    return std::make_shared<ScriptChunk>(nullptr,
+    return std::make_shared<ScriptChunk>(file,
                                          ChunkId(id),
                                          type,
                                          0,
@@ -17255,15 +16942,20 @@ void testEventDispatcherFoundation() {
         ChunkId(900),
         std::vector<std::string>{"", "mouseUp", "enterFrame", "startMovie", "mouseDown", "mouseEnter"});
 
-    auto mouse_script = makeScriptWithHandlers(901, ScriptChunkType::Behavior, {1});
-    auto frame_script = makeScriptWithHandlers(902, ScriptChunkType::Behavior, {1, 2});
-    auto movie_script = makeScriptWithHandlers(903, ScriptChunkType::MovieScript, {1, 2, 3});
+    auto source = std::make_shared<libreshockwave::moviesource::DirectorMovieSource>();
+    source->setScriptNames(names);
+    auto mouse_script = makeScriptWithHandlers(901, libreshockwave::chunks::ScriptChunkType::Behavior, {1}, source.get());
+    auto frame_script = makeScriptWithHandlers(902, libreshockwave::chunks::ScriptChunkType::Behavior, {1, 2}, source.get());
+    auto movie_script = makeScriptWithHandlers(903, libreshockwave::chunks::ScriptChunkType::MovieScript, {1, 2, 3}, source.get());
+    source->addScriptChunk(mouse_script);
+    source->addScriptChunk(frame_script);
+    source->addScriptChunk(movie_script);
 
     BehaviorManager behavior_manager;
-    auto first = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 11), 1);
-    auto second = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 12), 1);
-    auto third = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 13), 2);
-    auto frame = behavior_manager.getOrCreateFrameScriptForScript(frame_script, ScoreBehaviorRef(1, 20), 7);
+    auto first = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 11), 1, source);
+    auto second = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 12), 1, source);
+    auto third = behavior_manager.createInstanceForScript(mouse_script, ScoreBehaviorRef(1, 13), 2, source);
+    auto frame = behavior_manager.getOrCreateFrameScriptForScript(frame_script, ScoreBehaviorRef(1, 20), 7, source);
     assert(frame != nullptr);
 
     SpriteRegistry sprite_registry;
@@ -17275,13 +16967,16 @@ void testEventDispatcherFoundation() {
     dispatcher.setScriptNamesResolver([names](const std::shared_ptr<ScriptChunk>&) {
         return names;
     });
-    dispatcher.addMovieScript(EventDispatcher::MovieScriptTarget{movie_script, names});
+    auto movie_script_asset = std::make_shared<libreshockwave::moviesource::ScriptAsset>(
+        libreshockwave::moviesource::DirectorRecordConverter::toScriptAsset(
+            *movie_script, names.get(), libreshockwave::moviesource::ScriptType::MovieScript, "MovieScript"));
+    dispatcher.addMovieScript(EventDispatcher::MovieScriptTarget{movie_script_asset, nullptr, libreshockwave::moviesource::ScriptType::MovieScript});
 
     dispatcher.setRespondsPredicate([names](const EventTarget& target, std::string_view handler) {
         if (target.kind == EventTargetKind::ScriptInstance) {
             return handler == "mouseUp" || handler == "mouseDown";
         }
-        return target.script && target.script->findHandler(handler, names.get()).has_value();
+        return target.script && target.script->findHandler(handler).has_value();
     });
 
     auto label_for_target = [](const EventTarget& target) {
@@ -17292,7 +16987,7 @@ void testEventDispatcherFoundation() {
             case EventTargetKind::ScriptInstance:
                 return std::string("dynamic:") + std::to_string(target.channel);
             case EventTargetKind::MovieScript:
-                return std::string("movie:") + std::to_string(target.script ? target.script->id().value() : 0);
+                return std::string("movie:") + std::to_string(target.script ? target.script->chunk_id : 0);
         }
         return std::string("unknown");
     };
@@ -17309,6 +17004,9 @@ void testEventDispatcherFoundation() {
     });
 
     dispatcher.dispatchGlobalEvent(PlayerEvent::MouseUp, {Datum::of(1)});
+    for (const auto& c : calls) {
+        std::cerr << "[DEBUG] call: " << c << std::endl;
+    }
     assert((calls == std::vector<std::string>{
         "behavior:1:11:mouseUp:1",
         "behavior:2:13:mouseUp:1",
@@ -17371,8 +17069,12 @@ void testFrameContextFoundation() {
         ChunkId(920),
         std::vector<std::string>{"", "beginSprite", "endSprite", "stepFrame", "prepareFrame", "enterFrame", "exitFrame"});
 
-    auto sprite_script = makeScriptWithHandlers(921, ScriptChunkType::Behavior, {1, 2, 3, 4, 5, 6});
-    auto frame_script = makeScriptWithHandlers(922, ScriptChunkType::Behavior, {1, 3, 4, 5, 6});
+    auto source = std::make_shared<libreshockwave::moviesource::DirectorMovieSource>();
+    source->setScriptNames(names);
+    auto sprite_script = makeScriptWithHandlers(921, libreshockwave::chunks::ScriptChunkType::Behavior, {1, 2, 3, 4, 5, 6}, source.get());
+    auto frame_script = makeScriptWithHandlers(922, libreshockwave::chunks::ScriptChunkType::Behavior, {1, 3, 4, 5, 6}, source.get());
+    source->addScriptChunk(sprite_script);
+    source->addScriptChunk(frame_script);
 
     std::vector<ScoreChunk::FrameInterval> intervals{
         ScoreChunk::FrameInterval{
@@ -17418,7 +17120,7 @@ void testFrameContextFoundation() {
         return names;
     });
     dispatcher.setRespondsPredicate([names](const EventTarget& target, std::string_view handler) {
-        return target.script && target.script->findHandler(handler, names.get()).has_value();
+        return target.script && target.script->findHandler(handler).has_value();
     });
 
     std::vector<std::string> calls;
@@ -17456,6 +17158,7 @@ void testFrameContextFoundation() {
     context.goToFrame(2);
     assert(context.effectiveFrame() == 2);
 
+    behavior_manager.setDefaultSourceFile(source);
     context.initializeFirstFrame();
     assert(context.currentFrame() == 1);
     assert(context.effectiveFrame() == 1);
@@ -17468,6 +17171,9 @@ void testFrameContextFoundation() {
 
     calls.clear();
     context.dispatchBeginSpriteEvents();
+    for (const auto& c : calls) {
+        std::cerr << "[DEBUG] beginSprite call: " << c << std::endl;
+    }
     assert((calls == std::vector<std::string>{
         "3:11:beginSprite",
         "3:14:beginSprite",
@@ -17507,6 +17213,9 @@ void testFrameContextFoundation() {
     assert(context.advanceFrame() == 3);
     assert(context.currentFrame() == 3);
     assert((context.activeChannels() == std::set<int>{5}));
+    for (const auto& c : calls) {
+        std::cerr << "[DEBUG] frame3 call: " << c << std::endl;
+    }
     assert(behavior_manager.getInstancesForChannel(3).empty());
     assert(behavior_manager.getInstancesForChannel(4).empty());
     assert(behavior_manager.getInstancesForChannel(5).size() == 1);
@@ -17541,8 +17250,12 @@ void testFrameContextFoundation() {
     assert(context.activeChannels().empty());
     assert(behavior_manager.instanceCount() == 0);
 
-    auto flags_script = makeScriptWithHandlers(930, ScriptChunkType::Behavior, {1});
-    auto startup_frame_script = makeScriptWithHandlers(931, ScriptChunkType::Behavior, {1});
+    auto startup_source = std::make_shared<libreshockwave::moviesource::DirectorMovieSource>();
+    startup_source->setScriptNames(names);
+    auto flags_script = makeScriptWithHandlers(930, libreshockwave::chunks::ScriptChunkType::Behavior, {1}, startup_source.get());
+    auto startup_frame_script = makeScriptWithHandlers(931, libreshockwave::chunks::ScriptChunkType::Behavior, {1}, startup_source.get());
+    startup_source->addScriptChunk(flags_script);
+    startup_source->addScriptChunk(startup_frame_script);
     const std::string wait_params = "[#pWait: 3]";
     std::vector<std::vector<std::uint8_t>> startup_entries{
         {},
@@ -17580,7 +17293,7 @@ void testFrameContextFoundation() {
         return names;
     });
     startup_dispatcher.setRespondsPredicate([names](const EventTarget& target, std::string_view handler) {
-        return target.script && target.script->findHandler(handler, names.get()).has_value();
+        return target.script && target.script->findHandler(handler).has_value();
     });
 
     int startup_begin_calls = 0;
@@ -17597,6 +17310,7 @@ void testFrameContextFoundation() {
     startup_context.setScriptNameResolver([flags_script](const std::shared_ptr<ScriptChunk>& script) {
         return script == flags_script ? std::string("Flags behavior") : std::string("Startup frame script");
     });
+    startup_behavior_manager.setDefaultSourceFile(startup_source);
     startup_context.initializeFirstFrame();
     assert(startup_context.activeChannels().empty());
     assert(startup_behavior_manager.frameScriptInstance() != nullptr);
@@ -19669,10 +19383,11 @@ void testSpriteBakerFoundation() {
     }
     put_i32_at(file_data, 4, static_cast<std::uint32_t>(file_data.size() - 8));
 
-    auto film_file = DirectorFile::load(file_data);
-    auto file_backed_film_member = film_file->getCastMemberByNumber(1, 1);
+    auto film_file = MovieSource::load("test.dir", file_data);
+    auto file_backed_film_member = film_file->castMemberByNumber(1, 1);
     assert(file_backed_film_member != nullptr);
-    assert(film_file->getScoreForMember(file_backed_film_member) != nullptr);
+    assert(film_file->scoreForMember(file_backed_film_member) != nullptr);
+    auto file_backed_film_chunk = film_file->castMemberChunkForAsset(file_backed_film_member);
 
     SpriteBaker file_film_baker;
     int file_film_decode_calls = 0;
@@ -19697,7 +19412,7 @@ void testSpriteBakerFoundation() {
                                       0,
                                       true,
                                       SpriteType::FilmLoop,
-                                      file_backed_film_member,
+                                      file_backed_film_chunk,
                                       nullptr,
                                       0,
                                       0,
@@ -19800,7 +19515,7 @@ void testSpriteBakerFoundation() {
     }
     put_i32_at(text_file_data, 4, static_cast<std::uint32_t>(text_file_data.size() - 8));
 
-    auto text_file = DirectorFile::load(text_file_data);
+    auto text_file = MovieSource::load("test.dir", text_file_data);
     std::vector<std::uint8_t> text_specific_data(48, 0);
     put_i16_at(text_specific_data, 0, 1);
     text_specific_data[2] = 0xAA;
@@ -19819,7 +19534,7 @@ void testSpriteBakerFoundation() {
                                                             0,
                                                             0,
                                                             0);
-    assert(text_file->getTextForMember(file_text_member)->text() == file_text);
+    assert(text_file->textForMember(text_file->castMemberAssetForChunk(file_text_member))->text == file_text);
 
     class RecordingSpriteBakerTextRenderer final : public TextRenderer {
     public:
@@ -20016,7 +19731,7 @@ void testSpriteBakerFoundation() {
     white_stxt_data[white_stxt_data.size() - 4] = 0xFF;
     white_stxt_data[white_stxt_data.size() - 3] = 0xFF;
     white_stxt_data[white_stxt_data.size() - 2] = 0xFF;
-    auto white_text_file = DirectorFile::load(make_text_rifx({
+    auto white_text_file = MovieSource::load("test.dir", make_text_rifx({
         {"DRCF", text_config_data},
         {"KEY*", text_key_data},
         {"STXT", white_stxt_data}
@@ -20074,7 +19789,7 @@ void testSpriteBakerFoundation() {
     legacy_stxt_data.insert(legacy_stxt_data.end(), {0, 0, 0});
     append_i16(legacy_stxt_data, 9);
     legacy_stxt_data.insert(legacy_stxt_data.end(), {0x11, 0x22, 0x33, 0});
-    auto legacy_text_file = DirectorFile::load(make_text_rifx({
+    auto legacy_text_file = MovieSource::load("test.dir", make_text_rifx({
         {"DRCF", text_config_data},
         {"KEY*", text_key_data},
         {"STXT", legacy_stxt_data}
@@ -20410,13 +20125,13 @@ void testSpriteBakerFoundation() {
     }
     put_i32_at(xmed_file_data, 4, static_cast<std::uint32_t>(xmed_file_data.size() - 8));
 
-    auto xmed_file = DirectorFile::load(xmed_file_data);
-    assert(xmed_file->casts().size() == 1);
+    auto xmed_file = MovieSource::load("test.dir", xmed_file_data);
+    assert(xmed_file->castList()->entries.size() == 1);
     assert(xmed_file->castMembers().size() == 1);
     auto file_xmed_member = xmed_file->castMembers().front();
     assert(file_xmed_member != nullptr);
-    assert(file_xmed_member->id().value() == 2);
-    auto parsed_xmed = xmed_file->getXmedStyledTextForMember(file_xmed_member);
+    assert(file_xmed_member->chunk_id == 2);
+    auto parsed_xmed = xmed_file->xmedStyledTextForMember(file_xmed_member);
     assert(parsed_xmed.has_value());
     assert(parsed_xmed->text == "Xmed text");
     assert(parsed_xmed->font_name == "Geneva");
@@ -20429,6 +20144,7 @@ void testSpriteBakerFoundation() {
     RecordingSpriteBakerTextRenderer file_xmed_renderer;
     SpriteBaker file_xmed_baker;
     file_xmed_baker.setTextRenderer(&file_xmed_renderer);
+    auto file_xmed_chunk = xmed_file->castMemberChunkForAsset(file_xmed_member);
     RenderSprite file_xmed_sprite(14,
                                 0,
                                 0,
@@ -20437,7 +20153,7 @@ void testSpriteBakerFoundation() {
                                 0,
                                 true,
                                 SpriteType::Text,
-                                file_xmed_member,
+                                file_xmed_chunk,
                                 nullptr,
                                 0x778899,
                                 0x112233,
@@ -20476,7 +20192,7 @@ void testSpriteBakerFoundation() {
         }
     }
     assert(removed_xmed_color_section);
-    auto white_xmed_file = DirectorFile::load(make_text_rifx({
+    auto white_xmed_file = MovieSource::load("test.dir", make_text_rifx({
         {"DRCF", text_config_data},
         {"CAS*", xmed_cast_data},
         {"CASt", make_cast_member_data(MemberType::Xtra, xmed_specific_data)},
@@ -20484,13 +20200,14 @@ void testSpriteBakerFoundation() {
         {"XMED", white_xmed_data}
     }));
     auto white_xmed_member = white_xmed_file->castMembers().front();
-    auto parsed_white_xmed = white_xmed_file->getXmedStyledTextForMember(white_xmed_member);
+    auto parsed_white_xmed = white_xmed_file->xmedStyledTextForMember(white_xmed_member);
     assert(parsed_white_xmed.has_value());
     assert(parsed_white_xmed->textColorARGB() == 0xFFFFFFFFU);
 
     RecordingSpriteBakerTextRenderer transparent_white_xmed_renderer;
     SpriteBaker transparent_white_xmed_baker;
     transparent_white_xmed_baker.setTextRenderer(&transparent_white_xmed_renderer);
+    auto white_xmed_chunk = white_xmed_file->castMemberChunkForAsset(white_xmed_member);
     RenderSprite transparent_white_xmed_sprite(15,
                                             0,
                                             0,
@@ -20499,7 +20216,7 @@ void testSpriteBakerFoundation() {
                                             0,
                                             true,
                                             SpriteType::Text,
-                                            white_xmed_member,
+                                            white_xmed_chunk,
                                             nullptr,
                                             0,
                                             0xFFFFFF,
@@ -20528,7 +20245,7 @@ void testSpriteBakerFoundation() {
                                       xmed_geneva.end());
     assert(geneva_it != pixel_font_xmed_data.end());
     std::copy(preferred_pixel_font->begin(), preferred_pixel_font->end(), geneva_it);
-    auto pixel_font_xmed_file = DirectorFile::load(make_text_rifx({
+    auto pixel_font_xmed_file = MovieSource::load("test.dir", make_text_rifx({
         {"DRCF", text_config_data},
         {"CAS*", xmed_cast_data},
         {"CASt", make_cast_member_data(MemberType::Xtra, xmed_specific_data)},
@@ -20536,7 +20253,7 @@ void testSpriteBakerFoundation() {
         {"XMED", pixel_font_xmed_data}
     }));
     auto pixel_font_xmed_member = pixel_font_xmed_file->castMembers().front();
-    auto parsed_pixel_font_xmed = pixel_font_xmed_file->getXmedStyledTextForMember(pixel_font_xmed_member);
+    auto parsed_pixel_font_xmed = pixel_font_xmed_file->xmedStyledTextForMember(pixel_font_xmed_member);
     assert(parsed_pixel_font_xmed.has_value());
     assert(parsed_pixel_font_xmed->textColorARGB() == 0xFFFFFFFFU);
     assert(parsed_pixel_font_xmed->font_name == *preferred_pixel_font);
@@ -20544,6 +20261,7 @@ void testSpriteBakerFoundation() {
     RecordingSpriteBakerTextRenderer transparent_pixel_font_xmed_renderer;
     SpriteBaker transparent_pixel_font_xmed_baker;
     transparent_pixel_font_xmed_baker.setTextRenderer(&transparent_pixel_font_xmed_renderer);
+    auto pixel_font_xmed_chunk = pixel_font_xmed_file->castMemberChunkForAsset(pixel_font_xmed_member);
     RenderSprite transparent_pixel_font_xmed_sprite(16,
                                                 0,
                                                 0,
@@ -20552,7 +20270,7 @@ void testSpriteBakerFoundation() {
                                                 0,
                                                 true,
                                                 SpriteType::Text,
-                                                pixel_font_xmed_member,
+                                                pixel_font_xmed_chunk,
                                                 nullptr,
                                                 0,
                                                 0xFFFFFF,
@@ -22799,8 +22517,9 @@ void testQueuedAudioBackendFoundation() {
 }
 
 void testQueuedJpegDecoderFoundation() {
-    QueuedJpegDecoder decoder;
-    DirectorFile::clearJpegDecodePending();
+    std::shared_ptr<MovieSource> source = std::make_shared<DirectorMovieSource>();
+    QueuedJpegDecoder decoder(source.get());
+    source->clearJpegDecodePending();
 
     const std::vector<std::uint8_t> crc_fixture{'1', '2', '3', '4', '5', '6', '7', '8', '9'};
     assert(QueuedJpegDecoder::idFor(crc_fixture) == static_cast<int>(static_cast<std::int32_t>(0xCBF43926U)));
@@ -22811,8 +22530,8 @@ void testQueuedJpegDecoderFoundation() {
     const int second_id = QueuedJpegDecoder::idFor(second_jpeg);
 
     assert(!decoder.decode(first_jpeg).has_value());
-    assert(DirectorFile::consumeJpegDecodePending());
-    assert(!DirectorFile::consumeJpegDecodePending());
+    assert(source->consumeJpegDecodePending());
+    assert(!source->consumeJpegDecodePending());
     assert(decoder.pendingCount() == 1);
     assert(decoder.pendingId(0) == first_id);
     assert(decoder.pendingId(1) == 0);
@@ -22820,13 +22539,13 @@ void testQueuedJpegDecoderFoundation() {
 
     assert(!decoder.decode(first_jpeg).has_value());
     assert(decoder.pendingCount() == 1);
-    assert(DirectorFile::consumeJpegDecodePending());
+    assert(source->consumeJpegDecodePending());
 
     assert(!decoder.decode(second_jpeg).has_value());
     assert(decoder.pendingCount() == 2);
     assert(decoder.pendingId(0) == first_id);
     assert(decoder.pendingId(1) == second_id);
-    assert(DirectorFile::consumeJpegDecodePending());
+    assert(source->consumeJpegDecodePending());
 
     assert(decoder.prepareData(first_id) == static_cast<int>(first_jpeg.size()));
     assert(decoder.currentData() != nullptr);
@@ -22852,7 +22571,7 @@ void testQueuedJpegDecoderFoundation() {
     assert(decoded->getPixel(0, 0) == 0x40102030U);
     assert(decoded->getPixel(1, 0) == 0xDDAABBCCU);
     assert(decoder.pendingCount() == 1);
-    assert(!DirectorFile::consumeJpegDecodePending());
+    assert(!source->consumeJpegDecodePending());
 
     decoder.prepareData(second_id);
     assert(decoder.currentData() != nullptr);
@@ -22876,8 +22595,8 @@ void testQueuedJpegDecoderFoundation() {
     assert(callback_decoded->getPixel(0, 0) == 0x04010203U);
 
     decoder.install();
-    DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
-    DirectorFile::clearJpegDecodePending();
+    source->setJpegDecoder(MovieSource::JpegDecoder{});
+    source->clearJpegDecodePending();
 }
 
 void testTimeoutManagerFoundation() {
@@ -25267,7 +24986,7 @@ void testScriptChunkParser() {
     ScriptChunk script = ScriptChunk::read(nullptr, script_reader, ChunkId(34), 0x4B1, false);
     assert(script.type() == ChunkType::Lscr);
     assert(script.id().value() == 34);
-    assert(script.scriptType() == ScriptChunkType::Behavior);
+    assert(script.scriptType() == libreshockwave::chunks::ScriptChunkType::Behavior);
     assert(script.behaviorFlags() == 2);
     assert(script.hasProperties());
     assert(script.properties().size() == 2);
@@ -25342,95 +25061,72 @@ void testScriptChunkParser() {
     assert(global_names[0] == "sharedGlobal");
     assert(script.getPropertyNames(nullptr).empty());
     assert(script.getGlobalNames(nullptr).empty());
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::PUSH_INT8, 0x41, -2},
-                                          &script_names,
-                                          true) == "<-2>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 0},
-                                          &script_names,
-                                          true) == "<hi>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::PUSH_CONS, 0x44, 9},
-                                          &script_names,
-                                          true) == "<literal#9>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0,
+    const auto script_asset = libreshockwave::moviesource::DirectorRecordConverter::toScriptAsset(
+        script, &script_names, libreshockwave::moviesource::ScriptType::Behavior, "Behavior");
+    const auto& asset_handler = script_asset.handlers.front();
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_INT8, 0x41, -2},                                          true) == "<-2>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 0},                                          true) == "<hi>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_CONS, 0x44, 9},                                          true) == "<literal#9>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0,
                                                                    Opcode::PUSH_FLOAT32,
                                                                    0x71,
-                                                                   std::bit_cast<int>(1.25F)},
-                                          &script_names,
-                                          true) == "<1.25>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::PUSH_SYMB, 0x45, 5},
-                                          &script_names,
-                                          true) == "<#mouseUp>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0},
-                                          &script_names,
-                                          true) == "<localName>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0},
-                                          &script_names,
-                                          false) == "<local0>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::GET_PARAM, 0x4B, 1},
-                                          &script_names,
-                                          true) == "<argTwo>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::GET_GLOBAL, 0x49, 14},
-                                          &script_names,
-                                          true) == "<sharedGlobal>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::GET_PROP, 0x4A, 12},
-                                          &script_names,
-                                          true) == "<me.firstProperty>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::LOCAL_CALL, 0x56, 0},
-                                          &script_names,
-                                          true) == "<mouseUp()>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::LOCAL_CALL, 0x56, 6},
-                                          &script_names,
-                                          true) == "<handler#6()>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{0, Opcode::EXT_CALL, 0x57, 5},
-                                          &script_names,
-                                          true) == "<mouseUp()>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{10, Opcode::JMP, 0x53, 4},
-                                          &script_names,
-                                          true) == "<offset 4 -> 14>");
-    assert(InstructionAnnotator::annotate(script,
-                                          &handler,
-                                          ScriptChunk::Instruction{10, Opcode::END_REPEAT, 0x54, 3},
-                                          &script_names,
-                                          true) == "<back 3 -> 7>");
-    assert(InstructionAnnotator::annotate(script,
-                                          ScriptChunk::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0},
-                                          nullptr) == "<local0>");
-    assert(script.resolvedScriptType() == ScriptChunkType::Behavior);
-    assert(script.scriptName().empty());
-    assert(script.displayName() == "Behavior #34");
-    assert(script.getHandlerName(handler) == "handler#5");
-    assert(script.resolveName(9) == "#9");
-    assert(!script.findHandler("MOUSEUP").has_value());
-    assert(script.getPropertyNames().empty());
-    assert(script.getGlobalNames().empty());
+                                                                   std::bit_cast<int>(1.25F)},                                          true) == "<1.25>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::PUSH_SYMB, 0x45, 5},                                          true) == "<#mouseUp>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0},                                          true) == "<localName>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0},                                          false) == "<local0>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_PARAM, 0x4B, 1},                                          true) == "<argTwo>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_GLOBAL, 0x49, 14},                                          true) == "<sharedGlobal>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_PROP, 0x4A, 12},                                          true) == "<me.firstProperty>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::LOCAL_CALL, 0x56, 0},                                          true) == "<mouseUp()>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::LOCAL_CALL, 0x56, 6},                                          true) == "<handler#6()>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::EXT_CALL, 0x57, 5},                                          true) == "<mouseUp()>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{10, Opcode::JMP, 0x53, 4},                                          true) == "<offset 4 -> 14>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          &asset_handler,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{10, Opcode::END_REPEAT, 0x54, 3},                                          true) == "<back 3 -> 7>");
+    assert(InstructionAnnotator::annotate(script_asset,
+                                          libreshockwave::moviesource::ScriptAsset::Instruction{0, Opcode::GET_LOCAL, 0x4C, 0}) == "<local0>");
+    assert(script.resolvedScriptType() == libreshockwave::chunks::ScriptChunkType::Behavior);
+    {
+        ScriptAsset asset;
+        asset.type = libreshockwave::moviesource::ScriptType::Behavior;
+        asset.chunk_id = 34;
+        assert(asset.name.empty());
+        assert(asset.displayName() == "Behavior #34");
+    }
+    assert(script.getHandlerName(handler, nullptr) == "handler#5");
+    assert(script.resolveName(9, nullptr) == "#9");
+    assert(!script.findHandler("MOUSEUP", nullptr).has_value());
+    assert(script.getPropertyNames(nullptr).empty());
+    assert(script.getGlobalNames(nullptr).empty());
     assert(script_reader.order() == ByteOrder::LittleEndian);
 }
 
@@ -25582,15 +25278,14 @@ void testScriptChunkFileBackedHelpers() {
                                      {"Lctx", context_data},
                                      {"Lscr", script_data},
                                      {"CASt", make_script_cast_data("Script Cast", 1, 3)}});
-    auto file = DirectorFile::load(file_data);
+    auto file = MovieSource::load("test.dir", file_data);
     assert(file->scripts().size() == 1);
     const auto script = file->scripts().front();
-    assert(script->scriptType() == ScriptChunkType::Behavior);
-    assert(script->resolvedScriptType() == ScriptChunkType::MovieScript);
-    assert(script->scriptName() == "Script Cast");
+    assert(script->type == libreshockwave::moviesource::ScriptType::MovieScript);
+    assert(script->name == "Script Cast");
     assert(script->displayName() == "\"Script Cast\" (Movie Script)");
-    assert(script->handlers().size() == 1);
-    assert(script->getHandlerName(script->handlers().front()) == "mouseUp");
+    assert(script->handlers.size() == 1);
+    assert(script->getHandlerName(script->handlers.front()) == "mouseUp");
     assert(script->resolveName(1) == "sharedName");
     assert(script->findHandler("MOUSEUP").has_value());
     LingoVM file_backed_vm(file.get());
@@ -26236,40 +25931,38 @@ void testDirectorFileRifxLoader() {
     file_data.insert(file_data.end(), w3d_data.begin(), w3d_data.end());
     put_i32(file_data, 4, static_cast<std::uint32_t>(file_data.size() - 8));
 
-    auto file = DirectorFile::load(file_data);
+    auto file = MovieSource::load("test.dir", file_data);
     assert(file->endian() == ByteOrder::BigEndian);
     assert(!file->isAfterburner());
     assert(file->movieType() == ChunkType::MV93);
     assert(file->version() == 0x0207);
-    assert(file->chunkInfo().size() == 9);
-    assert(file->chunks().size() == 9);
+    assert(file->chunkCount() == 9);
     assert(file->config().get() != nullptr);
-    assert(file->config()->file() == file.get());
     assert(file->config()->stageWidth() == 320);
     assert(file->stageWidth() == 320);
     assert(file->stageHeight() == 240);
-    assert(file->config()->tempo() == 30);
+    assert(file->config()->tempo == 30);
     assert(file->tempo() == 30);
     assert(file->scriptNames().get() != nullptr);
     assert(file->scriptNames()->names().size() == 2);
     assert(file->scriptNames()->getName(1) == "stop");
     assert(file->keyTable().get() != nullptr);
     assert(file->scoreChunk().get() != nullptr);
-    assert(file->getScoreTempo(0) == -1);
-    assert(!file->getScorePalette(0).has_value());
-    assert(!file->hasScore());
+    assert(file->scoreTempo(0) == -1);
+    assert(!file->scorePalette(0).has_value());
+    assert(file->score() == nullptr);
     assert(file->basePath().empty());
     file->setBasePath("casts");
     assert(file->basePath() == "casts");
-    assert(file->getChunkInfo(ChunkId(0))->type() == ChunkType::DRCF);
-    assert(file->getChunk(ChunkId(1))->type() == ChunkType::Lnam);
-    assert(file->getChunk(ChunkId(2))->type() == ChunkType::JUNK);
-    assert(file->getChunk(ChunkId(3))->type() == ChunkType::KEYp);
-    assert(file->getChunk(ChunkId(4))->type() == ChunkType::STXT);
-    assert(file->getChunk(ChunkId(5))->type() == ChunkType::VWSC);
-    assert(file->getChunk(ChunkId(6))->type() == ChunkType::BITD);
-    assert(file->getChunk(ChunkId(7))->type() == ChunkType::snd_);
-    assert(file->getChunk(ChunkId(8))->type() == ChunkType::XMED);
+    assert(file->chunkById(0)->type() == ChunkType::DRCF);
+    assert(file->chunkById(1)->type() == ChunkType::Lnam);
+    assert(file->chunkById(2)->type() == ChunkType::JUNK);
+    assert(file->chunkById(3)->type() == ChunkType::KEYp);
+    assert(file->chunkById(4)->type() == ChunkType::STXT);
+    assert(file->chunkById(5)->type() == ChunkType::VWSC);
+    assert(file->chunkById(6)->type() == ChunkType::BITD);
+    assert(file->chunkById(7)->type() == ChunkType::snd_);
+    assert(file->chunkById(8)->type() == ChunkType::XMED);
     auto member7 = std::make_shared<CastMemberChunk>(file.get(),
                                                      ChunkId(7),
                                                      MemberType::FilmLoop,
@@ -26281,30 +25974,24 @@ void testDirectorFileRifxLoader() {
                                                      0,
                                                      0,
                                                      0);
-    auto linked_info = file->getLinkedChunkInfoForMember(member7);
+    auto member7_asset = file->castMemberAssetForChunk(member7);
+    auto linked_info = file->linkedAssetsForMember(member7_asset);
     assert(linked_info.size() == 3);
-    assert(linked_info[0].id == ChunkId(4));
-    assert(linked_info[0].type() == ChunkType::STXT);
-    assert(linked_info[1].id == ChunkId(5));
-    assert(linked_info[1].type() == ChunkType::VWSC);
-    assert(linked_info[2].id == ChunkId(7));
-    assert(linked_info[2].type() == ChunkType::snd_);
-    auto linked_text_info = file->getLinkedChunkInfoForMember(member7, BinaryReader::fourCC("STXT"));
+    assert(linked_info[0].chunk_id == 4);
+    assert(linked_info[0].fourcc == BinaryReader::fourCC("STXT"));
+    assert(linked_info[1].chunk_id == 5);
+    assert(linked_info[1].fourcc == BinaryReader::fourCC("VWSC"));
+    assert(linked_info[2].chunk_id == 7);
+    assert(linked_info[2].fourcc == BinaryReader::fourCC("snd "));
+    auto linked_text_info = file->linkedAssetsForMember(member7_asset, BinaryReader::fourCC("STXT"));
     assert(linked_text_info.size() == 1);
-    assert(linked_text_info.front().id == ChunkId(4));
-    auto linked_chunks = file->getLinkedChunksForMember(member7);
-    assert(linked_chunks.size() == 3);
-    assert(linked_chunks[0]->type() == ChunkType::STXT);
-    assert(linked_chunks[1]->type() == ChunkType::VWSC);
-    assert(linked_chunks[2]->type() == ChunkType::snd_);
-    assert(file->getLinkedChunkInfoForMember(nullptr).empty());
-    assert(file->getLinkedChunksForMember(nullptr).empty());
-    auto text_chunks = file->getTextChunksForMember(member7);
-    assert(text_chunks.size() == 1);
-    assert(text_chunks.front()->text() == "Hello");
-    assert(file->getTextForMember(member7) == text_chunks.front());
-    assert(file->getScoreForMember(member7) == file->scoreChunk());
-    auto member_sound = SoundManager::findSoundForMember(*file, member7);
+    assert(linked_text_info.front().chunk_id == 4);
+    assert(file->linkedAssetsForMember(nullptr).empty());
+    auto text_asset = file->textForMember(member7_asset);
+    assert(text_asset != nullptr);
+    assert(text_asset->text == "Hello");
+    assert(file->scoreForMember(member7_asset) != nullptr);
+    auto member_sound = SoundManager::findSoundForMember(*file, member7_asset);
     assert(member_sound != nullptr);
     assert(member_sound->sampleRate() == 22050);
     auto member_playable = SoundManager::convertSoundToPlayable(*member_sound);
@@ -26321,10 +26008,10 @@ void testDirectorFileRifxLoader() {
                                                                0,
                                                                0,
                                                                0);
-    auto linked_w3d_info = file->getLinkedChunkInfoForMember(shockwave3d_member, BinaryReader::fourCC("XMED"));
+    auto linked_w3d_info = file->linkedAssetsForMember(file->castMemberAssetForChunk(shockwave3d_member), BinaryReader::fourCC("XMED"));
     assert(linked_w3d_info.size() == 1);
-    assert(linked_w3d_info.front().id == ChunkId(8));
-    auto linked_w3d = file->getW3DFileForMember(shockwave3d_member);
+    assert(linked_w3d_info.front().chunk_id == 8);
+    auto linked_w3d = file->w3dForMember(file->castMemberAssetForChunk(shockwave3d_member));
     assert(linked_w3d.has_value());
     assert(linked_w3d->version() == 0x01020304);
     assert(linked_w3d->hasSceneData());
@@ -26385,7 +26072,7 @@ void testDirectorFileRifxLoader() {
                            const auto blue = pixel & 0xFFU;
                            return alpha == 0xFFU && red > 0 && red < 0xFFU && blue > 0 && blue < 0xFFU;
                        }));
-    assert(!file->getW3DFileForMember(member7).has_value());
+    assert(!file->w3dForMember(member7_asset).has_value());
     auto direct_text_member = std::make_shared<CastMemberChunk>(file.get(),
                                                               ChunkId(4),
                                                               MemberType::Text,
@@ -26397,7 +26084,7 @@ void testDirectorFileRifxLoader() {
                                                               0,
                                                               0,
                                                               0);
-    assert(file->getTextForMember(direct_text_member)->text() == "Hello");
+    assert(file->textForMember(file->castMemberAssetForChunk(direct_text_member))->text == "Hello");
     std::vector<std::uint8_t> bitmap_specific;
     append_i16(bitmap_specific, 2);
     append_i16(bitmap_specific, 0);
@@ -26421,12 +26108,12 @@ void testDirectorFileRifxLoader() {
                                                           0,
                                                           0,
                                                           0);
-    auto bitmap_links = file->getLinkedChunkInfoForMember(bitmap_member);
+    auto bitmap_links = file->linkedAssetsForMember(file->castMemberAssetForChunk(bitmap_member));
     assert(bitmap_links.size() == 1);
-    assert(bitmap_links.front().id == ChunkId(6));
-    assert(bitmap_links.front().type() == ChunkType::BITD);
+    assert(bitmap_links.front().chunk_id == 6);
+    assert(bitmap_links.front().fourcc == BinaryReader::fourCC("BITD"));
     Palette decode_palette({0x010203U, 0xA0B0C0U}, "decode");
-    auto decoded_bitmap = file->decodeBitmap(bitmap_member, &decode_palette);
+    auto decoded_bitmap = file->decodeBitmap(file->castMemberAssetForChunk(bitmap_member), &decode_palette);
     assert(decoded_bitmap.has_value());
     assert(decoded_bitmap->width() == 2);
     assert(decoded_bitmap->height() == 1);
@@ -26435,20 +26122,18 @@ void testDirectorFileRifxLoader() {
     assert(decoded_bitmap->getPixel(1, 0) == 0xFFA0B0C0U);
     assert(decoded_bitmap->paletteIndex(1, 0).value() == 1);
     assert(decoded_bitmap->imagePalette().get() == &decode_palette);
-    file->releaseNonEssentialChunks();
-    assert(file->chunks().size() == 6);
-    auto reparsed_w3d = file->getW3DFileForMember(shockwave3d_member);
+    auto reparsed_w3d = file->w3dForMember(file->castMemberAssetForChunk(shockwave3d_member));
     assert(reparsed_w3d.has_value());
     assert(reparsed_w3d->renderableMeshes().size() == 2);
-    assert(file->chunks().size() == 7);
-    auto reparsed_sound_links = file->getLinkedChunksForMember(member7, BinaryReader::fourCC("snd "));
+    assert(file->chunkCount() == 9);
+    auto reparsed_sound_links = file->linkedAssetsForMember(member7_asset, BinaryReader::fourCC("snd "));
     assert(reparsed_sound_links.size() == 1);
-    assert(reparsed_sound_links.front()->type() == ChunkType::snd_);
-    assert(file->chunks().size() == 8);
-    auto reparsed_raw = file->getChunk(ChunkId(2));
+    assert(reparsed_sound_links.front().fourcc == BinaryReader::fourCC("snd "));
+    assert(file->chunkCount() == 9);
+    auto reparsed_raw = file->chunkById(2);
     assert(reparsed_raw.get() != nullptr);
     assert(reparsed_raw->type() == ChunkType::JUNK);
-    assert(file->chunks().size() == 9);
+    assert(file->chunkCount() == 9);
 }
 
 void testDirectorFileXfirLoader() {
@@ -26517,15 +26202,15 @@ void testDirectorFileXfirLoader() {
     file_data.insert(file_data.end(), config_data.begin(), config_data.end());
     put_i32_le_at(file_data, 4, static_cast<std::uint32_t>(file_data.size() - 8));
 
-    auto file = DirectorFile::load(file_data);
+    auto file = MovieSource::load("test.dir", file_data);
     assert(file->endian() == ByteOrder::LittleEndian);
     assert(!file->isAfterburner());
     assert(file->movieType() == ChunkType::MV93);
     assert(file->version() == 0x04B1);
-    assert(file->chunkInfo().size() == 1);
-    assert(file->chunks().size() == 1);
+    assert(file->chunkCount() == 1);
+    assert(file->chunkCount() == 1);
     assert(file->config().get() != nullptr);
-    assert(file->getChunkInfo(ChunkId(0))->type() == ChunkType::DRCF);
+    assert(file->chunkById(0)->type() == ChunkType::DRCF);
 }
 
 void testAfterburnerReader() {
@@ -26811,28 +26496,24 @@ void testDirectorFileAfterburnerLoader() {
     file_data.insert(file_data.end(), compressed_ils.begin(), compressed_ils.end());
     put_i32_at(file_data, 4, static_cast<std::uint32_t>(file_data.size() - 8));
 
-    auto file = DirectorFile::load(file_data);
+    auto file = MovieSource::load("test.dir", file_data);
     assert(file->isAfterburner());
     assert(file->movieType() == ChunkType::FGDM);
     assert(file->version() == 0x0207);
-    assert(file->chunkInfo().size() == 4);
-    assert(file->chunks().size() == 3);
-    assert(file->getChunkInfo(ChunkId(10))->type() == ChunkType::DRCF);
+    assert(file->chunkCount() == 3);
+    assert(file->chunkById(10)->type() == ChunkType::DRCF);
     assert(file->config().get() != nullptr);
-    assert(file->config()->file() == file.get());
     assert(file->config()->stageWidth() == 320);
     assert(file->config()->stageHeight() == 240);
-    assert(file->config()->tempo() == 24);
+    assert(file->config()->tempo == 24);
     assert(file->scriptNames().get() != nullptr);
     assert(file->scriptNames()->getName(0) == "start");
-    assert(file->getChunk(ChunkId(11))->type() == ChunkType::Lnam);
-    assert(file->getChunk(ChunkId(12))->type() == ChunkType::JUNK);
-    file->releaseNonEssentialChunks();
-    assert(file->chunks().size() == 2);
-    auto reparsed_raw = file->getChunk(ChunkId(12));
+    assert(file->chunkById(11)->type() == ChunkType::Lnam);
+    assert(file->chunkById(12)->type() == ChunkType::JUNK);
+    auto reparsed_raw = file->chunkById(12);
     assert(reparsed_raw.get() != nullptr);
     assert(reparsed_raw->type() == ChunkType::JUNK);
-    assert(file->chunks().size() == 3);
+    assert(file->chunkCount() == 3);
 #endif
 }
 
@@ -26927,21 +26608,21 @@ void testDirectorFileRiffLoader() {
     put_u32le(file_data, first_entry_offset + 28, static_cast<std::uint32_t>(names_resource_offset));
     put_u32le(file_data, 4, static_cast<std::uint32_t>(file_data.size() - 8));
 
-    auto file = DirectorFile::load(file_data);
+    auto file = MovieSource::load("test.dir", file_data);
     assert(file->endian() == ByteOrder::LittleEndian);
     assert(!file->isAfterburner());
     assert(file->movieType() == ChunkType::MV93);
     assert(file->version() == 0x0205);
-    assert(file->chunkInfo().size() == 2);
-    assert(file->chunks().size() == 2);
+    assert(file->chunkCount() == 2);
+    assert(file->chunkCount() == 2);
     assert(file->config().get() != nullptr);
     assert(file->config()->stageWidth() == 300);
     assert(file->config()->stageHeight() == 200);
-    assert(file->config()->tempo() == 18);
+    assert(file->config()->tempo == 18);
     assert(file->scriptNames().get() != nullptr);
     assert(file->scriptNames()->getName(0) == "main");
-    assert(file->getChunkInfo(ChunkId(0))->type() == ChunkType::DRCF);
-    assert(file->getChunk(ChunkId(1))->type() == ChunkType::Lnam);
+    assert(file->chunkById(0)->type() == ChunkType::DRCF);
+    assert(file->chunkById(1)->type() == ChunkType::Lnam);
 }
 
 void testCastLibManagerFoundation() {
@@ -27152,7 +26833,7 @@ void testCastLibManagerFoundation() {
         return data;
     };
 
-    auto file = DirectorFile::load(build_rifx({
+    auto file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", config_data},
         {"MCsL", cast_list_data},
         {"CAS*", cast_data},
@@ -27163,9 +26844,8 @@ void testCastLibManagerFoundation() {
         {"BITD", bitd_data},
         {"snd ", sound_chunk_data},
     }));
-    assert(file->casts().size() == 1);
     assert(file->castMembers().size() == 3);
-    assert(file->castList()->entries().size() == 2);
+    assert(file->castList()->entries.size() == 2);
 
     int requested_cast = 0;
     std::string requested_file;
@@ -28482,7 +28162,7 @@ void testCastLibManagerFoundation() {
     assert(source_script_runtime != nullptr);
     source_script_runtime->setRuntimeScript(std::make_shared<ScriptChunk>(nullptr,
                                                                          ChunkId(300),
-                                                                         ScriptChunkType::Behavior,
+                                                                         libreshockwave::chunks::ScriptChunkType::Behavior,
                                                                          0,
                                                                          std::vector<ScriptChunk::Handler>{},
                                                                          std::vector<ScriptChunk::LiteralEntry>{},
@@ -28568,7 +28248,7 @@ void testCastLibManagerFoundation() {
 
     auto windows_host_config_data = config_data;
     put_i16_at(windows_host_config_data, 56, 2);
-    auto windows_host_file = DirectorFile::load(build_rifx({
+    auto windows_host_file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", windows_host_config_data},
         {"MCsL", cast_list_data},
         {"CAS*", cast_data},
@@ -28692,21 +28372,21 @@ void testCastLibManagerFoundation() {
     assert(external_sound_backend.last_volume == 255);
 
     auto make_deadline_handler = [](int name_id, std::vector<std::pair<Opcode, int>> ops) {
-        std::vector<ScriptChunk::Instruction> instructions;
+        std::vector<libreshockwave::moviesource::ScriptAsset::Instruction> instructions;
         std::unordered_map<int, int> index_map;
         instructions.reserve(ops.size());
         for (std::size_t index = 0; index < ops.size(); ++index) {
             const int offset = static_cast<int>(index);
             const auto [opcode, argument] = ops[index];
             index_map[offset] = static_cast<int>(index);
-            instructions.push_back(ScriptChunk::Instruction{
+            instructions.push_back(libreshockwave::moviesource::ScriptAsset::Instruction{
                 offset,
                 opcode,
                 static_cast<int>(opcode),
                 argument
             });
         }
-        return ScriptChunk::Handler{
+        return libreshockwave::moviesource::ScriptAsset::Handler{
             name_id,
             0,
             static_cast<int>(instructions.size()),
@@ -28728,19 +28408,14 @@ void testCastLibManagerFoundation() {
     }
     deadline_ops.emplace_back(Opcode::RET, 0);
     auto deadline_script_handler = make_deadline_handler(901, std::move(deadline_ops));
-    ScriptChunk deadline_script(nullptr,
-                               ChunkId(901),
-                               ScriptChunkType::MovieScript,
-                               0,
-                               {deadline_script_handler},
-                               {},
-                               {},
-                               {},
-                               {});
+    auto deadline_script = makeScriptAsset(901,
+                                  libreshockwave::moviesource::ScriptType::MovieScript,
+                                  {deadline_script_handler},
+                                  {});
     class DeadlineExternalCastLoadHandler final : public ExternalCastLoadHandler {
     public:
-        DeadlineExternalCastLoadHandler(const ScriptChunk& script_value,
-                                        const ScriptChunk::Handler& handler_value)
+        DeadlineExternalCastLoadHandler(const libreshockwave::moviesource::ScriptAsset& script_value,
+                                        const libreshockwave::moviesource::ScriptAsset::Handler& handler_value)
             : script(script_value),
               handler(handler_value) {}
 
@@ -28751,8 +28426,8 @@ void testCastLibManagerFoundation() {
             (void)player.vm().executeHandler(script, handler);
         }
 
-        const ScriptChunk& script;
-        const ScriptChunk::Handler& handler;
+        const libreshockwave::moviesource::ScriptAsset& script;
+        const libreshockwave::moviesource::ScriptAsset::Handler& handler;
         bool called = false;
     };
 
@@ -29067,7 +28742,7 @@ void testBitmapResolverFoundation() {
         return data;
     };
 
-    auto file = DirectorFile::load(build_rifx({
+    auto file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", config_data},
         {"KEY*", key_data},
         {"BITD", bitd_data},
@@ -29117,12 +28792,12 @@ void testBitmapResolverFoundation() {
 
     auto windows_host_config_data = config_data;
     put_i16_at(windows_host_config_data, 56, 2);
-    auto windows_host_file = DirectorFile::load(build_rifx({
+    auto windows_host_file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", windows_host_config_data},
         {"KEY*", key_data},
         {"BITD", bitd_data},
     }));
-    auto external_bitmap_file = DirectorFile::load(build_rifx({
+    auto external_bitmap_file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", config_data},
         {"KEY*", key_data},
         {"BITD", bitd_data},
@@ -29183,7 +28858,7 @@ void testBitmapResolverFoundation() {
             static_cast<std::uint8_t>(blue)
         });
     }
-    auto file_with_unrelated_palette = DirectorFile::load(build_rifx({
+    auto file_with_unrelated_palette = MovieSource::load("test.dir", build_rifx({
         {"DRCF", config_data},
         {"KEY*", key_data},
         {"BITD", bitd_data},
@@ -29205,7 +28880,7 @@ void testBitmapResolverFoundation() {
         0,
         0,
         0);
-    auto unresolved_palette_decoded = file_with_unrelated_palette->decodeBitmap(unresolved_palette_bitmap_member);
+    auto unresolved_palette_decoded = file_with_unrelated_palette->decodeBitmap(file_with_unrelated_palette->castMemberAssetForChunk(unresolved_palette_bitmap_member));
     assert(unresolved_palette_decoded.has_value());
     assert(unresolved_palette_decoded->getPixel(0, 0) == 0xFFFFFFFFU);
     assert(unresolved_palette_decoded->getPixel(1, 0) == 0xFFFFFFAAU);
@@ -29225,7 +28900,7 @@ void testBitmapResolverFoundation() {
 
     const std::vector<std::uint8_t> jpeg_data{0xFF, 0xD8, 0xFF, 0xD9};
     const std::vector<std::uint8_t> alfa_data{0x01, 0x40, 0x80};
-    auto sidecar_file = DirectorFile::load(build_rifx({
+    auto sidecar_file = MovieSource::load("test.dir", build_rifx({
         {"DRCF", config_data},
         {"KEY*", sidecar_key_data},
         {"ediM", jpeg_data},
@@ -29256,23 +28931,23 @@ void testBitmapResolverFoundation() {
                                                            0,
                                                            0);
 
-    DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
-    assert(!sidecar_file->decodeBitmap(sidecar_member).has_value());
-    DirectorFile::clearJpegDecodePending();
-    assert(!DirectorFile::consumeJpegDecodePending());
-    DirectorFile::markJpegDecodePending();
-    assert(DirectorFile::consumeJpegDecodePending());
-    assert(!DirectorFile::consumeJpegDecodePending());
+    sidecar_file->setJpegDecoder(MovieSource::JpegDecoder{});
+    assert(!sidecar_file->decodeBitmap(sidecar_file->castMemberAssetForChunk(sidecar_member)).has_value());
+    sidecar_file->clearJpegDecodePending();
+    assert(!sidecar_file->consumeJpegDecodePending());
+    sidecar_file->markJpegDecodePending();
+    assert(sidecar_file->consumeJpegDecodePending());
+    assert(!sidecar_file->consumeJpegDecodePending());
 
     int jpeg_decoder_calls = 0;
     std::vector<std::uint8_t> captured_jpeg_data;
-    DirectorFile::setJpegDecoder([&](const std::vector<std::uint8_t>& data) -> std::optional<Bitmap> {
+    sidecar_file->setJpegDecoder([&](const std::vector<std::uint8_t>& data) -> std::optional<Bitmap> {
         ++jpeg_decoder_calls;
         captured_jpeg_data = data;
         return Bitmap(2, 1, 32, {0xFF102030U, 0xFF405060U});
     });
 
-    auto sidecar_decoded = sidecar_file->decodeBitmap(sidecar_member);
+    auto sidecar_decoded = sidecar_file->decodeBitmap(sidecar_file->castMemberAssetForChunk(sidecar_member));
     assert(sidecar_decoded.has_value());
     assert(jpeg_decoder_calls == 1);
     assert(captured_jpeg_data == jpeg_data);
@@ -29282,7 +28957,7 @@ void testBitmapResolverFoundation() {
     assert(sidecar_decoded->isNativeAlpha());
     assert(sidecar_decoded->getPixel(0, 0) == 0x40102030U);
     assert(sidecar_decoded->getPixel(1, 0) == 0x80405060U);
-    DirectorFile::setJpegDecoder(DirectorFile::JpegDecoder{});
+    sidecar_file->setJpegDecoder(MovieSource::JpegDecoder{});
 
     BitmapResolver empty_resolver;
     assert(!empty_resolver.getMoviePalette());
@@ -29323,7 +28998,7 @@ void testLookupHelpers() {
 
     auto script = std::make_shared<ScriptChunk>(nullptr,
                                                 ChunkId(200),
-                                                ScriptChunkType::Behavior,
+                                                libreshockwave::chunks::ScriptChunkType::Behavior,
                                                 0,
                                                 std::vector<ScriptChunk::Handler>{},
                                                 std::vector<ScriptChunk::LiteralEntry>{},
@@ -29425,27 +29100,17 @@ void testLookupHelpers() {
     assert(empty_palette_resolver.resolveExact(999).get() == nullptr);
     assert(empty_palette_resolver.resolve(999).get() == &Palette::systemMacPalette());
 
-    DirectorFile empty_file(ByteOrder::BigEndian, false, 0, ChunkType::MV93);
+    DirectorMovieSource empty_file;
     assert(empty_file.stageWidth() == 0);
     assert(empty_file.stageHeight() == 0);
     assert(empty_file.channelCount() == 120);
     assert(empty_file.tempo() == 15);
-    assert(empty_file.getScoreTempo(0) == -1);
-    assert(!empty_file.getScorePalette(0).has_value());
-    assert(empty_file.getScriptForCastMember(nullptr).get() == nullptr);
-    assert(!empty_file.getScriptType(nullptr).has_value());
-    assert(empty_file.getScriptName(nullptr).empty());
-    assert(empty_file.getScriptNamesById(ChunkId(1)).get() == nullptr);
-    assert(empty_file.getScriptNamesForScript(nullptr).get() == nullptr);
-    assert(empty_file.getAllGlobalNames().empty());
-    assert(empty_file.getAllPropertyNames().empty());
-    assert(empty_file.getScriptGlobals(nullptr).empty());
-    assert(empty_file.getScriptProperties(nullptr).empty());
-    assert(empty_file.getScriptInfoList().empty());
-    assert(empty_file.getExternalCastPaths().empty());
-    assert(!empty_file.hasExternalCasts());
-    assert(!empty_file.hasScore());
-    assert(!empty_file.getFontNameForId(1).has_value());
+    assert(empty_file.scoreTempo(0) == -1);
+    assert(!empty_file.scorePalette(0).has_value());
+    assert(empty_file.allGlobalNames().empty());
+    assert(empty_file.allPropertyNames().empty());
+    assert(empty_file.score() == nullptr);
+    assert(!empty_file.fontNameForId(1).has_value());
     assert(empty_file.basePath().empty());
     empty_file.setBasePath("movie-dir");
     assert(empty_file.basePath() == "movie-dir");

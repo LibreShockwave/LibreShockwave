@@ -9,7 +9,7 @@ namespace libreshockwave::chunks {
 
 class ConfigChunk final : public Chunk {
 public:
-    ConfigChunk(const DirectorFile* file,
+    ConfigChunk(const moviesource::MovieSource* file,
                 id::ChunkId id,
                 int director_version,
                 int stage_top,
@@ -30,7 +30,7 @@ public:
                 int movie_version,
                 std::int16_t platform);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
 
@@ -55,10 +55,10 @@ public:
     [[nodiscard]] int stageWidth() const;
     [[nodiscard]] int stageHeight() const;
 
-    [[nodiscard]] static ConfigChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static ConfigChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     int director_version_;
     int stage_top_;

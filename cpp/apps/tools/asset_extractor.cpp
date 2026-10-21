@@ -20,7 +20,9 @@
 #include <jpeglib.h>
 #endif
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
+#include "libreshockwave/moviesource/records/cast_asset.hpp"
+#include "libreshockwave/moviesource/records/movie_asset.hpp"
 #include "libreshockwave/audio/sound_converter.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/cast/member_type.hpp"
@@ -43,12 +45,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
-using libreshockwave::DirectorFile;
+using libreshockwave::moviesource::MovieSource;
+using libreshockwave::moviesource::CastMemberAsset;
+using libreshockwave::moviesource::KeyTableAsset;
 using libreshockwave::bitmap::Bitmap;
 using libreshockwave::chunks::BitmapChunk;
-using libreshockwave::chunks::CastMemberChunk;
 using libreshockwave::chunks::Chunk;
-using libreshockwave::chunks::KeyTableChunk;
 using libreshockwave::chunks::MediaChunk;
 using libreshockwave::chunks::RawChunk;
 using libreshockwave::chunks::ScriptChunk;
@@ -118,16 +120,25 @@ struct FileCounts {
     });
 }
 
-[[nodiscard]] std::string memberStem(const CastMemberChunk& member) {
-    const auto& name = member.name();
+[[nodiscard]] bool isTextXtra(const CastMemberAsset& member) {
+    return member.type == libreshockwave::cast::MemberType::Xtra &&
+           member.specific_data.size() >= 8 &&
+           member.specific_data[4] == static_cast<std::uint8_t>('t') &&
+           member.specific_data[5] == static_cast<std::uint8_t>('e') &&
+           member.specific_data[6] == static_cast<std::uint8_t>('x') &&
+           member.specific_data[7] == static_cast<std::uint8_t>('t');
+}
+
+[[nodiscard]] std::string memberStem(const CastMemberAsset& member) {
+    const auto& name = member.name;
     const auto value = isBlank(name) ? std::string_view("member") : std::string_view(name);
     std::ostringstream result;
-    result << std::setw(5) << std::setfill('0') << member.id().value() << '_' << clean(value);
+    result << std::setw(5) << std::setfill('0') << member.chunk_id << '_' << clean(value);
     return result.str();
 }
 
-[[nodiscard]] std::shared_ptr<CastMemberChunk> scriptOwner(
-    DirectorFile& file,
+[[nodiscard]] std::shared_ptr<CastMemberAsset> scriptOwner(
+    MovieSource& file,
     const std::shared_ptr<ScriptChunk>& script) {
     if (!script) {
         return nullptr;
@@ -136,7 +147,7 @@ struct FileCounts {
     if (const auto key_table = file.keyTable(); key_table != nullptr) {
         if (const auto owner_id = key_table->getOwnerCastId(script->id()); owner_id.has_value()) {
             for (const auto& member : file.castMembers()) {
-                if (member && member->id().value() == owner_id->value() && member->isScript()) {
+                if (member && member->chunk_id == owner_id->value() && member->isScript()) {
                     return member;
                 }
             }
@@ -147,7 +158,7 @@ struct FileCounts {
         if (!member || !member->isScript()) {
             continue;
         }
-        for (const auto& candidate : file.getScriptsByContextId(member->scriptId())) {
+        for (const auto& candidate : file.scriptChunksByContextId(member->script_id)) {
             if (candidate && candidate->id().value() == script->id().value()) {
                 return member;
             }
@@ -157,14 +168,14 @@ struct FileCounts {
 }
 
 [[nodiscard]] std::string scriptStem(
-    DirectorFile& file,
+    MovieSource& file,
     const std::shared_ptr<ScriptChunk>& script,
-    const std::shared_ptr<CastMemberChunk>& owner) {
+    const std::shared_ptr<CastMemberAsset>& owner) {
     if (owner) {
         return memberStem(*owner);
     }
 
-    const auto name = file.getScriptName(script);
+    const auto name = file.scriptNameForScript(*script);
     std::ostringstream result;
     result << std::setw(5) << std::setfill('0') << script->id().value() << '_'
            << clean(isBlank(name) ? std::string_view("script") : std::string_view(name));
@@ -186,15 +197,15 @@ struct FileCounts {
     return output.str();
 }
 
-[[nodiscard]] std::string row(const CastMemberChunk& member,
+[[nodiscard]] std::string row(const CastMemberAsset& member,
                               std::string_view chunk_id,
                               std::string_view fourcc,
                               std::string_view asset_path) {
     std::ostringstream result;
-    result << member.id().value() << '\t'
-           << libreshockwave::cast::name(member.memberType()) << '\t'
-           << safeCell(member.name()) << '\t'
-           << member.scriptId() << '\t'
+    result << member.chunk_id << '\t'
+           << libreshockwave::cast::name(member.type) << '\t'
+           << safeCell(member.name) << '\t'
+           << member.script_id << '\t'
            << safeCell(chunk_id) << '\t'
            << safeCell(fourcc) << '\t'
            << safeCell(asset_path);
@@ -459,12 +470,12 @@ void jpegErrorExit(j_common_ptr common) {
                      : std::string_view(filename));
 }
 
-[[nodiscard]] std::vector<KeyTableChunk::KeyTableEntry> entries(
-    const DirectorFile& file,
-    const CastMemberChunk& member) {
+[[nodiscard]] std::vector<KeyTableAsset::Entry> entries(
+    MovieSource& file,
+    const CastMemberAsset& member) {
     const auto key_table = file.keyTable();
-    return key_table ? key_table->getEntriesForOwner(member.id())
-                    : std::vector<KeyTableChunk::KeyTableEntry>{};
+    return key_table ? key_table->getEntriesForOwner(libreshockwave::id::ChunkId(member.chunk_id))
+                    : std::vector<KeyTableAsset::Entry>{};
 }
 
 [[nodiscard]] std::optional<std::vector<std::uint8_t>> rawBytes(
@@ -488,7 +499,7 @@ void jpegErrorExit(j_common_ptr common) {
     return std::nullopt;
 }
 
-void writeFileInfo(const DirectorFile& file, const fs::path& input, const fs::path& output) {
+void writeFileInfo(MovieSource& file, const fs::path& input, const fs::path& output) {
     std::ostringstream info;
     info << "source\t" << input.string() << '\n'
          << "afterburner\t" << (file.isAfterburner() ? "true" : "false") << '\n'
@@ -499,17 +510,17 @@ void writeFileInfo(const DirectorFile& file, const fs::path& input, const fs::pa
          << "tempo\t" << file.tempo() << '\n'
          << "cast_members\t" << file.castMembers().size() << '\n'
          << "scripts\t" << file.scripts().size() << '\n'
-         << "palettes\t" << file.palettes().size() << '\n';
+         << "palettes\t" << file.paletteCount() << '\n';
     writeText(output / "file_info.tsv", info.str());
 }
 
 void logError(std::vector<std::string>& errors,
               const fs::path& input,
-              const CastMemberChunk* member,
+              const CastMemberAsset* member,
               std::string_view phase) {
     std::ostringstream line;
     line << input.filename().string() << '\t'
-         << (member == nullptr ? "" : std::to_string(member->id().value())) << '\t'
+         << (member == nullptr ? "" : std::to_string(member->chunk_id)) << '\t'
          << phase << '\t' << exceptionText();
     errors.push_back(line.str());
 }
@@ -521,8 +532,11 @@ void logError(std::vector<std::string>& errors,
     std::vector<std::string> error_log;
 
     try {
-        auto file = DirectorFile::load(readBytes(input));
+        auto file = MovieSource::load(input.filename().string(), readBytes(input));
         file->setBasePath(input.parent_path().string());
+#ifdef LIBRESHOCKWAVE_HAVE_JPEG
+        file->setJpegDecoder(decodeJpeg);
+#endif
         writeFileInfo(*file, input, output);
 
         const auto bitmap_dir = output / "bitmaps";
@@ -538,14 +552,14 @@ void logError(std::vector<std::string>& errors,
         fs::create_directories(raw_dir);
         fs::create_directories(script_dir);
 
-        for (const auto& script : file->scripts()) {
+        for (const auto& script : file->scriptChunks()) {
             if (!script) {
                 continue;
             }
-            std::shared_ptr<CastMemberChunk> owner;
+            std::shared_ptr<CastMemberAsset> owner;
             try {
                 owner = scriptOwner(*file, script);
-                const auto names = file->getScriptNamesForScript(script);
+                const auto names = file->scriptNamesForScript(*script);
                 libreshockwave::lingo::decompiler::LingoDecompiler decompiler;
                 const auto stem = scriptStem(*file, script, owner);
                 const auto source_asset = script_dir / (stem + ".ls");
@@ -583,7 +597,7 @@ void logError(std::vector<std::string>& errors,
             }
 
             try {
-                const auto text_chunks = file->getTextChunksForMember(member);
+                const auto text_chunks = file->textChunksForMember(member);
                 for (std::size_t index = 0; index < text_chunks.size(); ++index) {
                     const auto& text = text_chunks[index];
                     const auto asset = text_dir / (stem + "_stxt_" + std::to_string(index) + ".txt");
@@ -594,8 +608,8 @@ void logError(std::vector<std::string>& errors,
                                            relativeAssetPath(output, asset)));
                     ++counts.text;
                 }
-                if (member->isTextXtra()) {
-                    const auto xmed = file->getXmedStyledTextForMember(member);
+                if (isTextXtra(*member)) {
+                    const auto xmed = file->xmedStyledTextForMember(member);
                     if (xmed.has_value()) {
                         const auto asset = text_dir / (stem + "_xmed.txt");
                         writeText(asset, xmed->text);
@@ -611,7 +625,7 @@ void logError(std::vector<std::string>& errors,
             if (member->isSound()) {
                 try {
                     for (const auto& entry : entries(*file, *member)) {
-                        const auto chunk = file->getChunk(entry.section_id);
+                        const auto chunk = file->chunkById(entry.section_id.value());
                         std::optional<SoundChunk> converted_sound;
                         const SoundChunk* sound = nullptr;
                         if (const auto direct = std::dynamic_pointer_cast<SoundChunk>(chunk)) {
@@ -653,7 +667,7 @@ void logError(std::vector<std::string>& errors,
             }
 
             try {
-                if (member->isScript() && file->getScriptByContextId(member->scriptId())) {
+                if (member->isScript() && file->scriptByContextId(member->script_id)) {
                     ++counts.scripts;
                 }
             } catch (...) {
@@ -663,7 +677,7 @@ void logError(std::vector<std::string>& errors,
 
             try {
                 for (const auto& entry : entries(*file, *member)) {
-                    const auto data = rawBytes(file->getChunk(entry.section_id));
+                    const auto data = rawBytes(file->chunkById(entry.section_id.value()));
                     if (!data.has_value()) {
                         continue;
                     }
@@ -683,7 +697,7 @@ void logError(std::vector<std::string>& errors,
             }
         }
 
-        for (const auto& palette : file->palettes()) {
+        for (const auto& palette : file->paletteChunks()) {
             try {
                 const auto asset = output / "palettes" /
                     ("palette_" + std::to_string(palette->id().value()) + ".tsv");
@@ -760,10 +774,6 @@ int main(int argc, char** argv) {
                                      input_dir.string());
         }
         fs::create_directories(output_dir);
-
-#ifdef LIBRESHOCKWAVE_HAVE_JPEG
-        DirectorFile::setJpegDecoder(decodeJpeg);
-#endif
 
         std::vector<fs::path> inputs;
         for (const auto& entry : fs::directory_iterator(input_dir)) {

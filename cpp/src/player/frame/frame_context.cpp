@@ -7,7 +7,7 @@
 #include <string>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/chunks/score_chunk.hpp"
 #include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/player/behavior/behavior_instance.hpp"
@@ -64,7 +64,7 @@ void applyBehaviorParameterMetadata(render::SpriteRegistry* registry,
 
 } // namespace
 
-FrameContext::FrameContext(DirectorFile* file)
+FrameContext::FrameContext(moviesource::MovieSource* file)
     : file_(file),
       owned_navigator_(std::make_unique<score::ScoreNavigator>(file)),
       navigator_(owned_navigator_.get()),
@@ -75,7 +75,7 @@ FrameContext::FrameContext(DirectorFile* file)
     bindDispatcher();
 }
 
-FrameContext::FrameContext(DirectorFile* file,
+FrameContext::FrameContext(moviesource::MovieSource* file,
                            score::ScoreNavigator* navigator,
                            behavior::BehaviorManager* behavior_manager,
                            event::EventDispatcher* event_dispatcher)
@@ -450,7 +450,7 @@ std::string FrameContext::scriptNameFor(const std::shared_ptr<chunks::ScriptChun
         return script_name_resolver_(script);
     }
     if (script->file() != nullptr) {
-        return const_cast<DirectorFile*>(script->file())->getScriptName(script);
+        return script->file()->scriptNameForScript(*script);
     }
     return "";
 }

@@ -74,7 +74,7 @@ public:
         int name_id;
     };
 
-    ScriptChunk(const DirectorFile* file,
+    ScriptChunk(const moviesource::MovieSource* file,
                 id::ChunkId id,
                 ScriptChunkType script_type,
                 int behavior_flags,
@@ -84,10 +84,11 @@ public:
                 std::vector<GlobalEntry> globals,
                 std::vector<std::uint8_t> raw_bytecode);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] ScriptChunkType scriptType() const;
+    [[nodiscard]] ScriptChunkType resolvedScriptType() const;
     [[nodiscard]] int behaviorFlags() const;
     [[nodiscard]] const std::vector<Handler>& handlers() const;
     [[nodiscard]] const std::vector<LiteralEntry>& literals() const;
@@ -96,32 +97,23 @@ public:
     [[nodiscard]] const std::vector<std::uint8_t>& rawBytecode() const;
     [[nodiscard]] bool hasProperties() const;
     [[nodiscard]] bool hasGlobals() const;
-    [[nodiscard]] ScriptChunkType resolvedScriptType() const;
-    [[nodiscard]] std::string scriptName() const;
-    [[nodiscard]] std::string displayName() const;
     [[nodiscard]] std::optional<Handler> findHandlerByNameId(int name_id) const;
     [[nodiscard]] const Handler* findHandlerByNameIdPtr(int name_id) const;
-    [[nodiscard]] std::string getHandlerName(const Handler& handler) const;
     [[nodiscard]] std::string getHandlerName(const Handler& handler, const ScriptNamesChunk* names) const;
-    [[nodiscard]] std::string resolveName(int name_id) const;
     [[nodiscard]] std::string resolveName(int name_id, const ScriptNamesChunk* names) const;
-    [[nodiscard]] std::optional<Handler> findHandler(std::string_view name) const;
     [[nodiscard]] std::optional<Handler> findHandler(std::string_view name, const ScriptNamesChunk* names) const;
-    [[nodiscard]] const Handler* findHandlerPtr(std::string_view name) const;
     [[nodiscard]] const Handler* findHandlerPtr(std::string_view name, const ScriptNamesChunk* names) const;
-    [[nodiscard]] std::vector<std::string> getPropertyNames() const;
     [[nodiscard]] std::vector<std::string> getPropertyNames(const ScriptNamesChunk* names) const;
-    [[nodiscard]] std::vector<std::string> getGlobalNames() const;
     [[nodiscard]] std::vector<std::string> getGlobalNames(const ScriptNamesChunk* names) const;
 
-    [[nodiscard]] static ScriptChunk read(const DirectorFile* file,
+    [[nodiscard]] static ScriptChunk read(const moviesource::MovieSource* file,
                                           io::BinaryReader& reader,
                                           id::ChunkId id,
                                           int version,
                                           bool capital_x = false);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     ScriptChunkType script_type_;
     int behavior_flags_;

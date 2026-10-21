@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
 #include "libreshockwave/cast/bitmap_info.hpp"
@@ -48,10 +48,10 @@ void restoreRuntimeBitmapSizeIfPlaceholder(const std::shared_ptr<const ::libresh
 
 } // namespace
 
-StageRenderer::StageRenderer(DirectorFile* file)
+StageRenderer::StageRenderer(moviesource::MovieSource* file)
     : file_(file) {
     if (file_ != nullptr && file_->config() != nullptr) {
-        const int stage_color = file_->config()->stageColorRGB();
+        const int stage_color = file_->config()->stage_color_rgb;
         background_color_ = stage_color;
         default_background_color_ = stage_color;
     }
@@ -279,14 +279,14 @@ std::optional<RenderSprite> StageRenderer::createRenderSprite(int channel,
     std::shared_ptr<chunks::CastMemberChunk> member =
         dynamic_member != nullptr && dynamic_member->rawChunk() != nullptr
             ? dynamic_member->rawChunk()
-            : (file_ != nullptr ? file_->getCastMemberByNumber(data.cast_lib, data.cast_member) : nullptr);
+            : (file_ != nullptr ? file_->castMemberChunkByNumber(data.cast_lib, data.cast_member) : nullptr);
     if (member == nullptr && file_ != nullptr && isDefaultCastLibSentinel(data.cast_lib)) {
-        member = file_->getCastMemberByNumber(1, data.cast_member);
+        member = file_->castMemberChunkByNumber(1, data.cast_member);
     }
     if (member == nullptr && file_ != nullptr) {
-        member = file_->getCastMemberByIndex(data.cast_lib, data.cast_member);
+        member = file_->castMemberChunkByNumber(data.cast_lib, data.cast_member);
         if (member == nullptr && isDefaultCastLibSentinel(data.cast_lib)) {
-            member = file_->getCastMemberByIndex(1, data.cast_member);
+            member = file_->castMemberChunkByNumber(1, data.cast_member);
         }
     }
 
@@ -393,9 +393,9 @@ std::optional<RenderSprite> StageRenderer::createDynamicRenderSprite(const sprit
     std::shared_ptr<chunks::CastMemberChunk> member =
         dynamic_member != nullptr && dynamic_member->rawChunk() != nullptr
             ? dynamic_member->rawChunk()
-            : (file_ != nullptr ? file_->getCastMemberByIndex(cast_lib, cast_member) : nullptr);
+            : (file_ != nullptr ? file_->castMemberChunkByNumber(cast_lib, cast_member) : nullptr);
     if (member == nullptr && file_ != nullptr && isDefaultCastLibSentinel(cast_lib)) {
-        member = file_->getCastMemberByIndex(1, cast_member);
+        member = file_->castMemberChunkByNumber(1, cast_member);
     }
 
     SpriteType type = SpriteType::Unknown;
@@ -623,15 +623,15 @@ int StageRenderer::resolveScoreColor(int color, bool is_rgb) {
 }
 
 bool StageRenderer::usesRgb555ScoreColors() const {
-    return file_ != nullptr && file_->config() != nullptr && file_->config()->directorVersion() <= 1600;
+    return file_ != nullptr && file_->config() != nullptr && file_->config()->director_version <= 1600;
 }
 
 bool StageRenderer::usesLegacyRoundedRegistrationScale() const {
-    return file_ != nullptr && file_->config() != nullptr && file_->config()->directorVersion() <= 1600;
+    return file_ != nullptr && file_->config() != nullptr && file_->config()->director_version <= 1600;
 }
 
 int StageRenderer::directorVersionForParsing() const {
-    return file_ != nullptr && file_->config() != nullptr ? file_->config()->directorVersion() : 1200;
+    return file_ != nullptr && file_->config() != nullptr ? file_->config()->director_version : 1200;
 }
 
 int StageRenderer::scoreSpriteRasterY(int y) const {

@@ -57,20 +57,17 @@ private:
 };
 
 struct ResolvedScriptTarget {
-    std::shared_ptr<chunks::ScriptChunk> script;
-    std::shared_ptr<const chunks::ScriptNamesChunk> script_names;
-    std::shared_ptr<const DirectorFile> script_owner;
-    chunks::ScriptChunkType script_type{chunks::ScriptChunkType::Unknown};
+    std::shared_ptr<moviesource::ScriptAsset> script;
+    std::shared_ptr<const moviesource::MovieSource> script_owner;
+    moviesource::ScriptType script_type{moviesource::ScriptType::Unknown};
 };
 
 struct HandlerLookupKey {
-    const chunks::ScriptChunk* script{nullptr};
-    const chunks::ScriptNamesChunk* script_names{nullptr};
+    const moviesource::ScriptAsset* script{nullptr};
     std::string handler_name;
 
     bool operator==(const HandlerLookupKey& other) const {
         return script == other.script &&
-               script_names == other.script_names &&
                handler_name == other.handler_name;
     }
 };
@@ -78,9 +75,8 @@ struct HandlerLookupKey {
 struct HandlerLookupKeyHash {
     std::size_t operator()(const HandlerLookupKey& key) const {
         const auto script_hash = std::hash<const void*>{}(key.script);
-        const auto names_hash = std::hash<const void*>{}(key.script_names);
         const auto name_hash = std::hash<std::string>{}(key.handler_name);
-        return script_hash ^ (names_hash << 1U) ^ (name_hash << 2U);
+        return script_hash ^ (name_hash << 1U);
     }
 };
 
@@ -105,6 +101,10 @@ struct ScriptHandlerFinderKeyHash {
     }
 };
 
+moviesource::ScriptType scriptTypeFromChunkType(chunks::ScriptChunkType type) {
+    return static_cast<moviesource::ScriptType>(static_cast<int>(type));
+}
+
 std::string lowerAscii(std::string_view value) {
     std::string lowered(value);
     std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
@@ -113,7 +113,7 @@ std::string lowerAscii(std::string_view value) {
     return lowered;
 }
 
-int configuredTempo(const std::shared_ptr<DirectorFile>& file) {
+int configuredTempo(const std::shared_ptr<moviesource::MovieSource>& file) {
     if (file == nullptr) {
         return DEFAULT_TEMPO;
     }
@@ -259,10 +259,10 @@ private:
     Player& player_;
 };
 
-Player::Player(std::shared_ptr<DirectorFile> file)
+Player::Player(std::shared_ptr<moviesource::MovieSource> file)
     : Player(std::move(file), true) {}
 
-Player::Player(std::shared_ptr<DirectorFile> file, bool register_socket_multiuser_xtra)
+Player::Player(std::shared_ptr<moviesource::MovieSource> file, bool register_socket_multiuser_xtra)
     : file_(std::move(file)),
       frame_context_(file_.get()),
       stage_renderer_(file_.get()),
@@ -299,12 +299,12 @@ Player::Player(std::shared_ptr<DirectorFile> file, bool register_socket_multiuse
     setTextRenderer(default_text_renderer_.get());
 }
 
-Player::Player(std::shared_ptr<DirectorFile> file, net::NetProvider* net_provider)
+Player::Player(std::shared_ptr<moviesource::MovieSource> file, net::NetProvider* net_provider)
     : Player(std::move(file), false) {
     setNetProvider(net_provider);
 }
 
-Player::Player(std::shared_ptr<DirectorFile> file,
+Player::Player(std::shared_ptr<moviesource::MovieSource> file,
                net::NetProvider* net_provider,
                CastDataRequestCallback cast_data_request_callback)
     : Player(std::move(file), false) {
@@ -321,7 +321,7 @@ Player::~Player() {
     lingo::vm::dispatch::ImageMethodDispatcher::clearImageMutationCallback(this);
 }
 
-std::shared_ptr<DirectorFile> Player::file() const { return file_; }
+std::shared_ptr<moviesource::MovieSource> Player::file() const { return file_; }
 frame::FrameContext& Player::frameContext() { return frame_context_; }
 score::ScoreNavigator& Player::navigator() { return frame_context_.navigator(); }
 behavior::BehaviorManager& Player::behaviorManager() { return frame_context_.behaviorManager(); }
@@ -378,7 +378,7 @@ int Player::tempo() const {
         return puppet_tempo;
     }
     if (file_ != nullptr) {
-        const int score_tempo = file_->getScoreTempo(currentFrame() - 1);
+        const int score_tempo = file_->scoreTempo(currentFrame() - 1);
         if (score_tempo > 0) {
             return score_tempo;
         }
@@ -535,27 +535,26 @@ void Player::dumpScriptInfo(std::ostream& out) const {
             continue;
         }
 
-        switch (script->scriptType()) {
-            case chunks::ScriptChunkType::MovieScript:
+        switch (script->type) {
+            case moviesource::ScriptType::MovieScript:
                 ++movie_scripts;
                 break;
-            case chunks::ScriptChunkType::Behavior:
+            case moviesource::ScriptType::Behavior:
                 ++behaviors;
                 break;
-            case chunks::ScriptChunkType::Parent:
+            case moviesource::ScriptType::Parent:
                 ++parents;
                 break;
-            case chunks::ScriptChunkType::Score:
-            case chunks::ScriptChunkType::Unknown:
+            case moviesource::ScriptType::Score:
+            case moviesource::ScriptType::Unknown:
                 ++unknown;
                 break;
         }
 
-        if (script->resolvedScriptType() == chunks::ScriptChunkType::MovieScript) {
-            auto names = file_->getScriptNamesForScript(script);
-            out << "[Player] Movie script #" << script->id().value() << " handlers:\n";
-            for (const auto& handler : script->handlers()) {
-                out << "[Player]   - " << script->getHandlerName(handler, names.get()) << '\n';
+        if (script->type == moviesource::ScriptType::MovieScript) {
+            out << "[Player] Movie script #" << script->chunk_id << " handlers:\n";
+            for (const auto& handler : script->handlers) {
+                out << "[Player]   - " << script->getHandlerName(handler) << '\n';
             }
         }
     }
@@ -942,13 +941,10 @@ void Player::wireComponents() {
         }
     });
     frame_context_.setScriptNameResolver([this](const std::shared_ptr<chunks::ScriptChunk>& script) {
-        if (!script) {
+        if (!script || file_ == nullptr) {
             return std::string();
         }
-        if (auto* owner = const_cast<DirectorFile*>(script->file())) {
-            return owner->getScriptName(script);
-        }
-        return file_ != nullptr ? file_->getScriptName(script) : std::string();
+        return file_->scriptNameForScript(*script);
     });
     behaviorManager().setFrameScriptResolver([this](const score::ScoreBehaviorRef& behavior_ref)
         -> std::shared_ptr<chunks::ScriptChunk> {
@@ -1120,7 +1116,8 @@ void Player::wireComponents() {
         if (!member) {
             return std::nullopt;
         }
-        auto sound = audio::SoundManager::findSoundForMember(*source_file, member);
+        auto member_asset = source_file->castMemberAssetForChunk(member);
+        auto sound = audio::SoundManager::findSoundForMember(*source_file, member_asset);
         return sound ? audio::SoundManager::convertSoundToPlayable(*sound) : std::nullopt;
     });
 
@@ -1254,34 +1251,28 @@ void Player::wireComponents() {
     auto script_ref_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
     auto script_instance_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
 
-    auto find_handler_in_script = [this, handler_lookup_cache](const std::shared_ptr<chunks::ScriptChunk>& script,
-                                                          const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names,
-                                                          const std::shared_ptr<const DirectorFile>& script_owner,
-                                                          chunks::ScriptChunkType script_type,
+    auto find_handler_in_script = [this, handler_lookup_cache](const std::shared_ptr<moviesource::ScriptAsset>& script,
+                                                          const std::shared_ptr<const moviesource::MovieSource>& script_owner,
+                                                          moviesource::ScriptType script_type,
                                                           std::string_view handler_name)
         -> std::optional<lingo::vm::HandlerRef> {
         if (!script) {
             return std::nullopt;
         }
-        const HandlerLookupKey key{script.get(), script_names.get(), lowerAscii(handler_name)};
+        const HandlerLookupKey key{script.get(), lowerAscii(handler_name)};
         if (const auto cached = handler_lookup_cache->find(key); cached != handler_lookup_cache->end()) {
             return cached->second;
         }
-        if (script_names) {
-            if (auto handler = script->findHandlerPtr(handler_name, script_names.get())) {
-                auto ref = lingo::vm::HandlerRef{script.get(), handler, script, script_owner, script_names, script_type};
-                handler_lookup_cache->emplace(std::move(key), ref);
-                return ref;
-            }
+        if (auto handler = script->findHandlerPtr(handler_name)) {
+            auto ref = lingo::vm::HandlerRef{script.get(), handler, script, script_owner, script_type};
+            handler_lookup_cache->emplace(std::move(key), ref);
+            return ref;
         }
         if (auto handler = vm_.findHandler(*script, handler_name)) {
             handler->script_owner = script;
             handler->script_type = script_type;
             if (script_owner) {
                 handler->file_owner = script_owner;
-            }
-            if (script_names) {
-                handler->script_names_owner = script_names;
             }
             auto ref = *handler;
             handler_lookup_cache->emplace(std::move(key), ref);
@@ -1306,26 +1297,26 @@ void Player::wireComponents() {
         if (auto cast_lib_ref = cast_lib_manager_.getCastLib(cast_lib)) {
             if (auto resolved_script = cast_lib_ref->getScript(member_num)) {
                 const auto source = cast_lib_ref->sourceFile();
-                auto resolved = ResolvedScriptTarget{
-                    resolved_script,
-                    source ? source->getScriptNamesForScript(resolved_script) : cast_lib_ref->scriptNames(),
-                    source,
-                    cast_lib_ref->scriptTypeForScript(resolved_script)
-                };
-                script_ref_target_cache->emplace(cache_key, resolved);
-                return resolved;
+                const auto script_asset = source ? source->scriptByChunkId(resolved_script->id().value()) : nullptr;
+                if (script_asset) {
+                    auto resolved = ResolvedScriptTarget{
+                        script_asset,
+                        source,
+                        scriptTypeFromChunkType(cast_lib_ref->scriptTypeForScript(resolved_script))
+                    };
+                    script_ref_target_cache->emplace(cache_key, resolved);
+                    return resolved;
+                }
             }
         }
 
         if (file_ != nullptr) {
-            if (auto member = file_->getCastMemberByNumber(cast_lib, member_num); member && member->isScript()) {
-                if (auto resolved_script = file_->getScriptForCastMember(member, file_->getMappedCastChunk(cast_lib))) {
-                    const auto script_type = resolved_script->resolvedScriptType();
+            if (auto member = file_->castMemberByNumber(cast_lib, member_num); member && member->isScript()) {
+                if (auto resolved_script = file_->scriptForCastMember(member); resolved_script != nullptr) {
                     auto resolved = ResolvedScriptTarget{
                         resolved_script,
-                        file_->getScriptNamesForScript(resolved_script),
                         file_,
-                        script_type
+                        resolved_script->type
                     };
                     script_ref_target_cache->emplace(cache_key, resolved);
                     return resolved;
@@ -1386,7 +1377,6 @@ void Player::wireComponents() {
             if (auto resolved = resolve_script_ref(behavior_ref.castLib(), behavior_ref.castMember());
                 resolved && resolved->script == target.script) {
                 if (auto handler = find_handler_in_script(resolved->script,
-                                                       resolved->script_names,
                                                        resolved->script_owner,
                                                        resolved->script_type,
                                                        handler_name)) {
@@ -1396,7 +1386,6 @@ void Player::wireComponents() {
         }
 
         if (auto handler = find_handler_in_script(target.script,
-                                               target.script_names,
                                                target.script_owner,
                                                target.script_type,
                                                handler_name)) {
@@ -1414,7 +1403,6 @@ void Player::wireComponents() {
                      canonical_script_ref_candidates(script_ref->cast_lib, script_ref->memberNum())) {
                     if (auto resolved = resolve_script_ref(candidate_cast_lib, candidate_member)) {
                         if (auto handler = find_handler_in_script(resolved->script,
-                                                               resolved->script_names,
                                                                resolved->script_owner,
                                                                resolved->script_type,
                                                                handler_name)) {
@@ -1424,7 +1412,6 @@ void Player::wireComponents() {
                 }
             } else if (auto resolved = resolve_script_instance(*current)) {
                 if (auto handler = find_handler_in_script(resolved->script,
-                                                       resolved->script_names,
                                                        resolved->script_owner,
                                                        resolved->script_type,
                                                        handler_name)) {
@@ -1456,7 +1443,6 @@ void Player::wireComponents() {
                 continue;
             }
             const auto handler = find_handler_in_script(resolved->script,
-                                                     resolved->script_names,
                                                      resolved->script_owner,
                                                      resolved->script_type,
                                                      handler_name);
@@ -1468,7 +1454,6 @@ void Player::wireComponents() {
                 handler->handler,
                 handler->script_owner,
                 handler->file_owner,
-                handler->script_names_owner,
                 handler->script_type
             };
             break;
@@ -1607,13 +1592,12 @@ void Player::wireComponents() {
         if (file_ != nullptr) {
             targets.reserve(file_->scripts().size());
             for (const auto& script : file_->scripts()) {
-                const auto script_type = script ? script->resolvedScriptType() : chunks::ScriptChunkType::Unknown;
-                if (!script || script_type != chunks::ScriptChunkType::MovieScript) {
+                const auto script_type = script ? script->type : moviesource::ScriptType::Unknown;
+                if (!script || script_type != moviesource::ScriptType::MovieScript) {
                     continue;
                 }
                 targets.push_back(event::EventDispatcher::MovieScriptTarget{
                     script,
-                    file_->getScriptNamesForScript(script),
                     file_,
                     script_type
                 });
@@ -1625,17 +1609,22 @@ void Player::wireComponents() {
                 continue;
             }
             const auto source = cast_lib->sourceFile();
-            const auto default_names = cast_lib->scriptNames();
             for (const auto& script : cast_lib->allScripts()) {
+                if (!script || !source) {
+                    continue;
+                }
+                const auto script_asset = source->scriptByChunkId(script->id().value());
+                if (!script_asset) {
+                    continue;
+                }
                 const auto script_type = cast_lib->scriptTypeForScript(script);
-                if (!script || script_type != chunks::ScriptChunkType::MovieScript) {
+                if (script_type != chunks::ScriptChunkType::MovieScript) {
                     continue;
                 }
                 targets.push_back(event::EventDispatcher::MovieScriptTarget{
-                    script,
-                    source ? source->getScriptNamesForScript(script) : default_names,
+                    script_asset,
                     source,
-                    script_type
+                    moviesource::ScriptType::MovieScript
                 });
             }
         }
@@ -1647,13 +1636,12 @@ void Player::wireComponents() {
         if (file_ != nullptr) {
             targets.reserve(file_->scripts().size());
             for (const auto& script : file_->scripts()) {
-                const auto script_type = script ? script->resolvedScriptType() : chunks::ScriptChunkType::Unknown;
+                const auto script_type = script ? script->type : moviesource::ScriptType::Unknown;
                 if (!script || !lingo::vm::LingoVM::isGlobalHandlerScriptType(script_type)) {
                     continue;
                 }
                 targets.push_back(event::EventDispatcher::MovieScriptTarget{
                     script,
-                    file_->getScriptNamesForScript(script),
                     file_,
                     script_type
                 });
@@ -1665,15 +1653,20 @@ void Player::wireComponents() {
                 continue;
             }
             const auto source = cast_lib->sourceFile();
-            const auto default_names = cast_lib->scriptNames();
             for (const auto& script : cast_lib->allScripts()) {
-                const auto script_type = cast_lib->scriptTypeForScript(script);
-                if (!script || !lingo::vm::LingoVM::isGlobalHandlerScriptType(script_type)) {
+                if (!script || !source) {
+                    continue;
+                }
+                const auto script_asset = source->scriptByChunkId(script->id().value());
+                if (!script_asset) {
+                    continue;
+                }
+                const auto script_type = scriptTypeFromChunkType(cast_lib->scriptTypeForScript(script));
+                if (!lingo::vm::LingoVM::isGlobalHandlerScriptType(script_type)) {
                     continue;
                 }
                 targets.push_back(event::EventDispatcher::MovieScriptTarget{
-                    script,
-                    source ? source->getScriptNamesForScript(script) : default_names,
+                    script_asset,
                     source,
                     script_type
                 });
@@ -1682,32 +1675,26 @@ void Player::wireComponents() {
         return targets;
     };
 
-    vm_.setGlobalHandlerFinder([this, collect_global_handler_targets](std::string_view handler_name)
+    vm_.setGlobalHandlerFinder([this, &collect_global_handler_targets](std::string_view handler_name)
         -> std::optional<lingo::vm::HandlerRef> {
         for (const auto& target : collect_global_handler_targets()) {
             if (!target.script) {
                 continue;
             }
-            if (target.script_names) {
-                if (auto handler = target.script->findHandlerPtr(handler_name, target.script_names.get())) {
-                    return lingo::vm::HandlerRef{
-                        target.script.get(),
-                        handler,
-                        target.script,
-                        target.script_owner,
-                        target.script_names,
-                        target.script_type
-                    };
-                }
+            if (auto handler = target.script->findHandlerPtr(handler_name)) {
+                return lingo::vm::HandlerRef{
+                    target.script.get(),
+                    handler,
+                    target.script,
+                    target.script_owner,
+                    target.script_type
+                };
             }
             if (auto handler = vm_.findHandler(*target.script, handler_name)) {
                 handler->script_owner = target.script;
                 handler->script_type = target.script_type;
                 if (target.script_owner) {
                     handler->file_owner = target.script_owner;
-                }
-                if (target.script_names) {
-                    handler->script_names_owner = target.script_names;
                 }
                 return handler;
             }
@@ -1747,14 +1734,13 @@ void Player::wireComponents() {
         bool handled = false;
         eventDispatcher().resetEventStopped();
         for (const auto& movie : collect_movie_script_targets()) {
-            if (!movie.script || movie.script_type != chunks::ScriptChunkType::MovieScript) {
+            if (!movie.script || movie.script_type != moviesource::ScriptType::MovieScript) {
                 continue;
             }
 
             event::EventTarget target;
             target.kind = event::EventTargetKind::MovieScript;
             target.script = movie.script;
-            target.script_names = movie.script_names;
             target.script_owner = movie.script_owner;
             target.script_type = movie.script_type;
             const auto result = invoke_target(target, *handler_name, {});
@@ -1787,14 +1773,13 @@ void Player::wireComponents() {
         InputHandler::LegacyEventScriptResult aggregate;
         eventDispatcher().resetEventStopped();
         for (const auto& movie : collect_movie_script_targets()) {
-            if (!movie.script || movie.script_type != chunks::ScriptChunkType::MovieScript) {
+            if (!movie.script || movie.script_type != moviesource::ScriptType::MovieScript) {
                 continue;
             }
 
             event::EventTarget target;
             target.kind = event::EventTargetKind::MovieScript;
             target.script = movie.script;
-            target.script_names = movie.script_names;
             target.script_owner = movie.script_owner;
             target.script_type = movie.script_type;
             const auto result = invoke_target(target, *handler_name, {});
@@ -1813,11 +1798,11 @@ void Player::wireComponents() {
 
     eventDispatcher().setScriptNamesResolver([this](const std::shared_ptr<chunks::ScriptChunk>& script) {
         if (script) {
-            if (auto* owner = const_cast<DirectorFile*>(script->file())) {
-                return owner->getScriptNamesForScript(script);
+            if (auto* owner = const_cast<moviesource::MovieSource*>(script->file())) {
+                return owner->scriptNamesForScript(*script);
             }
         }
-        return file_ != nullptr ? file_->getScriptNamesForScript(script) : nullptr;
+        return file_ != nullptr ? file_->scriptNamesForScript(*script) : nullptr;
     });
     eventDispatcher().setMovieScriptSupplier(collect_movie_script_targets);
     eventDispatcher().setRespondsPredicate([find_event_handler](const event::EventTarget& target,

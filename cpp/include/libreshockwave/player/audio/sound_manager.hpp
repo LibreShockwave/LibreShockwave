@@ -10,11 +10,16 @@
 #include <vector>
 
 #include "libreshockwave/lingo/datum.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
+#include "libreshockwave/moviesource/records/cast_asset.hpp"
 #include "libreshockwave/player/audio/audio_backend.hpp"
 #include "libreshockwave/player/audio/sound_queue.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::chunks {
@@ -35,14 +40,14 @@ public:
         const lingo::Datum::CastMemberRef&)>;
 
     SoundManager();
-    explicit SoundManager(DirectorFile* source_file);
+    explicit SoundManager(moviesource::MovieSource* source_file);
 
     void setBackend(AudioBackend* backend);
     [[nodiscard]] AudioBackend* backend() const;
 
     void setAudioResolver(AudioResolver resolver);
-    void setCastLibSourceFile(int cast_lib, DirectorFile* source_file);
-    [[nodiscard]] DirectorFile* castLibSourceFile(int cast_lib) const;
+    void setCastLibSourceFile(int cast_lib, moviesource::MovieSource* source_file);
+    [[nodiscard]] moviesource::MovieSource* castLibSourceFile(int cast_lib) const;
 
     void setEnabled(bool enabled);
     [[nodiscard]] bool isEnabled() const;
@@ -106,8 +111,8 @@ public:
     [[nodiscard]] static std::optional<std::vector<std::uint8_t>> convertSoundToPlayable(
         const chunks::SoundChunk& sound);
     [[nodiscard]] static std::shared_ptr<chunks::SoundChunk> findSoundForMember(
-        DirectorFile& dir_file,
-        const std::shared_ptr<chunks::CastMemberChunk>& member);
+        moviesource::MovieSource& dir_file,
+        const std::shared_ptr<moviesource::CastMemberAsset>& member);
 
 private:
     struct PlayArgs {
@@ -152,7 +157,7 @@ private:
     std::array<int, MAX_CHANNELS + 1> loop_end_times_{};
     std::array<std::optional<lingo::Datum::CastMemberRef>, MAX_CHANNELS + 1> member_refs_{};
     std::array<SoundQueue, MAX_CHANNELS + 1> queues_{};
-    std::unordered_map<int, DirectorFile*> cast_lib_files_;
+    std::unordered_map<int, moviesource::MovieSource*> cast_lib_files_;
     AudioResolver resolver_;
 };
 

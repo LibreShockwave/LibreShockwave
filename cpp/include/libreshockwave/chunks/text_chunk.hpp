@@ -24,20 +24,20 @@ public:
         int color_b;
     };
 
-    TextChunk(const DirectorFile* file, id::ChunkId id, std::string text, std::vector<TextRun> runs);
+    TextChunk(const moviesource::MovieSource* file, id::ChunkId id, std::string text, std::vector<TextRun> runs);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::string& text() const;
     [[nodiscard]] const std::vector<TextRun>& runs() const;
 
-    [[nodiscard]] static TextChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int director_version = 0);
+    [[nodiscard]] static TextChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int director_version = 0);
 
 private:
     [[nodiscard]] static bool usesLegacyRunLayout(int director_version);
 
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::string text_;
     std::vector<TextRun> runs_;

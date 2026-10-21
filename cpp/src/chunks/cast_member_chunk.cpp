@@ -101,7 +101,7 @@ CastMemberScriptType castMemberScriptTypeFromCode(int code) {
     }
 }
 
-CastMemberChunk::CastMemberChunk(const DirectorFile* file,
+CastMemberChunk::CastMemberChunk(const moviesource::MovieSource* file,
                                  id::ChunkId id,
                                  cast::MemberType member_type,
                                  int info_len,
@@ -124,7 +124,7 @@ CastMemberChunk::CastMemberChunk(const DirectorFile* file,
       reg_point_x_(reg_point_x),
       reg_point_y_(reg_point_y) {}
 
-const DirectorFile* CastMemberChunk::file() const { return file_; }
+const moviesource::MovieSource* CastMemberChunk::file() const { return file_; }
 format::ChunkType CastMemberChunk::type() const { return format::ChunkType::CASt; }
 id::ChunkId CastMemberChunk::id() const { return id_; }
 cast::MemberType CastMemberChunk::memberType() const { return member_type_; }
@@ -160,7 +160,7 @@ std::optional<CastMemberScriptType> CastMemberChunk::getScriptType() const {
     return castMemberScriptTypeFromCode(code);
 }
 
-CastMemberChunk CastMemberChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+CastMemberChunk CastMemberChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     ScopedByteOrder order(reader, io::ByteOrder::BigEndian);
 
     cast::MemberType member_type = cast::MemberType::Null;

@@ -90,6 +90,18 @@ std::string getFileName(std::string_view path) {
     return separator == std::string::npos ? decoded : decoded.substr(separator + 1);
 }
 
+std::string fileExtension(std::string_view path) {
+    const auto file_name = getFileName(path);
+    if (file_name.empty()) {
+        return "";
+    }
+    const auto dot = file_name.find_last_of('.');
+    if (dot == std::string::npos || dot == file_name.size() - 1) {
+        return "";
+    }
+    return toLower(file_name.substr(dot + 1));
+}
+
 std::vector<std::string> getUrlsWithFallbacks(std::string_view url) {
     const std::string original(url);
     const auto lower = toLower(url);

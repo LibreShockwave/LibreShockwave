@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/bitmap/bitmap_decoder.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
@@ -508,7 +508,7 @@ std::string fontStyleFromDatum(const lingo::Datum& value) {
 
 CastLib::CastLib(int number,
                  std::shared_ptr<chunks::CastChunk> cast_chunk,
-                 const chunks::CastListChunk::CastListEntry* list_entry)
+                 const moviesource::CastListAsset::Entry* list_entry)
     : cast_lib_id_(number),
       selection_(lingo::Datum::list()),
       cast_chunk_(std::move(cast_chunk)) {
@@ -524,19 +524,19 @@ CastLib::CastLib(int number,
     }
 }
 
-void CastLib::setSourceFile(std::shared_ptr<DirectorFile> file) {
+void CastLib::setSourceFile(std::shared_ptr<moviesource::MovieSource> file) {
     source_file_ = std::move(file);
 }
 
-void CastLib::setBitmapPaletteHostFile(std::shared_ptr<DirectorFile> file) {
+void CastLib::setBitmapPaletteHostFile(std::shared_ptr<moviesource::MovieSource> file) {
     bitmap_palette_host_file_ = std::move(file);
 }
 
-std::shared_ptr<DirectorFile> CastLib::sourceFile() const {
+std::shared_ptr<moviesource::MovieSource> CastLib::sourceFile() const {
     return source_file_;
 }
 
-void CastLib::reloadFromFile(std::shared_ptr<DirectorFile> file) {
+void CastLib::reloadFromFile(std::shared_ptr<moviesource::MovieSource> file) {
     if (!file) {
         return;
     }
@@ -653,7 +653,7 @@ void CastLib::load() {
     }
 
     if (isExternal()) {
-        if (!source_file_->casts().empty()) {
+        if (!source_file_->castChunks().empty()) {
             loadFromExternalFile();
         }
         scanXmedFonts();
@@ -661,7 +661,7 @@ void CastLib::load() {
         return;
     }
 
-    if (!cast_chunk_ && !source_file_->casts().empty()) {
+    if (!cast_chunk_ && !source_file_->castChunks().empty()) {
         loadFromExternalFile();
         scanXmedFonts();
         state_ = State::Loaded;
@@ -909,7 +909,7 @@ const std::vector<std::shared_ptr<chunks::ScriptChunk>>& CastLib::allScripts() {
     }
     cached_scripts_.clear();
     if (source_file_) {
-        cached_scripts_ = source_file_->scripts();
+        cached_scripts_ = source_file_->scriptChunks();
     } else {
         for (const auto& [_, script] : scripts_) {
             cached_scripts_.push_back(script);
@@ -995,7 +995,7 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
     if (prop == "mediaready") return lingo::Datum::of(1);
     if (member->isSound() && prop == "duration") {
         if (source_file_ != nullptr && member->rawChunk()) {
-            if (const auto sound = player::audio::SoundManager::findSoundForMember(*source_file_, member->rawChunk())) {
+            if (const auto sound = player::audio::SoundManager::findSoundForMember(*source_file_, source_file_->castMemberAssetForChunk(member->rawChunk()))) {
                 return lingo::Datum::of(static_cast<int>(std::lround(sound->durationSeconds() * 1000.0)));
             }
         }
@@ -1079,7 +1079,7 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
         const bool uses_unlinked_palette = info.has_value() && info->palette_id >= 0 &&
             source_file_ != nullptr && source_file_->resolvePaletteExact(info->palette_id) == nullptr;
         const bool host_uses_windows_palette = bitmap_palette_host_file_ != nullptr &&
-            bitmap_palette_host_file_->config() != nullptr && bitmap_palette_host_file_->config()->platform() == 2 &&
+            bitmap_palette_host_file_->config() != nullptr && bitmap_palette_host_file_->config()->platform == 2 &&
             uses_unlinked_palette;
         const bool runtime_needs_host_palette = host_uses_windows_palette && bitmap != nullptr &&
             isSystemMacPalette(bitmap->imagePalette()) && member->runtimePaletteOverride() == nullptr;
@@ -1093,7 +1093,7 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
             const bitmap::Palette* decode_palette = palette_override.get();
             if (decode_palette == nullptr && bitmap_palette_host_file_ &&
                 bitmap_palette_host_file_->config() != nullptr &&
-                bitmap_palette_host_file_->config()->platform() == 2 &&
+                bitmap_palette_host_file_->config()->platform == 2 &&
                 uses_unlinked_palette) {
                 decode_palette = &bitmap::Palette::systemWinPalette();
             }
@@ -1102,7 +1102,7 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
                 player::BitmapResolver resolver(bitmap_palette_host_file_, nullptr, nullptr);
                 decoded = resolver.decodeBitmap(member->rawChunk(), decode_palette);
             } else {
-                decoded = source_file_->decodeBitmap(member->rawChunk(), decode_palette);
+                decoded = source_file_->decodeBitmap(source_file_->castMemberAssetForChunk(member->rawChunk()), decode_palette);
             }
             if (decoded.has_value()) {
                 applyRuntimePaletteMetadata(*decoded, member);
@@ -1345,7 +1345,7 @@ bool CastLib::setExternalData(const std::vector<std::uint8_t>& data) {
 
     try {
         fetched_external_data_ = data;
-        auto file = DirectorFile::load(data);
+        auto file = moviesource::MovieSource::load("external_cast.dir", data);
         if (!file) {
             return false;
         }
@@ -1353,8 +1353,8 @@ bool CastLib::setExternalData(const std::vector<std::uint8_t>& data) {
         source_file_ = std::move(file);
         const auto name_before_load = name_;
         if (auto external_cast_list = source_file_->castList();
-            external_cast_list && !external_cast_list->entries().empty()) {
-            const auto& internal_name = external_cast_list->entries().front().name;
+            external_cast_list && !external_cast_list->entries.empty()) {
+            const auto& internal_name = external_cast_list->entries.front().name;
             if (!internal_name.empty() && !name_explicitly_assigned_) {
                 name_ = internal_name;
                 name_loaded_from_external_file_ = !usesAuthoredExternalBinding();
@@ -1389,7 +1389,7 @@ void CastLib::cacheFetchedExternalData(const std::vector<std::uint8_t>& data) {
     const auto data_string = std::string(data.begin(), data.end());
     if (data_string.find("font") != std::string::npos || data_string.find("FONT") != std::string::npos) {
         try {
-            registerFontAliases(DirectorFile::load(data));
+            registerFontAliases(moviesource::MovieSource::load("external_cast.dir", data));
         } catch (const std::exception&) {
         }
     }
@@ -1403,7 +1403,7 @@ lingo::Datum CastLib::getInvalidMemberProp(const std::string& prop_name) {
     return lingo::Datum::voidValue();
 }
 
-void CastLib::registerFontAliases(const std::shared_ptr<DirectorFile>& file) {
+void CastLib::registerFontAliases(const std::shared_ptr<moviesource::MovieSource>& file) {
     if (!file) {
         return;
     }
@@ -1411,7 +1411,7 @@ void CastLib::registerFontAliases(const std::shared_ptr<DirectorFile>& file) {
         if (!member) {
             continue;
         }
-        if (const auto alias_info = parseFontAlias(member->specificData(), member->name()); alias_info.has_value()) {
+        if (const auto alias_info = parseFontAlias(member->specific_data, member->name); alias_info.has_value()) {
             FontRegistry::registerFontAlias(alias_info->alias, alias_info->font_name, alias_info->bold);
         }
     }
@@ -1422,12 +1422,12 @@ int CastLib::minMember() const {
         return 1;
     }
     if (auto cast_list = source_file_->castList();
-        cast_list && cast_lib_id_.value() - 1 < static_cast<int>(cast_list->entries().size())) {
-        const int value = cast_list->entries()[static_cast<std::size_t>(cast_lib_id_.value() - 1)].min_member;
+        cast_list && cast_lib_id_.value() - 1 < static_cast<int>(cast_list->entries.size())) {
+        const int value = cast_list->entries[static_cast<std::size_t>(cast_lib_id_.value() - 1)].min_member;
         return value > 0 ? value : 1;
     }
     if (auto config = source_file_->config()) {
-        const int value = config->minMember();
+        const int value = config->min_member;
         return value > 0 ? value : 1;
     }
     return 1;
@@ -1463,12 +1463,12 @@ void CastLib::loadMembersFromCast(const std::shared_ptr<chunks::CastChunk>& cast
 
         const int member_number = index + min_member_value;
         for (const auto& member : source_file_->castMembers()) {
-            if (!member || member->id().value() != chunk_id) {
+            if (!member || member->chunk_id != chunk_id) {
                 continue;
             }
-            member_chunks_[member_number] = member;
-            if (member->isScript() && member->scriptId() > 0) {
-                if (auto script = source_file_->getScriptForCastMember(member, cast)) {
+            member_chunks_[member_number] = source_file_ ? source_file_->castMemberChunkForAsset(member) : nullptr;
+            if (member->isScript() && member->script_id > 0) {
+                if (auto script = source_file_->scriptChunkForCastMember(member)) {
                     scripts_[member_number] = script;
                     cacheScriptTypeForMember(member_number, script);
                 }
@@ -1479,22 +1479,22 @@ void CastLib::loadMembersFromCast(const std::shared_ptr<chunks::CastChunk>& cast
 }
 
 void CastLib::loadFromExternalFile() {
-    if (!source_file_ || source_file_->casts().empty()) {
+    if (!source_file_ || source_file_->castList() == nullptr || source_file_->castList()->entries.empty()) {
         return;
     }
 
     int min_member_value = 1;
     if (auto external_cast_list = source_file_->castList();
-        external_cast_list && !external_cast_list->entries().empty()) {
-        min_member_value = external_cast_list->entries().front().min_member;
+        external_cast_list && !external_cast_list->entries.empty()) {
+        min_member_value = external_cast_list->entries.front().min_member;
     } else if (auto config = source_file_->config()) {
-        min_member_value = config->minMember();
+        min_member_value = config->min_member;
     }
     if (min_member_value <= 0) {
         min_member_value = 1;
     }
 
-    loadMembersFromCast(source_file_->casts().front(), min_member_value);
+    loadMembersFromCast(source_file_->castChunks().front(), min_member_value);
 }
 
 void CastLib::scanXmedFonts() {
@@ -1513,8 +1513,8 @@ void CastLib::scanXmedFonts() {
         if (!member) {
             continue;
         }
-        for (const auto& chunk : source_file_->getLinkedChunksForMember(member, xmed_four_cc)) {
-            auto raw = std::dynamic_pointer_cast<chunks::RawChunk>(chunk);
+        for (const auto& linked : source_file_->linkedAssetsForMember(member, xmed_four_cc)) {
+            auto raw = std::dynamic_pointer_cast<chunks::RawChunk>(source_file_->chunkById(linked.chunk_id));
             if (!raw || raw->data().size() < 4) {
                 continue;
             }
@@ -1523,8 +1523,8 @@ void CastLib::scanXmedFonts() {
                 data[1] == static_cast<std::uint8_t>('F') &&
                 data[2] == static_cast<std::uint8_t>('R') &&
                 data[3] == static_cast<std::uint8_t>('1') &&
-                !member->name().empty()) {
-                FontRegistry::registerPfr1Font(member->name(), data);
+                !member->name.empty()) {
+                FontRegistry::registerPfr1Font(member->name, data);
             }
         }
     }
@@ -1602,11 +1602,11 @@ std::string CastLib::resolveMemberText(const std::shared_ptr<libreshockwave::cas
         return member->textContent();
     }
     if (source_file_ && member->rawChunk()) {
-        if (auto styled_text = source_file_->getXmedStyledTextForMember(member->rawChunk())) {
+        if (auto styled_text = source_file_->xmedStyledTextForMember(source_file_->castMemberAssetForChunk(member->rawChunk()))) {
             return normalizeTextLineEndings(styled_text->text);
         }
-        if (auto text = source_file_->getTextForMember(member->rawChunk())) {
-            return normalizeTextLineEndings(text->text());
+        if (auto text = source_file_->textForMember(source_file_->castMemberAssetForChunk(member->rawChunk()))) {
+            return normalizeTextLineEndings(text->text);
         }
     }
     return "";

@@ -20,10 +20,10 @@ bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
 
 } // namespace
 
-ScriptNamesChunk::ScriptNamesChunk(const DirectorFile* file, id::ChunkId id, std::vector<std::string> names)
+ScriptNamesChunk::ScriptNamesChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<std::string> names)
     : file_(file), id_(id), names_(std::move(names)) {}
 
-const DirectorFile* ScriptNamesChunk::file() const { return file_; }
+const moviesource::MovieSource* ScriptNamesChunk::file() const { return file_; }
 format::ChunkType ScriptNamesChunk::type() const { return format::ChunkType::Lnam; }
 id::ChunkId ScriptNamesChunk::id() const { return id_; }
 const std::vector<std::string>& ScriptNamesChunk::names() const { return names_; }
@@ -44,7 +44,7 @@ int ScriptNamesChunk::findName(std::string_view value) const {
     return -1;
 }
 
-ScriptNamesChunk ScriptNamesChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+ScriptNamesChunk ScriptNamesChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     reader.setOrder(io::ByteOrder::BigEndian);
     (void)reader.readI32();

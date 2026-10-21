@@ -6,35 +6,31 @@
 
 namespace libreshockwave::lingo::vm {
 
-Scope::Scope(const chunks::ScriptChunk* script,
-             const chunks::ScriptChunk::Handler& handler,
+Scope::Scope(const moviesource::ScriptAsset* script,
+             const moviesource::ScriptAsset::Handler& handler,
              std::vector<Datum> arguments,
              Datum receiver,
              bool first_param_declared_receiver,
-             std::shared_ptr<const chunks::ScriptChunk> script_owner,
-             std::shared_ptr<const DirectorFile> file_owner,
-             std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner)
+             std::shared_ptr<const moviesource::ScriptAsset> script_owner,
+             std::shared_ptr<const moviesource::MovieSource> file_owner)
     : Scope(script,
             &handler,
             std::move(arguments),
             std::move(receiver),
             first_param_declared_receiver,
             std::move(script_owner),
-            std::move(file_owner),
-            std::move(script_names_owner)) {}
+            std::move(file_owner)) {}
 
-Scope::Scope(const chunks::ScriptChunk* script,
-             const chunks::ScriptChunk::Handler* handler,
+Scope::Scope(const moviesource::ScriptAsset* script,
+             const moviesource::ScriptAsset::Handler* handler,
              std::vector<Datum> arguments,
              Datum receiver,
              bool first_param_declared_receiver,
-             std::shared_ptr<const chunks::ScriptChunk> script_owner,
-             std::shared_ptr<const DirectorFile> file_owner,
-             std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner)
+             std::shared_ptr<const moviesource::ScriptAsset> script_owner,
+             std::shared_ptr<const moviesource::MovieSource> file_owner)
     : script_(script),
       script_owner_(std::move(script_owner)),
       file_owner_(std::move(file_owner)),
-      script_names_owner_(std::move(script_names_owner)),
       handler_(handler),
       arguments_(std::move(arguments)),
       receiver_(std::move(receiver)),
@@ -44,24 +40,20 @@ Scope::Scope(const chunks::ScriptChunk* script,
     loop_return_stack_.reserve(4);
 }
 
-const chunks::ScriptChunk* Scope::script() const {
+const moviesource::ScriptAsset* Scope::script() const {
     return script_;
 }
 
-const std::shared_ptr<const chunks::ScriptChunk>& Scope::scriptOwner() const {
+const std::shared_ptr<const moviesource::ScriptAsset>& Scope::scriptOwner() const {
     return script_owner_;
 }
 
-const std::shared_ptr<const DirectorFile>& Scope::fileOwner() const {
+const std::shared_ptr<const moviesource::MovieSource>& Scope::fileOwner() const {
     return file_owner_;
 }
 
-const std::shared_ptr<const chunks::ScriptNamesChunk>& Scope::scriptNamesOwner() const {
-    return script_names_owner_;
-}
-
-const chunks::ScriptChunk::Handler& Scope::handler() const {
-    static const chunks::ScriptChunk::Handler empty{};
+const moviesource::ScriptAsset::Handler& Scope::handler() const {
+    static const moviesource::ScriptAsset::Handler empty{};
     return handler_ != nullptr ? *handler_ : empty;
 }
 

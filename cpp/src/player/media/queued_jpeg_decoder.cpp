@@ -10,14 +10,14 @@ constexpr std::uint32_t crc32_polynomial = 0xEDB88320U;
 
 } // namespace
 
-DirectorFile::JpegDecoder QueuedJpegDecoder::decoder() {
+moviesource::MovieSource::JpegDecoder QueuedJpegDecoder::decoder() {
     return [this](const std::vector<std::uint8_t>& data) {
         return decode(data);
     };
 }
 
 void QueuedJpegDecoder::install() {
-    DirectorFile::setJpegDecoder(decoder());
+    if (source_ != nullptr) { source_->setJpegDecoder(decoder()); }
 }
 
 std::optional<libreshockwave::bitmap::Bitmap> QueuedJpegDecoder::decode(
@@ -32,7 +32,7 @@ std::optional<libreshockwave::bitmap::Bitmap> QueuedJpegDecoder::decode(
         pending_[id] = jpeg_data;
         pending_order_.push_back(id);
     }
-    DirectorFile::markJpegDecodePending();
+    if (source_ != nullptr) { source_->markJpegDecodePending(); }
     return std::nullopt;
 }
 
@@ -66,7 +66,7 @@ void QueuedJpegDecoder::reset() {
     pending_order_.clear();
     decoded_.clear();
     current_data_.reset();
-    DirectorFile::clearJpegDecodePending();
+    if (source_ != nullptr) { source_->clearJpegDecodePending(); }
 }
 
 void QueuedJpegDecoder::deliverDecoded(int id,
@@ -111,7 +111,7 @@ void QueuedJpegDecoder::removePending(int id) {
     pending_.erase(id);
     pending_order_.erase(std::remove(pending_order_.begin(), pending_order_.end(), id), pending_order_.end());
     if (pending_order_.empty()) {
-        DirectorFile::clearJpegDecodePending();
+        if (source_ != nullptr) { source_->clearJpegDecodePending(); }
     }
 }
 

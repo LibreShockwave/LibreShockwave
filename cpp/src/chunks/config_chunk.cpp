@@ -6,7 +6,7 @@
 
 namespace libreshockwave::chunks {
 
-ConfigChunk::ConfigChunk(const DirectorFile* file,
+ConfigChunk::ConfigChunk(const moviesource::MovieSource* file,
                          id::ChunkId id,
                          int director_version,
                          int stage_top,
@@ -47,7 +47,7 @@ ConfigChunk::ConfigChunk(const DirectorFile* file,
       movie_version_(movie_version),
       platform_(platform) {}
 
-const DirectorFile* ConfigChunk::file() const { return file_; }
+const moviesource::MovieSource* ConfigChunk::file() const { return file_; }
 format::ChunkType ConfigChunk::type() const { return format::ChunkType::DRCF; }
 id::ChunkId ConfigChunk::id() const { return id_; }
 int ConfigChunk::directorVersion() const { return director_version_; }
@@ -71,7 +71,7 @@ std::int16_t ConfigChunk::platform() const { return platform_; }
 int ConfigChunk::stageWidth() const { return stage_right_ - stage_left_; }
 int ConfigChunk::stageHeight() const { return stage_bottom_ - stage_top_; }
 
-ConfigChunk ConfigChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version) {
+ConfigChunk ConfigChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version) {
     (void)version;
     reader.setOrder(io::ByteOrder::BigEndian);
 

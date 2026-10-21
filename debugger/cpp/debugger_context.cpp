@@ -14,7 +14,7 @@
 
 #include "debug_state_bridge.hpp"
 #include "ui/movie_tree_panel.hpp"
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/player/player.hpp"
 #include "libreshockwave/player/cast/cast_lib.hpp"
@@ -92,7 +92,6 @@ static std::optional<bitmap::Bitmap> decodeEmbeddedJpeg(const std::vector<std::u
 
 DebuggerContext::DebuggerContext(QObject* parent)
     : QObject(parent) {
-    DirectorFile::setJpegDecoder(decodeEmbeddedJpeg);
     state_bridge_ = new DebugStateBridge(this);
     net_access_ = new QNetworkAccessManager(this);
     net_pump_timer_ = new QTimer(this);
@@ -146,9 +145,10 @@ bool DebuggerContext::loadMovie(const std::string& path) {
 
 bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
                                         const std::string& base_path) {
-    std::shared_ptr<DirectorFile> director_file;
+    std::shared_ptr<libreshockwave::moviesource::MovieSource> director_file;
     try {
-        director_file = DirectorFile::load(data);
+        director_file = libreshockwave::moviesource::MovieSource::load(base_path, data);
+        director_file->setJpegDecoder(decodeEmbeddedJpeg);
     } catch (const std::exception& ex) {
         emit errorOccurred(
             QStringLiteral("Failed to parse movie: %1").arg(QString::fromUtf8(ex.what())));

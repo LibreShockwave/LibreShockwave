@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
 #include "libreshockwave/lingo/datum.hpp"
 #include "libreshockwave/player/input/input_state.hpp"
 
@@ -25,9 +25,9 @@ public:
     using XtraNamesSupplier = std::function<std::vector<std::string>()>;
     using DatumSupplier = std::function<lingo::Datum()>;
 
-    explicit MovieProperties(DirectorFile* file = nullptr);
+    explicit MovieProperties(moviesource::MovieSource* file = nullptr);
 
-    void setFile(DirectorFile* file);
+    void setFile(moviesource::MovieSource* file);
     void setInputState(input::InputState* input_state);
     void setEffectiveFrameSupplier(IntSupplier supplier);
     void setFrameCountSupplier(IntSupplier supplier);
@@ -108,7 +108,7 @@ private:
     [[nodiscard]] static std::string lowerProp(std::string_view value);
     [[nodiscard]] static int colorToRgb(const lingo::Datum& value);
 
-    DirectorFile* file_{nullptr};
+    moviesource::MovieSource* file_{nullptr};
     input::InputState* input_state_{nullptr};
 
     bool exit_lock_{false};

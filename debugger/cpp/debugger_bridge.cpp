@@ -21,7 +21,8 @@
 #define LSW_EXPORT(name)
 #endif
 
-#include "libreshockwave/director_file.hpp"
+#include "libreshockwave/moviesource/movie_source.hpp"
+#include "libreshockwave/moviesource/director_movie_source.hpp"
 #include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/format/script_format_utils.hpp"
 #include "libreshockwave/lingo/datum.hpp"
@@ -48,6 +49,11 @@ using libreshockwave::player::debug::DebugSnapshot;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+std::string scriptDisplayName(const libreshockwave::chunks::ScriptChunk& script) {
+    const auto type_name = libreshockwave::format::getScriptTypeName(script.resolvedScriptType());
+    return type_name + " #" + std::to_string(script.id().value());
+}
 
 std::string jsonEscape(std::string_view value) {
     std::string out;
@@ -199,7 +205,7 @@ std::string buildScriptsJson(libreshockwave::player::Player& player, int cast_li
             first = false;
             out << "{\"scriptId\":" << script->id().value()
                 << ",\"name\":";
-            appendJsonString(out, script->displayName());
+            appendJsonString(out, scriptDisplayName(*script));
             out << ",\"type\":";
             appendJsonString(out, scriptTypeName(*script));
             out << ",\"handlerCount\":" << script->handlers().size()
@@ -231,15 +237,16 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
         if (found_handler != nullptr) break;
     }
 
-    // Also try the player's main DirectorFile scripts
+    // Also try the player's main MovieSource scripts
     if (found_handler == nullptr) {
         auto file = player.file();
         if (file != nullptr) {
-            for (const auto& script : file->scripts()) {
+            for (const auto& script : file->scriptChunks()) {
                 if (script == nullptr) continue;
                 if (script->id().value() != script_id) continue;
                 found_script = script;
-                found_handler = script->findHandlerPtr(handler_name);
+                found_names = file->scriptNamesForScript(*script).get();
+                found_handler = script->findHandlerPtr(handler_name, found_names);
                 if (found_handler != nullptr) break;
             }
         }
@@ -251,7 +258,7 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
     // When no handler specified, return script overview with handler list
     if (found_script != nullptr && handler_name.empty()) {
         out << "\"scriptName\":";
-        appendJsonString(out, found_script->displayName());
+        appendJsonString(out, scriptDisplayName(*found_script));
         out << ",\"handlerName\":\"\"";
         out << ",\"argCount\":0,\"localCount\":0,\"globalsCount\":0,\"bytecodeLength\":0";
         // Handler names — always use the script's own file for name resolution
@@ -260,7 +267,7 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
         for (const auto& handler : found_script->handlers()) {
             if (!first_h) out << ',';
             first_h = false;
-            appendJsonString(out, found_script->resolveName(handler.name_id));
+            appendJsonString(out, found_script->resolveName(handler.name_id, found_names));
         }
         out << ']';
         // Globals
@@ -269,7 +276,7 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
         for (const auto& g : found_script->globals()) {
             if (!first_glob) out << ',';
             first_glob = false;
-            appendJsonString(out, found_script->resolveName(g.name_id));
+            appendJsonString(out, found_script->resolveName(g.name_id, found_names));
         }
         out << ']';
         // Literals
@@ -294,8 +301,20 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
         // Bytecode + decompiled empty
         out << ",\"bytecode\":[],\"decompiled\":[]";
     } else if (found_script != nullptr && found_handler != nullptr) {
+        // Convert the ScriptChunk to a ScriptAsset for the annotator.
+        auto asset_source = found_script->file();
+        auto asset_script = asset_source != nullptr ? asset_source->scriptByChunkId(found_script->id().value()) : nullptr;
+        const libreshockwave::moviesource::ScriptAsset::Handler* asset_handler = nullptr;
+        if (asset_script != nullptr) {
+            for (const auto& h : asset_script->handlers) {
+                if (h.name_id == found_handler->name_id) {
+                    asset_handler = &h;
+                    break;
+                }
+            }
+        }
         out << "\"scriptName\":";
-        appendJsonString(out, found_script->displayName());
+        appendJsonString(out, scriptDisplayName(*found_script));
         out << ",\"handlerName\":";
         appendJsonString(out, handler_name);
         out << ",\"argCount\":" << found_handler->arg_count
@@ -314,8 +333,24 @@ std::string buildHandlerCodeJson(libreshockwave::player::Player& player,
             appendJsonString(out, std::string(libreshockwave::lingo::mnemonic(instr.opcode)));
             out << ",\"argument\":" << instr.argument
                 << ",\"annotation\":";
-            appendJsonString(out, InstructionAnnotator::annotate(
-                *found_script, found_handler, instr, found_names, true));
+            if (asset_script != nullptr && asset_handler != nullptr) {
+                // Find the matching instruction in the asset handler.
+                const libreshockwave::moviesource::ScriptAsset::Instruction* asset_instr = nullptr;
+                for (const auto& ai : asset_handler->instructions) {
+                    if (ai.offset == instr.offset) {
+                        asset_instr = &ai;
+                        break;
+                    }
+                }
+                if (asset_instr != nullptr) {
+                    appendJsonString(out, InstructionAnnotator::annotate(
+                        *asset_script, asset_handler, *asset_instr, true));
+                } else {
+                    out << "\"\"";
+                }
+            } else {
+                out << "\"\"";
+            }
             out << '}';
         }
         out << ']';

@@ -16,8 +16,23 @@ BehaviorInstance::BehaviorInstance(std::shared_ptr<chunks::ScriptChunk> script,
     receiver_.scriptInstanceValue().setProperty("sprite_num", lingo::Datum::of(sprite_num_));
 }
 
+BehaviorInstance::BehaviorInstance(std::shared_ptr<chunks::ScriptChunk> script,
+                                   score::ScoreBehaviorRef behavior_ref,
+                                   int sprite_num,
+                                   std::shared_ptr<const moviesource::MovieSource> source_file)
+    : id_(nextId()),
+      script_(std::move(script)),
+      source_file_(std::move(source_file)),
+      behavior_ref_(std::move(behavior_ref)),
+      sprite_num_(sprite_num),
+      receiver_(lingo::Datum::scriptInstance(scriptDisplayName(script_))) {
+    receiver_.scriptInstanceValue().setProperty("sprite_num", lingo::Datum::of(sprite_num_));
+}
+
 int BehaviorInstance::id() const { return id_; }
 const std::shared_ptr<chunks::ScriptChunk>& BehaviorInstance::script() const { return script_; }
+const std::shared_ptr<const moviesource::MovieSource>& BehaviorInstance::sourceFile() const { return source_file_; }
+void BehaviorInstance::setSourceFile(std::shared_ptr<const moviesource::MovieSource> source_file) { source_file_ = std::move(source_file); }
 const score::ScoreBehaviorRef& BehaviorInstance::behaviorRef() const { return behavior_ref_; }
 int BehaviorInstance::spriteNum() const { return sprite_num_; }
 bool BehaviorInstance::isFrameBehavior() const { return sprite_num_ == 0; }

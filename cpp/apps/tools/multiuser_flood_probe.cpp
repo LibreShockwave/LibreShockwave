@@ -131,7 +131,7 @@ void runServer(std::atomic<int>& port_out) {
 
 int main() {
     std::atomic<int> port{0};
-    std::thread server(run_server, std::ref(port));
+    std::thread server(runServer, std::ref(port));
     while (port.load() == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }

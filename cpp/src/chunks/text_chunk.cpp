@@ -4,16 +4,16 @@
 
 namespace libreshockwave::chunks {
 
-TextChunk::TextChunk(const DirectorFile* file, id::ChunkId id, std::string text, std::vector<TextRun> runs)
+TextChunk::TextChunk(const moviesource::MovieSource* file, id::ChunkId id, std::string text, std::vector<TextRun> runs)
     : file_(file), id_(id), text_(std::move(text)), runs_(std::move(runs)) {}
 
-const DirectorFile* TextChunk::file() const { return file_; }
+const moviesource::MovieSource* TextChunk::file() const { return file_; }
 format::ChunkType TextChunk::type() const { return format::ChunkType::STXT; }
 id::ChunkId TextChunk::id() const { return id_; }
 const std::string& TextChunk::text() const { return text_; }
 const std::vector<TextChunk::TextRun>& TextChunk::runs() const { return runs_; }
 
-TextChunk TextChunk::read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int director_version) {
+TextChunk TextChunk::read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int director_version) {
     const auto original_order = reader.order();
     reader.setOrder(io::ByteOrder::BigEndian);
 

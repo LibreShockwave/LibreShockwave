@@ -88,11 +88,11 @@ lingo::Datum stringDatum(std::string value) {
 
 } // namespace
 
-MovieProperties::MovieProperties(DirectorFile* file)
+MovieProperties::MovieProperties(moviesource::MovieSource* file)
     : file_(file),
       start_time_(std::chrono::steady_clock::now()) {}
 
-void MovieProperties::setFile(DirectorFile* file) {
+void MovieProperties::setFile(moviesource::MovieSource* file) {
     file_ = file;
 }
 
@@ -313,7 +313,7 @@ lingo::Datum MovieProperties::getMovieProp(std::string_view prop_name) const {
         if (cast_lib_count_supplier_) {
             return lingo::Datum::of(cast_lib_count_supplier_());
         }
-        return lingo::Datum::of(file_ != nullptr ? static_cast<int>(file_->casts().size()) : 0);
+        return lingo::Datum::of(file_ != nullptr && file_->castList() != nullptr ? static_cast<int>(file_->castList()->entries.size()) : 0);
     }
     if (prop == "number of xtras") return lingo::Datum::of(static_cast<int>(registeredXtraNames().size()));
     if (prop == "xtralist") return xtraList();
@@ -631,7 +631,7 @@ int MovieProperties::frameCount() const {
     if (frame_count_supplier_) {
         return frame_count_supplier_();
     }
-    return file_ != nullptr && file_->scoreChunk() ? file_->scoreChunk()->getFrameCount() : 0;
+    return file_ != nullptr && file_->score() != nullptr ? file_->score()->getFrameCount() : 0;
 }
 
 int MovieProperties::channelCount() const {
@@ -721,7 +721,7 @@ int MovieProperties::stageHeight(int fallback) const {
 
 int MovieProperties::colorDepth() const {
     if (file_ != nullptr && file_->config()) {
-        const int depth = file_->config()->bgColor();
+        const int depth = file_->config()->bg_color;
         if (depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16 || depth == 32) {
             return depth;
         }

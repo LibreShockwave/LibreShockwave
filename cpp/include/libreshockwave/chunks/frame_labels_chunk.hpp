@@ -19,19 +19,19 @@ public:
         std::string label;
     };
 
-    FrameLabelsChunk(const DirectorFile* file, id::ChunkId id, std::vector<FrameLabel> labels);
+    FrameLabelsChunk(const moviesource::MovieSource* file, id::ChunkId id, std::vector<FrameLabel> labels);
 
-    [[nodiscard]] const DirectorFile* file() const override;
+    [[nodiscard]] const moviesource::MovieSource* file() const override;
     [[nodiscard]] format::ChunkType type() const override;
     [[nodiscard]] id::ChunkId id() const override;
     [[nodiscard]] const std::vector<FrameLabel>& labels() const;
     [[nodiscard]] int getFrameByLabel(std::string_view label_name) const;
     [[nodiscard]] std::string getLabelForFrame(int frame_num) const;
 
-    [[nodiscard]] static FrameLabelsChunk read(const DirectorFile* file, io::BinaryReader& reader, id::ChunkId id, int version);
+    [[nodiscard]] static FrameLabelsChunk read(const moviesource::MovieSource* file, io::BinaryReader& reader, id::ChunkId id, int version);
 
 private:
-    const DirectorFile* file_;
+    const moviesource::MovieSource* file_;
     id::ChunkId id_;
     std::vector<FrameLabel> labels_;
 };

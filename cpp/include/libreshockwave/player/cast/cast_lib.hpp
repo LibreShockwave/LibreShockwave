@@ -12,9 +12,13 @@
 #include "libreshockwave/chunks/cast_list_chunk.hpp"
 #include "libreshockwave/id/ids.hpp"
 #include "libreshockwave/lingo/datum.hpp"
+#include "libreshockwave/moviesource/records/cast_asset.hpp"
 
 namespace libreshockwave {
-class DirectorFile;
+namespace moviesource {
+class MovieSource;
+}
+
 }
 
 namespace libreshockwave::cast {
@@ -42,12 +46,12 @@ public:
 
     CastLib(int number,
             std::shared_ptr<chunks::CastChunk> cast_chunk,
-            const chunks::CastListChunk::CastListEntry* list_entry = nullptr);
+            const moviesource::CastListAsset::Entry* list_entry = nullptr);
 
-    void setSourceFile(std::shared_ptr<DirectorFile> file);
-    void setBitmapPaletteHostFile(std::shared_ptr<DirectorFile> file);
-    [[nodiscard]] std::shared_ptr<DirectorFile> sourceFile() const;
-    void reloadFromFile(std::shared_ptr<DirectorFile> file);
+    void setSourceFile(std::shared_ptr<moviesource::MovieSource> file);
+    void setBitmapPaletteHostFile(std::shared_ptr<moviesource::MovieSource> file);
+    [[nodiscard]] std::shared_ptr<moviesource::MovieSource> sourceFile() const;
+    void reloadFromFile(std::shared_ptr<moviesource::MovieSource> file);
 
     [[nodiscard]] id::CastLibId castLibId() const;
     [[nodiscard]] int number() const;
@@ -104,7 +108,7 @@ public:
     void cacheFetchedExternalData(const std::vector<std::uint8_t>& data);
 
     [[nodiscard]] static lingo::Datum getInvalidMemberProp(const std::string& prop_name);
-    static void registerFontAliases(const std::shared_ptr<DirectorFile>& file);
+    static void registerFontAliases(const std::shared_ptr<moviesource::MovieSource>& file);
 
 private:
     struct FontAliasInfo {
@@ -149,8 +153,8 @@ private:
     lingo::Datum selection_;
 
     std::shared_ptr<chunks::CastChunk> cast_chunk_;
-    std::shared_ptr<DirectorFile> source_file_;
-    std::shared_ptr<DirectorFile> bitmap_palette_host_file_;
+    std::shared_ptr<moviesource::MovieSource> source_file_;
+    std::shared_ptr<moviesource::MovieSource> bitmap_palette_host_file_;
     std::vector<std::uint8_t> fetched_external_data_;
     std::map<int, std::shared_ptr<chunks::CastMemberChunk>> member_chunks_;
     std::map<int, std::shared_ptr<libreshockwave::cast::CastMember>> members_;
