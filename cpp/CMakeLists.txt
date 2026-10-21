@@ -128,6 +128,7 @@ add_library(libreshockwave
     src/moviesource/director_container_loader.cpp
     src/moviesource/director_record_converter.cpp
     src/moviesource/format_registry.cpp
+    src/moviesource/json_value.cpp
     src/moviesource/zip_archive.cpp
     src/moviesource/records/script_asset.cpp
     src/moviesource/records/score_asset.cpp
