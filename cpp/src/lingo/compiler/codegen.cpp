@@ -678,10 +678,11 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::MemberExpr: {
-            // `field(x)` is a field reference (GET_FIELD). `member(x)` and
-            // `script(x)` in expression position are ordinary calls: the
-            // decompiler prints the same text for the call and for the legacy
-            // member entity, and the call form is the standalone one.
+            // `field(x)` is a field reference (GET_FIELD). `castLib(x)` is a
+            // bare cast library reference used by the animation2 properties.
+            // `member(x)` and `script(x)` in expression position are ordinary
+            // calls: the decompiler prints the same text for the call and for
+            // the legacy member entity, and the call form is the standalone one.
             if (expr.member_type == "field") {
                 emitExpr(*expr.index);
                 if (expr.index2) {
@@ -690,6 +691,10 @@ void CodeGenerator::emitExpr(const Expr& expr) {
                     emitNoArg(Opcode::PUSH_ZERO);
                 }
                 emitNoArg(Opcode::GET_FIELD);
+                break;
+            }
+            if (expr.member_type == "castLib") {
+                emitExpr(*expr.index);
                 break;
             }
             emitExpr(*expr.index);
