@@ -3,6 +3,8 @@
 #include <bit>
 #include <cmath>
 
+#include "libreshockwave/format/script_format_utils.hpp"
+
 namespace libreshockwave::lingo::compiler {
 namespace {
 
@@ -169,8 +171,20 @@ int CodeGenerator::internInt(long long value) {
 }
 
 int CodeGenerator::internFloat(double value) {
-    (void)value;
-    return -1;
+    // Floats that are not exactly representable as float32 live in the literal
+    // table as type 9 entries.
+    for (std::size_t i = 0; i < literals_.size(); ++i) {
+        if (literals_[i].type == 9 && literals_[i].numeric_value == value) {
+            return static_cast<int>(i);
+        }
+    }
+    const int index = static_cast<int>(literals_.size());
+    moviesource::ScriptAsset::LiteralEntry entry;
+    entry.type = 9;
+    entry.value = format::floatingToString(value);
+    entry.numeric_value = value;
+    literals_.push_back(std::move(entry));
+    return index;
 }
 
 int CodeGenerator::internSymbol(const std::string& name) {
@@ -600,7 +614,11 @@ void CodeGenerator::emitExpr(const Expr& expr) {
         }
         case Expr::Kind::Float: {
             const float f = static_cast<float>(expr.float_value);
-            emit(Opcode::PUSH_FLOAT32, static_cast<int>(std::bit_cast<std::uint32_t>(f)));
+            if (static_cast<double>(f) == expr.float_value) {
+                emit(Opcode::PUSH_FLOAT32, static_cast<int>(std::bit_cast<std::uint32_t>(f)));
+            } else {
+                emit(Opcode::PUSH_CONS, internFloat(expr.float_value) * mult_);
+            }
             break;
         }
         case Expr::Kind::String: {

@@ -42,12 +42,6 @@ bool canReadAt(const io::BinaryReader& reader, int offset, std::size_t length) {
     return start <= reader.length() && length <= reader.length() - start;
 }
 
-std::string floatingToString(double value) {
-    std::ostringstream out;
-    out << value;
-    return out.str();
-}
-
 std::vector<int> readNameIds(io::BinaryReader& reader, int count, int offset) {
     std::vector<int> ids;
     if (count <= 0 || !canReadAt(reader, offset, static_cast<std::size_t>(count) * 2U)) {
@@ -341,7 +335,7 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
                             if (reader.bytesLeft() >= 8) {
                                 const auto bits = static_cast<std::uint64_t>(reader.readI64());
                                 numeric_value = std::bit_cast<double>(bits);
-                                value = floatingToString(numeric_value);
+                                value = format::floatingToString(numeric_value);
                             }
                             break;
                         }

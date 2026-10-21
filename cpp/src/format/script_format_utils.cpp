@@ -1,5 +1,7 @@
 #include "libreshockwave/format/script_format_utils.hpp"
 
+#include <sstream>
+
 #include "libreshockwave/chunks/script_names_chunk.hpp"
 #include "libreshockwave/util/string_utils.hpp"
 
@@ -119,6 +121,12 @@ std::string normalizeLineEndings(std::string_view value) {
     }
     const auto end = normalized.find_last_not_of(' ');
     return normalized.substr(start, end - start + 1);
+}
+
+std::string floatingToString(double value) {
+    std::ostringstream out;
+    out << value;
+    return out.str();
 }
 
 } // namespace libreshockwave::format

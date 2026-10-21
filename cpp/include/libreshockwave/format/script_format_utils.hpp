@@ -13,6 +13,8 @@ namespace libreshockwave::format {
 
 [[nodiscard]] std::string getLiteralTypeName(int type_code);
 [[nodiscard]] std::string getLiteralTypeNameShort(int type_code);
+// Formats a double the way the script literal table stores it.
+[[nodiscard]] std::string floatingToString(double value);
 [[nodiscard]] std::string formatLiteral(const chunks::ScriptChunk::LiteralEntry& literal);
 [[nodiscard]] std::string formatLiteralValue(const chunks::ScriptChunk::LiteralValue& value);
 [[nodiscard]] std::string formatLiteralValue(const chunks::ScriptChunk::LiteralValue& value, int max_string_length);
