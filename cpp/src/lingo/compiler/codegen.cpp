@@ -561,6 +561,23 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
                 emitChunkBounds(*stmt.variable);
                 const int var_type = emitVarRefForPut(*stmt.variable->source);
                 emit(Opcode::PUT_CHUNK, (put_type << 4) | var_type);
+            } else if (stmt.variable->kind == Expr::Kind::ObjPropIndexExpr) {
+                // `put value into base.prop[index]` builds the chunk reference
+                // with getPropRef and passes it to setContents.
+                emitChunkVarRef(*stmt.variable->object);
+                emit(Opcode::PUSH_SYMB, nameId(stmt.variable->name) * mult_);
+                emitExpr(*stmt.variable->index);
+                const bool has_second = stmt.variable->index2 != nullptr;
+                if (has_second) {
+                    emitExpr(*stmt.variable->index2);
+                }
+                emit(Opcode::PUSH_ARG_LIST, has_second ? 4 : 3);
+                emit(Opcode::OBJ_CALL, nameId("getPropRef") * mult_);
+                emitNoArg(Opcode::SWAP);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 2);
+                const char* const method = put_type == 1 ? "setContents"
+                    : put_type == 2 ? "setContentsAfter" : "setContentsBefore";
+                emit(Opcode::OBJ_CALL, nameId(method) * mult_);
             } else {
                 const int var_type = emitVarRefForPut(*stmt.variable);
                 emit(Opcode::PUT, (put_type << 4) | var_type);
@@ -577,6 +594,20 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             if (stmt.value->kind == Expr::Kind::ChunkExpr && stmt.value->source) {
                 emitChunkBounds(*stmt.value);
                 emit(Opcode::DELETE_CHUNK, emitVarRefForPut(*stmt.value->source));
+            } else if (stmt.value->kind == Expr::Kind::ObjPropIndexExpr) {
+                // `delete base.prop[index]` builds the chunk reference with
+                // getPropRef and passes it to the object's delete method.
+                emitChunkVarRef(*stmt.value->object);
+                emit(Opcode::PUSH_SYMB, nameId(stmt.value->name) * mult_);
+                emitExpr(*stmt.value->index);
+                const bool has_second = stmt.value->index2 != nullptr;
+                if (has_second) {
+                    emitExpr(*stmt.value->index2);
+                }
+                emit(Opcode::PUSH_ARG_LIST, has_second ? 4 : 3);
+                emit(Opcode::OBJ_CALL, nameId("getPropRef") * mult_);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 1);
+                emit(Opcode::OBJ_CALL, nameId("delete") * mult_);
             } else {
                 // `delete <object>` is the object's delete method call.
                 emitReceiver(*stmt.value);
@@ -1087,6 +1118,25 @@ void CodeGenerator::emitChunkBounds(const Expr& chunk) {
             emitNoArg(Opcode::PUSH_ZERO);
         }
     }
+}
+
+void CodeGenerator::emitChunkVarRef(const Expr& variable) {
+    if (variable.kind != Expr::Kind::Var) {
+        emitExpr(variable);
+        return;
+    }
+    const std::string& name = variable.name;
+    if (arg_slot_.count(name)) {
+        emitInt(arg_slot_.at(name));
+        emit(Opcode::PUSH_CHUNK_VAR_REF, 4);
+        return;
+    }
+    if (local_slot_.count(name)) {
+        emitInt(local_slot_.at(name));
+        emit(Opcode::PUSH_CHUNK_VAR_REF, 5);
+        return;
+    }
+    emit(Opcode::PUSH_VAR_REF, nameId(name) * mult_);
 }
 
 int CodeGenerator::emitVarRefForPut(const Expr& variable) {

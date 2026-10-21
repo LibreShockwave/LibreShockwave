@@ -110,6 +110,9 @@ private:
     // Emits a variable reference for PUT and PUT_CHUNK and returns the var_type
     // nibble that identifies it (1 global, 3 property, 4 arg, 5 local).
     [[nodiscard]] int emitVarRefForPut(const Expr& variable);
+    // Emits a chunk source reference: an index plus PUSH_CHUNK_VAR_REF for an
+    // argument or local, or a var-ref for a global or property.
+    void emitChunkVarRef(const Expr& variable);
     void emitVarGet(const std::string& name);
     void emitSetForVar(const std::string& name);
     [[nodiscard]] bool isScriptProperty(const std::string& name);
