@@ -345,6 +345,7 @@ bool isAlreadyLoadedCastRequest(const WasmPlayerContext& ctx, std::string_view u
     const std::string lower_file_name = toLower(file_name);
     const bool cast_like_request = lower_file_name.ends_with(".cct") ||
                                  lower_file_name.ends_with(".cst") ||
+                                 lower_file_name.ends_with(".lsw") ||
                                  lower_file_name.find('.') == std::string::npos;
     if (!cast_like_request) {
         return false;

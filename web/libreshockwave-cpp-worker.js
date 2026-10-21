@@ -215,10 +215,10 @@ function resolveUrl(candidate, baseUrl = movieUrl) {
 function isDirectorMovieUrl(url) {
   try {
     const pathname = new URL(url, movieUrl || self.location.href).pathname.toLowerCase();
-    return pathname.endsWith(".dcr") || pathname.endsWith(".dir") || pathname.endsWith(".dxr");
+    return pathname.endsWith(".dcr") || pathname.endsWith(".dir") || pathname.endsWith(".dxr") || pathname.endsWith(".lsw");
   } catch {
     const cleanUrl = String(url || "").split(/[?#]/, 1)[0].toLowerCase();
-    return cleanUrl.endsWith(".dcr") || cleanUrl.endsWith(".dir") || cleanUrl.endsWith(".dxr");
+    return cleanUrl.endsWith(".dcr") || cleanUrl.endsWith(".dir") || cleanUrl.endsWith(".dxr") || cleanUrl.endsWith(".lsw");
   }
 }
 
