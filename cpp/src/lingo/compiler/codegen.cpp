@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "libreshockwave/format/script_format_utils.hpp"
+#include "libreshockwave/lingo/decompiler/lingo_properties.hpp"
 
 namespace libreshockwave::lingo::compiler {
 namespace {
@@ -69,6 +70,18 @@ bool fixedPropCode(const std::string& name, int& type, int& id) {
         if (name == e.first) { type = 0x08; id = e.second; return true; }
     }
     return false;
+}
+
+// Finds the property id whose decompiled name matches. Returns -1 when the
+// name is not part of the table.
+int propIdForName(const std::string& name,
+                  std::string_view (*nameForId)(int)) {
+    for (int id = 1; id <= 0x40; ++id) {
+        if (nameForId(id) == name) {
+            return id;
+        }
+    }
+    return -1;
 }
 
 // A `the <prop>` that is a live builtin (not a fixed prop, not a name-table
@@ -788,15 +801,46 @@ void CodeGenerator::emitExpr(const Expr& expr) {
         case Expr::Kind::SoundProp:
         case Expr::Kind::SpriteProp:
         case Expr::Kind::MenuItemProp: {
-            // `the <prop> of menu/sound/sprite <id>`: push the id, then the
-            // property opcode.
-            if (expr.index) {
+            // `the <prop> of menu/sound/sprite <id>` uses the legacy GET with
+            // the property id and its property type.
+            int property_id = -1;
+            int property_type = 0;
+            if (expr.kind == Expr::Kind::SpriteProp) {
+                property_id = propIdForName(expr.name, decompiler::spritePropertyName);
+                property_type = 0x06;
+            } else if (expr.kind == Expr::Kind::MenuProp) {
+                property_id = propIdForName(expr.name, decompiler::menuPropertyName);
+                property_type = 0x02;
+            } else if (expr.kind == Expr::Kind::MenuItemProp) {
+                property_id = propIdForName(expr.name, decompiler::menuItemPropertyName);
+                property_type = 0x03;
+            } else {
+                property_id = propIdForName(expr.name, decompiler::soundPropertyName);
+                property_type = 0x04;
+            }
+            if (property_id < 0) {
+                if (expr.index) {
+                    emitExpr(*expr.index);
+                }
+                if (expr.index2) {
+                    emitExpr(*expr.index2);
+                }
+                emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+                break;
+            }
+            if (expr.kind == Expr::Kind::MenuItemProp) {
+                // The item id is below the menu id on the stack.
+                if (expr.index2) {
+                    emitExpr(*expr.index2);
+                }
+                if (expr.index) {
+                    emitExpr(*expr.index);
+                }
+            } else if (expr.index) {
                 emitExpr(*expr.index);
             }
-            if (expr.index2) {
-                emitExpr(*expr.index2);
-            }
-            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            emit(Opcode::PUSH_INT8, property_id);
+            emit(Opcode::GET, property_type);
             break;
         }
         case Expr::Kind::NewObj: {
