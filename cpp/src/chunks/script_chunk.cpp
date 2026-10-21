@@ -337,9 +337,10 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
                             break;
                         }
                         case 9: {
-                            if (reader.bytesLeft() >= 4) {
-                                const auto bits = static_cast<std::uint32_t>(reader.readI32());
-                                numeric_value = static_cast<double>(std::bit_cast<float>(bits));
+                            // Literal floats are stored as 8-byte IEEE doubles.
+                            if (reader.bytesLeft() >= 8) {
+                                const auto bits = static_cast<std::uint64_t>(reader.readI64());
+                                numeric_value = std::bit_cast<double>(bits);
                                 value = floatingToString(numeric_value);
                             }
                             break;

@@ -922,16 +922,16 @@ std::string CasesStmtNode::toLingo(bool dot) const {
 
 std::string maybeParenDot(const LingoNode& node, bool dot) {
     const auto text = node.toLingo(dot);
-    // `the X of Y` binds looser than a following `.` or `[]` access, so a
-    // non-dot property read used as a receiver must be parenthesized.
-    if (!dot && dynamic_cast<const ObjPropExprNode*>(&node) != nullptr) {
+    // `x.y` in dot syntax and `the X of Y` in non-dot syntax both bind looser
+    // than a following `[]` access. Parenthesize so a getAt on a property read
+    // stays distinguishable from a getProp/getPropRef on it.
+    if (dynamic_cast<const ObjPropExprNode*>(&node) != nullptr) {
         return "(" + text + ")";
     }
     if (dynamic_cast<const VarNode*>(&node) != nullptr ||
         dynamic_cast<const ObjCallNode*>(&node) != nullptr ||
         dynamic_cast<const ObjCallV4Node*>(&node) != nullptr ||
         dynamic_cast<const CallNode*>(&node) != nullptr ||
-        dynamic_cast<const ObjPropExprNode*>(&node) != nullptr ||
         dynamic_cast<const ObjBracketExprNode*>(&node) != nullptr ||
         dynamic_cast<const ObjPropIndexExprNode*>(&node) != nullptr) {
         return text;
