@@ -829,6 +829,18 @@ void CodeGenerator::emitReceiver(const Expr& expr) {
         emit(Opcode::GET_CHAINED_PROP, nameId(expr.name) * mult_);
         return;
     }
+    if (expr.kind == Expr::Kind::ThePropExpr) {
+        emitReceiver(*expr.object);
+        int type = -1;
+        int id = -1;
+        if (fixedPropCode(expr.name, type, id)) {
+            emit(Opcode::PUSH_INT8, id);
+            emit(Opcode::GET, type);
+        } else {
+            emit(Opcode::GET_CHAINED_PROP, nameId(expr.name) * mult_);
+        }
+        return;
+    }
     if (expr.kind == Expr::Kind::ObjPropIndexExpr) {
         emitObjPropIndex(expr, /*by_ref=*/true);
         return;

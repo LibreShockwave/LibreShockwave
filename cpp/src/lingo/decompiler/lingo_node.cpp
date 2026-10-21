@@ -387,7 +387,7 @@ ObjBracketExprNode::ObjBracketExprNode(NodePtr object, NodePtr prop)
 }
 
 std::string ObjBracketExprNode::toLingo(bool dot) const {
-    return object_->toLingo(dot) + "[" + prop_->toLingo(dot) + "]";
+    return maybeParenDot(*object_, dot) + "[" + prop_->toLingo(dot) + "]";
 }
 
 ObjPropIndexExprNode::ObjPropIndexExprNode(NodePtr object, std::string prop, NodePtr index, NodePtr index2)
@@ -919,6 +919,11 @@ std::string CasesStmtNode::toLingo(bool dot) const {
 
 std::string maybeParenDot(const LingoNode& node, bool dot) {
     const auto text = node.toLingo(dot);
+    // `the X of Y` binds looser than a following `.` or `[]` access, so a
+    // non-dot property read used as a receiver must be parenthesized.
+    if (!dot && dynamic_cast<const ObjPropExprNode*>(&node) != nullptr) {
+        return "(" + text + ")";
+    }
     if (dynamic_cast<const VarNode*>(&node) != nullptr ||
         dynamic_cast<const ObjCallNode*>(&node) != nullptr ||
         dynamic_cast<const ObjCallV4Node*>(&node) != nullptr ||
