@@ -63,29 +63,7 @@ bool isMemberTypeWord(const std::string& word) {
 // ---------------------------------------------------------------------------
 
 std::unique_ptr<Expr> Parser::parseExpression() {
-    return parseJoin();
-}
-
-std::unique_ptr<Expr> Parser::parseJoin() {
-    auto left = parseOr();
-    while (true) {
-        BinOp op = BinOp::Add;
-        if (check(TokenType::Ampersand)) {
-            op = BinOp::JoinStr;
-        } else if (check(TokenType::And)) {
-            op = BinOp::JoinPadStr;
-        } else if (checkKeyword("contains")) {
-            op = BinOp::ContainsStr;
-        } else if (checkKeyword("starts")) {
-            op = BinOp::Contains0Str;
-        } else {
-            break;
-        }
-        advance();
-        auto right = parseOr();
-        left = makeBinary(op, std::move(left), std::move(right));
-    }
-    return left;
+    return parseOr();
 }
 
 std::unique_ptr<Expr> Parser::parseOr() {
@@ -109,7 +87,7 @@ std::unique_ptr<Expr> Parser::parseAnd() {
 }
 
 std::unique_ptr<Expr> Parser::parseComparison() {
-    auto left = parseAdditive();
+    auto left = parseJoin();
     while (true) {
         BinOp op = BinOp::Add;
         if (check(TokenType::Lt)) {
@@ -126,6 +104,28 @@ std::unique_ptr<Expr> Parser::parseComparison() {
             op = BinOp::Gt;
         } else if (check(TokenType::GtEq)) {
             op = BinOp::GtEq;
+        } else if (checkKeyword("contains")) {
+            op = BinOp::ContainsStr;
+        } else if (checkKeyword("starts")) {
+            op = BinOp::Contains0Str;
+        } else {
+            break;
+        }
+        advance();
+        auto right = parseJoin();
+        left = makeBinary(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expr> Parser::parseJoin() {
+    auto left = parseAdditive();
+    while (true) {
+        BinOp op = BinOp::Add;
+        if (check(TokenType::Ampersand)) {
+            op = BinOp::JoinStr;
+        } else if (check(TokenType::And)) {
+            op = BinOp::JoinPadStr;
         } else {
             break;
         }
