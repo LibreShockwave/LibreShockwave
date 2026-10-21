@@ -488,6 +488,19 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
                 emitExpr(*stmt.value);
                 emit(Opcode::PUSH_ARG_LIST_NO_RET, 3);
                 emit(Opcode::OBJ_CALL, nameId("setAt") * mult_);
+            } else if (stmt.variable->kind == Expr::Kind::ObjPropIndexExpr) {
+                // object.prop[index] = value: push object, #prop, index,
+                // value, then OBJ_CALL(setProp).
+                emitReceiver(*stmt.variable->object);
+                emit(Opcode::PUSH_SYMB, nameId(stmt.variable->name) * mult_);
+                emitExpr(*stmt.variable->index);
+                const bool has_second = stmt.variable->index2 != nullptr;
+                if (has_second) {
+                    emitExpr(*stmt.variable->index2);
+                }
+                emitExpr(*stmt.value);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, has_second ? 5 : 4);
+                emit(Opcode::OBJ_CALL, nameId("setProp") * mult_);
             } else {
                 // Fallback: value first, then the lvalue (which emits the SET).
                 emitExpr(*stmt.value);
