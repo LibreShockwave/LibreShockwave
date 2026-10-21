@@ -645,7 +645,8 @@ void CastLib::load() {
     state_ = State::Loading;
 
     if (!source_file_) {
-        if (!fetched_external_data_.empty() && setExternalData(fetched_external_data_)) {
+        if (!fetched_external_data_.empty() &&
+            setExternalData(fetched_external_data_, fetched_external_name_)) {
             return;
         }
         state_ = isExternal() ? State::None : State::Loaded;
@@ -1338,14 +1339,16 @@ bool CastLib::setMemberProp(int member_number, const std::string& prop_name, con
     return false;
 }
 
-bool CastLib::setExternalData(const std::vector<std::uint8_t>& data) {
+bool CastLib::setExternalData(const std::vector<std::uint8_t>& data,
+                              std::string_view source_name) {
     if (data.empty()) {
         return false;
     }
 
     try {
         fetched_external_data_ = data;
-        auto file = moviesource::MovieSource::load("external_cast.dir", data);
+        fetched_external_name_ = source_name.empty() ? "external_cast.dir" : std::string(source_name);
+        auto file = moviesource::MovieSource::load(fetched_external_name_, data);
         if (!file) {
             return false;
         }

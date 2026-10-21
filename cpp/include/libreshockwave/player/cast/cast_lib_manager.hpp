@@ -108,7 +108,8 @@ public:
     void cacheExternalData(const std::string& url, const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> getCachedExternalData(const std::string& base_name) const;
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> getCachedDownloadedData(const std::string& url) const;
-    bool setExternalCastData(int cast_lib_number, const std::vector<std::uint8_t>& data);
+    bool setExternalCastData(int cast_lib_number, const std::vector<std::uint8_t>& data,
+                             std::string_view source_name = {});
     bool setExternalCastDataByUrl(const std::string& url, const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::vector<int> getMatchingCastLibNumbersByUrl(const std::string& url);
     [[nodiscard]] std::vector<int> getRequestedExternalCastSlots(const std::string& url);

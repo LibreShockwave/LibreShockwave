@@ -104,7 +104,8 @@ public:
     [[nodiscard]] lingo::Datum getMemberProp(int member_number, const std::string& prop_name);
     bool setMemberProp(int member_number, const std::string& prop_name, const lingo::Datum& value);
 
-    bool setExternalData(const std::vector<std::uint8_t>& data);
+    bool setExternalData(const std::vector<std::uint8_t>& data,
+                         std::string_view source_name = {});
     void cacheFetchedExternalData(const std::vector<std::uint8_t>& data);
 
     [[nodiscard]] static lingo::Datum getInvalidMemberProp(const std::string& prop_name);
@@ -156,6 +157,8 @@ private:
     std::shared_ptr<moviesource::MovieSource> source_file_;
     std::shared_ptr<moviesource::MovieSource> bitmap_palette_host_file_;
     std::vector<std::uint8_t> fetched_external_data_;
+    // File name of the fetched external data, used to pick the format parser.
+    std::string fetched_external_name_;
     std::map<int, std::shared_ptr<chunks::CastMemberChunk>> member_chunks_;
     std::map<int, std::shared_ptr<libreshockwave::cast::CastMember>> members_;
     std::map<int, std::shared_ptr<chunks::ScriptChunk>> scripts_;

@@ -2,6 +2,7 @@
 
 #include "libreshockwave/audio/wav_decoder.hpp"
 #include "libreshockwave/bitmap/png_decoder.hpp"
+#include "libreshockwave/util/file_util.hpp"
 
 #include "json_value.hpp"
 #include "lsw_chunk_builder.hpp"
@@ -110,6 +111,20 @@ void LswMovieSource::loadCasts() {
         casts_[cast_entry.cast_lib] = cast;
         cast_chunks_[cast_entry.cast_lib] =
             buildCastChunk(this, cast_entry.cast_lib, cast->member_ids);
+    }
+    // External casts load later from their file. The cast list entry carries the
+    // path so the Player can fetch it and re-enter the loader with a .lsw name.
+    int next_cast_lib = 1;
+    for (const auto& cast : manifest_->casts) {
+        next_cast_lib = std::max(next_cast_lib, cast.cast_lib + 1);
+    }
+    for (const auto& path : manifest_->external_casts) {
+        CastListAsset::Entry list_entry;
+        list_entry.name = util::getFileNameWithoutExtension(util::getFileName(path));
+        list_entry.path = path;
+        list_entry.id = next_cast_lib++;
+        list_entry.min_member = 1;
+        cast_list_->entries.push_back(std::move(list_entry));
     }
 }
 

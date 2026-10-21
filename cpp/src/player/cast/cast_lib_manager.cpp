@@ -1382,13 +1382,15 @@ std::optional<std::vector<std::uint8_t>> CastLibManager::getCachedDownloadedData
     return std::nullopt;
 }
 
-bool CastLibManager::setExternalCastData(int cast_lib_number, const std::vector<std::uint8_t>& data) {
+bool CastLibManager::setExternalCastData(int cast_lib_number,
+                                          const std::vector<std::uint8_t>& data,
+                                          std::string_view source_name) {
     ensureInitialized();
     const auto found = cast_libs_.find(cast_lib_number);
     if (found == cast_libs_.end() || !found->second) {
         return false;
     }
-    const bool loaded = found->second->setExternalData(data);
+    const bool loaded = found->second->setExternalData(data, source_name);
     if (loaded) {
         clearPendingExternalLoad(cast_lib_number);
     }
@@ -1403,7 +1405,7 @@ bool CastLibManager::setExternalCastDataByUrl(const std::string& url, const std:
             any_loaded = true;
             continue;
         }
-        if (setExternalCastData(cast_lib->number(), data)) {
+        if (setExternalCastData(cast_lib->number(), data, util::getFileName(url))) {
             any_loaded = true;
         }
     }
