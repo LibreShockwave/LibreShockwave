@@ -86,6 +86,10 @@ private:
     void emitBlock(const std::vector<std::unique_ptr<Stmt>>& block);
     void emitStmt(const Stmt& stmt);
     void emitExpr(const Expr& expr);
+    // Emits an expression in receiver position. A property access used as the
+    // receiver of a further access is a chained read (GET_CHAINED_PROP); the
+    // outermost access of the chain is a plain GET_OBJ_PROP.
+    void emitReceiver(const Expr& expr);
     void emitLvalue(const Expr& expr);
     void emitVarGet(const std::string& name);
     void emitSetForVar(const std::string& name);

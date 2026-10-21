@@ -1,7 +1,6 @@
 #include "libreshockwave/lingo/compiler/parser.hpp"
 
 #include <cctype>
-#include <iostream>
 
 namespace libreshockwave::lingo::compiler {
 namespace {
@@ -52,7 +51,9 @@ bool isChunkCountWord(const std::string& word) {
 }
 
 bool isMemberTypeWord(const std::string& word) {
-    return word == "sprite" || word == "field" || word == "member";
+    // `sprite(...)` is always a function call in decompiler output. Member
+    // expressions only print as field/member/castLib/script.
+    return word == "field" || word == "member";
 }
 
 } // namespace
@@ -215,9 +216,6 @@ std::unique_ptr<Expr> Parser::parsePostfix() {
             auto args = parseArgList();
             expect(TokenType::RParen);
             if (primary->kind == Expr::Kind::Var) {
-                if (primary->name == "script") {
-                    std::cerr << "  [parsePostfix] LParen script -> Call, args=" << args.size() << "\n";
-                }
                 auto call = std::make_unique<Expr>();
                 call->kind = Expr::Kind::Call;
                 call->name = std::move(primary->name);
@@ -233,7 +231,6 @@ std::unique_ptr<Expr> Parser::parsePostfix() {
         } else if (check(TokenType::Dot)) {
             advance();
             const std::string prop = takeIdent();
-            std::cerr << "  [parsePostfix] Dot prop=" << prop << " next=" << cur().describe() << "\n";
             if (check(TokenType::LParen)) {
                 advance();
                 auto args = parseArgList();
@@ -324,9 +321,6 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
     }
     if (check(TokenType::Identifier)) {
         const std::string word = cur().text;
-        if (word == "script") {
-            std::cerr << "  [parsePrimary] word=script next=" << peekAt(1).describe() << "\n";
-        }
         if (word == "the") {
             return parseTheExpr();
         }

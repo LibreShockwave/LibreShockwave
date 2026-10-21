@@ -127,9 +127,9 @@ std::vector<Diff> compareAssets(const ScriptAsset& a, const ScriptAsset& b) {
         std::ostringstream detail;
         detail << "literal count " << a.literals.size() << " != " << b.literals.size();
         diffs.push_back(Diff{"literals", detail.str()});
-        return diffs;
     }
-    for (std::size_t i = 0; i < a.literals.size(); ++i) {
+    const std::size_t literal_count = std::min(a.literals.size(), b.literals.size());
+    for (std::size_t i = 0; i < literal_count; ++i) {
         const auto& la = a.literals[i];
         const auto& lb = b.literals[i];
         bool same = la.type == lb.type;
@@ -157,9 +157,9 @@ std::vector<Diff> compareAssets(const ScriptAsset& a, const ScriptAsset& b) {
         std::ostringstream detail;
         detail << "handler count " << a.handlers.size() << " != " << b.handlers.size();
         diffs.push_back(Diff{"handlers", detail.str()});
-        return diffs;
     }
-    for (std::size_t i = 0; i < a.handlers.size(); ++i) {
+    const std::size_t handler_count = std::min(a.handlers.size(), b.handlers.size());
+    for (std::size_t i = 0; i < handler_count; ++i) {
         auto handler_diffs = compareHandler(a.handlers[i], b.handlers[i],
                                           "handler " + a.getHandlerName(a.handlers[i]));
         diffs.insert(diffs.end(), handler_diffs.begin(), handler_diffs.end());
@@ -266,23 +266,30 @@ int main(int argc, char** argv) {
             continue;
         }
         if (options.dump_lits) {
-            std::cout << "-- " << script_name << " original lits=" << original->literals.size()
-                      << " recompiled lits=" << recompiled->literals.size() << "\n";
-            for (std::size_t i = 0; i < recompiled->literals.size(); ++i) {
-                const auto& lv = recompiled->literals[i].value;
-                std::string kind = "mono";
-                if (std::holds_alternative<std::string>(lv)) kind = "str";
-                else if (std::holds_alternative<int>(lv)) kind = "int";
-                else if (std::holds_alternative<std::vector<uint8_t>>(lv)) kind = "bytes";
-                std::cout << "  r" << i << ": " << kind;
-                if (std::holds_alternative<std::string>(lv)) {
-                    const auto& s = std::get<std::string>(lv);
-                    std::cout << " [" << s.size() << "]";
-                    for (char c : s) std::cout << (static_cast<unsigned char>(c) >= 32 ? c : '?');
+            auto dumpTable = [&](const char* label, const ScriptAsset& asset) {
+                std::cout << "-- " << script_name << " " << label << " lits=" << asset.literals.size()
+                          << "\n";
+                for (std::size_t i = 0; i < asset.literals.size(); ++i) {
+                    const auto& lv = asset.literals[i].value;
+                    std::string kind = "mono";
+                    if (std::holds_alternative<std::string>(lv)) kind = "str";
+                    else if (std::holds_alternative<int>(lv)) kind = "int";
+                    else if (std::holds_alternative<std::vector<uint8_t>>(lv)) kind = "bytes";
+                    std::cout << "  " << label[0] << i << ": " << kind << " type=" << asset.literals[i].type;
+                    if (std::holds_alternative<std::string>(lv)) {
+                        const auto& s = std::get<std::string>(lv);
+                        std::cout << " [" << s.size() << "] ";
+                        for (char c : s) {
+                            const auto uc = static_cast<unsigned char>(c);
+                            std::cout << (uc >= 32 && uc < 127 ? c : '?');
+                        }
+                    }
+                    if (std::holds_alternative<int>(lv)) std::cout << " " << std::get<int>(lv);
+                    std::cout << "\n";
                 }
-                if (std::holds_alternative<int>(lv)) std::cout << " " << std::get<int>(lv);
-                std::cout << "\n";
-            }
+            };
+            dumpTable("original", *original);
+            dumpTable("recompiled", *recompiled);
         }
         if (options.dump_ins) {
             for (std::size_t h = 0; h < recompiled->handlers.size(); ++h) {
@@ -306,11 +313,6 @@ int main(int argc, char** argv) {
             }
         }
         if (options.dump_asm) {
-            std::cout << "-- names: ";
-            for (std::size_t i = 0; i < original->names.size(); ++i) {
-                std::cout << i << "=" << original->names[i] << " ";
-            }
-            std::cout << std::endl;
             for (std::size_t h = 0; h < original->handlers.size(); ++h) {
                 const auto& a = original->handlers[h];
                 const bool has_b = h < recompiled->handlers.size();

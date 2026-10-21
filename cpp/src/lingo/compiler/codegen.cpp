@@ -2,8 +2,6 @@
 
 #include <bit>
 #include <cmath>
-#include <execinfo.h>
-#include <iostream>
 
 namespace libreshockwave::lingo::compiler {
 namespace {
@@ -150,21 +148,6 @@ void CodeGenerator::emitInt(long long value) {
 }
 
 int CodeGenerator::internString(const std::string& value) {
-    std::cerr << "[internString] len=" << value.size();
-    for (char c : value) std::cerr << " " << std::hex << (int)(unsigned char)c;
-    std::cerr << std::dec << "\n";
-    if (value.size() == 1 && value[0] == '\r') {
-        void* frames[10];
-        const int n = backtrace(frames, 10);
-        std::cerr << "  [backtrace-r] " << n << " frames\n";
-        for (int i = 0; i < n; ++i) std::cerr << "  " << i << ": " << reinterpret_cast<void*>(frames[i]) << "\n";
-    }
-    if (value.empty()) {
-        void* frames[10];
-        const int n = backtrace(frames, 10);
-        std::cerr << "  [backtrace-empty] " << n << " frames\n";
-        for (int i = 0; i < n; ++i) std::cerr << "  " << i << ": " << reinterpret_cast<void*>(frames[i]) << "\n";
-    }
     const auto found = literal_index_.find(value);
     if (found != literal_index_.end()) {
         return found->second;
@@ -235,6 +218,11 @@ void CodeGenerator::compileHandler(const Handler& handler_ast, moviesource::Scri
     for (const auto& global : handler_ast.global_names) {
         declared_names_.insert(global);
         global_names_.insert(global);
+    }
+    // Arguments are parameters, never locals. `tMethod = tEvent` inside a
+    // handler must emit SET_PARAM and must not grow the local table.
+    for (const auto& arg : handler_ast.arg_names) {
+        declared_names_.insert(arg);
     }
     // First pass: collect the locals (first-assignment order).
     collectLocals(handler_ast);
@@ -478,10 +466,6 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             // A simple var: value first, then the SET. A dot/bracket lvalue:
             // the object first, then the value, then the SET.
             if (stmt.variable->kind == Expr::Kind::Var) {
-                if (stmt.value->kind == Expr::Kind::String && stmt.value->string.value.empty()) {
-                    std::cerr << "  [assignment-empty] var=" << stmt.variable->name
-                              << " value=String(\"\")\n";
-                }
                 emitExpr(*stmt.value);
                 emitSetForVar(stmt.variable->name);
             } else if (stmt.variable->kind == Expr::Kind::ObjPropExpr) {
@@ -545,7 +529,16 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             break;
         case Stmt::Kind::Call: {
             // A statement call: push the args (NO_RET), then EXT_CALL (or
-            // LOCAL_CALL).
+            // LOCAL_CALL). An object method call pushes the receiver first.
+            if (stmt.window) {
+                emitReceiver(*stmt.window);
+                for (const auto& arg : stmt.args) {
+                    emitExpr(*arg);
+                }
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, static_cast<int>(stmt.args.size()) + 1);
+                emit(Opcode::OBJ_CALL, nameId(stmt.name) * mult_);
+                break;
+            }
             emitCall(stmt.name, stmt.args, /*is_local=*/false, /*no_ret=*/true);
             break;
         }
@@ -564,9 +557,6 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::String: {
-            if (expr.string.value.empty()) {
-                std::cerr << "  [empty-string-expr] interned in emitExpr String case\n";
-            }
             const int index = internString(expr.string.value);
             emit(Opcode::PUSH_CONS, index * mult_);
             break;
@@ -603,7 +593,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             // `the <prop> of <object>`: push the object, then access the prop.
             // A fixed prop is PUSH_INT8 <id>; GET <type>. A name-table prop
             // is GET_OBJ_PROP.
-            emitExpr(*expr.object);
+            emitReceiver(*expr.object);
             int type = -1, id = -1;
             if (fixedPropCode(expr.name, type, id)) {
                 emit(Opcode::PUSH_INT8, id);
@@ -626,14 +616,17 @@ void CodeGenerator::emitExpr(const Expr& expr) {
                 emit(Opcode::OBJ_CALL, nameId("count") * mult_);
                 break;
             }
-            emitExpr(*expr.object);
+            emitReceiver(*expr.object);
             emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
             break;
         }
         case Expr::Kind::ObjBracketExpr: {
-            emitExpr(*expr.object);
+            // `object[index]` is the getAt object call in Director bytecode. The
+            // decompiler's translateObjCall prints OBJ_CALL getAt as a bracket.
+            emitReceiver(*expr.object);
             emitExpr(*expr.index);
-            emitNoArg(Opcode::GET);
+            emit(Opcode::PUSH_ARG_LIST, 2);
+            emit(Opcode::OBJ_CALL, nameId("getAt") * mult_);
             break;
         }
         case Expr::Kind::ObjPropIndexExpr: {
@@ -653,14 +646,28 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::MemberExpr: {
-            // `sprite(id)`, `member(id, cast)`, etc.
+            // `field(x)` is a field reference (GET_FIELD). `member(x)` and
+            // `script(x)` in expression position are ordinary calls: the
+            // decompiler prints the same text for the call and for the legacy
+            // member entity, and the call form is the standalone one.
+            if (expr.member_type == "field") {
+                emitExpr(*expr.index);
+                if (expr.index2) {
+                    emitExpr(*expr.index2);
+                } else if (version_ >= 500) {
+                    emitNoArg(Opcode::PUSH_ZERO);
+                }
+                emitNoArg(Opcode::GET_FIELD);
+                break;
+            }
             emitExpr(*expr.index);
             if (expr.index2) {
                 emitExpr(*expr.index2);
+                emit(Opcode::PUSH_ARG_LIST, 2);
+            } else {
+                emit(Opcode::PUSH_ARG_LIST, 1);
             }
-            // The member type selects the opcode; the decompiler maps these to
-            // GET_OBJ_PROP with a member-type name.
-            emit(Opcode::GET_OBJ_PROP, nameId(expr.member_type) * mult_);
+            emit(Opcode::EXT_CALL, nameId(expr.member_type) * mult_);
             break;
         }
         case Expr::Kind::ChunkExpr: {
@@ -723,7 +730,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
         case Expr::Kind::ObjCall: {
             // `object.method(args)`: push the object, push the args, then
             // PUSH_ARG_LIST (object + args), then OBJ_CALL.
-            emitExpr(*expr.object);
+            emitReceiver(*expr.object);
             for (const auto& arg : expr.args) {
                 emitExpr(*arg);
             }
@@ -732,7 +739,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ObjCallV4: {
-            emitExpr(*expr.object);
+            emitReceiver(*expr.object);
             emitArgs(expr.args, /*no_ret=*/false);
             emit(Opcode::OBJ_CALL_V4, 0);
             break;
@@ -785,6 +792,18 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
     }
+}
+
+void CodeGenerator::emitReceiver(const Expr& expr) {
+    if (expr.kind == Expr::Kind::ObjPropExpr) {
+        // `a.b.c`: the inner access is a chained read and the outermost access
+        // is a plain property read. Director uses GET_CHAINED_PROP for the
+        // inner access because its result is immediately read again.
+        emitReceiver(*expr.object);
+        emit(Opcode::GET_CHAINED_PROP, nameId(expr.name) * mult_);
+        return;
+    }
+    emitExpr(expr);
 }
 
 void CodeGenerator::emitVarGet(const std::string& name) {
@@ -859,7 +878,7 @@ void CodeGenerator::emitLvalue(const Expr& expr) {
             break;
         }
         case Expr::Kind::ObjPropExpr: {
-            emitExpr(*expr.object);
+            emitReceiver(*expr.object);
             emit(Opcode::SET_OBJ_PROP, nameId(expr.name) * mult_);
             break;
         }
@@ -1029,24 +1048,63 @@ void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
 }
 
 void CodeGenerator::emitCase(const Stmt& stmt) {
-    // The decompiler's case lowering is PEEK-based. Emit a simplified but
-    // structurally faithful pattern: push the value, then for each branch
-    // compare and branch.
+    // Director's case lowering: the case value stays on the stack. Each branch
+    // starts with PEEK plus a label compare. The last label of a branch uses EQ
+    // and jumps over the body to the next branch; earlier labels of an
+    // or-group use NT_EQ and jump into the body. The last branch falls through
+    // to POP, which removes the case value.
     emitExpr(*stmt.condition);
-    for (const auto& branch : stmt.case_branches) {
-        for (const auto& label : branch.labels) {
-            emitNoArg(Opcode::PEEK);
-            emitExpr(*label);
-            emitNoArg(Opcode::EQ);
-            const int cond_offset = offset_;
-            emit(Opcode::JMP_IF_Z, 0); // patched to next branch
-            emitBlock(branch.body);
-            emit(Opcode::JMP, 0); // patched to end
-            const int branch_end = offset_;
-            patchJump(cond_offset, branch_end - cond_offset);
-            patchJump(branch_end - 1, 0); // placeholder; patched to case end below
+
+    struct PendingJump {
+        int offset;
+        int branch;
+    };
+    std::vector<int> branch_start;
+    std::vector<PendingJump> or_jumps;   // NT_EQ checks: target is the body
+    std::vector<PendingJump> next_jumps; // EQ checks: target is the next branch
+    std::vector<int> end_jumps;          // branch-end JMPs: target is the case end
+
+    for (std::size_t branch_index = 0; branch_index < stmt.case_branches.size(); ++branch_index) {
+        const auto& branch = stmt.case_branches[branch_index];
+        branch_start.push_back(offset_);
+        if (!branch.is_otherwise) {
+            for (std::size_t label_index = 0; label_index < branch.labels.size(); ++label_index) {
+                emitNoArg(Opcode::PEEK);
+                emitExpr(*branch.labels[label_index]);
+                const bool is_last_label = label_index + 1 == branch.labels.size();
+                emitNoArg(is_last_label ? Opcode::EQ : Opcode::NT_EQ);
+                const int jump_offset = offset_;
+                if (is_last_label) {
+                    next_jumps.push_back(PendingJump{jump_offset, static_cast<int>(branch_index)});
+                } else {
+                    or_jumps.push_back(PendingJump{jump_offset, static_cast<int>(branch_index)});
+                }
+                emit(Opcode::JMP_IF_Z, 0);
+            }
+        }
+        const int body_start = offset_;
+        for (const auto& jump : or_jumps) {
+            if (jump.branch == static_cast<int>(branch_index)) {
+                patchJump(jump.offset, body_start - jump.offset);
+            }
+        }
+        emitBlock(branch.body);
+        if (branch_index + 1 < stmt.case_branches.size()) {
+            end_jumps.push_back(offset_);
+            emit(Opcode::JMP, 0);
         }
     }
+
+    const int case_end = offset_;
+    for (const auto& jump : next_jumps) {
+        const std::size_t next_branch = static_cast<std::size_t>(jump.branch) + 1;
+        const int target = next_branch < branch_start.size() ? branch_start[next_branch] : case_end;
+        patchJump(jump.offset, target - jump.offset);
+    }
+    for (const int jump_offset : end_jumps) {
+        patchJump(jump_offset, case_end - jump_offset);
+    }
+    emit(Opcode::POP, 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 #include "libreshockwave/lingo/compiler/parser.hpp"
 
 #include <algorithm>
-#include <iostream>
 
 namespace libreshockwave::lingo::compiler {
 
@@ -9,7 +8,12 @@ Parser::Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
 
 std::unique_ptr<Expr> Parser::makeBareWordLiteral(const std::string& word) const {
     if (word == "VOID") {
-        return Expr::stringLit("", "VOID");
+        // The decompiler prints a zero-argument `void()` call as VOID. It must
+        // lower back to PUSH_ARG_LIST 0 plus EXT_CALL, not to a string literal.
+        auto call = std::make_unique<Expr>();
+        call->kind = Expr::Kind::Call;
+        call->name = "void";
+        return call;
     }
     if (word == "EMPTY") {
         return Expr::stringLit("", "EMPTY");
@@ -564,9 +568,6 @@ std::unique_ptr<Stmt> Parser::parseCallOrAssignment() {
         stmt->kind = Stmt::Kind::Assignment;
         stmt->variable = std::move(head);
         stmt->value = parseExpression();
-        if (stmt->variable->kind == Expr::Kind::Var && stmt->variable->name == "gCore") {
-            std::cerr << "  [parseCallOrAssignment] gCore = value kind=" << static_cast<int>(stmt->value->kind) << " head_kind=" << static_cast<int>(stmt->variable->kind) << "\n";
-        }
         return stmt;
     }
     // Otherwise it is a call statement.
