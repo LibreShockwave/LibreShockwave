@@ -483,7 +483,7 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             } else if (stmt.variable->kind == Expr::Kind::ObjBracketExpr) {
                 // object[index] = value: push object, index, value, then
                 // PUSH_ARG_LIST_NO_RET(3) and OBJ_CALL(setAt).
-                emitExpr(*stmt.variable->object);
+                emitReceiver(*stmt.variable->object);
                 emitExpr(*stmt.variable->index);
                 emitExpr(*stmt.value);
                 emit(Opcode::PUSH_ARG_LIST_NO_RET, 3);
