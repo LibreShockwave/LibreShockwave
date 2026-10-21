@@ -552,6 +552,14 @@ std::unique_ptr<HandlerNode> LingoDecompiler::translateHandler(const chunks::Scr
     }
 
     auto root = std::make_unique<HandlerNode>(resolveName(handler.name_id), std::move(argument_names), std::vector<std::string>{});
+    // Handler-level globals are part of the handler record, not the script
+    // record. Emit them so the decompiled text round-trips the global list.
+    std::vector<std::string> handler_globals;
+    handler_globals.reserve(handler.global_name_ids.size());
+    for (const auto name_id : handler.global_name_ids) {
+        handler_globals.push_back(resolveName(name_id));
+    }
+    root->setGlobalNames(std::move(handler_globals));
     if (script_ != nullptr) {
         std::vector<std::string> property_names;
         for (const auto& prop : script_->properties()) {

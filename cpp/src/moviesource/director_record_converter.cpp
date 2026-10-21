@@ -43,6 +43,8 @@ ScriptAsset DirectorRecordConverter::toScriptAsset(
         handler.line_count = src.line_count;
         handler.arg_name_ids = src.arg_name_ids;
         handler.local_name_ids = src.local_name_ids;
+        handler.global_name_ids = src.global_name_ids;
+        handler.global_name_ids = src.global_name_ids;
         handler.instructions.reserve(src.instructions.size());
         for (const auto& instr : src.instructions) {
             ScriptAsset::Instruction out;

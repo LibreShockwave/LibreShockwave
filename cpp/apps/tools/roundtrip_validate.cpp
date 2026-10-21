@@ -89,6 +89,9 @@ std::vector<Diff> compareHandler(const ScriptAsset::Handler& a,
     if (a.local_name_ids != b.local_name_ids) {
         add("local_name_ids", "mismatch");
     }
+    if (a.global_name_ids != b.global_name_ids) {
+        add("global_name_ids", "mismatch");
+    }
     if (a.instructions.size() != b.instructions.size()) {
         add("instruction_count",
             std::to_string(a.instructions.size()) + " != " + std::to_string(b.instructions.size()));

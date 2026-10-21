@@ -56,6 +56,9 @@ public:
         std::vector<int> local_name_ids;
         std::vector<Instruction> instructions;
         std::unordered_map<int, int> bytecode_index_map;
+        // Name ids of the handler's own `global` declarations. Script-level
+        // globals live on the ScriptAsset, not here.
+        std::vector<int> global_name_ids;
 
         [[nodiscard]] int getInstructionIndex(int offset) const;
     };

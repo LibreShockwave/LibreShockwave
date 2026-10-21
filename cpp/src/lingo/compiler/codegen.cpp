@@ -235,6 +235,9 @@ void CodeGenerator::compileHandler(const Handler& handler_ast, moviesource::Scri
         arg_slot_[handler_ast.arg_names[i]] = static_cast<int>(i);
     }
     handler.globals_count = static_cast<int>(handler_ast.global_names.size());
+    for (const auto& global : handler_ast.global_names) {
+        handler.global_name_ids.push_back(nameId(global));
+    }
     for (std::size_t i = 0; i < local_names_.size(); ++i) {
         local_slot_[local_names_[i]] = static_cast<int>(i);
     }

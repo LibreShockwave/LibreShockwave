@@ -371,7 +371,7 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
             const int local_count = reader.readU16();
             const int local_offset = reader.readI32();
             const int handler_globals_count = reader.readU16();
-            (void)reader.readI32();
+            const int globals_offset = reader.readI32();
             (void)reader.readI32();
             (void)reader.readU16();
             const int line_count = reader.readU16();
@@ -383,6 +383,7 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
             const auto saved_position = reader.position();
             auto arg_name_ids = readNameIds(reader, arg_count, arg_offset);
             auto local_name_ids = readNameIds(reader, local_count, local_offset);
+            auto global_name_ids = readNameIds(reader, handler_globals_count, globals_offset);
 
             std::vector<Instruction> instructions;
             std::unordered_map<int, int> bytecode_index_map;
@@ -432,7 +433,8 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
                                        std::move(arg_name_ids),
                                        std::move(local_name_ids),
                                        std::move(instructions),
-                                       std::move(bytecode_index_map)});
+                                       std::move(bytecode_index_map),
+                                       std::move(global_name_ids)});
         }
     }
 
