@@ -1179,7 +1179,13 @@ void LingoDecompiler::translatePeek(const chunks::ScriptChunk::Instruction& inst
     } else if (target_index >= 0 &&
                target_index < static_cast<int>(instructions.size()) &&
                instructions[static_cast<std::size_t>(target_index)].opcode == Opcode::POP) {
-        expect = CaseNode::EXPECT_POP;
+        // A POP target is the case end, unless the previous instruction is a
+        // jump past it: then the POP starts an otherwise body that returns.
+        const bool otherwise_body = target_index >= 1 &&
+            instructions[static_cast<std::size_t>(target_index - 1)].opcode == Opcode::JMP &&
+            instructions[static_cast<std::size_t>(target_index - 1)].offset +
+                instructions[static_cast<std::size_t>(target_index - 1)].argument > jump_pos;
+        expect = otherwise_body ? CaseNode::EXPECT_OTHERWISE : CaseNode::EXPECT_POP;
     }
 
     auto current_case = std::make_unique<CaseNode>(std::move(case_value), expect);

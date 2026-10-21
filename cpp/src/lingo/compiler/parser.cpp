@@ -482,16 +482,6 @@ std::unique_ptr<Stmt> Parser::parseCase() {
     }
     expectKeyword("end");
     expectKeyword("case");
-    // The decompiler prints an `otherwise` block whose body returns as plain
-    // statements after `end case`, because its branch starts with POP. Attach
-    // the trailing return as the otherwise branch so the bytecode round-trips.
-    skipNewlines();
-    if (checkKeyword("return")) {
-        Stmt::CaseBranch otherwise_branch;
-        otherwise_branch.is_otherwise = true;
-        otherwise_branch.body.push_back(parseReturn());
-        stmt->case_branches.push_back(std::move(otherwise_branch));
-    }
     return stmt;
 }
 
