@@ -259,6 +259,11 @@ int main(int argc, char** argv) {
             continue;
         }
         if (options.dump_asm) {
+            std::cout << "-- names: ";
+            for (std::size_t i = 0; i < original->names.size(); ++i) {
+                std::cout << i << "=" << original->names[i] << " ";
+            }
+            std::cout << std::endl;
             for (std::size_t h = 0; h < original->handlers.size(); ++h) {
                 const auto& a = original->handlers[h];
                 const bool has_b = h < recompiled->handlers.size();

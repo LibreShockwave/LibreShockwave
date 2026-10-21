@@ -95,8 +95,10 @@ void CodeGenerator::emit(Opcode op, int argument) {
     if (base == 1 && !fitsOne(op, argument)) {
         width = fitsTwo(op, argument) ? 2 : 4;
     }
-    // Jump opcodes always use a 2-byte argument (to allow negative offsets).
-    if (op == Opcode::JMP_IF_Z || op == Opcode::JMP || op == Opcode::END_REPEAT) {
+    // JMP_IF_Z and JMP always use a 2-byte argument (to allow negative
+    // offsets). END_REPEAT uses the narrowest width that fits (1-byte when the
+    // offset is a signed byte, 2-byte otherwise).
+    if (op == Opcode::JMP_IF_Z || op == Opcode::JMP) {
         width = 2;
     }
     const int n = static_cast<int>(op);
@@ -593,16 +595,19 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ObjPropIndexExpr: {
+            // `base.prop[idx]` (and `base.prop[idx1, idx2]`) is encoded as the
+            // getProp(base, prop_sym, idx[, idx2]) call. This inverts the
+            // decompiler's getProp pattern (3 or 4 args, 2nd a symbol).
             emitExpr(*expr.object);
-            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            emit(Opcode::PUSH_SYMB, nameId(expr.name) * mult_);
+            emitExpr(*expr.index);
             if (expr.index2) {
-                emitExpr(*expr.index);
                 emitExpr(*expr.index2);
-                emitNoArg(Opcode::GET);
+                emit(Opcode::PUSH_ARG_LIST, 4);
             } else {
-                emitExpr(*expr.index);
-                emitNoArg(Opcode::GET);
+                emit(Opcode::PUSH_ARG_LIST, 3);
             }
+            emit(Opcode::OBJ_CALL, nameId("getProp") * mult_);
             break;
         }
         case Expr::Kind::MemberExpr: {
@@ -952,7 +957,7 @@ void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
     emit(Opcode::PUSH_INT8, 1);
     emitNoArg(Opcode::PEEK); // the index
     emitNoArg(Opcode::ADD);
-    emit(Opcode::END_REPEAT, top - offset_); // back to top
+    emit(Opcode::END_REPEAT, 256 + (top - offset_)); // back to top (unsigned)
     const int exit = offset_;
     emit(Opcode::POP, 3);
     patchJump(cond_offset, exit - cond_offset);
@@ -976,7 +981,7 @@ void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
     emitVarGet(stmt.loop_var->name);
     emitNoArg(Opcode::ADD);
     emitSetForVar(stmt.loop_var->name);
-    emit(Opcode::END_REPEAT, offset_ - loop_top);
+    emit(Opcode::END_REPEAT, 256 - (offset_ - loop_top)); // back to loop_top (unsigned)
     const int exit = offset_;
     patchJump(cond_offset, exit - cond_offset);
 }
