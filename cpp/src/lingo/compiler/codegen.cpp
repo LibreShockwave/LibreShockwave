@@ -1009,14 +1009,23 @@ void CodeGenerator::emitLvalue(const Expr& expr) {
 
 void CodeGenerator::emitChunkBounds(const Expr& chunk) {
     // first_char, last_char, first_word, last_word, first_item, last_item,
-    // first_line, last_line. Missing bounds become PUSH_ZERO.
+    // first_line, last_line. Missing bounds become PUSH_ZERO. Director folds a
+    // negated integer bound into the constant itself.
+    const auto emit_bound = [this](const Expr& expr) {
+        if (expr.kind == Expr::Kind::InverseOp && expr.left &&
+            expr.left->kind == Expr::Kind::Int) {
+            emitInt(-expr.left->int_value);
+            return;
+        }
+        emitExpr(expr);
+    };
     for (const int chunk_id : {1, 2, 3, 4, 5, 6, 7, 8}) {
         const int type = (chunk_id + 1) / 2; // 1->1, 2->1, 3->2, ...
         if (chunk.chunk_type == type && chunk.first) {
             if (chunk_id % 2 == 1) {
-                emitExpr(*chunk.first);
+                emit_bound(*chunk.first);
             } else if (chunk.last) {
-                emitExpr(*chunk.last);
+                emit_bound(*chunk.last);
             } else {
                 emitNoArg(Opcode::PUSH_ZERO);
             }
