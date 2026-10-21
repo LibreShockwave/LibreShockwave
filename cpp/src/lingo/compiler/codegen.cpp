@@ -182,14 +182,13 @@ moviesource::ScriptAsset CodeGenerator::compile() {
 }
 
 void CodeGenerator::compileHandler(const Handler& handler_ast, moviesource::ScriptAsset& asset) {
-    // Reset per-handler state.
+    // Reset per-handler state. The literal table is per-script (a single table
+    // the PUSH_CONS index references), so it is not cleared here.
     arg_slot_.clear();
     local_slot_.clear();
     local_names_.clear();
     declared_names_.clear();
     global_names_.clear();
-    literals_.clear();
-    literal_index_.clear();
     offset_ = 0;
 
     // Names declared as globals or properties are never locals.
@@ -508,8 +507,9 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             // body bytecode. Skip (the decompiler emits it as a comment).
             break;
         case Stmt::Kind::Call: {
-            // A statement call: push the args, then EXT_CALL (or LOCAL_CALL).
-            emitCall(stmt.name, stmt.args, /*is_local=*/false);
+            // A statement call: push the args (NO_RET), then EXT_CALL (or
+            // LOCAL_CALL).
+            emitCall(stmt.name, stmt.args, /*is_local=*/false, /*no_ret=*/true);
             break;
         }
     }
@@ -570,6 +570,18 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ObjPropExpr: {
+            // `.count` on a nested property is encoded as count(base, prop_sym):
+            // push the base, push the property name as a symbol, wrap in an
+            // arg list, then OBJ_CALL count. This inverts the decompiler's
+            // count pattern (nargs == 2, 2nd arg a symbol).
+            if (expr.name == "count" && expr.object &&
+                expr.object->kind == Expr::Kind::ObjPropExpr) {
+                emitExpr(*expr.object->object);
+                emit(Opcode::PUSH_SYMB, nameId(expr.object->name) * mult_);
+                emit(Opcode::PUSH_ARG_LIST, 2);
+                emit(Opcode::OBJ_CALL, nameId("count") * mult_);
+                break;
+            }
             emitExpr(*expr.object);
             emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
             break;
@@ -653,12 +665,12 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::NewObj: {
-            emitArgs(expr.args);
+            emitArgs(expr.args, /*no_ret=*/false);
             emit(Opcode::NEW_OBJ, nameId(expr.name) * mult_);
             break;
         }
         case Expr::Kind::Call: {
-            emitCall(expr.name, expr.args, /*is_local=*/false);
+            emitCall(expr.name, expr.args, /*is_local=*/false, /*no_ret=*/false);
             break;
         }
         case Expr::Kind::ObjCall: {
@@ -674,7 +686,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
         }
         case Expr::Kind::ObjCallV4: {
             emitExpr(*expr.object);
-            emitArgs(expr.args);
+            emitArgs(expr.args, /*no_ret=*/false);
             emit(Opcode::OBJ_CALL_V4, 0);
             break;
         }
@@ -739,13 +751,23 @@ void CodeGenerator::emitVarGet(const std::string& name) {
         return;
     }
     // A global, a script property, or a movie-level (top-level) property.
-    if (global_names_.count(name)) {
+    // Director's built-in top-level references (_player, _movie, _sound) are
+    // always accessed via GET_TOP_LEVEL_PROP, even when declared global.
+    if (isTopLevelBuiltin(name)) {
+        emit(Opcode::GET_TOP_LEVEL_PROP, nameId(name) * mult_);
+    } else if (global_names_.count(name)) {
         emit(Opcode::GET_GLOBAL, nameId(name) * mult_);
     } else if (isScriptProperty(name)) {
         emit(Opcode::GET_PROP, nameId(name) * mult_);
     } else {
         emit(Opcode::GET_TOP_LEVEL_PROP, nameId(name) * mult_);
     }
+}
+
+// Director's built-in top-level references. They are accessed via
+// GET_TOP_LEVEL_PROP regardless of their global declaration.
+bool CodeGenerator::isTopLevelBuiltin(const std::string& name) {
+    return name == "_player" || name == "_movie" || name == "_sound";
 }
 
 bool CodeGenerator::isScriptProperty(const std::string& name) {
@@ -774,6 +796,19 @@ void CodeGenerator::emitLvalue(const Expr& expr) {
             emitExpr(*expr.object);
             emitExpr(*expr.index);
             emitNoArg(Opcode::SET);
+            break;
+        }
+        case Expr::Kind::TheExpr: {
+            // `set the <prop> to <value>`: the value is already on the stack.
+            // A fixed prop is PUSH_INT8 <id>; SET <type>. A name-table prop is
+            // SET_MOVIE_PROP <name_id * mult>.
+            int type = -1, id = -1;
+            if (fixedPropCode(expr.name, type, id)) {
+                emit(Opcode::PUSH_INT8, id);
+                emit(Opcode::SET, type);
+            } else {
+                emit(Opcode::SET_MOVIE_PROP, nameId(expr.name) * mult_);
+            }
             break;
         }
         case Expr::Kind::ObjPropExpr: {
@@ -849,17 +884,22 @@ int CodeGenerator::varTypeForExpr(const Expr& expr) {
     return 1;
 }
 
-void CodeGenerator::emitArgs(const std::vector<std::unique_ptr<Expr>>& args) {
+void CodeGenerator::emitArgs(const std::vector<std::unique_ptr<Expr>>& args,
+                             bool no_ret) {
     for (const auto& arg : args) {
         emitExpr(*arg);
     }
-    emit(Opcode::PUSH_ARG_LIST, static_cast<int>(args.size()));
+    // A statement call wraps its args in PUSH_ARG_LIST_NO_RET; an expression
+    // call (and NEW_OBJ) wraps them in PUSH_ARG_LIST.
+    emit(no_ret ? Opcode::PUSH_ARG_LIST_NO_RET : Opcode::PUSH_ARG_LIST,
+         static_cast<int>(args.size()));
 }
 
 void CodeGenerator::emitCall(const std::string& name,
                             const std::vector<std::unique_ptr<Expr>>& args,
-                            bool is_local) {
-    emitArgs(args);
+                            bool is_local,
+                            bool no_ret) {
+    emitArgs(args, no_ret);
     // A call to a handler in the same script is a LOCAL_CALL (arg = handler index).
     for (std::size_t i = 0; i < script_->handlers.size(); ++i) {
         if (script_->handlers[i]->name == name) {

@@ -91,10 +91,12 @@ private:
     void emitSetForVar(const std::string& name);
     [[nodiscard]] int varTypeForExpr(const Expr& expr);
     [[nodiscard]] bool isScriptProperty(const std::string& name);
-    void emitArgs(const std::vector<std::unique_ptr<Expr>>& args);
+    [[nodiscard]] bool isTopLevelBuiltin(const std::string& name);
+    void emitArgs(const std::vector<std::unique_ptr<Expr>>& args, bool no_ret);
     void emitCall(const std::string& name,
                   const std::vector<std::unique_ptr<Expr>>& args,
-                  bool is_local);
+                  bool is_local,
+                  bool no_ret);
     [[nodiscard]] lingo::Opcode binOpToOpcode(BinOp op);
 
     // Loop lowering (the exact Director patterns the decompiler recognizes).

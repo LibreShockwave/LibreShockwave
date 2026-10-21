@@ -248,6 +248,12 @@ add_executable(libreshockwave_multiuser_probe
 target_link_libraries(libreshockwave_multiuser_probe PRIVATE LibreShockwave::libreshockwave)
 target_compile_features(libreshockwave_multiuser_probe PRIVATE cxx_std_20)
 
+add_executable(libreshockwave_roundtrip_validate
+    apps/tools/roundtrip_validate.cpp
+)
+target_link_libraries(libreshockwave_roundtrip_validate PRIVATE LibreShockwave::libreshockwave)
+target_compile_features(libreshockwave_roundtrip_validate PRIVATE cxx_std_20)
+
 find_package(Threads REQUIRED)
 target_link_libraries(libreshockwave PUBLIC Threads::Threads)
 
