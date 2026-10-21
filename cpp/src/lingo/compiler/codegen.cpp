@@ -634,6 +634,16 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ThePropExpr: {
+            // The decompiler prints the count(base, #prop) object call as
+            // `the count of the <prop> of <base>` in non-dot mode.
+            if (expr.name == "count" && expr.object &&
+                expr.object->kind == Expr::Kind::ThePropExpr) {
+                emitReceiver(*expr.object->object);
+                emit(Opcode::PUSH_SYMB, nameId(expr.object->name) * mult_);
+                emit(Opcode::PUSH_ARG_LIST, 2);
+                emit(Opcode::OBJ_CALL, nameId("count") * mult_);
+                break;
+            }
             // `the <prop> of <object>`: push the object, then access the prop.
             // A fixed prop is PUSH_INT8 <id>; GET <type>. A name-table prop
             // is GET_OBJ_PROP.
