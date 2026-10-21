@@ -384,6 +384,11 @@ ScriptChunk ScriptChunk::read(const moviesource::MovieSource* file,
             auto arg_name_ids = readNameIds(reader, arg_count, arg_offset);
             auto local_name_ids = readNameIds(reader, local_count, local_offset);
             auto global_name_ids = readNameIds(reader, handler_globals_count, globals_offset);
+            // Director leaves unused global slots as 0xFFFF. They carry no name
+            // and cannot be represented in script text.
+            global_name_ids.erase(
+                std::remove(global_name_ids.begin(), global_name_ids.end(), 0xFFFF),
+                global_name_ids.end());
 
             std::vector<Instruction> instructions;
             std::unordered_map<int, int> bytecode_index_map;

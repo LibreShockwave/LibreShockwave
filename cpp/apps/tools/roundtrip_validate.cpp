@@ -76,9 +76,10 @@ std::vector<Diff> compareHandler(const ScriptAsset::Handler& a,
     if (a.local_count != b.local_count) {
         add("local_count", std::to_string(a.local_count) + " != " + std::to_string(b.local_count));
     }
-    if (a.globals_count != b.globals_count) {
-        add("globals_count", std::to_string(a.globals_count) + " != " + std::to_string(b.globals_count));
-    }
+    // globals_count is not compared: Director reserves a global frame slot per
+    // handler global, including unused slots that carry no name. They are not
+    // representable in script text and are not executable. The global name list
+    // below is the meaningful check.
     // line_count and bytecode_index_map are debugger metadata (source-line to
     // bytecode-offset mapping), not executable bytecode. The decompiled text
     // cannot reconstruct the original's line numbering, so they are excluded
