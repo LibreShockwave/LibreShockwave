@@ -361,9 +361,14 @@ private:
 
 class ExitStmtNode final : public LingoNode {
 public:
-    ExitStmtNode();
+    // `return_call` marks a bare `return` (a no-argument return call). A plain
+    // exit is the RET opcode. The two are distinct in the source.
+    explicit ExitStmtNode(bool return_call = false);
     [[nodiscard]] std::string toLingo(bool dot) const override;
     [[nodiscard]] std::string toTypeScript() const override;
+
+private:
+    bool return_call_ = false;
 };
 
 // Lingo `return <value>` (a value-returning return statement). Distinct from

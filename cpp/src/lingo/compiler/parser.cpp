@@ -460,11 +460,14 @@ std::unique_ptr<Stmt> Parser::parseReturn() {
     expectKeyword("return");
     auto stmt = std::make_unique<Stmt>();
     stmt->kind = Stmt::Kind::Return;
-    // A bare `return` has no value; `return <value>` does. The value is an
-    // expression, but a trailing keyword (none expected here) would signal
-    // the bare form. We treat any following expression as the value.
+    // A bare `return` has no value; `return <value>` does. The decompiler
+    // prints a multi-argument return as a comma-separated list.
     if (!checkNewline() && !atEof() && !checkKeyword("end")) {
-        stmt->value = parseExpression();
+        stmt->args.push_back(parseExpression());
+        while (check(TokenType::Comma)) {
+            advance();
+            stmt->args.push_back(parseExpression());
+        }
     }
     return stmt;
 }

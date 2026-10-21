@@ -316,6 +316,9 @@ void CodeGenerator::collectLocalsStmt(const Stmt& stmt) {
             break;
         case Stmt::Kind::Return:
             if (stmt.value) collectLocalsExpr(*stmt.value);
+            for (const auto& arg : stmt.args) {
+                if (arg) collectLocalsExpr(*arg);
+            }
             break;
         case Stmt::Kind::Assignment:
             if (stmt.variable) collectLocalsExpr(*stmt.variable);
@@ -431,11 +434,9 @@ void CodeGenerator::collectLocalsExpr(const Expr& expr) {
 }
 
 void CodeGenerator::emitBlock(const std::vector<std::unique_ptr<Stmt>>& block) {
-    ++block_depth_;
     for (const auto& stmt : block) {
         emitStmt(*stmt);
     }
-    --block_depth_;
 }
 
 void CodeGenerator::emitStmt(const Stmt& stmt) {
@@ -476,24 +477,24 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
             if (case_depth_ > 0) {
                 emit(Opcode::POP, case_depth_);
             }
-            if (stmt.value) {
+            if (!stmt.args.empty()) {
+                emitArgs(stmt.args, /*no_ret=*/true);
+                emit(Opcode::EXT_CALL, nameId("return") * mult_);
+            } else if (stmt.value) {
                 emitExpr(*stmt.value);
                 emit(Opcode::PUSH_ARG_LIST_NO_RET, 1);
                 emit(Opcode::EXT_CALL, nameId("return") * mult_);
             } else {
-                emitNoArg(Opcode::RET);
+                // A bare return is a no-argument call to the return handler.
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 0);
+                emit(Opcode::EXT_CALL, nameId("return") * mult_);
             }
             break;
         }
         case Stmt::Kind::Exit:
-            // A top-level exit is a bare RET. A nested exit is a no-argument
-            // call to the return handler.
-            if (block_depth_ <= 1) {
-                emitNoArg(Opcode::RET);
-            } else {
-                emit(Opcode::PUSH_ARG_LIST_NO_RET, 0);
-                emit(Opcode::EXT_CALL, nameId("return") * mult_);
-            }
+            // The Lingo exit statement is a bare RET. A bare return is a
+            // no-argument call to the return handler.
+            emitNoArg(Opcode::RET);
             break;
         case Stmt::Kind::Assignment: {
             // A simple var: value first, then the SET. A dot/bracket lvalue:

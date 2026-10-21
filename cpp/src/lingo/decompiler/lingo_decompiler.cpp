@@ -901,7 +901,7 @@ void LingoDecompiler::translateInstruction(const chunks::ScriptChunk::Instructio
                 (arg_list->valueType() == ValueType::ArgList ||
                  arg_list->valueType() == ValueType::ArgListNoRet)) {
                 if (arg_list->argNodes().empty()) {
-                    translation = std::make_unique<ExitStmtNode>();
+                    translation = std::make_unique<ExitStmtNode>(/*return_call=*/true);
                     break;
                 }
                 if (arg_list->argNodes().size() == 1) {

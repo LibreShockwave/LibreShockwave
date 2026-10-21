@@ -541,12 +541,12 @@ std::string NewObjNode::toLingo(bool dot) const {
     return "new " + object_type_ + "(" + object_args_->toLingo(dot) + ")";
 }
 
-ExitStmtNode::ExitStmtNode() {
+ExitStmtNode::ExitStmtNode(bool return_call) : return_call_(return_call) {
     markStatement();
 }
 
 std::string ExitStmtNode::toLingo(bool /*dot*/) const {
-    return "exit";
+    return return_call_ ? "return" : "exit";
 }
 
 ReturnStmtNode::ReturnStmtNode(NodePtr value) : value_(std::move(value)) {
