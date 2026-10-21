@@ -44,6 +44,21 @@ std::string lower(std::string value) {
     return value;
 }
 
+// TrueType outlines start with 0x00010000, "true", or "OTTO".
+bool isTrueTypeFont(const std::vector<std::uint8_t>& data) {
+    if (data.size() < 4) {
+        return false;
+    }
+    const std::uint32_t tag = (static_cast<std::uint32_t>(data[0]) << 24U) |
+        (static_cast<std::uint32_t>(data[1]) << 16U) |
+        (static_cast<std::uint32_t>(data[2]) << 8U) |
+        static_cast<std::uint32_t>(data[3]);
+    constexpr std::uint32_t kTrueType = 0x00010000;
+    constexpr std::uint32_t kTrue = 0x74727565;
+    constexpr std::uint32_t kOtto = 0x4F54544F;
+    return tag == kTrueType || tag == kTrue || tag == kOtto;
+}
+
 bool isSystemMacPalette(const std::shared_ptr<const bitmap::Palette>& palette) {
     if (!palette) {
         return false;
@@ -1506,10 +1521,6 @@ void CastLib::scanXmedFonts() {
     }
 
     registerFontAliases(source_file_);
-    const auto key_table = source_file_->keyTable();
-    if (!key_table) {
-        return;
-    }
 
     const auto xmed_four_cc = io::BinaryReader::fourCC("XMED");
     for (const auto& member : source_file_->castMembers()) {
@@ -1518,16 +1529,17 @@ void CastLib::scanXmedFonts() {
         }
         for (const auto& linked : source_file_->linkedAssetsForMember(member, xmed_four_cc)) {
             auto raw = std::dynamic_pointer_cast<chunks::RawChunk>(source_file_->chunkById(linked.chunk_id));
-            if (!raw || raw->data().size() < 4) {
+            if (!raw || raw->data().size() < 4 || member->name.empty()) {
                 continue;
             }
             const auto& data = raw->data();
             if (data[0] == static_cast<std::uint8_t>('P') &&
                 data[1] == static_cast<std::uint8_t>('F') &&
                 data[2] == static_cast<std::uint8_t>('R') &&
-                data[3] == static_cast<std::uint8_t>('1') &&
-                !member->name.empty()) {
+                data[3] == static_cast<std::uint8_t>('1')) {
                 FontRegistry::registerPfr1Font(member->name, data);
+            } else if (isTrueTypeFont(data)) {
+                FontRegistry::registerEmbeddedTtfFont(member->name, data);
             }
         }
     }

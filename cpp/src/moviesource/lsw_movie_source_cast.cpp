@@ -52,6 +52,39 @@ std::vector<std::uint32_t> parsePaletteColors(const std::vector<std::uint8_t>& b
     return result;
 }
 
+// A text payload is plain text, or a JSON object with the text and its styled
+// runs: {"text": "...", "runs": [{"start": 0, "end": 3, ...}]}.
+TextAsset parseTextAsset(const std::vector<std::uint8_t>& bytes) {
+    TextAsset asset;
+    const std::string payload(bytes.begin(), bytes.end());
+    const bool looks_like_json = !payload.empty() && payload.front() == '{';
+    if (looks_like_json) {
+        std::string error;
+        const auto json = JsonValue::parse(payload, error);
+        if (json && json->isObject() && json->find("text") != nullptr) {
+            asset.text = json->stringField("text");
+            if (const JsonValue* runs = json->find("runs");
+                runs != nullptr && runs->isArray()) {
+                for (const auto& run : runs->asArray()) {
+                    TextAsset::TextRun out;
+                    out.start_offset = run.intField("start", 0);
+                    out.end_offset = run.intField("end", 0);
+                    out.font_id = run.intField("font", 0);
+                    out.font_size = run.intField("size", 0);
+                    out.font_style = run.intField("style", 0);
+                    out.color_r = run.intField("r", 0);
+                    out.color_g = run.intField("g", 0);
+                    out.color_b = run.intField("b", 0);
+                    asset.runs.push_back(out);
+                }
+            }
+            return asset;
+        }
+    }
+    asset.text = payload;
+    return asset;
+}
+
 } // namespace
 
 void LswMovieSource::loadCasts() {
@@ -84,8 +117,14 @@ void LswMovieSource::loadCasts() {
                 }
                 member_payloads_[member->chunk_id] = *bytes;
                 if (member->type == cast::MemberType::Text) {
-                    member_text_[member->chunk_id] =
-                        std::string(bytes->begin(), bytes->end());
+                    member_texts_[member->chunk_id] = parseTextAsset(*bytes);
+                }
+                if (member->type == cast::MemberType::Font) {
+                    auto raw = std::make_shared<chunks::RawChunk>(
+                        this, id::ChunkId(member->chunk_id), format::ChunkType::XMED, *bytes);
+                    raw_chunks_[member->chunk_id] = raw;
+                    member->linked.push_back(
+                        LinkedAsset{io::BinaryReader::fourCC("XMED"), member->chunk_id});
                 }
                 if (member->type == cast::MemberType::Palette) {
                     std::string error;
@@ -261,13 +300,11 @@ std::shared_ptr<TextAsset> LswMovieSource::textForMember(
     if (!member) {
         return nullptr;
     }
-    const auto found = member_text_.find(member->chunk_id);
-    if (found == member_text_.end()) {
+    const auto found = member_texts_.find(member->chunk_id);
+    if (found == member_texts_.end()) {
         return nullptr;
     }
-    auto asset = std::make_shared<TextAsset>();
-    asset->text = found->second;
-    return asset;
+    return std::make_shared<TextAsset>(found->second);
 }
 
 std::vector<std::shared_ptr<chunks::TextChunk>> LswMovieSource::textChunksForMember(

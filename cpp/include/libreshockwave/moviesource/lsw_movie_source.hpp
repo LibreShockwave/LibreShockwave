@@ -11,6 +11,7 @@
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
 #include "libreshockwave/chunks/cast_member_chunk.hpp"
+#include "libreshockwave/chunks/raw_chunk.hpp"
 #include "libreshockwave/chunks/script_chunk.hpp"
 #include "libreshockwave/chunks/script_names_chunk.hpp"
 #include "libreshockwave/moviesource/movie_source.hpp"
@@ -184,7 +185,8 @@ private:
     std::unordered_map<int, std::shared_ptr<const bitmap::Palette>> palettes_;
     std::unordered_map<int, std::string> font_names_;
     std::unordered_map<int, std::vector<std::uint8_t>> member_payloads_;
-    std::unordered_map<int, std::string> member_text_;
+    std::unordered_map<int, TextAsset> member_texts_;
+    std::unordered_map<int, std::shared_ptr<chunks::RawChunk>> raw_chunks_;
 };
 
 } // namespace libreshockwave::moviesource

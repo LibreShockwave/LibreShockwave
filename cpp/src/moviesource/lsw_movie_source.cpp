@@ -155,6 +155,10 @@ std::shared_ptr<chunks::Chunk> LswMovieSource::chunkById(int chunk_id) {
     if (member != cast_member_chunks_by_id_.end()) {
         return member->second;
     }
+    const auto raw = raw_chunks_.find(chunk_id);
+    if (raw != raw_chunks_.end()) {
+        return raw->second;
+    }
     return nullptr;
 }
 
