@@ -1,0 +1,1002 @@
+#include "libreshockwave/lingo/compiler/codegen.hpp"
+
+#include <bit>
+#include <cmath>
+
+namespace libreshockwave::lingo::compiler {
+namespace {
+
+// Whether an argument fits in a 1-byte / 2-byte field. PUSH_INT8/INT16 are
+// signed; everything else is unsigned.
+bool fitsOne(Opcode op, int value) {
+    if (op == Opcode::PUSH_INT8) {
+        return value >= -128 && value <= 127;
+    }
+    return value >= 0 && value <= 255;
+}
+
+bool fitsTwo(Opcode op, int value) {
+    if (op == Opcode::PUSH_INT16) {
+        return value >= -32768 && value <= 32767;
+    }
+    return value >= 0 && value <= 65535;
+}
+
+// A fixed `the <prop>` (not a name-table entry) is encoded as PUSH_INT8 <id>
+// then GET <type>. This inverts the decompiler's readV4Property.
+bool fixedPropCode(const std::string& name, int& type, int& id) {
+    // property_type 0x00: moviePropertyName.
+    static const std::pair<const char*, int> kMovie[] = {
+        {"floatPrecision", 0x00}, {"mouseDownScript", 0x01},
+        {"mouseUpScript", 0x02}, {"keyDownScript", 0x03},
+        {"keyUpScript", 0x04}, {"timeoutScript", 0x05},
+        {"short time", 0x06}, {"abbr time", 0x07}, {"long time", 0x08},
+        {"short date", 0x09}, {"abbr date", 0x0a}, {"long date", 0x0b},
+    };
+    for (const auto& e : kMovie) {
+        if (name == e.first) { type = 0x00; id = e.second; return true; }
+    }
+    // property_type 0x07: animationPropertyName.
+    static const std::pair<const char*, int> kAnim[] = {
+        {"beepOn", 0x01}, {"buttonStyle", 0x02}, {"centerStage", 0x03},
+        {"checkBoxAccess", 0x04}, {"checkboxType", 0x05}, {"colorDepth", 0x06},
+        {"colorQD", 0x07}, {"exitLock", 0x08}, {"fixStageSize", 0x09},
+        {"fullColorPermit", 0x0a}, {"imageDirect", 0x0b}, {"doubleClick", 0x0c},
+        {"key", 0x0d}, {"lastClick", 0x0e}, {"lastEvent", 0x0f},
+        {"keyCode", 0x10}, {"lastKey", 0x11}, {"lastRoll", 0x12},
+        {"timeoutLapsed", 0x13}, {"multiSound", 0x14}, {"pauseState", 0x15},
+        {"quickTimePresent", 0x16}, {"selEnd", 0x17}, {"selStart", 0x18},
+        {"soundEnabled", 0x19}, {"soundLevel", 0x1a}, {"stageColor", 0x1b},
+        {"switchColorDepth", 0x1d}, {"timeoutKeyDown", 0x1e},
+        {"timeoutLength", 0x1f}, {"timeoutMouse", 0x20}, {"timeoutPlay", 0x21},
+        {"timer", 0x22}, {"preLoadRAM", 0x23},
+        {"videoForWindowsPresent", 0x24}, {"netPresent", 0x25},
+        {"safePlayer", 0x26}, {"soundKeepDevice", 0x27},
+        {"soundMixMedia", 0x28},
+    };
+    for (const auto& e : kAnim) {
+        if (name == e.first) { type = 0x07; id = e.second; return true; }
+    }
+    // property_type 0x08: animation2PropertyName.
+    static const std::pair<const char*, int> kAnim2[] = {
+        {"perFrameHook", 0x01}, {"number of castMembers", 0x02},
+        {"number of menus", 0x03}, {"number of castLibs", 0x04},
+        {"number of xtras", 0x05},
+    };
+    for (const auto& e : kAnim2) {
+        if (name == e.first) { type = 0x08; id = e.second; return true; }
+    }
+    return false;
+}
+
+} // namespace
+
+CodeGenerator::CodeGenerator(std::unique_ptr<Script> script,
+                             const std::vector<std::string>& name_table,
+                             int version,
+                             bool capital_x)
+    : script_(std::move(script)),
+      names_(name_table),
+      version_(version),
+      mult_(capital_x ? 1 : (version >= 500 ? 8 : 6)) {}
+
+int CodeGenerator::nameId(const std::string& name) {
+    for (std::size_t i = 0; i < names_.size(); ++i) {
+        if (names_[i] == name) {
+            return static_cast<int>(i);
+        }
+    }
+    throw CompileError("name '" + name + "' is not in the name table", 0, 0);
+}
+
+void CodeGenerator::emit(Opcode op, int argument) {
+    const int base = lingo::argBytes(op);
+    int width = base;
+    if (base == 1 && !fitsOne(op, argument)) {
+        width = fitsTwo(op, argument) ? 2 : 4;
+    }
+    // Jump opcodes always use a 2-byte argument (to allow negative offsets).
+    if (op == Opcode::JMP_IF_Z || op == Opcode::JMP || op == Opcode::END_REPEAT) {
+        width = 2;
+    }
+    const int n = static_cast<int>(op);
+    int raw;
+    if (width == 0) {
+        raw = n;
+    } else if (width == 1) {
+        raw = n;
+    } else if (width == 2) {
+        raw = n + 0x40;
+    } else {
+        raw = n + 0x80;
+    }
+    handler_->instructions.push_back(
+        moviesource::ScriptAsset::Instruction{offset_, op, raw, argument});
+    offset_ += 1 + width;
+}
+
+void CodeGenerator::emitNoArg(Opcode op) {
+    emit(op, 0);
+}
+
+void CodeGenerator::emitInt(long long value) {
+    if (value == 0) {
+        emitNoArg(Opcode::PUSH_ZERO);
+    } else if (value >= -128 && value <= 127) {
+        emit(Opcode::PUSH_INT8, static_cast<int>(value));
+    } else if (value >= -32768 && value <= 32767) {
+        emit(Opcode::PUSH_INT16, static_cast<int>(value));
+    } else {
+        emit(Opcode::PUSH_INT32, static_cast<int>(value));
+    }
+}
+
+int CodeGenerator::internString(const std::string& value) {
+    const auto found = literal_index_.find(value);
+    if (found != literal_index_.end()) {
+        return found->second;
+    }
+    const int index = static_cast<int>(literals_.size());
+    moviesource::ScriptAsset::LiteralEntry entry;
+    entry.type = 1; // string
+    entry.value = value;
+    literals_.push_back(std::move(entry));
+    literal_index_[value] = index;
+    return index;
+}
+
+int CodeGenerator::internInt(long long value) {
+    // Ints are pushed directly (PUSH_INT8/16/32), not via the literal table.
+    (void)value;
+    return -1;
+}
+
+int CodeGenerator::internFloat(double value) {
+    (void)value;
+    return -1;
+}
+
+int CodeGenerator::internSymbol(const std::string& name) {
+    return nameId(name);
+}
+
+// ---------------------------------------------------------------------------
+// Script compilation.
+// ---------------------------------------------------------------------------
+
+moviesource::ScriptAsset CodeGenerator::compile() {
+    moviesource::ScriptAsset asset;
+    asset.names = names_;
+    for (const auto& prop : script_->property_names) {
+        asset.property_name_ids.push_back(nameId(prop));
+    }
+    for (const auto& global : script_->global_names) {
+        asset.global_name_ids.push_back(nameId(global));
+    }
+    asset.handlers.reserve(script_->handlers.size());
+    for (auto& handler_ast : script_->handlers) {
+        compileHandler(*handler_ast, asset);
+    }
+    asset.literals = std::move(literals_);
+    return asset;
+}
+
+void CodeGenerator::compileHandler(const Handler& handler_ast, moviesource::ScriptAsset& asset) {
+    // Reset per-handler state.
+    arg_slot_.clear();
+    local_slot_.clear();
+    local_names_.clear();
+    declared_names_.clear();
+    global_names_.clear();
+    literals_.clear();
+    literal_index_.clear();
+    offset_ = 0;
+
+    // Names declared as globals or properties are never locals.
+    for (const auto& prop : script_->property_names) {
+        declared_names_.insert(prop);
+    }
+    for (const auto& global : script_->global_names) {
+        declared_names_.insert(global);
+        global_names_.insert(global);
+    }
+    for (const auto& global : handler_ast.global_names) {
+        declared_names_.insert(global);
+        global_names_.insert(global);
+    }
+    // First pass: collect the locals (first-assignment order).
+    collectLocals(handler_ast);
+
+    moviesource::ScriptAsset::Handler handler;
+    handler.name_id = nameId(handler_ast.name);
+    handler.arg_count = static_cast<int>(handler_ast.arg_names.size());
+    for (std::size_t i = 0; i < handler_ast.arg_names.size(); ++i) {
+        handler.arg_name_ids.push_back(nameId(handler_ast.arg_names[i]));
+        arg_slot_[handler_ast.arg_names[i]] = static_cast<int>(i);
+    }
+    handler.globals_count = static_cast<int>(handler_ast.global_names.size());
+    for (std::size_t i = 0; i < local_names_.size(); ++i) {
+        local_slot_[local_names_[i]] = static_cast<int>(i);
+    }
+    handler_ = &handler;
+    emitBlock(handler_ast.statements);
+    emitNoArg(Opcode::RET);
+    handler_ = nullptr;
+    handler.local_count = static_cast<int>(local_names_.size());
+    for (const auto& local : local_names_) {
+        handler.local_name_ids.push_back(nameId(local));
+    }
+    handler.bytecode_length = offset_;
+    asset.handlers.push_back(std::move(handler));
+}
+
+void CodeGenerator::collectLocals(const Handler& handler_ast) {
+    for (const auto& stmt : handler_ast.statements) {
+        collectLocalsStmt(*stmt);
+    }
+}
+
+// Mark a simple name as a local (first-assignment order, skipping declared names).
+void CodeGenerator::markLocal(const std::string& name) {
+    if (declared_names_.count(name)) {
+        return;
+    }
+    for (const auto& existing : local_names_) {
+        if (existing == name) {
+            return;
+        }
+    }
+    local_names_.push_back(name);
+}
+
+void CodeGenerator::collectLocalsStmt(const Stmt& stmt) {
+    switch (stmt.kind) {
+        case Stmt::Kind::If:
+            if (stmt.condition) collectLocalsExpr(*stmt.condition);
+            for (const auto& s : stmt.then_block) collectLocalsStmt(*s);
+            for (const auto& s : stmt.else_block) collectLocalsStmt(*s);
+            break;
+        case Stmt::Kind::RepeatWhile:
+            if (stmt.condition) collectLocalsExpr(*stmt.condition);
+            for (const auto& s : stmt.block) collectLocalsStmt(*s);
+            break;
+        case Stmt::Kind::RepeatWithIn:
+            if (stmt.value) collectLocalsExpr(*stmt.value);
+            if (stmt.loop_var && stmt.loop_var->kind == Expr::Kind::Var) {
+                markLocal(stmt.loop_var->name);
+            }
+            for (const auto& s : stmt.block) collectLocalsStmt(*s);
+            break;
+        case Stmt::Kind::RepeatWithTo:
+            if (stmt.start) collectLocalsExpr(*stmt.start);
+            if (stmt.end) collectLocalsExpr(*stmt.end);
+            if (stmt.loop_var && stmt.loop_var->kind == Expr::Kind::Var) {
+                markLocal(stmt.loop_var->name);
+            }
+            for (const auto& s : stmt.block) collectLocalsStmt(*s);
+            break;
+        case Stmt::Kind::Return:
+            if (stmt.value) collectLocalsExpr(*stmt.value);
+            break;
+        case Stmt::Kind::Assignment:
+            if (stmt.variable) collectLocalsExpr(*stmt.variable);
+            if (stmt.variable && stmt.variable->kind == Expr::Kind::Var) {
+                markLocal(stmt.variable->name);
+            }
+            if (stmt.value) collectLocalsExpr(*stmt.value);
+            break;
+        case Stmt::Kind::Put:
+            if (stmt.value) collectLocalsExpr(*stmt.value);
+            if (stmt.variable) collectLocalsExpr(*stmt.variable);
+            if (stmt.variable && stmt.variable->kind == Expr::Kind::Var) {
+                markLocal(stmt.variable->name);
+            }
+            break;
+        case Stmt::Kind::Hilite:
+        case Stmt::Kind::Delete:
+            if (stmt.value) collectLocalsExpr(*stmt.value);
+            break;
+        case Stmt::Kind::Case:
+            if (stmt.condition) collectLocalsExpr(*stmt.condition);
+            for (const auto& branch : stmt.case_branches) {
+                for (const auto& label : branch.labels) collectLocalsExpr(*label);
+                for (const auto& s : branch.body) collectLocalsStmt(*s);
+            }
+            break;
+        case Stmt::Kind::Tell:
+            if (stmt.window) collectLocalsExpr(*stmt.window);
+            for (const auto& s : stmt.block) collectLocalsStmt(*s);
+            break;
+        case Stmt::Kind::Call:
+            for (const auto& arg : stmt.args) collectLocalsExpr(*arg);
+            break;
+        default:
+            break;
+    }
+}
+
+void CodeGenerator::collectLocalsExpr(const Expr& expr) {
+    switch (expr.kind) {
+        case Expr::Kind::Var:
+            break;
+        case Expr::Kind::ThePropExpr:
+            if (expr.object) collectLocalsExpr(*expr.object);
+            break;
+        case Expr::Kind::ObjPropExpr:
+        case Expr::Kind::MemberExpr:
+            if (expr.index) collectLocalsExpr(*expr.index);
+            if (expr.index2) collectLocalsExpr(*expr.index2);
+            break;
+        case Expr::Kind::ObjBracketExpr:
+            if (expr.object) collectLocalsExpr(*expr.object);
+            if (expr.index) collectLocalsExpr(*expr.index);
+            break;
+        case Expr::Kind::ObjPropIndexExpr:
+            if (expr.object) collectLocalsExpr(*expr.object);
+            if (expr.index) collectLocalsExpr(*expr.index);
+            if (expr.index2) collectLocalsExpr(*expr.index2);
+            break;
+        case Expr::Kind::ChunkExpr:
+            if (expr.source) collectLocalsExpr(*expr.source);
+            if (expr.first) collectLocalsExpr(*expr.first);
+            if (expr.last) collectLocalsExpr(*expr.last);
+            break;
+        case Expr::Kind::LastChunkExpr:
+            if (expr.source) collectLocalsExpr(*expr.source);
+            break;
+        case Expr::Kind::ChunkCountExpr:
+            if (expr.source) collectLocalsExpr(*expr.source);
+            break;
+        case Expr::Kind::SpriteIntersects:
+        case Expr::Kind::SpriteWithin:
+            if (expr.left) collectLocalsExpr(*expr.left);
+            if (expr.right) collectLocalsExpr(*expr.right);
+            break;
+        case Expr::Kind::MenuProp:
+        case Expr::Kind::SoundProp:
+        case Expr::Kind::SpriteProp:
+        case Expr::Kind::MenuItemProp:
+            if (expr.index) collectLocalsExpr(*expr.index);
+            if (expr.index2) collectLocalsExpr(*expr.index2);
+            break;
+        case Expr::Kind::NewObj:
+        case Expr::Kind::Call:
+        case Expr::Kind::ObjCall:
+        case Expr::Kind::ObjCallV4:
+            for (const auto& arg : expr.args) {
+                if (arg) collectLocalsExpr(*arg);
+            }
+            if ((expr.kind == Expr::Kind::ObjCall || expr.kind == Expr::Kind::ObjCallV4) && expr.object) {
+                collectLocalsExpr(*expr.object);
+            }
+            break;
+        case Expr::Kind::List:
+            for (const auto& item : expr.list->items) collectLocalsExpr(*item);
+            break;
+        case Expr::Kind::PropList:
+            for (const auto& value : expr.prop_list->values) {
+                if (value) collectLocalsExpr(*value);
+            }
+            break;
+        case Expr::Kind::BinaryOp:
+        case Expr::Kind::NotOp:
+        case Expr::Kind::InverseOp:
+            if (expr.left) collectLocalsExpr(*expr.left);
+            if (expr.kind == Expr::Kind::BinaryOp && expr.right) {
+                collectLocalsExpr(*expr.right);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void CodeGenerator::emitBlock(const std::vector<std::unique_ptr<Stmt>>& block) {
+    for (const auto& stmt : block) {
+        emitStmt(*stmt);
+    }
+}
+
+void CodeGenerator::emitStmt(const Stmt& stmt) {
+    switch (stmt.kind) {
+        case Stmt::Kind::If: {
+            emitExpr(*stmt.condition);
+            const int cond_offset = offset_;
+            emit(Opcode::JMP_IF_Z, 0); // patched to else (or end)
+            emitBlock(stmt.then_block);
+            int else_start = -1;
+            int then_jump_offset = -1;
+            if (!stmt.else_block.empty()) {
+                then_jump_offset = offset_;
+                emit(Opcode::JMP, 0); // patched to end
+                else_start = offset_;
+                emitBlock(stmt.else_block);
+            }
+            const int end_offset = offset_;
+            patchJump(cond_offset,
+                      (else_start != -1 ? else_start : end_offset) - cond_offset);
+            if (then_jump_offset != -1) {
+                patchJump(then_jump_offset, end_offset - then_jump_offset);
+            }
+            break;
+        }
+        case Stmt::Kind::RepeatWhile:
+            emitRepeatWhile(stmt);
+            break;
+        case Stmt::Kind::RepeatWithIn:
+            emitRepeatWithIn(stmt);
+            break;
+        case Stmt::Kind::RepeatWithTo:
+            emitRepeatWithTo(stmt);
+            break;
+        case Stmt::Kind::Return: {
+            if (stmt.value) {
+                emitExpr(*stmt.value);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 1);
+                emit(Opcode::EXT_CALL, nameId("return") * mult_);
+            } else {
+                emitNoArg(Opcode::RET);
+            }
+            break;
+        }
+        case Stmt::Kind::Exit:
+            emitNoArg(Opcode::RET);
+            break;
+        case Stmt::Kind::Assignment: {
+            // A simple var: value first, then the SET. A dot/bracket lvalue:
+            // the object first, then the value, then the SET.
+            if (stmt.variable->kind == Expr::Kind::Var) {
+                emitExpr(*stmt.value);
+                emitSetForVar(stmt.variable->name);
+            } else if (stmt.variable->kind == Expr::Kind::ObjPropExpr) {
+                emitExpr(*stmt.variable->object);
+                emitExpr(*stmt.value);
+                emit(Opcode::SET_OBJ_PROP, nameId(stmt.variable->name) * mult_);
+            } else if (stmt.variable->kind == Expr::Kind::ObjBracketExpr) {
+                // object[index] = value: push object, index, value, then
+                // PUSH_ARG_LIST_NO_RET(3) and OBJ_CALL(setAt).
+                emitExpr(*stmt.variable->object);
+                emitExpr(*stmt.variable->index);
+                emitExpr(*stmt.value);
+                emit(Opcode::PUSH_ARG_LIST_NO_RET, 3);
+                emit(Opcode::OBJ_CALL, nameId("setAt") * mult_);
+            } else {
+                // Fallback: value first, then the lvalue (which emits the SET).
+                emitExpr(*stmt.value);
+                emitLvalue(*stmt.variable);
+            }
+            break;
+        }
+        case Stmt::Kind::Put: {
+            emitExpr(*stmt.value);
+            emitLvalue(*stmt.variable);
+            const int put_type = stmt.put_dir == PutDir::Into ? 1
+                                 : stmt.put_dir == PutDir::After ? 2 : 3;
+            if (stmt.variable->kind == Expr::Kind::ChunkExpr) {
+                const int var_type = varTypeForExpr(*stmt.variable->source);
+                emit(Opcode::PUT_CHUNK, (put_type << 4) | var_type);
+            } else {
+                emit(Opcode::PUT, put_type);
+            }
+            break;
+        }
+        case Stmt::Kind::Hilite:
+            emitExpr(*stmt.value);
+            emitNoArg(Opcode::HILITE_CHUNK);
+            break;
+        case Stmt::Kind::Delete:
+            emitExpr(*stmt.value);
+            emitNoArg(Opcode::DELETE_CHUNK);
+            break;
+        case Stmt::Kind::Case:
+            emitCase(stmt);
+            break;
+        case Stmt::Kind::ExitRepeat:
+            // Handled by the loop lowering (a pending jump target).
+            break;
+        case Stmt::Kind::NextRepeat:
+            // Handled by the loop lowering (a pending jump target).
+            break;
+        case Stmt::Kind::Tell:
+            emitExpr(*stmt.window);
+            emitNoArg(Opcode::START_TELL);
+            emitBlock(stmt.block);
+            emitNoArg(Opcode::END_TELL);
+            break;
+        case Stmt::Kind::When:
+            // `when` is a handler-level directive; it is not inlined into the
+            // body bytecode. Skip (the decompiler emits it as a comment).
+            break;
+        case Stmt::Kind::Call: {
+            // A statement call: push the args, then EXT_CALL (or LOCAL_CALL).
+            emitCall(stmt.name, stmt.args, /*is_local=*/false);
+            break;
+        }
+    }
+}
+
+void CodeGenerator::emitExpr(const Expr& expr) {
+    switch (expr.kind) {
+        case Expr::Kind::Int: {
+            emitInt(expr.int_value);
+            break;
+        }
+        case Expr::Kind::Float: {
+            const float f = static_cast<float>(expr.float_value);
+            emit(Opcode::PUSH_FLOAT32, static_cast<int>(std::bit_cast<std::uint32_t>(f)));
+            break;
+        }
+        case Expr::Kind::String: {
+            const int index = internString(expr.string.value);
+            emit(Opcode::PUSH_CONS, index * mult_);
+            break;
+        }
+        case Expr::Kind::Symbol: {
+            emit(Opcode::PUSH_SYMB, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::Symb: {
+            emit(Opcode::PUSH_SYMB, expr.int_value * mult_);
+            break;
+        }
+        case Expr::Kind::Var: {
+            emitVarGet(expr.name);
+            break;
+        }
+        case Expr::Kind::TheExpr: {
+            int type = -1, id = -1;
+            if (fixedPropCode(expr.name, type, id)) {
+                // A fixed prop: PUSH_INT8 <id> then GET <type>.
+                emit(Opcode::PUSH_INT8, id);
+                emit(Opcode::GET, type);
+            } else {
+                // A name-table prop: GET_MOVIE_PROP.
+                emit(Opcode::GET_MOVIE_PROP, nameId(expr.name) * mult_);
+            }
+            break;
+        }
+        case Expr::Kind::ThePropExpr: {
+            // `the <prop> of <object>`: push the object, then access the prop.
+            // A fixed prop is PUSH_INT8 <id>; GET <type>. A name-table prop
+            // is GET_OBJ_PROP.
+            emitExpr(*expr.object);
+            int type = -1, id = -1;
+            if (fixedPropCode(expr.name, type, id)) {
+                emit(Opcode::PUSH_INT8, id);
+                emit(Opcode::GET, type);
+            } else {
+                emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            }
+            break;
+        }
+        case Expr::Kind::ObjPropExpr: {
+            emitExpr(*expr.object);
+            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::ObjBracketExpr: {
+            emitExpr(*expr.object);
+            emitExpr(*expr.index);
+            emitNoArg(Opcode::GET);
+            break;
+        }
+        case Expr::Kind::ObjPropIndexExpr: {
+            emitExpr(*expr.object);
+            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            if (expr.index2) {
+                emitExpr(*expr.index);
+                emitExpr(*expr.index2);
+                emitNoArg(Opcode::GET);
+            } else {
+                emitExpr(*expr.index);
+                emitNoArg(Opcode::GET);
+            }
+            break;
+        }
+        case Expr::Kind::MemberExpr: {
+            // `sprite(id)`, `member(id, cast)`, etc.
+            emitExpr(*expr.index);
+            if (expr.index2) {
+                emitExpr(*expr.index2);
+            }
+            // The member type selects the opcode; the decompiler maps these to
+            // GET_OBJ_PROP with a member-type name.
+            emit(Opcode::GET_OBJ_PROP, nameId(expr.member_type) * mult_);
+            break;
+        }
+        case Expr::Kind::ChunkExpr: {
+            emitExpr(*expr.source);
+            if (expr.last) {
+                emitExpr(*expr.first);
+                emitExpr(*expr.last);
+            } else {
+                emitExpr(*expr.first);
+            }
+            emit(Opcode::GET_CHUNK, expr.chunk_type);
+            break;
+        }
+        case Expr::Kind::LastChunkExpr: {
+            emitExpr(*expr.source);
+            emit(Opcode::GET_CHUNK, expr.chunk_type + 0x10); // last variant
+            break;
+        }
+        case Expr::Kind::ChunkCountExpr: {
+            emitExpr(*expr.source);
+            emit(Opcode::GET_CHUNK, expr.chunk_type + 0x20); // count variant
+            break;
+        }
+        case Expr::Kind::SpriteIntersects: {
+            emitExpr(*expr.left);
+            emitExpr(*expr.right);
+            emitNoArg(Opcode::ONTO_SPR);
+            break;
+        }
+        case Expr::Kind::SpriteWithin: {
+            emitExpr(*expr.left);
+            emitExpr(*expr.right);
+            emitNoArg(Opcode::INTO_SPR);
+            break;
+        }
+        case Expr::Kind::MenuProp:
+        case Expr::Kind::SoundProp:
+        case Expr::Kind::SpriteProp:
+        case Expr::Kind::MenuItemProp: {
+            // `the <prop> of menu/sound/sprite <id>`: push the id, then the
+            // property opcode.
+            if (expr.index) {
+                emitExpr(*expr.index);
+            }
+            if (expr.index2) {
+                emitExpr(*expr.index2);
+            }
+            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::NewObj: {
+            emitArgs(expr.args);
+            emit(Opcode::NEW_OBJ, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::Call: {
+            emitCall(expr.name, expr.args, /*is_local=*/false);
+            break;
+        }
+        case Expr::Kind::ObjCall: {
+            // `object.method(args)`: push the object, push the args, then
+            // PUSH_ARG_LIST (object + args), then OBJ_CALL.
+            emitExpr(*expr.object);
+            for (const auto& arg : expr.args) {
+                emitExpr(*arg);
+            }
+            emit(Opcode::PUSH_ARG_LIST, static_cast<int>(expr.args.size()) + 1);
+            emit(Opcode::OBJ_CALL, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::ObjCallV4: {
+            emitExpr(*expr.object);
+            emitArgs(expr.args);
+            emit(Opcode::OBJ_CALL_V4, 0);
+            break;
+        }
+        case Expr::Kind::List: {
+            // Build the list on the stack: push the items, combine them with
+            // PUSH_ARG_LIST, then set the value type with PUSH_LIST.
+            const auto& items = expr.list->items;
+            for (const auto& item : items) {
+                emitExpr(*item);
+            }
+            emit(Opcode::PUSH_ARG_LIST, static_cast<int>(items.size()));
+            emitNoArg(Opcode::PUSH_LIST);
+            break;
+        }
+        case Expr::Kind::PropList: {
+            const auto& pl = expr.prop_list;
+            for (std::size_t i = 0; i < pl->keys.size(); ++i) {
+                if (pl->key_types[i] == PropListLit::KeyType::Symbol) {
+                    emit(Opcode::PUSH_SYMB, nameId(pl->keys[i]) * mult_);
+                } else if (pl->key_types[i] == PropListLit::KeyType::String) {
+                    emit(Opcode::PUSH_CONS, internString(pl->keys[i]) * mult_);
+                } else {
+                    emitInt(std::stoll(pl->keys[i]));
+                }
+                if (pl->values[i]) {
+                    emitExpr(*pl->values[i]);
+                } else {
+                    emitNoArg(Opcode::PUSH_ZERO);
+                }
+            }
+            emit(Opcode::PUSH_ARG_LIST, static_cast<int>(pl->keys.size()) * 2);
+            emitNoArg(Opcode::PUSH_PROP_LIST);
+            break;
+        }
+        case Expr::Kind::BinaryOp: {
+            emitExpr(*expr.left);
+            emitExpr(*expr.right);
+            emitNoArg(binOpToOpcode(expr.bin_op));
+            break;
+        }
+        case Expr::Kind::NotOp: {
+            emitExpr(*expr.left);
+            emitNoArg(Opcode::NOT);
+            break;
+        }
+        case Expr::Kind::InverseOp: {
+            emitExpr(*expr.left);
+            emitNoArg(Opcode::INV);
+            break;
+        }
+    }
+}
+
+void CodeGenerator::emitVarGet(const std::string& name) {
+    // Choose the GET opcode by the variable's declaration kind.
+    if (arg_slot_.count(name)) {
+        emit(Opcode::GET_PARAM, arg_slot_.at(name) * mult_);
+        return;
+    }
+    if (local_slot_.count(name)) {
+        emit(Opcode::GET_LOCAL, local_slot_.at(name) * mult_);
+        return;
+    }
+    // A global, a script property, or a movie-level (top-level) property.
+    if (global_names_.count(name)) {
+        emit(Opcode::GET_GLOBAL, nameId(name) * mult_);
+    } else if (isScriptProperty(name)) {
+        emit(Opcode::GET_PROP, nameId(name) * mult_);
+    } else {
+        emit(Opcode::GET_TOP_LEVEL_PROP, nameId(name) * mult_);
+    }
+}
+
+bool CodeGenerator::isScriptProperty(const std::string& name) {
+    for (const auto& prop : script_->property_names) {
+        if (prop == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CodeGenerator::emitLvalue(const Expr& expr) {
+    // An lvalue leaves a var-ref on the stack; the following SET opcode is
+    // chosen by the var kind. For a simple var, emit the GET (which the SET
+    // pairs with). For a bracket/dot index, emit the object + index.
+    switch (expr.kind) {
+        case Expr::Kind::Var: {
+            // A simple var: the SET opcode is emitted by the caller via the
+            // var kind. Here we emit a marker by re-emitting the GET; the SET
+            // is appended by emitStmt. To keep the pattern exact, emit the GET
+            // then the matching SET.
+            emitSetForVar(expr.name);
+            break;
+        }
+        case Expr::Kind::ObjBracketExpr: {
+            emitExpr(*expr.object);
+            emitExpr(*expr.index);
+            emitNoArg(Opcode::SET);
+            break;
+        }
+        case Expr::Kind::ObjPropExpr: {
+            emitExpr(*expr.object);
+            emit(Opcode::SET_OBJ_PROP, nameId(expr.name) * mult_);
+            break;
+        }
+        case Expr::Kind::ObjPropIndexExpr: {
+            emitExpr(*expr.object);
+            emit(Opcode::GET_OBJ_PROP, nameId(expr.name) * mult_);
+            emitExpr(*expr.index);
+            emitNoArg(Opcode::SET);
+            break;
+        }
+        case Expr::Kind::ChunkExpr: {
+            // A chunk target: push the source, then the 8 chunk values in
+            // order (first_char, last_char, first_word, last_word, first_item,
+            // last_item, first_line, last_line). The PUT opcode is appended by
+            // the caller with the combined put_type + var_type argument.
+            emitExpr(*expr.source);
+            for (const int chunk_id : {1, 2, 3, 4, 5, 6, 7, 8}) {
+                const int type = (chunk_id + 1) / 2; // 1->1, 2->1, 3->2, ...
+                if (expr.chunk_type == type && expr.first) {
+                    if (chunk_id % 2 == 1) {
+                        emitExpr(*expr.first);
+                    } else if (expr.last) {
+                        emitExpr(*expr.last);
+                    } else {
+                        emitNoArg(Opcode::PUSH_ZERO);
+                    }
+                } else {
+                    emitNoArg(Opcode::PUSH_ZERO);
+                }
+            }
+            break;
+        }
+        default: {
+            // Fallback: treat as a var get + set.
+            emitSetForVar(expr.name);
+            break;
+        }
+    }
+}
+
+void CodeGenerator::emitSetForVar(const std::string& name) {
+    if (arg_slot_.count(name)) {
+        emit(Opcode::SET_PARAM, arg_slot_.at(name) * mult_);
+        return;
+    }
+    if (local_slot_.count(name)) {
+        emit(Opcode::SET_LOCAL, local_slot_.at(name) * mult_);
+        return;
+    }
+    if (global_names_.count(name)) {
+        emit(Opcode::SET_GLOBAL, nameId(name) * mult_);
+    } else if (isScriptProperty(name)) {
+        emit(Opcode::SET_PROP, nameId(name) * mult_);
+    } else {
+        emit(Opcode::SET_MOVIE_PROP, nameId(name) * mult_);
+    }
+}
+
+int CodeGenerator::varTypeForExpr(const Expr& expr) {
+    // The var_type for a chunk-ref source: 4 for an arg, 5 for a local, 1/2/3
+    // for a simple var (global or property), 6 for a field. The decompiler's
+    // readVar uses these to recover the source var from the stack.
+    if (arg_slot_.count(expr.name)) {
+        return 4;
+    }
+    if (local_slot_.count(expr.name)) {
+        return 5;
+    }
+    return 1;
+}
+
+void CodeGenerator::emitArgs(const std::vector<std::unique_ptr<Expr>>& args) {
+    for (const auto& arg : args) {
+        emitExpr(*arg);
+    }
+    emit(Opcode::PUSH_ARG_LIST, static_cast<int>(args.size()));
+}
+
+void CodeGenerator::emitCall(const std::string& name,
+                            const std::vector<std::unique_ptr<Expr>>& args,
+                            bool is_local) {
+    emitArgs(args);
+    // A call to a handler in the same script is a LOCAL_CALL (arg = handler index).
+    for (std::size_t i = 0; i < script_->handlers.size(); ++i) {
+        if (script_->handlers[i]->name == name) {
+            emit(Opcode::LOCAL_CALL, static_cast<int>(i));
+            return;
+        }
+    }
+    if (is_local) {
+        emit(Opcode::LOCAL_CALL, 0);
+    } else {
+        emit(Opcode::EXT_CALL, nameId(name) * mult_);
+    }
+}
+
+void CodeGenerator::emitRepeatWhile(const Stmt& stmt) {
+    const int loop_start = offset_;
+    emitExpr(*stmt.condition);
+    const int cond_offset = offset_;
+    emit(Opcode::JMP_IF_Z, 0); // patched to loop_end
+    emitBlock(stmt.block);
+    emit(Opcode::JMP, loop_start - offset_); // back to loop_start
+    const int loop_end = offset_;
+    patchJump(cond_offset, loop_end - cond_offset);
+}
+
+void CodeGenerator::emitRepeatWithIn(const Stmt& stmt) {
+    // The exact pattern the decompiler's isRepeatWithInLoop recognizes:
+    //   PEEK 0; PUSH_ARG_LIST 1; EXT_CALL count; PUSH_INT8 1; PEEK 0;
+    //   PEEK 2; LT_EQ; JMP_IF_Z -> exit; PEEK 2; PEEK 1; PUSH_ARG_LIST 2;
+    //   EXT_CALL getAt; SET var; <body>; PUSH_INT8 1; ADD; END_REPEAT -> top;
+    //   POP 3
+    emitExpr(*stmt.value); // the list
+    emitNoArg(Opcode::PEEK); // 0 (top of stack)
+    emit(Opcode::PUSH_ARG_LIST, 1);
+    emit(Opcode::EXT_CALL, nameId("count") * mult_);
+    emit(Opcode::PUSH_INT8, 1);
+    emitNoArg(Opcode::PEEK);
+    const int top = offset_;
+    emitNoArg(Opcode::PEEK); // 2
+    emitNoArg(Opcode::PEEK); // 1 (the count)
+    emitNoArg(Opcode::LT_EQ);
+    const int cond_offset = offset_;
+    emit(Opcode::JMP_IF_Z, 0); // patched to exit
+    emitNoArg(Opcode::PEEK); // 2 (the list)
+    emitNoArg(Opcode::PEEK); // 1 (the index)
+    emit(Opcode::PUSH_ARG_LIST, 2);
+    emit(Opcode::EXT_CALL, nameId("getAt") * mult_);
+    emitSetForVar(stmt.loop_var->name);
+    emitBlock(stmt.block);
+    emit(Opcode::PUSH_INT8, 1);
+    emitNoArg(Opcode::PEEK); // the index
+    emitNoArg(Opcode::ADD);
+    emit(Opcode::END_REPEAT, top - offset_); // back to top
+    const int exit = offset_;
+    emit(Opcode::POP, 3);
+    patchJump(cond_offset, exit - cond_offset);
+}
+
+void CodeGenerator::emitRepeatWithTo(const Stmt& stmt) {
+    // The pattern the decompiler's isRepeatWithToLoop recognizes:
+    //   <push start>; SET var; loop_top: GET var; <push end>; LT_EQ (or GT_EQ
+    //   for down); JMP_IF_Z -> exit; <body>; PUSH_INT8 +-1; GET var; ADD;
+    //   SET var; END_REPEAT -> loop_top
+    emitExpr(*stmt.start);
+    emitSetForVar(stmt.loop_var->name);
+    const int loop_top = offset_;
+    emitVarGet(stmt.loop_var->name);
+    emitExpr(*stmt.end);
+    emitNoArg(stmt.up ? Opcode::LT_EQ : Opcode::GT_EQ);
+    const int cond_offset = offset_;
+    emit(Opcode::JMP_IF_Z, 0); // patched to exit
+    emitBlock(stmt.block);
+    emit(Opcode::PUSH_INT8, stmt.up ? 1 : -1);
+    emitVarGet(stmt.loop_var->name);
+    emitNoArg(Opcode::ADD);
+    emitSetForVar(stmt.loop_var->name);
+    emit(Opcode::END_REPEAT, offset_ - loop_top);
+    const int exit = offset_;
+    patchJump(cond_offset, exit - cond_offset);
+}
+
+void CodeGenerator::emitCase(const Stmt& stmt) {
+    // The decompiler's case lowering is PEEK-based. Emit a simplified but
+    // structurally faithful pattern: push the value, then for each branch
+    // compare and branch.
+    emitExpr(*stmt.condition);
+    for (const auto& branch : stmt.case_branches) {
+        for (const auto& label : branch.labels) {
+            emitNoArg(Opcode::PEEK);
+            emitExpr(*label);
+            emitNoArg(Opcode::EQ);
+            const int cond_offset = offset_;
+            emit(Opcode::JMP_IF_Z, 0); // patched to next branch
+            emitBlock(branch.body);
+            emit(Opcode::JMP, 0); // patched to end
+            const int branch_end = offset_;
+            patchJump(cond_offset, branch_end - cond_offset);
+            patchJump(branch_end - 1, 0); // placeholder; patched to case end below
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers.
+// ---------------------------------------------------------------------------
+
+void CodeGenerator::patchJump(int from_offset, int target) {
+    // Find the instruction at `from_offset` and set its argument to `target`.
+    for (auto& instr : handler_->instructions) {
+        if (instr.offset == from_offset) {
+            instr.argument = target;
+            return;
+        }
+    }
+}
+
+Opcode CodeGenerator::binOpToOpcode(BinOp op) {
+    switch (op) {
+        case BinOp::Mul: return Opcode::MUL;
+        case BinOp::Add: return Opcode::ADD;
+        case BinOp::Sub: return Opcode::SUB;
+        case BinOp::Div: return Opcode::DIV;
+        case BinOp::Mod: return Opcode::MOD;
+        case BinOp::JoinStr: return Opcode::JOIN_STR;
+        case BinOp::JoinPadStr: return Opcode::JOIN_PAD_STR;
+        case BinOp::Lt: return Opcode::LT;
+        case BinOp::LtEq: return Opcode::LT_EQ;
+        case BinOp::NotEq: return Opcode::NT_EQ;
+        case BinOp::Eq: return Opcode::EQ;
+        case BinOp::Gt: return Opcode::GT;
+        case BinOp::GtEq: return Opcode::GT_EQ;
+        case BinOp::And: return Opcode::AND;
+        case BinOp::Or: return Opcode::OR;
+        case BinOp::ContainsStr: return Opcode::CONTAINS_STR;
+        case BinOp::Contains0Str: return Opcode::CONTAINS_0_STR;
+    }
+    return Opcode::INVALID;
+}
+
+} // namespace libreshockwave::lingo::compiler

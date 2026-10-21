@@ -95,6 +95,10 @@ add_library(libreshockwave
     src/lingo/decompiler/lingo_node.cpp
     src/lingo/decompiler/lingo_node_type_script.cpp
     src/lingo/decompiler/lingo_properties.cpp
+    src/lingo/compiler/lexer.cpp
+    src/lingo/compiler/parser.cpp
+    src/lingo/compiler/parser_expr.cpp
+    src/lingo/compiler/codegen.cpp
     src/lingo/vm/alert_hook_handler.cpp
     src/lingo/vm/debug_config.cpp
     src/lingo/vm/datum/datum_formatter.cpp
