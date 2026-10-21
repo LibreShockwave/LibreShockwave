@@ -185,6 +185,7 @@ struct Options {
     std::string script_filter;
     std::string dump_prefix;
     bool dump_asm = false;
+    bool dump_names = false;
     bool dump_lits = false;
     bool dump_ins = false;
 };
@@ -199,6 +200,8 @@ Options parseOptions(int argc, char** argv) {
             options.dump_prefix = argv[++i];
         } else if (arg == "--dump-asm") {
             options.dump_asm = true;
+        } else if (arg == "--dump-names") {
+            options.dump_names = true;
         } else if (arg == "--dump-lits") {
             options.dump_lits = true;
         } else if (arg == "--dump-ins") {
@@ -311,6 +314,13 @@ int main(int argc, char** argv) {
                     std::cout << "\n";
                 }
             }
+        }
+        if (options.dump_names) {
+            std::cout << "-- " << script_name << " names:";
+            for (std::size_t i = 0; i < original->names.size(); ++i) {
+                std::cout << " " << i << "=" << original->names[i];
+            }
+            std::cout << "\n";
         }
         if (options.dump_asm) {
             for (std::size_t h = 0; h < original->handlers.size(); ++h) {

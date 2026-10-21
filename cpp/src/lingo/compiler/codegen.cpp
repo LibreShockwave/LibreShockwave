@@ -83,6 +83,42 @@ bool builtinProp(const std::string& name) {
     return false;
 }
 
+// A case branch whose body returns must pop the case value first: `return`
+// lowers to a one-argument call whose arg list would otherwise capture it.
+bool blockContainsReturn(const std::vector<std::unique_ptr<Stmt>>& block);
+
+bool stmtContainsReturn(const Stmt& stmt) {
+    switch (stmt.kind) {
+        case Stmt::Kind::Return:
+            return true;
+        case Stmt::Kind::If:
+            return blockContainsReturn(stmt.then_block) || blockContainsReturn(stmt.else_block);
+        case Stmt::Kind::RepeatWhile:
+        case Stmt::Kind::RepeatWithIn:
+        case Stmt::Kind::RepeatWithTo:
+        case Stmt::Kind::Tell:
+            return blockContainsReturn(stmt.block);
+        case Stmt::Kind::Case:
+            for (const auto& branch : stmt.case_branches) {
+                if (blockContainsReturn(branch.body)) {
+                    return true;
+                }
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
+bool blockContainsReturn(const std::vector<std::unique_ptr<Stmt>>& block) {
+    for (const auto& stmt : block) {
+        if (stmtContainsReturn(*stmt)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 CodeGenerator::CodeGenerator(std::unique_ptr<Script> script,
@@ -469,7 +505,7 @@ void CodeGenerator::emitStmt(const Stmt& stmt) {
                 emitExpr(*stmt.value);
                 emitSetForVar(stmt.variable->name);
             } else if (stmt.variable->kind == Expr::Kind::ObjPropExpr) {
-                emitExpr(*stmt.variable->object);
+                emitReceiver(*stmt.variable->object);
                 emitExpr(*stmt.value);
                 emit(Opcode::SET_OBJ_PROP, nameId(stmt.variable->name) * mult_);
             } else if (stmt.variable->kind == Expr::Kind::ObjBracketExpr) {
@@ -610,7 +646,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             // count pattern (nargs == 2, 2nd arg a symbol).
             if (expr.name == "count" && expr.object &&
                 expr.object->kind == Expr::Kind::ObjPropExpr) {
-                emitExpr(*expr.object->object);
+                emitReceiver(*expr.object->object);
                 emit(Opcode::PUSH_SYMB, nameId(expr.object->name) * mult_);
                 emit(Opcode::PUSH_ARG_LIST, 2);
                 emit(Opcode::OBJ_CALL, nameId("count") * mult_);
@@ -630,19 +666,7 @@ void CodeGenerator::emitExpr(const Expr& expr) {
             break;
         }
         case Expr::Kind::ObjPropIndexExpr: {
-            // `base.prop[idx]` (and `base.prop[idx1, idx2]`) is encoded as the
-            // getProp(base, prop_sym, idx[, idx2]) call. This inverts the
-            // decompiler's getProp pattern (3 or 4 args, 2nd a symbol).
-            emitExpr(*expr.object);
-            emit(Opcode::PUSH_SYMB, nameId(expr.name) * mult_);
-            emitExpr(*expr.index);
-            if (expr.index2) {
-                emitExpr(*expr.index2);
-                emit(Opcode::PUSH_ARG_LIST, 4);
-            } else {
-                emit(Opcode::PUSH_ARG_LIST, 3);
-            }
-            emit(Opcode::OBJ_CALL, nameId("getProp") * mult_);
+            emitObjPropIndex(expr, /*by_ref=*/false);
             break;
         }
         case Expr::Kind::MemberExpr: {
@@ -794,6 +818,23 @@ void CodeGenerator::emitExpr(const Expr& expr) {
     }
 }
 
+void CodeGenerator::emitObjPropIndex(const Expr& expr, bool by_ref) {
+    // `base.prop[idx]` (and `base.prop[idx1, idx2]`) is encoded as the
+    // getProp(base, prop_sym, idx[, idx2]) call. A receiver-position read uses
+    // getPropRef instead; the decompiler prints both forms identically. The
+    // base is itself in receiver position, so a nested access is by-ref too.
+    emitReceiver(*expr.object);
+    emit(Opcode::PUSH_SYMB, nameId(expr.name) * mult_);
+    emitExpr(*expr.index);
+    if (expr.index2) {
+        emitExpr(*expr.index2);
+        emit(Opcode::PUSH_ARG_LIST, 4);
+    } else {
+        emit(Opcode::PUSH_ARG_LIST, 3);
+    }
+    emit(Opcode::OBJ_CALL, nameId(by_ref ? "getPropRef" : "getProp") * mult_);
+}
+
 void CodeGenerator::emitReceiver(const Expr& expr) {
     if (expr.kind == Expr::Kind::ObjPropExpr) {
         // `a.b.c`: the inner access is a chained read and the outermost access
@@ -801,6 +842,10 @@ void CodeGenerator::emitReceiver(const Expr& expr) {
         // inner access because its result is immediately read again.
         emitReceiver(*expr.object);
         emit(Opcode::GET_CHAINED_PROP, nameId(expr.name) * mult_);
+        return;
+    }
+    if (expr.kind == Expr::Kind::ObjPropIndexExpr) {
+        emitObjPropIndex(expr, /*by_ref=*/true);
         return;
     }
     emitExpr(expr);
@@ -1087,6 +1132,9 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
             if (jump.branch == static_cast<int>(branch_index)) {
                 patchJump(jump.offset, body_start - jump.offset);
             }
+        }
+        if (blockContainsReturn(branch.body)) {
+            emit(Opcode::POP, 1);
         }
         emitBlock(branch.body);
         if (branch_index + 1 < stmt.case_branches.size()) {

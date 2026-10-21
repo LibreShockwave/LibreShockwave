@@ -90,6 +90,9 @@ private:
     // receiver of a further access is a chained read (GET_CHAINED_PROP); the
     // outermost access of the chain is a plain GET_OBJ_PROP.
     void emitReceiver(const Expr& expr);
+    // Emits `base.prop[index]` as the getProp (value) or getPropRef (receiver)
+    // object call. The decompiler prints both forms identically.
+    void emitObjPropIndex(const Expr& expr, bool by_ref);
     void emitLvalue(const Expr& expr);
     void emitVarGet(const std::string& name);
     void emitSetForVar(const std::string& name);
