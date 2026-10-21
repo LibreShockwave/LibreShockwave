@@ -1092,6 +1092,7 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
     std::vector<PendingJump> or_jumps;   // NT_EQ checks: target is the body
     std::vector<PendingJump> next_jumps; // EQ checks: target is the next branch
     std::vector<int> end_jumps;          // branch-end JMPs: target is the case end
+    int otherwise_skip = -1;
 
     for (std::size_t branch_index = 0; branch_index < stmt.case_branches.size(); ++branch_index) {
         const auto& branch = stmt.case_branches[branch_index];
@@ -1117,6 +1118,12 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
                 patchJump(jump.offset, body_start - jump.offset);
             }
         }
+        // A case with only an otherwise branch jumps over the otherwise body.
+        // Director emits this even though the body is then unreachable.
+        if (branch.is_otherwise && branch_index == 0) {
+            otherwise_skip = offset_;
+            emit(Opcode::JMP, 0);
+        }
         emitBlock(branch.body);
         if (branch_index + 1 < stmt.case_branches.size()) {
             end_jumps.push_back(offset_);
@@ -1132,6 +1139,9 @@ void CodeGenerator::emitCase(const Stmt& stmt) {
     }
     for (const int jump_offset : end_jumps) {
         patchJump(jump_offset, case_end - jump_offset);
+    }
+    if (otherwise_skip >= 0) {
+        patchJump(otherwise_skip, case_end - otherwise_skip);
     }
     emit(Opcode::POP, 1);
     --case_depth_;
