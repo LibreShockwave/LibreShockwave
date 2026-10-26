@@ -1,15 +1,13 @@
 "use strict";
 
 (function attach(global) {
-  // document.currentScript is only this file's own <script> tag while
-  // this file executes; create() is normally called from a later inline
-  // script, where document.currentScript is that other (src-less)
-  // element. Capture the URL here so the worker/wasm base path resolves
-  // against this file's own location (e.g. a static CDN) instead of the
-  // page's.
+  // create() is normally called from a later inline script, where
+  // document.currentScript is src-less. Capture this file's own URL now so
+  // the worker and wasm paths resolve against the player script, not the page.
   const playerScriptUrl = global.document && global.document.currentScript && global.document.currentScript.src
     ? global.document.currentScript.src
     : "";
+  const workerName = "LibreShockwaveCppWorker";
 
   const defaultHabboParams = {
     sw1: "site.url=http://127.0.0.1;url.prefix=http://127.0.0.1",
@@ -233,15 +231,17 @@
     function isSameOriginUrl(url) {
       try {
         return new URL(url).origin === global.location.origin;
-      } catch (error) {
+      } catch {
         return false;
       }
     }
 
     function reportWorkerError(error) {
-      const message = `LibreShockwave worker error: ${error && error.message ? error.message : String(error)}`;
+      if (destroyed) return;
+      const detail = error && error.message ? error.message : String(error);
+      const message = `LibreShockwave worker error: ${detail}`;
       if (typeof options.onError === "function") options.onError(message);
-      if (typeof options.onDebug === "function") options.onDebug({ level: "error", message: message });
+      if (typeof options.onDebug === "function") options.onDebug({ level: "error", message });
     }
 
     function attachWorkerErrorReporting(target) {
@@ -250,40 +250,52 @@
       });
     }
 
+    function revokeBlobWorkerUrls() {
+      for (const blobUrl of blobWorkerUrls) URL.revokeObjectURL(blobUrl);
+      blobWorkerUrls.length = 0;
+    }
+
     function flushQueuedWorkerMessages() {
       if (destroyed || !worker) return;
-      while (queuedWorkerMessages.length > 0) {
-        worker.postMessage(queuedWorkerMessages.shift());
+      for (const message of queuedWorkerMessages.splice(0)) {
+        worker.postMessage(message);
       }
     }
 
+    function activateWorker(url) {
+      worker = new Worker(url, { name: workerName });
+      attachWorkerMessageHandler(worker);
+      attachWorkerErrorReporting(worker);
+      flushQueuedWorkerMessages();
+    }
+
     function logWorkerStartup(message) {
-      if (typeof options.onDebug === "function") options.onDebug({ level: "info", message: message });
+      if (typeof options.onDebug === "function") options.onDebug({ level: "info", message });
       if (global.console && typeof global.console.info === "function") global.console.info(message);
     }
 
     function startWorker() {
       if (isSameOriginUrl(workerUrl)) {
-        logWorkerStartup(`LibreShockwave worker: same-origin ${workerUrl}`);
-        worker = new Worker(workerUrl, { name: "LibreShockwaveCppWorker" });
-        attachWorkerMessageHandler();
-        attachWorkerErrorReporting(worker);
-        flushQueuedWorkerMessages();
+        try {
+          logWorkerStartup(`LibreShockwave worker: same-origin ${workerUrl}`);
+          if (destroyed) return;
+          activateWorker(workerUrl);
+        } catch (error) {
+          reportWorkerError(error);
+        }
         return;
       }
-      // Classic workers are same-origin only. When the player script is
-      // served from a different origin (e.g. a static CDN), fetch the
-      // worker script and run it from a same-origin blob URL. The
-      // injected globals tell the worker where its own assets
-      // (libreshockwave-cpp-wasm.js / .wasm) live and what the page
-      // origin/protocol is, so importScripts(), fetch() and the websocket
-      // scheme resolve against the player's URL instead of the page's.
-      fetch(workerUrl)
+
+      // Classic workers are same-origin only. Fetch the cross-origin worker
+      // and run it from a same-origin blob URL. Injected globals keep asset
+      // and page URL resolution and the websocket scheme page-relative.
+      fetch(workerUrl, { mode: "cors", credentials: "omit" })
         .then((response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status} for ${workerUrl}`);
           return response.text();
         })
         .then((source) => {
+          if (destroyed) return;
           const blob = new Blob([
             `self.__libreshockwavePageUrl = ${JSON.stringify(global.location.href)};\n`,
             `self.__libreshockwaveBase = ${JSON.stringify(basePath)};\n`,
@@ -291,13 +303,21 @@
           ], { type: "application/javascript" });
           const blobUrl = URL.createObjectURL(blob);
           blobWorkerUrls.push(blobUrl);
-          logWorkerStartup(`LibreShockwave worker: cross-origin blob from ${workerUrl}`);
-          worker = new Worker(blobUrl, { name: "LibreShockwaveCppWorker" });
-          attachWorkerMessageHandler();
-          attachWorkerErrorReporting(worker);
-          flushQueuedWorkerMessages();
+          try {
+            logWorkerStartup(`LibreShockwave worker: cross-origin blob from ${workerUrl}`);
+            if (destroyed) {
+              revokeBlobWorkerUrls();
+              return;
+            }
+            activateWorker(blobUrl);
+          } catch (error) {
+            revokeBlobWorkerUrls();
+            throw error;
+          }
         })
-        .catch(reportWorkerError);
+        .catch((error) => {
+          if (!destroyed) reportWorkerError(error);
+        });
     }
 
     startWorker();
@@ -727,81 +747,88 @@
       navigation.redirect();
     }
 
-    function attachWorkerMessageHandler() {
-    worker.addEventListener("message", (event) => {
-      const message = event.data || {};
-      if (message.type === "frame") {
-        drawFrame(message.info, message.pixels);
-      } else if (message.type === "frameInfo") {
-        lastInfo = message.info || lastInfo;
-        if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
-        applyCursor(lastInfo && lastInfo.cursor);
-      } else if (message.type === "load") {
-        if (message.info && message.info.tempo) inputTempo = clampTempo(message.info.tempo);
-        if (typeof options.onLoad === "function") options.onLoad(message.info || {});
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(message.info || {});
+    function attachWorkerMessageHandler(target) {
+      target.addEventListener("message", (event) => {
+        const message = event.data || {};
+        if (message.type === "frame") {
+          drawFrame(message.info, message.pixels);
+        } else if (message.type === "frameInfo") {
+          lastInfo = message.info || lastInfo;
+          if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
+          applyCursor(lastInfo && lastInfo.cursor);
+        } else if (message.type === "load") {
+          if (message.info && message.info.tempo) inputTempo = clampTempo(message.info.tempo);
+          if (typeof options.onLoad === "function") options.onLoad(message.info || {});
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(message.info || {});
+          }
+        } else if (message.type === "error") {
+          if (typeof options.onError === "function") options.onError(message.message);
+          if (typeof options.onDebug === "function") {
+            options.onDebug({
+              level: "error",
+              message: message.detail || message.message || "unknown error"
+            });
+          }
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(Promise.reject(new Error(message.message)));
+          }
+        } else if (message.type === "selectedText" || message.type === "cut") {
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(message.text || "");
+          }
+        } else if (message.type === "fireTestError") {
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(!!message.handled);
+          }
+        } else if (message.type === "debugSprites") {
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(message.sprites || []);
+          }
+        } else if (message.type === "debugImageTrace") {
+          const resolve = callbacks.get(message.requestId);
+          if (resolve) {
+            callbacks.delete(message.requestId);
+            resolve(message.events || []);
+          }
+        } else if (message.type === "socket" && typeof options.onSocket === "function") {
+          options.onSocket(message);
+        } else if (message.type === "audio") {
+          void handleAudioCommand(message.command || {}, message.bytes).catch((error) => {
+            reportAudioWarning(`Audio playback failed: ${error.message || String(error)}`);
+          });
+        } else if (message.type === "tempo") {
+          inputTempo = clampTempo(message.tempo || message.baseTempo || inputTempo);
+          scheduleMouseInputSample(true);
+          if (typeof options.onTempo === "function") options.onTempo(message);
+        } else if (message.type === "navigation") {
+          handleNavigation(message.url || "");
+        } else if (message.type === "debug" && typeof options.onDebug === "function") {
+          options.onDebug({ level: message.level || "debug", message: message.message || "" });
+        } else if (message.type === "warning") {
+          if (typeof options.onWarning === "function") options.onWarning(message.message);
+          if (typeof options.onDebug === "function") {
+            options.onDebug({ level: "warning", message: message.message || "" });
+          }
+        } else if (message.type === "ready" && typeof options.onReady === "function") {
+          options.onReady();
         }
-      } else if (message.type === "error") {
-        if (typeof options.onError === "function") options.onError(message.message);
-        if (typeof options.onDebug === "function") options.onDebug({ level: "error", message: message.detail || message.message || "unknown error" });
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(Promise.reject(new Error(message.message)));
+        // Forward all unhandled messages to the generic onMessage callback
+        // (used by the debugger UI to receive debug-specific events)
+        if (typeof options.onMessage === "function") {
+          options.onMessage(message);
         }
-      } else if (message.type === "selectedText" || message.type === "cut") {
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(message.text || "");
-        }
-      } else if (message.type === "fireTestError") {
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(!!message.handled);
-        }
-      } else if (message.type === "debugSprites") {
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(message.sprites || []);
-        }
-      } else if (message.type === "debugImageTrace") {
-        const resolve = callbacks.get(message.requestId);
-        if (resolve) {
-          callbacks.delete(message.requestId);
-          resolve(message.events || []);
-        }
-      } else if (message.type === "socket" && typeof options.onSocket === "function") {
-        options.onSocket(message);
-      } else if (message.type === "audio") {
-        void handleAudioCommand(message.command || {}, message.bytes).catch((error) => {
-          reportAudioWarning(`Audio playback failed: ${error.message || String(error)}`);
-        });
-      } else if (message.type === "tempo") {
-        inputTempo = clampTempo(message.tempo || message.baseTempo || inputTempo);
-        scheduleMouseInputSample(true);
-        if (typeof options.onTempo === "function") options.onTempo(message);
-      } else if (message.type === "navigation") {
-        handleNavigation(message.url || "");
-      } else if (message.type === "debug" && typeof options.onDebug === "function") {
-        options.onDebug({ level: message.level || "debug", message: message.message || "" });
-      } else if (message.type === "warning") {
-        if (typeof options.onWarning === "function") options.onWarning(message.message);
-        if (typeof options.onDebug === "function") options.onDebug({ level: "warning", message: message.message || "" });
-      } else if (message.type === "ready" && typeof options.onReady === "function") {
-        options.onReady();
-      }
-      // Forward all unhandled messages to the generic onMessage callback
-      // (used by the debugger UI to receive debug-specific events)
-      if (typeof options.onMessage === "function") {
-        options.onMessage(message);
-      }
-    });
+      });
     }
 
     canvas.addEventListener("mousemove", (event) => {
@@ -951,10 +978,10 @@
         if (worker) {
           worker.postMessage({ type: "destroy" });
           worker.terminate();
+          worker = null;
         }
-        for (const blobUrl of blobWorkerUrls) {
-          URL.revokeObjectURL(blobUrl);
-        }
+        revokeBlobWorkerUrls();
+        queuedWorkerMessages.length = 0;
         if (audioContext && audioContext.state !== "closed") {
           void audioContext.close().catch(() => {});
         }
