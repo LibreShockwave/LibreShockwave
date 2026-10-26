@@ -1,6 +1,35 @@
 /* global createLibreShockwaveCppWasm */
 "use strict";
 
+// When this worker runs from a same-origin blob URL (because the player
+// script was served cross-origin), the host injects the page URL and the
+// player asset base before this file executes. In that case self.location
+// is a blob: URL, so these globals restore the page-based heuristics.
+const pageUrl = typeof self.__libreshockwavePageUrl === "string" && self.__libreshockwavePageUrl
+  ? self.__libreshockwavePageUrl
+  : self.location.href;
+const assetBase = typeof self.__libreshockwaveBase === "string" ? self.__libreshockwaveBase : "";
+
+function assetUrl(name) {
+  return assetBase ? new URL(name, assetBase).href : name;
+}
+
+function pageOrigin() {
+  try {
+    return new URL(pageUrl).origin;
+  } catch (error) {
+    return self.location.origin;
+  }
+}
+
+function pageProtocol() {
+  try {
+    return new URL(pageUrl).protocol;
+  } catch (error) {
+    return self.location.protocol;
+  }
+}
+
 let modulePromise = null;
 let Module = null;
 let api = null;
@@ -68,10 +97,10 @@ self.addEventListener("unhandledrejection", (event) => {
 
 function ensureModule() {
   if (modulePromise) return modulePromise;
-  importScripts("libreshockwave-cpp-wasm.js");
+  importScripts(assetUrl("libreshockwave-cpp-wasm.js"));
   modulePromise = createLibreShockwaveCppWasm({
     locateFile(path) {
-      return path;
+      return assetUrl(path);
     }
   }).then((mod) => {
     Module = mod;
@@ -206,7 +235,7 @@ function emitDebugMessages() {
 function resolveUrl(candidate, baseUrl = movieUrl) {
   if (!candidate) return "";
   try {
-    return new URL(candidate, baseUrl || self.location.href).href;
+    return new URL(candidate, baseUrl || pageUrl).href;
   } catch {
     return candidate;
   }
@@ -214,7 +243,7 @@ function resolveUrl(candidate, baseUrl = movieUrl) {
 
 function isDirectorMovieUrl(url) {
   try {
-    const pathname = new URL(url, movieUrl || self.location.href).pathname.toLowerCase();
+    const pathname = new URL(url, movieUrl || pageUrl).pathname.toLowerCase();
     return pathname.endsWith(".dcr") || pathname.endsWith(".dir") || pathname.endsWith(".dxr");
   } catch {
     const cleanUrl = String(url || "").split(/[?#]/, 1)[0].toLowerCase();
@@ -233,7 +262,7 @@ function isHttpStatusError(error) {
 
 function isRemoteCandidate(url) {
   try {
-    return new URL(url).origin !== self.location.origin;
+    return new URL(url).origin !== pageOrigin();
   } catch {
     return false;
   }
@@ -357,7 +386,7 @@ function socketSendPayload(bytes) {
 }
 
 function socketUrlFor(host, port) {
-  const secure = websocketSsl === null ? self.location.protocol === "https:" : Boolean(websocketSsl);
+  const secure = websocketSsl === null ? pageProtocol() === "https:" : Boolean(websocketSsl);
   const scheme = secure ? "wss" : "ws";
   return `${scheme}://${host}:${port}${websocketPath || ""}`;
 }

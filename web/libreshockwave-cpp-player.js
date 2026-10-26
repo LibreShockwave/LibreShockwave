@@ -1,6 +1,16 @@
 "use strict";
 
 (function attach(global) {
+  // document.currentScript is only this file's own <script> tag while
+  // this file executes; create() is normally called from a later inline
+  // script, where document.currentScript is that other (src-less)
+  // element. Capture the URL here so the worker/wasm base path resolves
+  // against this file's own location (e.g. a static CDN) instead of the
+  // page's.
+  const playerScriptUrl = global.document && global.document.currentScript && global.document.currentScript.src
+    ? global.document.currentScript.src
+    : "";
+
   const defaultHabboParams = {
     sw1: "site.url=http://127.0.0.1;url.prefix=http://127.0.0.1",
     sw2: "connection.info.host=au.h4bbo.net;connection.info.port=30001",
@@ -168,11 +178,12 @@
     const ctx = canvas.getContext("2d", { alpha: false });
     const frameBufferCanvas = document.createElement("canvas");
     const frameBufferCtx = frameBufferCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    const scriptUrl = document.currentScript && document.currentScript.src
-      ? document.currentScript.src
-      : location.href;
+    const scriptUrl = playerScriptUrl || location.href;
     const basePath = options.basePath || new URL(".", scriptUrl).href;
-    const worker = new Worker(new URL("libreshockwave-cpp-worker.js", basePath), { name: "LibreShockwaveCppWorker" });
+    const workerUrl = new URL("libreshockwave-cpp-worker.js", basePath).href;
+    let worker = null;
+    const queuedWorkerMessages = [];
+    const blobWorkerUrls = [];
     const callbacks = new Map();
     let nextRequestId = 1;
     let lastInfo = null;
@@ -211,8 +222,85 @@
     }
 
     function send(type, payload = {}) {
-      if (!destroyed) worker.postMessage({ type, ...payload });
+      if (destroyed) return;
+      if (!worker) {
+        queuedWorkerMessages.push({ type, ...payload });
+        return;
+      }
+      worker.postMessage({ type, ...payload });
     }
+
+    function isSameOriginUrl(url) {
+      try {
+        return new URL(url).origin === global.location.origin;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function reportWorkerError(error) {
+      const message = `LibreShockwave worker error: ${error && error.message ? error.message : String(error)}`;
+      if (typeof options.onError === "function") options.onError(message);
+      if (typeof options.onDebug === "function") options.onDebug({ level: "error", message: message });
+    }
+
+    function attachWorkerErrorReporting(target) {
+      target.addEventListener("error", (event) => {
+        reportWorkerError(event.error || new Error(event.message || "worker error"));
+      });
+    }
+
+    function flushQueuedWorkerMessages() {
+      if (destroyed || !worker) return;
+      while (queuedWorkerMessages.length > 0) {
+        worker.postMessage(queuedWorkerMessages.shift());
+      }
+    }
+
+    function logWorkerStartup(message) {
+      if (typeof options.onDebug === "function") options.onDebug({ level: "info", message: message });
+      if (global.console && typeof global.console.info === "function") global.console.info(message);
+    }
+
+    function startWorker() {
+      if (isSameOriginUrl(workerUrl)) {
+        logWorkerStartup(`LibreShockwave worker: same-origin ${workerUrl}`);
+        worker = new Worker(workerUrl, { name: "LibreShockwaveCppWorker" });
+        attachWorkerMessageHandler();
+        attachWorkerErrorReporting(worker);
+        flushQueuedWorkerMessages();
+        return;
+      }
+      // Classic workers are same-origin only. When the player script is
+      // served from a different origin (e.g. a static CDN), fetch the
+      // worker script and run it from a same-origin blob URL. The
+      // injected globals tell the worker where its own assets
+      // (libreshockwave-cpp-wasm.js / .wasm) live and what the page
+      // origin/protocol is, so importScripts(), fetch() and the websocket
+      // scheme resolve against the player's URL instead of the page's.
+      fetch(workerUrl)
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status} for ${workerUrl}`);
+          return response.text();
+        })
+        .then((source) => {
+          const blob = new Blob([
+            `self.__libreshockwavePageUrl = ${JSON.stringify(global.location.href)};\n`,
+            `self.__libreshockwaveBase = ${JSON.stringify(basePath)};\n`,
+            source
+          ], { type: "application/javascript" });
+          const blobUrl = URL.createObjectURL(blob);
+          blobWorkerUrls.push(blobUrl);
+          logWorkerStartup(`LibreShockwave worker: cross-origin blob from ${workerUrl}`);
+          worker = new Worker(blobUrl, { name: "LibreShockwaveCppWorker" });
+          attachWorkerMessageHandler();
+          attachWorkerErrorReporting(worker);
+          flushQueuedWorkerMessages();
+        })
+        .catch(reportWorkerError);
+    }
+
+    startWorker();
 
     function clampTempo(value) {
       return Math.max(1, Math.min(240, Number(value || 0) || 15));
@@ -639,6 +727,7 @@
       navigation.redirect();
     }
 
+    function attachWorkerMessageHandler() {
     worker.addEventListener("message", (event) => {
       const message = event.data || {};
       if (message.type === "frame") {
@@ -713,6 +802,7 @@
         options.onMessage(message);
       }
     });
+    }
 
     canvas.addEventListener("mousemove", (event) => {
       recordMouseClientPosition(event.clientX, event.clientY);
@@ -858,15 +948,20 @@
         document.removeEventListener("pointerdown", handleDocumentPointerDown);
         document.removeEventListener("keydown", handleDocumentKeyDown);
         global.removeEventListener("resize", hideContextMenu);
-        worker.postMessage({ type: "destroy" });
-        worker.terminate();
+        if (worker) {
+          worker.postMessage({ type: "destroy" });
+          worker.terminate();
+        }
+        for (const blobUrl of blobWorkerUrls) {
+          URL.revokeObjectURL(blobUrl);
+        }
         if (audioContext && audioContext.state !== "closed") {
           void audioContext.close().catch(() => {});
         }
       },
       get lastInfo() { return lastInfo; },
       post(type, payload = {}) { send(type, payload); },
-      worker
+      get worker() { return worker; }
     };
   }
 
