@@ -35,6 +35,11 @@ public:
     void requestDisconnect(int instance_id) override;
     [[nodiscard]] bool isConnected(int instance_id) const override;
     [[nodiscard]] bool hasCompletedHandshake() const;
+
+    // True once the movie has asked for a text (non-SMUS) connection. Callers
+    // that gate work on the handshake use this to avoid waiting before the
+    // movie has even requested the connection.
+    [[nodiscard]] bool hasRequestedTextConnection() const;
     [[nodiscard]] std::vector<NetMessage> pollMessages(int instance_id) override;
     void destroyInstance(int instance_id) override;
 

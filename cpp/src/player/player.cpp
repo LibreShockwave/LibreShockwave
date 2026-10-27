@@ -813,8 +813,17 @@ bool Player::networkReady() const {
     if (!casts_ready || !has_unloaded_external_cast) {
         external_cast_load_observed_ = true;
     }
-    if (socket_multiuser_bridge_ == nullptr || !socket_multiuser_bridge_->hasCompletedHandshake()) {
-        return socket_multiuser_bridge_ == nullptr && casts_ready;
+    // The multiuser handshake only gates readiness after the movie has asked
+    // for a text connection. Before that request (for example while a replay
+    // is still on the navigator) there is nothing to wait for, and blocking
+    // here would stop the replay from delivering the click that enters a room.
+    if (socket_multiuser_bridge_ != nullptr &&
+        socket_multiuser_bridge_->hasRequestedTextConnection() &&
+        !socket_multiuser_bridge_->hasCompletedHandshake()) {
+        return false;
+    }
+    if (socket_multiuser_bridge_ == nullptr) {
+        return casts_ready;
     }
 
     const bool ready = casts_ready && external_cast_load_observed_;
