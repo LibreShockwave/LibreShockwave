@@ -516,6 +516,14 @@ tests. They are not a complete rendering specification.
 
 - For `DARKEN` and `LIGHTEN`, opaque white 32-bit non-alpha buffers can be
   neutral content. They are not automatic matte.
+- A tinted `DARKEN` or `LIGHTEN` sprite often uses white for both the backing
+  and the artwork surface. Clear only the white that reaches the sprite edge.
+  A global white key removes the artwork surface and leaves transparent holes
+  where the tint should be brightest.
+- Habbo furniture art is usually 8-bit indexed grayscale. The sprite `bgColor`
+  is the tint. The brightest surface colour comes from white pixels tinted by
+  `bgColor`. `solveInk` returns 8 (`MATTE`) when the furniture `.props` part has
+  no `#ink`.
 - Dynamic indexed sprites that depend on color ramps require preserved palette
   indices. Later text, timestamp, or wrapper copies must not clear base image
   indices.
@@ -601,6 +609,9 @@ breakpoints per movie.
   movie is loaded. So events are never injected into an empty or loading score.
   The clock also pauses while a recording-triggered movie navigation fetches the
   next movie. Then it resumes when the new session is ready.
+  `networkReady()` waits for the MUS text handshake only after the movie asks
+  for a text connection. A recording that starts before a room must deliver the
+  room-entry click before that request can happen.
 - Replays run against the live network. If the server data changed since
   recording, the recorded click path can diverge. It can give a different room
   list, a different navigation result, or a different handshake. Before assuming
@@ -621,6 +632,103 @@ Playback and stepping shortcuts:
 | `F10` | Step over |
 | `F11` | Step into |
 | `Shift+F11` | Step out |
+
+## Debugging Workflow
+
+Use this order for rendering and replay bugs. It finds the failing layer fast.
+
+### Confirm that the replay reaches the scene
+
+- A replay can stall on one screen. The replay clock only advances while
+  `Player::networkReady()` is true.
+- `networkReady()` waits for the MUS text handshake after the movie requests a
+  text connection. The room `Binary Manager` creates that connection on room
+  entry. A recording that starts before a room must deliver the room-entry
+  click first.
+- Check the live sockets with `ss -tnp | grep -E "9301|6301"`. The game port is
+  `connection.info.port`. The MUS port is `connection.mus.port`. No MUS
+  connection means no room session.
+- The frame dump counter is not replay progress. It counts rendered dumps.
+
+### Capture frames without blocking
+
+- Run the debugger offscreen with `QT_QPA_PLATFORM=offscreen`.
+- Set `LIBRESHOCKWAVE_DEBUGGER_FRAME_DUMP=/tmp/.../frame.png`. The debugger
+  overwrites that file at most once per second.
+- Copy the file to a numbered sequence when its modification time changes. Then
+  you can find the first frame that shows the target scene.
+- A replay that clicks through several screens can take minutes. Do other work
+  while it runs.
+
+### Learn which sprite path runs
+
+- Add a temporary log in `SpriteBaker::bakeBitmap`, `processDecodedBitmap`, and
+  `processLiveBitmap`. Print the member name, bit depth, `isNativeAlpha`,
+  `isScriptModified`, ink code, back and fore colour, `hasBackColor` and
+  `hasForeColor`, palette-index presence, and the top opaque RGB colours.
+- The log shows whether the decoded path or the live path runs. It also shows
+  whether the bitmap is already tinted before the ink.
+- `bakeBitmap` uses the live path when the member has a runtime bitmap. A
+  palette override sets `isScriptModified` without a script edit.
+- Remove the temporary log before finalizing. Do not keep asset-name branches
+  in the runtime.
+
+### Reproduce the ink math without a replay
+
+- Build a small probe in `/tmp`. Link it against
+  `cmake-build-release/cpp/liblibreshockwave.a`.
+
+```bash
+c++ -std=c++20 -O2 -I cpp/include probe.cpp \
+    cmake-build-release/cpp/liblibreshockwave.a -lz -lpthread -o probe
+```
+
+- Load the cast with `DirectorFile::load`. Decode a member with `decodeBitmap`.
+  Then call `InkProcessor::applyInk` and
+  `BitmapCache::applyIndexedMatteColorRemapIfNeeded` with the authored ink and
+  colour.
+- This reproduces `processDecodedBitmap` and `processLiveBitmap` in about one
+  second. It removes the replay from the iteration loop.
+- Extract the cast first with the asset extractor. It writes `manifest.tsv`,
+  PNGs, text, palettes, and raw chunks.
+
+```bash
+./cmake-build-release/cpp/libreshockwave_asset_extractor <in-dir> <out-dir>
+```
+
+- Cast files can be Afterburner-compressed. Do not parse them by hand. Use the
+  extractor.
+
+### Find the authored values
+
+- The local game server is `/opt/git/ClassicProject`. Read the database
+  credentials from its `config-server.json`.
+- The database holds `rooms`, `items`, and `items_definitions`. Join
+  `items.definition_id` to `items_definitions.id` to get the furniture sprite
+  and placement.
+- `tools/gamedata/shockwave/furnidata.txt` holds the per-variant colour string.
+  The `Active Object Class` sets `sprite.bgColor` from it, per part.
+- Furniture cast files are under `/home/alex/Downloads/dcr/hof_furni/`.
+- The part ink comes from the furniture `.props` member. A missing `#ink` means
+  ink 8 (`MATTE`).
+
+### Compare against a reference image
+
+- Reference images can come from different camera positions. Align before you
+  diff. A raw diff is dominated by the offset.
+- Locate a stable colour blob, for example the furniture orange. Use its
+  bounding box, or a small brute-force offset search over the room region.
+- Report the diff for the target region and at least one control region.
+- Report the diff against both references. A large diff against the bad
+  reference and a near-zero diff against the good reference proves the fix.
+
+### Read the introducing commit
+
+- Use `git log -S "<symbol>" --all -- '<path>'` to find the commit that added a
+  behaviour.
+- Read the commit message and any `GOAL.md` in that commit. It states the
+  intended behaviour and the bug it fixed.
+- Do not revert a behaviour without reading its commit first.
 
 ## Network Architecture: WebSocket (WASM) vs Raw TCP (native)
 
