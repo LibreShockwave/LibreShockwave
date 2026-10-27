@@ -841,15 +841,29 @@ bitmap::Bitmap InkProcessor::applyFloodFillTransparency(const bitmap::Bitmap& sr
 }
 
 bitmap::Bitmap InkProcessor::convertOpaqueWhiteToTransparent(const bitmap::Bitmap& src) {
+    const int width = src.width();
+    const int height = src.height();
+    if (width <= 0 || height <= 0) {
+        return src.copy();
+    }
+
+    // Only border-connected white is the sprite's backing. Interior white
+    // pixels are authored art that a DARKEN/LIGHTEN tint must keep, so a
+    // global white match would punch holes through the artwork. Walk out from
+    // the edges and clear only the white region that reaches them.
+    const auto& pixels = src.pixels();
+    const auto is_backing = [&](int index) {
+        const auto pixel = pixels[static_cast<std::size_t>(index)];
+        return ((pixel >> 24U) & 0xFFU) == 0 || (pixel & 0x00FFFFFFU) == 0x00FFFFFFU;
+    };
+    const auto transparent = bitmap::detail::computeEdgeConnectedMask(width, height, is_backing);
+
+    std::vector<std::uint32_t> result = pixels;
     bool changed = false;
-    std::vector<std::uint32_t> result;
-    result.reserve(src.pixels().size());
-    for (const auto pixel : src.pixels()) {
-        if (pixel == 0xFFFFFFFFU) {
-            result.push_back(0x00FFFFFFU);
+    for (std::size_t index = 0; index < result.size() && index < transparent.size(); ++index) {
+        if (transparent[index] && ((result[index] >> 24U) & 0xFFU) != 0U) {
+            result[index] = 0x00FFFFFFU;
             changed = true;
-        } else {
-            result.push_back(pixel);
         }
     }
     return changed ? derivedBitmap(src, std::move(result)) : src.copy();

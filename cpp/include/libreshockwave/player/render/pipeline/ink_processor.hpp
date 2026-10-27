@@ -63,6 +63,9 @@ public:
                                                    int matte_color_rgb,
                                                    int tolerance = 0);
     [[nodiscard]] static bitmap::Bitmap applyFloodFillTransparency(const bitmap::Bitmap& src);
+    // Clears the white backing that reaches the sprite edge and keeps interior
+    // white pixels, which are authored art for DARKEN/LIGHTEN tinted sprites.
+    // Keyed pixels become 0x00FFFFFF so their RGB stays available downstream.
     [[nodiscard]] static bitmap::Bitmap convertOpaqueWhiteToTransparent(const bitmap::Bitmap& src);
     [[nodiscard]] static bitmap::Bitmap multiplyColor(const bitmap::Bitmap& src, int tint_rgb);
 };
