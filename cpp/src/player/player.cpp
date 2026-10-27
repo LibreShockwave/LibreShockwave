@@ -792,7 +792,9 @@ int Player::preloadAllCasts() {
 
 bool Player::externalCastsReady() const {
     for (const auto& [_, cast_lib] : cast_lib_manager_.castLibs()) {
-        if (cast_lib && cast_lib->isExternal() && !cast_lib->isLoaded() && !cast_lib->fileName().empty()) {
+        // A Failed cast (fetched data that did not parse) is settled empty
+        // and must not keep the gate closed the way an in-flight cast does.
+        if (cast_lib && cast_lib->isExternal() && !cast_lib->isSettled() && !cast_lib->fileName().empty()) {
             return false;
         }
     }
@@ -803,7 +805,7 @@ bool Player::networkReady() const {
     const bool casts_ready = externalCastsReady();
     bool has_unloaded_external_cast = false;
     for (const auto& [_, cast_lib] : cast_lib_manager_.castLibs()) {
-        if (cast_lib && cast_lib->isExternal() && !cast_lib->isLoaded() && !cast_lib->fileName().empty()) {
+        if (cast_lib && cast_lib->isExternal() && !cast_lib->isSettled() && !cast_lib->fileName().empty()) {
             has_unloaded_external_cast = true;
             break;
         }

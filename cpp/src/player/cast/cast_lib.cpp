@@ -623,6 +623,9 @@ bool CastLib::usesStableRegistryBinding() const {
 
 CastLib::State CastLib::state() const { return state_; }
 bool CastLib::isLoaded() const { return state_ == State::Loaded; }
+bool CastLib::isSettled() const {
+    return state_ == State::Loaded || state_ == State::Failed;
+}
 bool CastLib::isFetching() const { return state_ == State::Fetching; }
 
 void CastLib::markFetching() {
@@ -638,7 +641,7 @@ void CastLib::setPreloadMode(int preload_mode) {
 }
 
 void CastLib::load() {
-    if (state_ == State::Loaded) {
+    if (state_ == State::Loaded || state_ == State::Failed) {
         return;
     }
 
@@ -1347,6 +1350,10 @@ bool CastLib::setExternalData(const std::vector<std::uint8_t>& data) {
         fetched_external_data_ = data;
         auto file = DirectorFile::load(data);
         if (!file) {
+            // The fetched bytes are not a Director file (e.g. an HTTP
+            // error page). Settle the cast as Failed so it stops blocking
+            // the external-cast gate instead of staying in Fetching.
+            state_ = State::Failed;
             return false;
         }
 
@@ -1377,6 +1384,7 @@ bool CastLib::setExternalData(const std::vector<std::uint8_t>& data) {
         load();
         return true;
     } catch (const std::exception&) {
+        state_ = State::Failed;
         return false;
     }
 }

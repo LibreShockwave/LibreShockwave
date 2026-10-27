@@ -37,7 +37,11 @@ public:
         None,
         Fetching,
         Loading,
-        Loaded
+        Loaded,
+        // Fetched but the data did not parse as a Director file (e.g. an
+        // error page). Terminal: the cast is settled empty and must not
+        // keep the external-cast gate closed.
+        Failed
     };
 
     CastLib(int number,
@@ -65,6 +69,10 @@ public:
 
     [[nodiscard]] State state() const;
     [[nodiscard]] bool isLoaded() const;
+    // True once the cast reached a terminal state (Loaded or Failed).
+    // A Failed cast is settled empty; it must not block the external-cast
+    // gate the way an in-flight Fetching/Loading cast does.
+    [[nodiscard]] bool isSettled() const;
     [[nodiscard]] bool isFetching() const;
     void markFetching();
 
