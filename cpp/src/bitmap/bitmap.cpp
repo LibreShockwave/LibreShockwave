@@ -351,7 +351,14 @@ void Bitmap::copyPaletteStateFrom(const Bitmap* other) {
     }
 
     image_palette_ = other->image_palette_;
-    palette_indices_ = other->palette_indices_;
+    // Per-pixel indices only transfer when the pixel counts match; a size
+    // mismatch would leave this bitmap's indices misaligned with its pixels.
+    if (other->palette_indices_.has_value() &&
+        other->palette_indices_->size() == pixels_.size()) {
+        palette_indices_ = other->palette_indices_;
+    } else {
+        palette_indices_.reset();
+    }
     palette_ref_cast_lib_ = other->palette_ref_cast_lib_;
     palette_ref_member_num_ = other->palette_ref_member_num_;
     palette_ref_system_name_ = other->palette_ref_system_name_;
