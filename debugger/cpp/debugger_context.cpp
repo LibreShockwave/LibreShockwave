@@ -8,8 +8,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 #include "debug_state_bridge.hpp"
@@ -206,6 +208,10 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     auto& vm = player_->vm();
     vm.builtinContext().output_handler =
         [this](std::string_view tag, std::string_view text) {
+            if (const char* console = std::getenv("LS_DEBUGGER_CONSOLE_OUTPUT");
+                console != nullptr && *console != '\0') {
+                std::cout << '[' << tag << "] " << text << std::endl;
+            }
             emit vmOutput(QString::fromUtf8(tag.data(), static_cast<int>(tag.size())),
                           QString::fromUtf8(text.data(), static_cast<int>(text.size())));
         };
