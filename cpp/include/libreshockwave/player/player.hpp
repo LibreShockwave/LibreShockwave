@@ -222,6 +222,7 @@ private:
     bool debug_enabled_{false};
     std::function<void(const PlayerEventInfo&)> event_listener_;
     std::function<void()> cast_loaded_listener_;
+    std::function<void()> invalidate_script_resolution_caches_;
     std::function<void(const ExternalCastLoadEvent&)> external_cast_load_listener_;
     std::shared_ptr<debug::DebugControllerApi> debug_controller_;
     ErrorListener error_listener_;

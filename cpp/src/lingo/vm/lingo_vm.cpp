@@ -700,6 +700,8 @@ void LingoVM::invalidateHandlerCache() {
     resolved_name_cache_.clear();
     builtin_context_.script_resolution_cache.clear();
     builtin_context_.script_property_names_cache.clear();
+    builtin_context_.direct_script_instance_handler_cache.clear();
+    builtin_context_.script_instance_handler_cache.clear();
 }
 
 Datum LingoVM::callHandler(std::string_view handler_name_value, const std::vector<Datum>& args) {

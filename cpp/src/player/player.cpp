@@ -836,6 +836,9 @@ void Player::onSynchronousExternalCastLoad(int cast_lib_number) {
     }
 
     bitmap_cache_.clear();
+    if (invalidate_script_resolution_caches_) {
+        invalidate_script_resolution_caches_();
+    }
     vm_.invalidateHandlerCache();
     stage_renderer_.spriteRegistry().bumpRevision();
     frame_context_.rebindBehaviorsForLoadedCast(cast_lib_number);
@@ -1264,6 +1267,19 @@ void Player::wireComponents() {
             ScriptHandlerFinderKeyHash>>();
     auto script_ref_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
     auto script_instance_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
+
+    // An external cast can be rebound to a different file in the same cast
+    // slot. Cached handler, script-reference, and script-instance resolutions
+    // can then point at scripts from the previous file, so drop them on reload.
+    invalidate_script_resolution_caches_ = [handler_lookup_cache,
+                                            script_handler_finder_cache,
+                                            script_ref_target_cache,
+                                            script_instance_target_cache] {
+        handler_lookup_cache->clear();
+        script_handler_finder_cache->clear();
+        script_ref_target_cache->clear();
+        script_instance_target_cache->clear();
+    };
 
     auto find_handler_in_script = [this, handler_lookup_cache](const std::shared_ptr<chunks::ScriptChunk>& script,
                                                           const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names,
