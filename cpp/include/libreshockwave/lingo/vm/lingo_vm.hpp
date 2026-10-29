@@ -153,10 +153,14 @@ public:
         const chunks::ScriptChunk& existing_script);
 
 private:
-    [[nodiscard]] ExecutionContext::Callbacks callbacksFor(
+    [[nodiscard]] ExecutionContext::Callbacks baseCallbacksFor(
         const chunks::ScriptChunk& script,
-        std::shared_ptr<const DirectorFile> file_owner = nullptr,
-        std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner = nullptr);
+        const std::shared_ptr<const DirectorFile>& file_owner,
+        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner);
+    [[nodiscard]] ExecutionContext::Callbacks cachedCallbacksFor(
+        const chunks::ScriptChunk& script,
+        const std::shared_ptr<const DirectorFile>& file_owner,
+        const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner);
     [[nodiscard]] std::shared_ptr<const chunks::ScriptNamesChunk> scriptNamesForScript(
         const chunks::ScriptChunk& script,
         const std::shared_ptr<const DirectorFile>& file_owner = nullptr,
@@ -274,6 +278,26 @@ private:
         }
     };
 
+    struct CallbacksKey {
+        const chunks::ScriptChunk* script{nullptr};
+        const DirectorFile* file_owner{nullptr};
+        const chunks::ScriptNamesChunk* script_names_owner{nullptr};
+
+        bool operator==(const CallbacksKey& other) const {
+            return script == other.script &&
+                   file_owner == other.file_owner &&
+                   script_names_owner == other.script_names_owner;
+        }
+    };
+
+    struct CallbacksKeyHash {
+        std::size_t operator()(const CallbacksKey& key) const {
+            return std::hash<const void*>{}(key.script) ^
+                   (std::hash<const void*>{}(key.file_owner) << 1U) ^
+                   (std::hash<const void*>{}(key.script_names_owner) << 2U);
+        }
+    };
+
     DirectorFile* file_{nullptr};
     RuntimeGlobals globals_;
     std::map<std::string, Datum> prefs_;
@@ -297,6 +321,7 @@ private:
     std::unordered_set<std::string> missing_builtin_debug_cache_;
     std::unordered_map<HandlerMetadataKey, std::shared_ptr<const HandlerMetadata>, HandlerMetadataKeyHash> handler_metadata_cache_;
     mutable std::unordered_map<ResolvedNameKey, std::string, ResolvedNameKeyHash> resolved_name_cache_;
+    std::unordered_map<CallbacksKey, std::shared_ptr<ExecutionContext::Callbacks>, CallbacksKeyHash> callbacks_cache_;
     std::function<void()> pass_callback_;
     bool event_stopped_{false};
     bool in_error_state_{false};

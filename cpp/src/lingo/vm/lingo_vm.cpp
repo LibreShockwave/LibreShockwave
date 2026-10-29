@@ -851,6 +851,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handler_ref,
     const std::int64_t handler_start_time =
         (emit_slow_handler_warnings || needs_safepoint_time) ? currentTimeMillis() : 0;
     int executed_steps = 0;
+    int safepoint_countdown = SAFEPOINT_CHECK_INTERVAL;
     if (is_alert_hook_handler) {
         alert_hook_handler_.incrementDepth();
         alert_hook_depth_incremented = true;
@@ -897,7 +898,7 @@ Datum LingoVM::executeHandler(const HandlerRef& handler_ref,
         }
         (void)skipDisabledTraceScriptPrologue(scope, script, file_owner, script_names_owner);
         if (const auto* first = scope.currentInstruction()) {
-            auto callbacks = callbacksFor(script, file_owner, script_names_owner);
+            auto callbacks = cachedCallbacksFor(script, file_owner, script_names_owner);
             const bool trace_instruction =
                 trace_enabled_ || (trace_listener_ != nullptr && trace_listener_->needsInstructionTrace());
             ExecutionContext context(scope,
@@ -915,7 +916,8 @@ Datum LingoVM::executeHandler(const HandlerRef& handler_ref,
                     throw LingoException("Step limit exceeded (" + std::to_string(step_limit_) +
                                          " instructions) in handler '" + current_handler_name + "'");
                 }
-                if ((executed_steps % SAFEPOINT_CHECK_INTERVAL) == 0) {
+                if (needs_safepoint_time && --safepoint_countdown == 0) {
+                    safepoint_countdown = SAFEPOINT_CHECK_INTERVAL;
                     const std::int64_t now = currentTimeMillis();
                     if (now - last_gc_time >= GC_SAFEPOINT_INTERVAL_MS) {
                         if (gc_callback_) {
@@ -996,10 +998,10 @@ bool LingoVM::shouldSkipDeconstructReentry(std::string_view normalized_handler_n
            &current_script == &existing_script;
 }
 
-ExecutionContext::Callbacks LingoVM::callbacksFor(
+ExecutionContext::Callbacks LingoVM::baseCallbacksFor(
     const chunks::ScriptChunk& script,
-    std::shared_ptr<const DirectorFile> file_owner,
-    std::shared_ptr<const chunks::ScriptNamesChunk> script_names_owner) {
+    const std::shared_ptr<const DirectorFile>& file_owner,
+    const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner) {
     ExecutionContext::Callbacks callbacks;
     callbacks.name_resolver = [this, &script, file_owner, script_names_owner](int name_id) {
         return resolveName(script, name_id, file_owner, script_names_owner);
@@ -1027,6 +1029,27 @@ ExecutionContext::Callbacks LingoVM::callbacksFor(
     callbacks.call_stack_formatter = [this] {
         return formatCallStack();
     };
+    return callbacks;
+}
+
+ExecutionContext::Callbacks LingoVM::cachedCallbacksFor(
+    const chunks::ScriptChunk& script,
+    const std::shared_ptr<const DirectorFile>& file_owner,
+    const std::shared_ptr<const chunks::ScriptNamesChunk>& script_names_owner) {
+    // The base callbacks only depend on the script and its owners, so build
+    // them once per script and reuse them across every handler invocation of
+    // that script instead of reconstructing the std::function set each time.
+    const CallbacksKey key{&script, file_owner.get(), script_names_owner.get()};
+    ExecutionContext::Callbacks callbacks;
+    const auto cached = callbacks_cache_.find(key);
+    if (cached != callbacks_cache_.end()) {
+        callbacks = *cached->second;
+    } else {
+        auto built = std::make_shared<ExecutionContext::Callbacks>(
+            baseCallbacksFor(script, file_owner, script_names_owner));
+        callbacks_cache_.emplace(key, built);
+        callbacks = *built;
+    }
     const bool needs_variable_trace =
         (trace_listener_ != nullptr && trace_listener_->needsVariableTrace()) || !traced_handlers_.empty();
     if (!needs_variable_trace) {
