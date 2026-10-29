@@ -1152,7 +1152,14 @@ bool CastLib::setMemberProp(int member_number, const std::string& prop_name, con
 
     const auto prop = lower(prop_name);
     if (prop == "name") {
-        member->setName(value.stringValue());
+        const std::string new_name = value.stringValue();
+        if (new_name.empty() && member->isBitmap() && member->isRuntimeDynamic()) {
+            // A released bitmap returns to the dynamic member pool. Its old
+            // registration point belongs to the previous use, so it must not
+            // override the registration point of the next media assignment.
+            member->setRegPointState(member->regX(), member->regY(), false);
+        }
+        member->setName(new_name);
         invalidateMemberNameIndex();
         return true;
     }
