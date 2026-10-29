@@ -34,7 +34,37 @@ Datum* propertyValue(Datum::ScriptInstanceRef& instance, std::string_view prop_n
     return index >= 0 ? &instance.properties()[static_cast<std::size_t>(index)].second : nullptr;
 }
 
+template <typename Instance>
+Instance* findScriptNodeImpl(Instance& instance,
+                             int script_chunk_id,
+                             const ScriptChunkIdLookup& resolve_chunk_id) {
+    auto* current = &instance;
+    for (int depth = 0; current != nullptr && depth < MAX_ANCESTOR_DEPTH; ++depth) {
+        if (const auto& script_ref = current->scriptRef(); script_ref.has_value()) {
+            const int cast_lib = script_ref->cast_lib > 0 ? script_ref->cast_lib : 1;
+            if (resolve_chunk_id(cast_lib, script_ref->memberNum()) == script_chunk_id) {
+                return current;
+            }
+        }
+
+        current = current->ancestorRaw();
+    }
+    return nullptr;
+}
+
 } // namespace
+
+Datum::ScriptInstanceRef* findScriptNode(Datum::ScriptInstanceRef& instance,
+                                         int script_chunk_id,
+                                         const ScriptChunkIdLookup& resolve_chunk_id) {
+    return findScriptNodeImpl(instance, script_chunk_id, resolve_chunk_id);
+}
+
+const Datum::ScriptInstanceRef* findScriptNode(const Datum::ScriptInstanceRef& instance,
+                                               int script_chunk_id,
+                                               const ScriptChunkIdLookup& resolve_chunk_id) {
+    return findScriptNodeImpl(instance, script_chunk_id, resolve_chunk_id);
+}
 
 Datum getProperty(const Datum::ScriptInstanceRef& instance, std::string_view prop_name) {
     if (equalsIgnoreCase(prop_name, "ancestor")) {

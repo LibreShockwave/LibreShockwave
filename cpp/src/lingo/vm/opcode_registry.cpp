@@ -2058,6 +2058,38 @@ Datum scriptInstanceNestedProperty(const Datum& container, const Datum& sub_key)
     return Datum::voidValue();
 }
 
+template <typename Instance>
+Instance* handlerPropertyNode(ExecutionContext& context, Instance& instance) {
+    auto* builtin_context = context.builtinContext();
+    const auto* script = context.scope().script();
+    if (builtin_context == nullptr || script == nullptr ||
+        !builtin_context->script_chunk_id_resolver) {
+        return &instance;
+    }
+    if (auto* node = util::findScriptNode(instance,
+                                          script->id().value(),
+                                          builtin_context->script_chunk_id_resolver)) {
+        return node;
+    }
+    return &instance;
+}
+
+Datum getHandlerPropertyValue(ExecutionContext& context,
+                              const Datum& receiver,
+                              std::string_view prop_name) {
+    if (receiver.type() != DatumType::ScriptInstanceRef) {
+        return Datum::voidValue();
+    }
+    return util::getProperty(*handlerPropertyNode(context, receiver.scriptInstanceValue()), prop_name);
+}
+
+void setHandlerPropertyValue(ExecutionContext& context,
+                             Datum::ScriptInstanceRef& instance,
+                             std::string_view prop_name,
+                             Datum value) {
+    util::setProperty(*handlerPropertyNode(context, instance), prop_name, std::move(value));
+}
+
 Datum scriptInstancePropertyValue(const Datum::ScriptInstanceRef& instance, std::string_view prop_name) {
     if (const auto* value = util::findPropertyValue(instance, prop_name)) {
         return *value;
@@ -5746,10 +5778,9 @@ Datum getContextVar(ExecutionContext& context,
             return context.getGlobal(context.resolveNameRef(toIntLikeJava(id_datum)));
         case id::VarType::PROPERTY: {
             const Datum& receiver = context.scope().receiver();
-            if (receiver.type() == DatumType::ScriptInstanceRef) {
-                return util::getProperty(receiver.scriptInstanceValue(), context.resolveNameRef(toIntLikeJava(id_datum)));
-            }
-            return Datum::voidValue();
+            return getHandlerPropertyValue(context,
+                                           receiver,
+                                           context.resolveNameRef(toIntLikeJava(id_datum)));
         }
         case id::VarType::FIELD: {
             auto* builtin_context = context.builtinContext();
@@ -5785,11 +5816,11 @@ void setContextVar(ExecutionContext& context,
                 const std::string& prop_name = context.resolveNameRef(toIntLikeJava(id_datum));
                 auto instance = receiver.scriptInstancePtr();
                 if (!context.hasVariableSetListener()) {
-                    util::setProperty(*instance, prop_name, std::move(value));
+                    setHandlerPropertyValue(context, *instance, prop_name, std::move(value));
                     return;
                 }
                 const Datum traced_value = value;
-                util::setProperty(*instance, prop_name, std::move(value));
+                setHandlerPropertyValue(context, *instance, prop_name, std::move(value));
                 context.tracePropertySet(prop_name, traced_value);
             }
             return;
@@ -6092,12 +6123,7 @@ bool pushArgListNoRet(ExecutionContext& context) {
 
 bool getProp(ExecutionContext& context) {
     const std::string& prop_name = context.resolveNameRef(context.argument());
-    const Datum& receiver = context.scope().receiver();
-    if (receiver.type() == DatumType::ScriptInstanceRef) {
-        context.push(util::getProperty(receiver.scriptInstanceValue(), prop_name));
-    } else {
-        context.push(Datum::voidValue());
-    }
+    context.push(getHandlerPropertyValue(context, context.scope().receiver(), prop_name));
     return true;
 }
 
@@ -6108,11 +6134,11 @@ bool setProp(ExecutionContext& context) {
     if (receiver.type() == DatumType::ScriptInstanceRef) {
         auto instance = receiver.scriptInstancePtr();
         if (!context.hasVariableSetListener()) {
-            util::setProperty(*instance, prop_name, std::move(value));
+            setHandlerPropertyValue(context, *instance, prop_name, std::move(value));
             return true;
         }
         const Datum traced_value = value;
-        util::setProperty(*instance, prop_name, std::move(value));
+        setHandlerPropertyValue(context, *instance, prop_name, std::move(value));
         context.tracePropertySet(prop_name, traced_value);
     }
     return true;

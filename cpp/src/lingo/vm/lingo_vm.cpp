@@ -495,18 +495,10 @@ Datum LingoVM::findAncestorForCall(const Datum::ScriptInstanceRef& instance) con
     }
 
     const int current_script_id = scope->script()->id().value();
-    const auto* current = &instance;
-    for (int depth = 0; current != nullptr && depth < util::MAX_ANCESTOR_DEPTH; ++depth) {
-        if (const auto& script_ref = current->scriptRef(); script_ref.has_value()) {
-            const int cast_lib = script_ref->cast_lib > 0 ? script_ref->cast_lib : 1;
-            const int script_chunk_id = builtin_context_.script_chunk_id_resolver(cast_lib, script_ref->memberNum());
-            if (script_chunk_id == current_script_id) {
-                return scriptInstanceOrVoid(current->ancestor());
-            }
-        }
-
-        auto ancestor = current->ancestor();
-        current = ancestor ? ancestor.get() : nullptr;
+    if (const auto* script_node = util::findScriptNode(instance,
+                                                       current_script_id,
+                                                       builtin_context_.script_chunk_id_resolver)) {
+        return scriptInstanceOrVoid(script_node->ancestor());
     }
 
     return scriptInstanceOrVoid(instance.ancestor());
