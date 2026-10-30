@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <csetjmp>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -16,10 +15,7 @@
 #include <string_view>
 #include <vector>
 
-#ifdef LIBRESHOCKWAVE_HAVE_JPEG
-#include <jpeglib.h>
-#endif
-
+#include "common/jpeg_decoder.hpp"
 #include "libreshockwave/director_file.hpp"
 #include "libreshockwave/audio/sound_converter.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
@@ -350,76 +346,6 @@ void appendPngChunk(std::vector<std::uint8_t>& png,
 void writePng(const fs::path& path, const Bitmap& bitmap) {
     writeBytes(path, pngBytes(bitmap));
 }
-
-#ifdef LIBRESHOCKWAVE_HAVE_JPEG
-struct JpegErrorManager {
-    jpeg_error_mgr public_error;
-    std::jmp_buf jump;
-};
-
-void jpegErrorExit(j_common_ptr common) {
-    auto* error = reinterpret_cast<JpegErrorManager*>(common->err);
-    longjmp(error->jump, 1);
-}
-
-[[nodiscard]] std::optional<Bitmap> decodeJpeg(const std::vector<std::uint8_t>& data) {
-    if (data.empty() || data.size() > std::numeric_limits<unsigned long>::max()) {
-        return std::nullopt;
-    }
-
-    jpeg_decompress_struct decoder{};
-    JpegErrorManager error{};
-    bool created = false;
-    decoder.err = jpeg_std_error(&error.public_error);
-    error.public_error.error_exit = jpeg_error_exit;
-    if (setjmp(error.jump) != 0) {
-        if (created) {
-            jpeg_destroy_decompress(&decoder);
-        }
-        return std::nullopt;
-    }
-
-    jpeg_create_decompress(&decoder);
-    created = true;
-    jpeg_mem_src(&decoder,
-                 const_cast<unsigned char*>(data.data()),
-                 static_cast<unsigned long>(data.size()));
-    if (jpeg_read_header(&decoder, TRUE) != JPEG_HEADER_OK) {
-        jpeg_destroy_decompress(&decoder);
-        return std::nullopt;
-    }
-    decoder.out_color_space = JCS_RGB;
-    jpeg_start_decompress(&decoder);
-
-    const auto width = static_cast<int>(decoder.output_width);
-    const auto height = static_cast<int>(decoder.output_height);
-    if (width <= 0 || height <= 0 || decoder.output_components != 3) {
-        jpeg_destroy_decompress(&decoder);
-        return std::nullopt;
-    }
-
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width) *
-                                      static_cast<std::size_t>(height));
-    std::vector<JSAMPLE> scanline(static_cast<std::size_t>(width) * 3U);
-    while (decoder.output_scanline < decoder.output_height) {
-        JSAMPROW row = scanline.data();
-        const auto y = decoder.output_scanline;
-        jpeg_read_scanlines(&decoder, &row, 1);
-        for (int x = 0; x < width; ++x) {
-            const auto offset = static_cast<std::size_t>(x) * 3U;
-            pixels[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
-                   static_cast<std::size_t>(x)] =
-                0xFF000000U |
-                (static_cast<std::uint32_t>(scanline[offset]) << 16U) |
-                (static_cast<std::uint32_t>(scanline[offset + 1U]) << 8U) |
-                static_cast<std::uint32_t>(scanline[offset + 2U]);
-        }
-    }
-    jpeg_finish_decompress(&decoder);
-    jpeg_destroy_decompress(&decoder);
-    return Bitmap(width, height, 32, std::move(pixels));
-}
-#endif
 
 [[nodiscard]] std::vector<std::uint8_t> readBytes(const fs::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -762,7 +688,7 @@ int main(int argc, char** argv) {
         fs::create_directories(output_dir);
 
 #ifdef LIBRESHOCKWAVE_HAVE_JPEG
-        DirectorFile::setJpegDecoder(decodeJpeg);
+        DirectorFile::setJpegDecoder(apps::decodeJpeg);
 #endif
 
         std::vector<fs::path> inputs;

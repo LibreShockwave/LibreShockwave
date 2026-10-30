@@ -207,9 +207,12 @@ target_link_libraries(libreshockwave_probe PRIVATE LibreShockwave::libreshockwav
 target_compile_features(libreshockwave_probe PRIVATE cxx_std_20)
 
 add_executable(libreshockwave_asset_extractor
+    apps/common/jpeg_decoder.cpp
+    apps/common/jpeg_decoder.hpp
     apps/tools/asset_extractor.cpp
 )
 target_link_libraries(libreshockwave_asset_extractor PRIVATE LibreShockwave::libreshockwave)
+target_include_directories(libreshockwave_asset_extractor PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/apps")
 target_compile_features(libreshockwave_asset_extractor PRIVATE cxx_std_20)
 
 find_package(JPEG QUIET)
@@ -313,10 +316,14 @@ if(EMSCRIPTEN)
     endif()
 
     add_executable(libreshockwave_cpp_wasm
+        apps/common/jpeg_decoder.cpp
+        apps/common/jpeg_decoder.hpp
         apps/wasm/wasm_bridge.cpp
         ../debugger/cpp/debugger_bridge.cpp
     )
     target_link_libraries(libreshockwave_cpp_wasm PRIVATE LibreShockwave::libreshockwave)
+    target_include_directories(libreshockwave_cpp_wasm PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/apps")
+    target_compile_definitions(libreshockwave_cpp_wasm PRIVATE LIBRESHOCKWAVE_HAVE_JPEG=1)
     target_compile_features(libreshockwave_cpp_wasm PRIVATE cxx_std_20)
     target_compile_options(libreshockwave_cpp_wasm PRIVATE
         -O3
@@ -327,6 +334,7 @@ if(EMSCRIPTEN)
         "SHELL:-fwasm-exceptions"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_NAME=createLibreShockwaveCppWasm"
+        "SHELL:-sUSE_LIBJPEG"
         "SHELL:-s ENVIRONMENT=worker"
         "SHELL:-sALLOW_MEMORY_GROWTH"
         "SHELL:-s STACK_SIZE=8388608"

@@ -27,6 +27,9 @@
 #define LSW_EXPORT(name)
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include "common/jpeg_decoder.hpp"
+#endif
 #include "libreshockwave/director_file.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/cast/cast_member.hpp"
@@ -1174,7 +1177,11 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_load_movie") int lswLoadMovie(int handle,
         auto multiuser_bridge = std::make_unique<QueuedMultiuserBridge>();
         auto audio_backend = std::make_unique<QueuedAudioBackend>();
         auto jpeg_decoder = std::make_unique<QueuedJpegDecoder>();
+#ifdef __EMSCRIPTEN__
+        DirectorFile::setJpegDecoder(libreshockwave::apps::decodeJpeg);
+#else
         jpeg_decoder->install();
+#endif
         auto player = std::make_unique<Player>(file, net_provider.get());
         player->registerMultiuserXtra(*multiuser_bridge);
         player->setAudioBackend(audio_backend.get());
