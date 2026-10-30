@@ -359,18 +359,15 @@ bool DebuggerContext::restoreMovieSession() {
 void DebuggerContext::enqueueInput(InputEvent event) {
     std::lock_guard<std::mutex> lock(input_mutex_);
 
-    // Mouse moves are high-frequency and only the newest position matters
-    // before the next VM iteration. Coalesce adjacent moves so a busy GUI
-    // cannot build an unbounded input backlog while the movie is ticking.
+    // Input is staged for the next frame tick. Coalesce adjacent moves so a
+    // fast GUI cannot build an unbounded backlog before the tick polls it.
     if (event.type == InputEvent::MouseMove && !input_queue_.empty() &&
         input_queue_.back().type == InputEvent::MouseMove) {
         input_queue_.back() = std::move(event);
-        wakeWorker();
         return;
     }
 
     input_queue_.push_back(std::move(event));
-    wakeWorker();
 }
 
 void DebuggerContext::play() {
@@ -399,6 +396,12 @@ void DebuggerContext::pausePlayback() {
     if (debug_controller_ != nullptr) {
         debug_controller_->setTracingEnabled(true);
         debug_controller_->pause();
+    }
+    // A paused movie has no next tick, so input staged before the pause must
+    // not run later against a different frame.
+    {
+        std::lock_guard<std::mutex> lock(input_mutex_);
+        input_queue_.clear();
     }
     wakeWorker();
 }
@@ -607,57 +610,19 @@ void DebuggerContext::runLoop() {
         }
     };
 
-    while (!quit_worker_.load(std::memory_order_relaxed)) {
-        // 1. Deliver completed network fetches (main thread → VM thread).
-        //    onFetchComplete invokes fetchCompleteCallback_ which feeds the
-        //    bytes to Player::onNetFetchComplete on this (VM) thread.
-        deliver_pending_fetch_results();
-
-        // 2. Complete pending movie navigations and surface them to the
-        //    window, which reloads the movie (mirrors the WASM worker's
-        //    navigation poll).
-        if (queued_net_->pendingMovieNavigationTaskCount() > 0) {
-            for (const auto& nav : queued_net_->pendingMovieNavigationRequests()) {
-                queued_net_->onMovieNavigationComplete(nav.task_id);
-                emit movieNavigationRequested(QString::fromStdString(nav.url));
-            }
+    const auto poll_queued_input = [this] {
+        if (player_ == nullptr) {
+            return;
         }
-
-        // 3. Copy pending fetch requests out of the provider for the
-        //    main-thread HTTP pump.
-        queue_pending_fetch_requests();
-
-        // 4. Drain queued input events
+        std::vector<InputEvent> queued;
         {
             std::lock_guard<std::mutex> lock(input_mutex_);
-            std::vector<InputEvent> queued;
             queued.swap(input_queue_);
-            for (std::size_t index = 0; index < queued.size(); ++index) {
-                const auto& event = queued[index];
-                auto& handler = player_->inputHandler();
-                switch (event.type) {
-                    case InputEvent::MouseMove:
-                        handler.onMouseMove(event.stage_x, event.stage_y);
-                        break;
-                    case InputEvent::MouseDown:
-                        handler.onMouseDown(event.stage_x, event.stage_y, event.right_button);
-                        break;
-                    case InputEvent::MouseUp:
-                        handler.onMouseUp(event.stage_x, event.stage_y, event.right_button);
-                        break;
-                    case InputEvent::KeyDown:
-                        handler.onKeyDown(event.director_key_code, event.key_text,
-                                          event.shift, event.ctrl, event.alt);
-                        break;
-                    case InputEvent::KeyUp:
-                        handler.onKeyUp(event.director_key_code, event.key_text,
-                                        event.shift, event.ctrl, event.alt);
-                        break;
-                }
-            }
         }
-        (void)player_->inputHandler().processInputEvents();
+        player_->inputHandler().applyHostEvents(queued);
+    };
 
+    while (!quit_worker_.load(std::memory_order_relaxed)) {
         if (!movie_started) {
             player_->play();
             movie_started = true;
@@ -675,13 +640,27 @@ void DebuggerContext::runLoop() {
             first_frame = false;
         }
 
-        // 5. Run one frame tick at the movie's deadline. Rendering is not part
-        // of this deadline: it consumes the latest immutable snapshot on a
-        // separate thread. If a breakpoint is hit, DebugController blocks
-        // this VM thread on its own condition_variable until the main thread
-        // calls step/continue, while GUI and network event loops remain free.
-        if (player_->state() == libreshockwave::player::PlayerState::Playing &&
-            Clock::now() >= next_tick_at) {
+        // The frame tick is the only consumer of host input and network
+        // results. Nothing between ticks runs VM or render work, so a burst
+        // of input or HTTP completions cannot delay the movie.
+        const bool tick_due = player_->state() == libreshockwave::player::PlayerState::Playing &&
+                              Clock::now() >= next_tick_at;
+        if (tick_due) {
+            // Poll everything staged since the previous frame boundary.
+            deliver_pending_fetch_results();
+            if (queued_net_->pendingMovieNavigationTaskCount() > 0) {
+                for (const auto& nav : queued_net_->pendingMovieNavigationRequests()) {
+                    queued_net_->onMovieNavigationComplete(nav.task_id);
+                    emit movieNavigationRequested(QString::fromStdString(nav.url));
+                }
+            }
+            queue_pending_fetch_requests();
+            poll_queued_input();
+
+            // Run one frame tick at the movie deadline. Player::tick polls
+            // the staged input at frame start. Rendering consumes the latest
+            // immutable snapshot on another thread, so a breakpoint here
+            // never blocks the GUI or the network event loops.
             try {
                 (void)player_->tick();
             } catch (const std::exception& error) {
@@ -692,6 +671,8 @@ void DebuggerContext::runLoop() {
             }
 
             network_ready_.store(player_->networkReady(), std::memory_order_release);
+            // Hand fetch requests created by this frame to the GUI pump.
+            queue_pending_fetch_requests();
             if (!quit_worker_.load(std::memory_order_relaxed)) {
                 submit_current_frame();
             }
@@ -894,15 +875,15 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
 }
 
 void DebuggerContext::deliverFetchResult(int task_id, std::vector<std::uint8_t> data) {
+    // Staged for the next frame tick; see the fetch-result queue comment in
+    // the header. Delivering here would run cast parsing off the tick.
     std::lock_guard<std::mutex> lock(net_in_mutex_);
     net_in_queue_.push_back(NetFetchResult{task_id, std::move(data), 0});
-    wakeWorker();
 }
 
 void DebuggerContext::deliverFetchError(int task_id, int status) {
     std::lock_guard<std::mutex> lock(net_in_mutex_);
     net_in_queue_.push_back(NetFetchResult{task_id, {}, status});
-    wakeWorker();
 }
 
 bool DebuggerContext::isAlreadyLoadedCastRequest(std::string_view url) const {

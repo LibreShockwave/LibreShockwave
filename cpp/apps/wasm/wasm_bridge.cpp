@@ -69,6 +69,21 @@ using libreshockwave::player::xtra::QueuedMultiuserBridge;
 constexpr int DEFAULT_WASM_SCRIPT_DEADLINE_MS = 60000;
 constexpr int SLOW_WASM_OPERATION_WARNING_MS = 1000;
 
+// Host input and load results are staged here and polled by lswTick at the
+// next frame boundary. Nothing in these structs touches the Player.
+struct PendingFetchResult {
+    int task_id{0};
+    std::vector<std::uint8_t> data;
+    int error_status{0};
+};
+
+struct PendingJpegDecode {
+    int id{0};
+    int width{0};
+    int height{0};
+    std::vector<std::uint8_t> rgba;
+};
+
 struct WasmPlayerContext {
     std::shared_ptr<DirectorFile> file;
     std::unique_ptr<QueuedNetProvider> net_provider;
@@ -77,6 +92,9 @@ struct WasmPlayerContext {
     std::unique_ptr<QueuedJpegDecoder> jpeg_decoder;
     std::unique_ptr<Player> player;
     std::vector<std::pair<std::string, std::string>> external_params;
+    std::vector<libreshockwave::player::InputHandler::HostInputEvent> pending_inputs;
+    std::vector<PendingFetchResult> pending_fetch_results;
+    std::vector<PendingJpegDecode> pending_jpeg_decodes;
     std::vector<std::uint8_t> frame_rgba;
     int frame_width{0};
     int frame_height{0};
@@ -1009,11 +1027,53 @@ std::string jpegDecodeRequestsJson(QueuedJpegDecoder& decoder) {
     return out.str();
 }
 
-void processQueuedInput(WasmPlayerContext& ctx) {
+using HostInputEvent = libreshockwave::player::InputHandler::HostInputEvent;
+
+void queueInputEvent(WasmPlayerContext& ctx, HostInputEvent event) {
+    // Mouse moves are high-frequency and only the newest position matters
+    // before the next tick polls them.
+    if (event.type == HostInputEvent::MouseMove && !ctx.pending_inputs.empty() &&
+        ctx.pending_inputs.back().type == HostInputEvent::MouseMove) {
+        ctx.pending_inputs.back() = std::move(event);
+        return;
+    }
+    ctx.pending_inputs.push_back(std::move(event));
+}
+
+void applyPendingInput(WasmPlayerContext& ctx) {
+    if (ctx.player == nullptr || ctx.pending_inputs.empty()) {
+        return;
+    }
+    std::vector<HostInputEvent> pending;
+    pending.swap(ctx.pending_inputs);
+    ctx.player->inputHandler().applyHostEvents(pending);
+}
+
+void applyPendingHostResults(WasmPlayerContext& ctx) {
     if (ctx.player == nullptr) {
         return;
     }
-    (void)ctx.player->inputHandler().processInputEvents();
+
+    std::vector<PendingJpegDecode> jpeg_decodes;
+    jpeg_decodes.swap(ctx.pending_jpeg_decodes);
+    if (ctx.jpeg_decoder != nullptr) {
+        for (auto& decode : jpeg_decodes) {
+            ctx.jpeg_decoder->deliverDecoded(
+                decode.id, decode.width, decode.height, decode.rgba);
+        }
+    }
+
+    std::vector<PendingFetchResult> fetch_results;
+    fetch_results.swap(ctx.pending_fetch_results);
+    if (ctx.net_provider != nullptr) {
+        for (auto& result : fetch_results) {
+            if (result.error_status == 0) {
+                ctx.net_provider->onFetchComplete(result.task_id, std::move(result.data));
+            } else {
+                ctx.net_provider->onFetchError(result.task_id, result.error_status);
+            }
+        }
+    }
 }
 
 const char* scratch(WasmPlayerContext& ctx, std::string value) {
@@ -1178,6 +1238,9 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_load_movie") int lswLoadMovie(int handle,
         ctx->multiuser_bridge.reset();
         ctx->net_provider.reset();
         ctx->file.reset();
+        ctx->pending_inputs.clear();
+        ctx->pending_fetch_results.clear();
+        ctx->pending_jpeg_decodes.clear();
         ctx->frame_rgba.clear();
         ctx->frame_width = 0;
         ctx->frame_height = 0;
@@ -1352,6 +1415,9 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_pause") void lswPause(int handle) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "pause", [&]() {
             ctx->player->pause();
+            // A paused movie has no next tick; drop staged input so resume
+            // does not replay it against a later frame.
+            ctx->pending_inputs.clear();
         });
     }
 }
@@ -1360,6 +1426,7 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_stop") void lswStop(int handle) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "stop", [&]() {
             ctx->player->stop();
+            ctx->pending_inputs.clear();
             (void)renderCurrentFrame(*ctx);
         });
     }
@@ -1372,6 +1439,13 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_tick") int lswTick(int handle) {
     }
     try {
         clearError(*ctx);
+        if (ctx->player->state() == PlayerState::Playing) {
+            // Poll host load results and input exactly once per frame, before
+            // the VM advances. Host callbacks only staged them.
+            WasmScriptDeadlineGuard script_deadline(ctx->player.get());
+            applyPendingHostResults(*ctx);
+            applyPendingInput(*ctx);
+        }
         const bool keep_going = ctx->player->tick();
         (void)renderCurrentFrame(*ctx);
 
@@ -1583,10 +1657,8 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_jpeg_decode_complete") void lswJpegDecodeCo
         if (rgba != nullptr && byte_count > 0) {
             data.assign(rgba, rgba + byte_count);
         }
-        ctx->jpeg_decoder->deliverDecoded(id, width, height, data);
-        if (ctx->player != nullptr) {
-            (void)renderCurrentFrame(*ctx);
-        }
+        ctx->pending_jpeg_decodes.push_back(
+            PendingJpegDecode{id, width, height, std::move(data)});
     });
 }
 
@@ -1623,15 +1695,16 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_fetch_complete") void lswFetchComplete(int 
         return;
     }
     guardedVoid(*ctx, "complete fetch", [&]() {
-        WasmScriptDeadlineGuard script_deadline(ctx->player.get());
-        ctx->net_provider->onFetchComplete(task_id, std::vector<std::uint8_t>(bytes, bytes + byte_count));
+        std::vector<std::uint8_t> data(bytes, bytes + byte_count);
+        ctx->pending_fetch_results.push_back(
+            PendingFetchResult{task_id, std::move(data), 0});
     });
 }
 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_fetch_error") void lswFetchError(int handle, int task_id, int status) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->net_provider != nullptr) {
         guardedVoid(*ctx, "fail fetch", [&]() {
-            ctx->net_provider->onFetchError(task_id, status);
+            ctx->pending_fetch_results.push_back(PendingFetchResult{task_id, {}, status});
         });
     }
 }
@@ -1743,24 +1816,10 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_director_key_from_browser") int lswDirector
 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_move") int lswMouseMove(int handle, int stage_x, int stage_y) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
-        int result_flags = 0;
         guardedVoid(*ctx, "mouse move", [&]() {
-            const int sprite_revision_before = ctx->player->stageRenderer().spriteRegistry().revision();
-            const int rollover_before = ctx->player->inputState().rolloverSprite();
-            const bool was_mouse_down = ctx->player->inputState().isMouseDown();
-            ctx->player->inputHandler().onMouseMove(stage_x, stage_y);
-            processQueuedInput(*ctx);
-            const int sprite_revision_after = ctx->player->stageRenderer().spriteRegistry().revision();
-            if (was_mouse_down || sprite_revision_after != sprite_revision_before) {
-                if (renderCurrentFrame(*ctx)) {
-                    result_flags |= 1;
-                }
-            }
-            if (ctx->player->inputState().rolloverSprite() != rollover_before) {
-                result_flags |= 2;
-            }
+            queueInputEvent(*ctx, HostInputEvent{
+                HostInputEvent::MouseMove, stage_x, stage_y});
         });
-        return result_flags;
     }
     return 0;
 }
@@ -1768,9 +1827,12 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_move") int lswMouseMove(int handle, i
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_down") void lswMouseDown(int handle, int stage_x, int stage_y, int right_button) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "mouse down", [&]() {
-            ctx->player->inputHandler().onMouseDown(stage_x, stage_y, right_button != 0);
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            HostInputEvent event;
+            event.type = HostInputEvent::MouseDown;
+            event.stage_x = stage_x;
+            event.stage_y = stage_y;
+            event.right_button = right_button != 0;
+            queueInputEvent(*ctx, std::move(event));
         });
     }
 }
@@ -1778,9 +1840,12 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_down") void lswMouseDown(int handle, 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_up") void lswMouseUp(int handle, int stage_x, int stage_y, int right_button) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "mouse up", [&]() {
-            ctx->player->inputHandler().onMouseUp(stage_x, stage_y, right_button != 0);
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            HostInputEvent event;
+            event.type = HostInputEvent::MouseUp;
+            event.stage_x = stage_x;
+            event.stage_y = stage_y;
+            event.right_button = right_button != 0;
+            queueInputEvent(*ctx, std::move(event));
         });
     }
 }
@@ -1788,9 +1853,9 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_mouse_up") void lswMouseUp(int handle, int 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_blur") void lswBlur(int handle) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "blur", [&]() {
-            ctx->player->inputHandler().onBlur();
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            HostInputEvent event;
+            event.type = HostInputEvent::Blur;
+            queueInputEvent(*ctx, std::move(event));
         });
     }
 }
@@ -1803,13 +1868,14 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_key_down") void lswKeyDown(int handle,
                                        int alt) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "key down", [&]() {
-            ctx->player->inputHandler().onKeyDown(DirectorKeyCodes::fromBrowserKeyCode(browser_key_code),
-                                                  key_text != nullptr ? std::string(key_text) : std::string(),
-                                                  shift != 0,
-                                                  ctrl != 0,
-                                                  alt != 0);
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            HostInputEvent event;
+            event.type = HostInputEvent::KeyDown;
+            event.director_key_code = DirectorKeyCodes::fromBrowserKeyCode(browser_key_code);
+            event.key_text = key_text != nullptr ? std::string(key_text) : std::string();
+            event.shift = shift != 0;
+            event.ctrl = ctrl != 0;
+            event.alt = alt != 0;
+            queueInputEvent(*ctx, std::move(event));
         });
     }
 }
@@ -1822,13 +1888,14 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_key_up") void lswKeyUp(int handle,
                                      int alt) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "key up", [&]() {
-            ctx->player->inputHandler().onKeyUp(DirectorKeyCodes::fromBrowserKeyCode(browser_key_code),
-                                                key_text != nullptr ? std::string(key_text) : std::string(),
-                                                shift != 0,
-                                                ctrl != 0,
-                                                alt != 0);
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
+            HostInputEvent event;
+            event.type = HostInputEvent::KeyUp;
+            event.director_key_code = DirectorKeyCodes::fromBrowserKeyCode(browser_key_code);
+            event.key_text = key_text != nullptr ? std::string(key_text) : std::string();
+            event.shift = shift != 0;
+            event.ctrl = ctrl != 0;
+            event.alt = alt != 0;
+            queueInputEvent(*ctx, std::move(event));
         });
     }
 }
@@ -1836,9 +1903,9 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_key_up") void lswKeyUp(int handle,
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_paste_text") void lswPasteText(int handle, const char* text) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr && text != nullptr) {
         guardedVoid(*ctx, "paste text", [&]() {
+            // Text editing commands change the focused field directly. They
+            // do not dispatch queued stage input or force a frame render.
             ctx->player->inputHandler().onPasteText(text);
-            processQueuedInput(*ctx);
-            (void)renderCurrentFrame(*ctx);
         });
     }
 }
@@ -1858,7 +1925,6 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_select_all") void lswSelectAll(int handle) 
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
         guardedVoid(*ctx, "select all", [&]() {
             ctx->player->inputHandler().selectAll();
-            (void)renderCurrentFrame(*ctx);
         });
     }
 }
@@ -1870,7 +1936,6 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_cut_selected_text") const char* lswCutSelec
     }
     return guardedResult<const char*>(*ctx, "cut selected text", "", [&]() {
         const auto text = ctx->player->inputHandler().cutSelectedText();
-        (void)renderCurrentFrame(*ctx);
         return scratch(*ctx, text.value_or(std::string()));
     });
 }

@@ -37,6 +37,22 @@ namespace libreshockwave::player {
 
 class InputHandler {
 public:
+    /// A raw host input event. Hosts only stage these; the frame tick applies
+    /// them in order. Applying at event time would run hit tests and sprite
+    /// work outside the frame budget.
+    struct HostInputEvent {
+        enum Type { MouseMove, MouseDown, MouseUp, KeyDown, KeyUp, Blur };
+        Type type{KeyDown};
+        int stage_x{0};
+        int stage_y{0};
+        int director_key_code{0};
+        std::string key_text;
+        bool shift{false};
+        bool ctrl{false};
+        bool alt{false};
+        bool right_button{false};
+    };
+
     using CurrentFrameSupplier = std::function<int()>;
     using EventDispatcherSupplier = std::function<event::EventDispatcher*()>;
     using HitSpritesSupplier = std::function<std::vector<render::pipeline::RenderSprite>()>;
@@ -78,6 +94,12 @@ public:
     [[nodiscard]] std::optional<std::string> getSelectedText() const;
     [[nodiscard]] std::optional<std::string> cutSelectedText();
     void selectAll();
+
+    /// Applies staged host events in order at the frame boundary. A run of
+    /// consecutive mouse moves collapses to the last position, because only
+    /// the final position matters for the tick. Call once per frame before
+    /// processInputEvents; never call it from the host input callback.
+    void applyHostEvents(const std::vector<HostInputEvent>& events);
 
     [[nodiscard]] bool processInputEvents();
 

@@ -677,18 +677,6 @@ function sendFrame() {
   post("frame", { info, pixels }, [pixels.buffer]);
 }
 
-function sendFrameInfo() {
-  if (!handle) return;
-  const infoText = bridgeCall("frame info", () => api.frameInfoJson(handle), "{}");
-  let info = {};
-  try {
-    info = JSON.parse(infoText || "{}");
-  } catch {
-    info = {};
-  }
-  post("frameInfo", { info });
-}
-
 function paramsObjectToText(params) {
   if (!params) return "";
   const text = typeof params === "string"
@@ -842,47 +830,28 @@ self.addEventListener("message", (event) => {
         bridgeCall("set params", () => api.setParams(handle, paramsText));
         break;
       case "mouseMove":
-        const mouseMoveFlags = bridgeCall("mouse move", () => api.mouseMove(handle, message.x | 0, message.y | 0), 0);
-        await pumpHostQueues();
-        if (mouseMoveFlags & 1) {
-          sendFrame();
-        } else if (mouseMoveFlags & 2) {
-          sendFrameInfo();
-        }
+        bridgeCall("mouse move", () => api.mouseMove(handle, message.x | 0, message.y | 0), 0);
         break;
       case "mouseDown":
         bridgeCall("mouse down", () => api.mouseDown(handle, message.x | 0, message.y | 0, message.right ? 1 : 0));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "mouseUp":
         bridgeCall("mouse up", () => api.mouseUp(handle, message.x | 0, message.y | 0, message.right ? 1 : 0));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "blur":
         bridgeCall("blur", () => api.blur(handle));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "keyDown":
         bridgeCall("key down", () => api.keyDown(handle, message.keyCode | 0, message.text || "", message.shift ? 1 : 0, message.ctrl ? 1 : 0, message.alt ? 1 : 0));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "keyUp":
         bridgeCall("key up", () => api.keyUp(handle, message.keyCode | 0, message.text || "", message.shift ? 1 : 0, message.ctrl ? 1 : 0, message.alt ? 1 : 0));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "paste":
         bridgeCall("paste", () => api.pasteText(handle, message.text || ""));
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "selectAll":
         bridgeCall("select all", () => api.selectAll(handle));
-        sendFrame();
         break;
       case "selectedText":
         post("selectedText", { requestId: message.requestId, text: bridgeCall("selected text", () => api.selectedText(handle), "") || "" });
@@ -921,8 +890,6 @@ self.addEventListener("message", (event) => {
         break;
       case "cut":
         post("cut", { requestId: message.requestId, text: bridgeCall("cut", () => api.cutSelectedText(handle), "") || "" });
-        await pumpHostQueues();
-        sendFrame();
         break;
       case "audioStopped":
         bridgeCall("audio stopped", () => api.audioStopped(handle, message.channel | 0));

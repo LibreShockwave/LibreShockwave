@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #include "model/debugger_model.hpp"
+#include "libreshockwave/player/input_handler.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -53,8 +54,8 @@ class DebugStateBridge;
 /// Network I/O bridges (mirroring the WASM worker):
 ///  - QueuedNetProvider lives on the worker (VM) thread; pending fetch
 ///    requests are copied out to a thread-safe queue drained by a main-thread
-///    QTimer + QNetworkAccessManager pump. Completed results are fed back
-///    through onFetchComplete/onFetchError by the worker each loop iteration.
+///    QTimer + QNetworkAccessManager pump. Completed results are delivered
+///    back through onFetchComplete/onFetchError on the next frame tick.
 ///  - gotoNetPage/gotoNetMovie become movie navigations; the worker completes
 ///    them and emits movieNavigationRequested() so the window can load the
 ///    new movie bytes as a fresh session.
@@ -94,7 +95,8 @@ public:
     [[nodiscard]] bool debugEnabled() const;
 
     /// Thread-safe input queue for keyboard/mouse events from StageWidget.
-    struct InputEvent;
+    /// The tick loop polls it at the next frame boundary.
+    using InputEvent = libreshockwave::player::InputHandler::HostInputEvent;
     void enqueueInput(InputEvent event);
 
     /// A pending HTTP fetch copied out of QueuedNetProvider for the main
@@ -107,7 +109,8 @@ public:
         std::vector<std::string> fallbacks;
     };
     /// A completed (or failed) HTTP fetch fed back into QueuedNetProvider
-    /// (main → worker). errorStatus == 0 means success.
+    /// (main → worker). Staged until the tick loop polls it.
+    /// errorStatus == 0 means success.
     struct NetFetchResult {
         int task_id{0};
         std::vector<std::uint8_t> data;
@@ -222,8 +225,8 @@ private:
     mutable std::mutex frame_mutex_;
     std::shared_ptr<QImage> latest_frame_;
 
-    // Wake the VM loop as soon as input or an asynchronous network result
-    // arrives, while retaining the movie's own frame deadline.
+    // Wake the VM loop only for explicit playback and debugger control
+    // changes. Input and network results wait for the movie frame deadline.
     mutable std::mutex worker_wait_mutex_;
     std::condition_variable worker_condition_;
     std::atomic<std::uint64_t> worker_wake_generation_{0};
@@ -238,21 +241,6 @@ private:
     std::string movie_path_;
     std::vector<std::pair<std::string, std::string>> external_params_;
     std::atomic<bool> debug_enabled_{true};
-};
-
-/// A raw input event enqueued from the StageWidget (main thread) and
-/// consumed by the worker thread.
-struct DebuggerContext::InputEvent {
-    enum Type { MouseMove, MouseDown, MouseUp, KeyDown, KeyUp };
-    Type type{KeyDown};
-    int stage_x{0};
-    int stage_y{0};
-    int director_key_code{0};
-    std::string key_text;
-    bool shift{false};
-    bool ctrl{false};
-    bool alt{false};
-    bool right_button{false};
 };
 
 } // namespace libreshockwave::debugger

@@ -375,6 +375,38 @@ void InputHandler::selectAll() {
     input_state_->resetCaretBlink();
 }
 
+void InputHandler::applyHostEvents(const std::vector<HostInputEvent>& events) {
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const auto& event = events[index];
+        if (event.type == HostInputEvent::MouseMove && index + 1 < events.size() &&
+            events[index + 1].type == HostInputEvent::MouseMove) {
+            continue;
+        }
+        switch (event.type) {
+            case HostInputEvent::MouseMove:
+                onMouseMove(event.stage_x, event.stage_y);
+                break;
+            case HostInputEvent::MouseDown:
+                onMouseDown(event.stage_x, event.stage_y, event.right_button);
+                break;
+            case HostInputEvent::MouseUp:
+                onMouseUp(event.stage_x, event.stage_y, event.right_button);
+                break;
+            case HostInputEvent::KeyDown:
+                onKeyDown(event.director_key_code, event.key_text,
+                          event.shift, event.ctrl, event.alt);
+                break;
+            case HostInputEvent::KeyUp:
+                onKeyUp(event.director_key_code, event.key_text,
+                        event.shift, event.ctrl, event.alt);
+                break;
+            case HostInputEvent::Blur:
+                onBlur();
+                break;
+        }
+    }
+}
+
 bool InputHandler::processInputEvents() {
     if (input_state_ == nullptr) {
         return false;
