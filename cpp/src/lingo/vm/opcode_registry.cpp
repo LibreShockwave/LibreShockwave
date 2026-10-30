@@ -4116,12 +4116,14 @@ Datum imageCopyPixels(bitmap::Bitmap& dest, const std::vector<Datum>& args) {
         src_rect->bottom > src.height();
     if (destination_is_fully_replaced &&
         source_rect_extends_past_source &&
+        mask == nullptr &&
         !src.isTextRendered() &&
         src.hasScriptFillBacking() &&
         src.scriptFillBackingColor().has_value()) {
         // Director's image copy leaves the source's authored backing in the
         // uncovered part of a full destination when the source rect extends
         // beyond the source image. Preserve that backing before compositing.
+        // A mask defines which pixels copy, so it must not expose that backing.
         dest.fill(*src.scriptFillBackingColor());
     }
 
