@@ -1899,6 +1899,7 @@ void Player::wireComponents() {
 
 void Player::prepareMovieFoundation() {
     TickDeadlineGuard deadline_guard(vm_);
+    movie_properties_.markMovieStart();
     applyInitialBuiltinVariables();
     (void)preloadAllCasts();
     cast_lib_manager_.preloadCasts(2);

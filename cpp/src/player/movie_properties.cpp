@@ -204,6 +204,10 @@ void MovieProperties::setGotoNetMovieHandler(NetMovieHandler handler) {
     goto_net_movie_handler_ = std::move(handler);
 }
 
+void MovieProperties::markMovieStart() {
+    movie_start_time_ = std::chrono::steady_clock::now();
+}
+
 lingo::Datum MovieProperties::getMovieProp(std::string_view prop_name) const {
     const std::string prop = lowerProp(prop_name);
 
@@ -810,12 +814,19 @@ lingo::Datum MovieProperties::dateTimeProp(std::string_view prop) const {
 }
 
 lingo::Datum MovieProperties::elapsedProp(std::string_view prop) const {
-    const auto elapsed = std::chrono::steady_clock::now() - start_time_;
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     if (prop == "milliseconds") {
-        return lingo::Datum::of(static_cast<int>(millis));
+        return lingo::Datum::of(static_cast<int>(elapsedMsSince(start_time_)));
     }
+    if (movie_start_time_ == std::nullopt) {
+        return lingo::Datum::of(0);
+    }
+    const auto millis = elapsedMsSince(*movie_start_time_);
     return lingo::Datum::of(static_cast<int>((millis * 60) / 1000));
+}
+
+long long MovieProperties::elapsedMsSince(std::chrono::steady_clock::time_point since) const {
+    const auto elapsed = std::chrono::steady_clock::now() - since;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 }
 
 std::string MovieProperties::lowerProp(std::string_view value) {

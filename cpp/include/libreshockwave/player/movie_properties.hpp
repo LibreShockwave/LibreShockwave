@@ -56,6 +56,12 @@ public:
     void setGotoNetPageHandler(NetPageHandler handler);
     void setGotoNetMovieHandler(NetMovieHandler handler);
 
+    // Records the moment the current movie starts playing.  `the timer` and
+    // `the ticks` count from this point and read 0 before the first start.
+    // `the milliseconds` keeps counting from session start and is unaffected.
+    // Call once per movie start, before dispatching the StartMovie event.
+    void markMovieStart();
+
     [[nodiscard]] lingo::Datum getMovieProp(std::string_view prop_name) const;
     [[nodiscard]] bool setMovieProp(std::string_view prop_name, const lingo::Datum& value);
     [[nodiscard]] lingo::Datum getStageProp(std::string_view prop_name) const;
@@ -105,6 +111,8 @@ private:
     [[nodiscard]] std::vector<std::string> registeredXtraNames() const;
     [[nodiscard]] lingo::Datum dateTimeProp(std::string_view prop) const;
     [[nodiscard]] lingo::Datum elapsedProp(std::string_view prop) const;
+    // Milliseconds elapsed since the given steady-clock point, truncated.
+    [[nodiscard]] long long elapsedMsSince(std::chrono::steady_clock::time_point since) const;
     [[nodiscard]] static std::string lowerProp(std::string_view value);
     [[nodiscard]] static int colorToRgb(const lingo::Datum& value);
 
@@ -154,6 +162,7 @@ private:
     int stage_background_color_{0};
 
     std::chrono::steady_clock::time_point start_time_;
+    std::optional<std::chrono::steady_clock::time_point> movie_start_time_;
 
     IntSupplier effective_frame_supplier_;
     IntSupplier frame_count_supplier_;
