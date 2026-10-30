@@ -6737,7 +6737,7 @@ void testBuiltinRegistryFoundation() {
     assert(registry.contains("image"));
     assert(registry.contains("importFileInto"));
     assert(registry.invoke("image", context).isVoid());
-    assert(registry.invoke("image", context, {Datum::of(0), Datum::of(2)}).isVoid());
+    assert(registry.invoke("image", context, {Datum::of(0), Datum::of(2)}).asImageRef());
     assert(registry.invoke("image", context, {Datum::of(2), Datum::of(-1)}).isVoid());
     const auto image_datum = registry.invoke("image", context, {Datum::of(std::string("2")), Datum::of(3)});
     const auto* image_ref = image_datum.asImageRef();

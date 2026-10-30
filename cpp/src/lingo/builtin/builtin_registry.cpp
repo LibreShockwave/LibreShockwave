@@ -1948,7 +1948,8 @@ Datum ImageBuiltins::image(BuiltinContext& context, const std::vector<Datum>& ar
     const int width = toIntLikeJava(args[0]);
     const int height = toIntLikeJava(args[1]);
     const int bit_depth = args.size() >= 3 ? toIntLikeJava(args[2]) : 32;
-    if (width <= 0 || height <= 0) {
+    // Director allows zero-size images, which scripts use as empty image objects.
+    if (width < 0 || height < 0) {
         return Datum::voidValue();
     }
 
