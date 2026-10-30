@@ -933,6 +933,23 @@ void putPropListProp(Datum::PropList& prop_list, std::string_view prop_name, Dat
 
 std::vector<std::string> splitLines(std::string_view value);
 int countLines(std::string_view value);
+Datum fastIntegerValue(const Datum& value);
+
+// Director exposes the `string` and `integer` conversion properties on every
+// value.  Authored code reads slide identifiers with `id.string` and slide
+// destinations with `location.integer`.  Returns nullopt for other names.
+std::optional<Datum> typeConversionProperty(const Datum& value, std::string_view prop_name) {
+    if (!value.isNumber() && !value.isString() && !value.isSymbol()) {
+        return std::nullopt;
+    }
+    if (equalsIgnoreCase(prop_name, "string")) {
+        return Datum::of(value.stringValue());
+    }
+    if (equalsIgnoreCase(prop_name, "integer") && !value.isSymbol()) {
+        return fastIntegerValue(value);
+    }
+    return std::nullopt;
+}
 
 Datum getStringProp(std::string_view value, std::string_view prop_name) {
     if (equalsIgnoreCase(prop_name, "length")) {
@@ -1163,6 +1180,9 @@ Datum getObjectProperty(ExecutionContext& context, const Datum& object, std::str
 
 Datum getChainedObjectProperty(ExecutionContext& context, const Datum& object, std::string_view prop_name) {
     auto* builtin_context = context.builtinContext();
+    if (auto converted = typeConversionProperty(object, prop_name)) {
+        return std::move(*converted);
+    }
     if (object.type() == DatumType::ScriptInstanceRef) {
         if (couldBeStrictInteger(prop_name) && parseIntStrictView(prop_name).has_value()) {
             return Datum::voidValue();
@@ -1220,6 +1240,9 @@ Datum getChainedObjectProperty(ExecutionContext& context, const Datum& object, s
 Datum getObjectProperty(ExecutionContext& context, const Datum& object, std::string_view prop_name) {
     if (object.isVoid()) {
         return Datum::voidValue();
+    }
+    if (auto converted = typeConversionProperty(object, prop_name)) {
+        return std::move(*converted);
     }
     auto* builtin_context = context.builtinContext();
     if (object.type() == DatumType::MovieRef) {
@@ -6216,6 +6239,10 @@ bool getObjProp(ExecutionContext& context) {
         return true;
     }
     if (object.isString()) {
+        if (auto converted = typeConversionProperty(object, prop_name)) {
+            context.push(std::move(*converted));
+            return true;
+        }
         std::string storage;
         context.push(getStringProp(stringViewLikeJava(object, storage), prop_name));
         return true;
