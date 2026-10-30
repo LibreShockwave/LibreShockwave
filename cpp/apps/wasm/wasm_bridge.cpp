@@ -281,6 +281,25 @@ std::vector<std::uint8_t> bitmapToRgba(const Bitmap& bitmap, int background_rgb)
     return rgba;
 }
 
+// A cursor keeps its mask transparency in the alpha channel. Straight RGBA
+// passes that alpha to the CSS cursor instead of flattening it onto white.
+std::vector<std::uint8_t> bitmapToCursorRgba(const Bitmap& bitmap) {
+    std::vector<std::uint8_t> rgba;
+    if (bitmap.width() <= 0 || bitmap.height() <= 0 ||
+        bitmap.pixels().size() != static_cast<std::size_t>(bitmap.width() * bitmap.height())) {
+        return rgba;
+    }
+
+    rgba.reserve(bitmap.pixels().size() * 4U);
+    for (const std::uint32_t argb : bitmap.pixels()) {
+        rgba.push_back(static_cast<std::uint8_t>((argb >> 16) & 0xFF));
+        rgba.push_back(static_cast<std::uint8_t>((argb >> 8) & 0xFF));
+        rgba.push_back(static_cast<std::uint8_t>(argb & 0xFF));
+        rgba.push_back(static_cast<std::uint8_t>((argb >> 24) & 0xFF));
+    }
+    return rgba;
+}
+
 std::uint32_t fnv1a32(const std::vector<std::uint8_t>& bytes) {
     std::uint32_t hash = 2166136261U;
     for (const auto byte : bytes) {
@@ -458,7 +477,7 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
         out << ",\"hotX\":" << (*cursor_reg)[0] << ",\"hotY\":" << (*cursor_reg)[1];
     }
     if (cursor_bitmap.has_value()) {
-        const auto rgba = bitmapToRgba(*cursor_bitmap, 0xFFFFFF);
+        const auto rgba = bitmapToCursorRgba(*cursor_bitmap);
         if (!rgba.empty()) {
             out << ",\"width\":" << cursor_bitmap->width()
                 << ",\"height\":" << cursor_bitmap->height()
