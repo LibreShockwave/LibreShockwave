@@ -229,22 +229,24 @@ bool isPropListElement(const ListElement& element) {
     return isIdentifier(raw_key);
 }
 
-Datum parsePropListKey(std::string_view raw_key, const IdentifierResolver& identifier_resolver) {
+Datum parsePropListKey(std::string_view raw_key) {
+    // Property-list keys are literal text. Never resolve them as identifiers,
+    // because an authored key may share its name with a global or handler.
     const std::string_view key = trimView(raw_key);
     if (startsWith(key, "#") && key.size() > 1) {
         const std::string_view symbol_text = trimView(key.substr(1));
         if (isIdentifier(symbol_text)) {
             return Datum::symbol(std::string(symbol_text));
         }
-        const auto parsed = tryParseComplete(symbol_text, identifier_resolver);
+        const auto parsed = tryParseComplete(symbol_text, {});
         return parsed.has_value() && !parsed->isVoid() ? *parsed : Datum::symbol(std::string(symbol_text));
     }
     if (startsWith(key, "\"") && endsWith(key, "\"") && key.size() >= 2) {
         std::string unquoted = unescapeString(key.substr(1, key.size() - 2));
-        const auto parsed = tryParseComplete(unquoted, identifier_resolver);
+        const auto parsed = tryParseComplete(unquoted, {});
         return parsed.has_value() && !parsed->isVoid() ? *parsed : Datum::of(std::move(unquoted));
     }
-    const auto parsed = tryParseComplete(key, identifier_resolver);
+    const auto parsed = tryParseComplete(key, {});
     return parsed.has_value() && !parsed->isVoid() ? *parsed : Datum::of(std::string(key));
 }
 
@@ -271,8 +273,8 @@ Datum parseListOrPropList(std::string_view content, const IdentifierResolver& id
             if (colon_index <= 0) {
                 continue;
             }
-            Datum key = parsePropListKey(std::string_view(element).substr(0, static_cast<std::size_t>(colon_index)),
-                                         identifier_resolver);
+            Datum key = parsePropListKey(
+                std::string_view(element).substr(0, static_cast<std::size_t>(colon_index)));
             Datum value = LingoValueParser::parseWithPartial(
                 std::string_view(element).substr(static_cast<std::size_t>(colon_index + 1)),
                 identifier_resolver);
