@@ -354,7 +354,10 @@ std::optional<RenderSprite> StageRenderer::createDynamicRenderSprite(const sprit
     const auto pos = state.snapshotPosition();
 
     if (cast_member <= 0) {
-        if (state.isPuppet() && state.hasBackColor() && pos.width > 0 && pos.height > 0) {
+        // A cleared member draws nothing. Only a sprite that never had a
+        // member can act as a script-drawn bgColor fill.
+        if (!state.isMemberCleared() && state.isPuppet() && state.hasBackColor() &&
+            pos.width > 0 && pos.height > 0) {
             const int fill_color = state.backColor();
             return applyLegacyRenderProperties(
                 RenderSprite(state.channel(),

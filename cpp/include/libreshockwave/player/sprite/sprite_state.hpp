@@ -96,6 +96,11 @@ public:
     [[nodiscard]] int effectiveCastLib() const;
     [[nodiscard]] int effectiveCastMember() const;
     [[nodiscard]] bool hasDynamicMember() const;
+    /// True when a real member was explicitly replaced with member(0) or
+    /// castNum 0. A cleared sprite draws nothing; it must not fall back to a
+    /// filled rectangle from its background colour.
+    [[nodiscard]] bool isMemberCleared() const;
+    void setMemberCleared(bool cleared);
     [[nodiscard]] bool isDynamic() const;
     [[nodiscard]] bool hasSizeChanged() const;
 
@@ -156,6 +161,7 @@ private:
     int dynamic_cast_lib_{-1};
     int dynamic_cast_member_{-1};
     bool has_dynamic_member_{false};
+    bool member_cleared_{false};
 };
 
 } // namespace libreshockwave::player::sprite

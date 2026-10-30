@@ -178,6 +178,9 @@ void SpriteState::setDynamicMember(int cast_lib, int member) {
     dynamic_cast_lib_ = cast_lib;
     dynamic_cast_member_ = member;
     has_dynamic_member_ = true;
+    if (member > 0) {
+        member_cleared_ = false;
+    }
 }
 
 void SpriteState::clearDynamicMember() {
@@ -203,6 +206,9 @@ int SpriteState::effectiveCastMember() const {
 bool SpriteState::hasDynamicMember() const { return has_dynamic_member_; }
 bool SpriteState::isDynamic() const { return !score_data_.has_value(); }
 bool SpriteState::hasSizeChanged() const { return has_size_changed_; }
+
+bool SpriteState::isMemberCleared() const { return member_cleared_; }
+void SpriteState::setMemberCleared(bool cleared) { member_cleared_ = cleared; }
 
 void SpriteState::resetReleasedSpriteTransforms() {
     flip_h_ = false;

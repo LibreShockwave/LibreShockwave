@@ -784,7 +784,11 @@ void SpriteProperties::setConstrainedLoc(sprite::SpriteState& sprite,
 }
 
 void SpriteProperties::applyEmptyMemberOverride(sprite::SpriteState& sprite) {
+    // A sprite that loses a real member must draw nothing. Remember that
+    // transition so the renderer does not turn it into a bgColor fill.
+    const bool had_member = sprite.effectiveCastMember() > 0;
     sprite.setDynamicMember(0, 0);
+    sprite.setMemberCleared(had_member);
     sprite.resetReleasedSpriteTransforms();
 }
 
