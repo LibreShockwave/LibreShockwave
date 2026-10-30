@@ -4033,10 +4033,10 @@ void testPlayerInputFoundation() {
         }
         return InputHandler::LegacyEventScriptResult{};
     });
-    editable_input.onKeyDown(0, "!", false, false, false);
+    editable_input.onKeyDown(124, "'", false, false, false);
     assert(editable_input.processInputEvents());
     assert(legacy_key_script_ran);
-    assert(editable_field->textContent() == "Zy!c");
+    assert(editable_field->textContent() == "Zy'c");
     assert(editable_state.selStart() == 3);
     assert(editable_state.selEnd() == 3);
     editable_input.setLegacyEventScriptDispatcher({});

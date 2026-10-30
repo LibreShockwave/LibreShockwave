@@ -911,7 +911,13 @@ void InputHandler::handleEditableFieldInput(int channel, const std::string& key_
     const int sel_max = std::max(sel_start, sel_end);
     const int key_code = input_state_->lastKeyCode();
 
-    if (key_code == 51) {
+    // Printable text wins over key codes. A punctuation code can collide with
+    // a navigation or editing code in the host keyboard mapping.
+    if (key_char.size() == 1 && std::isprint(static_cast<unsigned char>(key_char.front())) != 0) {
+        text.replace(static_cast<std::size_t>(sel_min), static_cast<std::size_t>(sel_max - sel_min), key_char);
+        sel_start = sel_end = sel_min + 1;
+        member->setDynamicText(text);
+    } else if (key_code == 51) {
         if (sel_min != sel_max) {
             text.erase(static_cast<std::size_t>(sel_min), static_cast<std::size_t>(sel_max - sel_min));
             sel_start = sel_end = sel_min;
@@ -929,10 +935,6 @@ void InputHandler::handleEditableFieldInput(int channel, const std::string& key_
         return;
     } else if (key_code == 36) {
         return;
-    } else if (key_char.size() == 1 && std::isprint(static_cast<unsigned char>(key_char.front())) != 0) {
-        text.replace(static_cast<std::size_t>(sel_min), static_cast<std::size_t>(sel_max - sel_min), key_char);
-        sel_start = sel_end = sel_min + 1;
-        member->setDynamicText(text);
     } else {
         return;
     }

@@ -1080,6 +1080,8 @@ void testStageWidgetKeys() {
             {Qt::Key_ParenLeft, QStringLiteral("(")},
             {Qt::Key_Colon, QStringLiteral(":")},
             {Qt::Key_QuoteDbl, QStringLiteral("\"")},
+            {Qt::Key_Comma, QStringLiteral(",")},
+            {Qt::Key_Apostrophe, QStringLiteral("'")},
             {Qt::Key_Less, QStringLiteral("<")},
             {Qt::Key_Greater, QStringLiteral(">")},
             {Qt::Key_Question, QStringLiteral("?")},
@@ -1105,7 +1107,8 @@ void testStageWidgetKeys() {
         assert(spy.keys().empty());
     }
 
-    // Auto-repeat presses are suppressed like ordinary repeat handling.
+    // Auto-repeat presses keep typing while a key is held. Repeat releases
+    // stay suppressed so the player sees one key up per physical press.
     {
         EventSpy spy;
         StageWidget widget;
@@ -1113,7 +1116,15 @@ void testStageWidgetKeys() {
         QKeyEvent repeat_press(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier,
                               QStringLiteral("b"), true);
         QApplication::sendEvent(&widget, &repeat_press);
-        assert(spy.keys().empty());
+        assert(spy.keys().size() == 1);
+        assert(spy.keys()[0].type == k_key_down);
+        assert(spy.keys()[0].key_code == 11);
+        assert(spy.keys()[0].text == "b");
+
+        QKeyEvent repeat_release(QEvent::KeyRelease, Qt::Key_B, Qt::NoModifier,
+                                 QStringLiteral("b"), true);
+        QApplication::sendEvent(&widget, &repeat_release);
+        assert(spy.keys().size() == 1);
     }
 }
 

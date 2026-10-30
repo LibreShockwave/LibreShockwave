@@ -216,10 +216,6 @@ void StageWidget::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void StageWidget::keyPressEvent(QKeyEvent* event) {
-    if (event->isAutoRepeat()) {
-        QWidget::keyPressEvent(event);
-        return;
-    }
     if (qtKeyToBrowserKeyCode(event->key()) == 0 || !input_callback_) {
         QWidget::keyPressEvent(event);
         return;

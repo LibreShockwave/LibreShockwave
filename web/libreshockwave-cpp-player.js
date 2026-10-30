@@ -21,6 +21,19 @@
     return canvasOrId;
   }
 
+  // Printable characters keep their text but use a private key-code range.
+  // Browser punctuation otherwise collides with navigation and editing codes.
+  const syntheticPrintableCodeBase = 0x2000;
+
+  function printableKeyCode(character) {
+    const upper = character.toUpperCase();
+    if (upper.length === 1) {
+      const code = upper.charCodeAt(0);
+      if ((code >= 65 && code <= 90) || (code >= 48 && code <= 57)) return code;
+    }
+    return syntheticPrintableCodeBase + character.charCodeAt(0);
+  }
+
   function browserKeyCodeFromEvent(event) {
     if (event.key === "Enter" || event.code === "NumpadEnter") return 13;
     if (event.key === "Backspace") return 8;
@@ -36,7 +49,7 @@
     if (event.key === "ArrowRight") return 39;
     if (event.key === "ArrowDown") return 40;
     if (event.key === "Delete") return 46;
-    if (event.key && event.key.length === 1) return event.key.toUpperCase().charCodeAt(0);
+    if (event.key && event.key.length === 1) return printableKeyCode(event.key);
     return event.keyCode || event.which || 0;
   }
 
@@ -883,15 +896,13 @@
         return;
       }
       if (shouldPreventKey(event)) event.preventDefault();
-      if (!event.repeat) {
-        send("keyDown", {
-          keyCode: browserKeyCodeFromEvent(event),
-          text: keyTextFromEvent(event),
-          shift: event.shiftKey,
-          ctrl: event.ctrlKey || event.metaKey,
-          alt: event.altKey
-        });
-      }
+      send("keyDown", {
+        keyCode: browserKeyCodeFromEvent(event),
+        text: keyTextFromEvent(event),
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey || event.metaKey,
+        alt: event.altKey
+      });
     });
     canvas.addEventListener("keyup", (event) => {
       send("keyUp", {
