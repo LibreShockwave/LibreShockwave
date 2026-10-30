@@ -36,6 +36,9 @@ namespace libreshockwave::player {
 namespace {
 
 constexpr int DEFAULT_TEMPO = 15;
+// The browser Shockwave player advanced at about 15 fps even when the authored
+// tempo or puppetTempo asked for more, so higher values act as a ceiling.
+constexpr int kShockwavePlaybackTempoCeiling = 15;
 
 class TickDeadlineGuard {
 public:
@@ -373,6 +376,8 @@ int Player::tempo() const {
 }
 
 int Player::baseTempo() const { return tempo_; }
+
+int Player::playbackTempo() const { return std::min(tempo(), kShockwavePlaybackTempoCeiling); }
 
 void Player::setTempo(int tempo) {
     tempo_ = tempo > 0 ? tempo : DEFAULT_TEMPO;
