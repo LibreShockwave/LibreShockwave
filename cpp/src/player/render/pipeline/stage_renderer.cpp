@@ -585,7 +585,10 @@ StageRenderer::RegPoint StageRenderer::scaledRegPoint(const ::libreshockwave::ca
                                                       int pos_y,
                                                       bool flip_h,
                                                       bool flip_v) const {
-    if (member.rawChunk() != nullptr) {
+    const auto runtime_bitmap = member.runtimeBitmap();
+    const bool live_bitmap = runtime_bitmap != nullptr &&
+        (runtime_bitmap->isScriptModified() || member.hasRuntimeBitmapDecodePlaceholder());
+    if (member.rawChunk() != nullptr && !live_bitmap) {
         return scaledRegPoint(*member.rawChunk(), sprite_width, sprite_height, pos_x, pos_y, flip_h, flip_v);
     }
 
