@@ -231,11 +231,6 @@ void SocketMultiuserBridge::setIncomingDataReadyPredicate(IncomingDataReadyPredi
     incoming_data_ready_predicate_ = std::move(predicate);
 }
 
-bool SocketMultiuserBridge::hasRequestedTextConnection() const {
-    std::lock_guard lock(connections_mutex_);
-    return text_connection_requested_;
-}
-
 bool SocketMultiuserBridge::hasCompletedHandshake() const {
     std::lock_guard lock(connections_mutex_);
     if (!text_connection_requested_) {
