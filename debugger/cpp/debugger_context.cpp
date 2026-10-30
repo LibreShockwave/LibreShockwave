@@ -225,6 +225,29 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
         emit vmOutput(QStringLiteral("TRACE"),
                       QString::fromUtf8(line.data(), static_cast<int>(line.size())));
     });
+    // TEMP DIAGNOSTIC: LS_TRACE_HANDLERS=name,name traces Lingo handlers to
+    // stdout.  Remove before finalizing the investigation.
+    if (const char* traced = std::getenv("LS_TRACE_HANDLERS");
+        traced != nullptr && *traced != '\0') {
+        vm.setTraceOutputHandler([this](std::string_view line) {
+            std::cout << line << '\n';
+            emit vmOutput(QStringLiteral("TRACE"),
+                          QString::fromUtf8(line.data(), static_cast<int>(line.size())));
+        });
+        const std::string names(traced);
+        std::size_t start = 0;
+        while (start <= names.size()) {
+            const auto comma = names.find(',', start);
+            const auto end = comma == std::string::npos ? names.size() : comma;
+            if (end > start) {
+                vm.addTraceHandler(std::string_view(names).substr(start, end - start));
+            }
+            if (comma == std::string::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+    }
     // Runtime CCT/CST loads mutate the cast libs on the VM thread.  Capture
     // a movie-tree snapshot there and hand it to the window through a queued
     // signal, so the script list stays in sync without the UI ever reading

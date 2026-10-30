@@ -1644,8 +1644,20 @@ void DebuggerWindow::onFrameRendered(const QImage& image) {
     // Frame dumps are diagnostic output, not part of presentation. Writing a
     // PNG for every movie frame can itself destroy the frame budget, so keep
     // the requested rolling snapshot at most once per second.
+    // TEMP DIAGNOSTIC: LIBRESHOCKWAVE_DEBUGGER_FRAME_DUMP_MS lowers the
+    // interval for colour-transition captures.  Remove before finalizing.
+    int dump_interval_ms = 1000;
+    if (const QByteArray raw_interval =
+            qgetenv("LIBRESHOCKWAVE_DEBUGGER_FRAME_DUMP_MS");
+        !raw_interval.isEmpty()) {
+        bool ok = false;
+        const int parsed = raw_interval.toInt(&ok);
+        if (ok && parsed > 0) {
+            dump_interval_ms = parsed;
+        }
+    }
     if (!dump_path.isEmpty() &&
-        (!frame_dump_clock_.isValid() || frame_dump_clock_.elapsed() >= 1000)) {
+        (!frame_dump_clock_.isValid() || frame_dump_clock_.elapsed() >= dump_interval_ms)) {
         frame_dump_clock_.restart();
         QSaveFile dump_file(dump_path);
         if (dump_file.open(QIODevice::WriteOnly) &&

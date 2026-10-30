@@ -4,11 +4,13 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "libreshockwave/director_file.hpp"
@@ -1263,6 +1265,50 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
     return processed;
 }
 
+namespace {
+
+// TEMP DIAGNOSTIC: LS_DEBUG_TINT logs sprite tint inputs and the dominant
+// opaque colour of the baked bitmap.  Remove before finalizing.
+void logTintDiagnostic(const RenderSprite& sprite, const bitmap::Bitmap& result) {
+    if (std::getenv("LS_DEBUG_TINT") == nullptr) {
+        return;
+    }
+    const auto* member = sprite.castMember().get();
+    std::unordered_map<std::uint32_t, int> counts;
+    for (const auto pixel : result.pixels()) {
+        if (((pixel >> 24U) & 0xFFU) == 0U) {
+            continue;
+        }
+        ++counts[pixel & 0x00FFFFFFU];
+    }
+    std::uint32_t best_rgb = 0;
+    int best_count = 0;
+    for (const auto& [rgb, count] : counts) {
+        if (count > best_count) {
+            best_count = count;
+            best_rgb = rgb;
+        }
+    }
+    const auto dynamic_member = sprite.dynamicMember();
+    std::fprintf(stderr,
+                 "[tint] %s dyn=%s:%d:%d ink=%d back=%06X hasBack=%d fore=%06X "
+                 "hasFore=%d bd=%d top=%06X n=%d\n",
+                 member != nullptr ? member->name().c_str() : "?",
+                 dynamic_member != nullptr ? dynamic_member->name().c_str() : "-",
+                 dynamic_member != nullptr ? dynamic_member->castLib() : 0,
+                 dynamic_member != nullptr ? dynamic_member->memberNum() : 0,
+                 sprite.ink(),
+                 sprite.backColor() & 0xFFFFFF,
+                 sprite.hasBackColor() ? 1 : 0,
+                 sprite.foreColor() & 0xFFFFFF,
+                 sprite.hasForeColor() ? 1 : 0,
+                 result.bitDepth(),
+                 best_rgb,
+                 best_count);
+}
+
+} // namespace
+
 bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, const RenderSprite& sprite) const {
     // Director's 32-bit bitmap records can carry RGB data with an all-zero
     // alpha byte even when the member did not opt into native alpha.  That
@@ -1298,14 +1344,16 @@ bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, cons
         }
     }
 
-    return BitmapCache::applyIndexedMatteColorRemapIfNeeded(&raw,
-                                                            processed,
-                                                            sprite.ink(),
-                                                            sprite.foreColor(),
-                                                            sprite.backColor(),
-                                                            sprite.hasForeColor(),
-                                                            sprite.hasBackColor(),
-                                                            raw.imagePalette().get());
+    bitmap::Bitmap result = BitmapCache::applyIndexedMatteColorRemapIfNeeded(&raw,
+                                                                            processed,
+                                                                            sprite.ink(),
+                                                                            sprite.foreColor(),
+                                                                            sprite.backColor(),
+                                                                            sprite.hasForeColor(),
+                                                                            sprite.hasBackColor(),
+                                                                            raw.imagePalette().get());
+    logTintDiagnostic(sprite, result);
+    return result;
 }
 
 bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const RenderSprite& sprite) const {
@@ -1363,6 +1411,7 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
         (sprite.backColor() & 0x00FFFFFF) != 0x00FFFFFF) {
         result = InkProcessor::remapExactColor(result, 0x00FFFFFFU, static_cast<std::uint32_t>(sprite.backColor()));
     }
+    logTintDiagnostic(sprite, result);
     return result;
 }
 
