@@ -33,6 +33,8 @@ public:
                                                                  int initial_index);
     [[nodiscard]] static bool isMp3(const std::vector<std::uint8_t>& data);
     [[nodiscard]] static int findMp3Start(const std::vector<std::uint8_t>& data);
+    // Duration of playable MP3 or PCM WAV bytes. Returns 0 for unknown formats.
+    [[nodiscard]] static double getMediaDuration(const std::vector<std::uint8_t>& data);
     [[nodiscard]] static double getDuration(const chunks::SoundChunk& sound);
     [[nodiscard]] static double getDuration(int data_length, int sample_rate, int bits_per_sample, int channel_count);
 };

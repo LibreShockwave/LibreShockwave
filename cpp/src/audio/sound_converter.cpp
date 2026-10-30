@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 #include "libreshockwave/chunks/sound_chunk.hpp"
 
@@ -101,21 +102,35 @@ std::vector<std::uint8_t> createEmptyWav(int sample_rate, int bits_per_sample, i
     return buildWav({}, sample_rate, bits_per_sample, channel_count);
 }
 
-int calculateMp3FrameSize(int version, int layer, int bitrate_index, int sample_rate_index, int padding) {
-    static constexpr std::array<std::array<int, 16>, 2> k_bitrates{{
-        {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0},
-        {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0}
-    }};
+int mp3SampleRate(int version, int sample_rate_index) {
     static constexpr std::array<std::array<int, 3>, 4> k_sample_rates{{
         {11025, 12000, 8000},
         {0, 0, 0},
         {22050, 24000, 16000},
         {44100, 48000, 32000}
     }};
+    return k_sample_rates[static_cast<std::size_t>(version)][static_cast<std::size_t>(sample_rate_index)];
+}
+
+int mp3SamplesPerFrame(int version, int layer) {
+    if (layer == 3) {
+        return 384;
+    }
+    if (layer == 2) {
+        return 1152;
+    }
+    return version == 3 ? 1152 : 576;
+}
+
+int calculateMp3FrameSize(int version, int layer, int bitrate_index, int sample_rate_index, int padding) {
+    static constexpr std::array<std::array<int, 16>, 2> k_bitrates{{
+        {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0},
+        {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0}
+    }};
 
     (void)layer;
     const int bitrate = k_bitrates[version == 3 ? 1 : 0][static_cast<std::size_t>(bitrate_index)];
-    const int sample_rate = k_sample_rates[static_cast<std::size_t>(version)][static_cast<std::size_t>(sample_rate_index)];
+    const int sample_rate = mp3SampleRate(version, sample_rate_index);
     if (bitrate == 0 || sample_rate == 0) {
         return -1;
     }
@@ -158,6 +173,96 @@ bool validateMp3Sequence(const std::vector<std::uint8_t>& data, int offset) {
     }
 
     return valid_frames >= 2;
+}
+
+double mp3DurationSeconds(const std::vector<std::uint8_t>& data, int start_offset) {
+    int position = start_offset;
+    double duration = 0.0;
+
+    while (position + 4 <= static_cast<int>(data.size())) {
+        if ((data[static_cast<std::size_t>(position)] & 0xFF) != 0xFF ||
+            (data[static_cast<std::size_t>(position + 1)] & 0xE0U) != 0xE0U) {
+            break;
+        }
+
+        const int header =
+            (static_cast<int>(data[static_cast<std::size_t>(position)] & 0xFF) << 24) |
+            (static_cast<int>(data[static_cast<std::size_t>(position + 1)] & 0xFF) << 16) |
+            (static_cast<int>(data[static_cast<std::size_t>(position + 2)] & 0xFF) << 8) |
+            static_cast<int>(data[static_cast<std::size_t>(position + 3)] & 0xFF);
+
+        const int version = (header >> 19) & 3;
+        const int layer = (header >> 17) & 3;
+        const int bitrate_index = (header >> 12) & 0xF;
+        const int sample_rate_index = (header >> 10) & 3;
+        const int padding = (header >> 9) & 1;
+
+        if (version == 1 || layer == 0 || bitrate_index == 0 || bitrate_index == 15 ||
+            sample_rate_index == 3) {
+            break;
+        }
+
+        const int frame_size = calculateMp3FrameSize(version, layer, bitrate_index, sample_rate_index, padding);
+        const int sample_rate = mp3SampleRate(version, sample_rate_index);
+        if (frame_size <= 0 || sample_rate == 0 ||
+            position + frame_size > static_cast<int>(data.size())) {
+            break;
+        }
+
+        duration += static_cast<double>(mp3SamplesPerFrame(version, layer)) / sample_rate;
+        position += frame_size;
+    }
+
+    return duration;
+}
+
+std::uint16_t readLe16(const std::vector<std::uint8_t>& data, std::size_t offset) {
+    return static_cast<std::uint16_t>(data[offset]) |
+           static_cast<std::uint16_t>(data[offset + 1] << 8);
+}
+
+std::uint32_t readLe32(const std::vector<std::uint8_t>& data, std::size_t offset) {
+    return static_cast<std::uint32_t>(data[offset]) |
+           (static_cast<std::uint32_t>(data[offset + 1]) << 8) |
+           (static_cast<std::uint32_t>(data[offset + 2]) << 16) |
+           (static_cast<std::uint32_t>(data[offset + 3]) << 24);
+}
+
+double wavDurationSeconds(const std::vector<std::uint8_t>& data) {
+    if (data.size() < 12 || std::memcmp(data.data(), "RIFF", 4) != 0 ||
+        std::memcmp(data.data() + 8, "WAVE", 4) != 0) {
+        return 0.0;
+    }
+
+    std::uint16_t audio_format = 0;
+    std::uint16_t channels = 0;
+    std::uint16_t bits_per_sample = 0;
+    std::uint32_t sample_rate = 0;
+    std::uint32_t data_size = 0;
+
+    std::size_t offset = 12;
+    while (offset + 8 <= data.size()) {
+        const std::uint32_t chunk_size = readLe32(data, offset + 4);
+        const std::size_t body = offset + 8;
+        if (chunk_size > data.size() - body) {
+            break;
+        }
+        if (std::memcmp(data.data() + offset, "fmt ", 4) == 0 && chunk_size >= 16) {
+            audio_format = readLe16(data, body);
+            channels = readLe16(data, body + 2);
+            sample_rate = readLe32(data, body + 4);
+            bits_per_sample = readLe16(data, body + 14);
+        } else if (std::memcmp(data.data() + offset, "data", 4) == 0) {
+            data_size = chunk_size;
+        }
+        offset = body + chunk_size + (chunk_size & 1U);
+    }
+
+    if (audio_format != 1 || channels == 0 || bits_per_sample == 0 || sample_rate == 0) {
+        return 0.0;
+    }
+    const std::uint32_t bytes_per_second = sample_rate * channels * (bits_per_sample / 8U);
+    return bytes_per_second == 0 ? 0.0 : static_cast<double>(data_size) / bytes_per_second;
 }
 
 int findMp3End(const std::vector<std::uint8_t>& data, int start_offset) {
@@ -352,6 +457,15 @@ int SoundConverter::findMp3Start(const std::vector<std::uint8_t>& data) {
         }
     }
     return -1;
+}
+
+double SoundConverter::getMediaDuration(const std::vector<std::uint8_t>& data) {
+    if (data.size() >= 12 && std::memcmp(data.data(), "RIFF", 4) == 0 &&
+        std::memcmp(data.data() + 8, "WAVE", 4) == 0) {
+        return wavDurationSeconds(data);
+    }
+    const int start = findMp3Start(data);
+    return start >= 0 ? mp3DurationSeconds(data, start) : 0.0;
 }
 
 double SoundConverter::getDuration(const chunks::SoundChunk& sound) {

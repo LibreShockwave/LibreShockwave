@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "libreshockwave/director_file.hpp"
+#include "libreshockwave/audio/sound_converter.hpp"
 #include "libreshockwave/bitmap/bitmap.hpp"
 #include "libreshockwave/bitmap/bitmap_decoder.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
@@ -1012,9 +1013,16 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
     }
     if (prop == "mediaready") return lingo::Datum::of(1);
     if (member->isSound() && prop == "duration") {
+        if (const auto& runtime_media = member->runtimeSoundMedia(); runtime_media.has_value()) {
+            const double seconds = libreshockwave::audio::SoundConverter::getMediaDuration(*runtime_media);
+            return lingo::Datum::of(static_cast<int>(std::lround(seconds * 1000.0)));
+        }
         if (source_file_ != nullptr && member->rawChunk()) {
             if (const auto sound = player::audio::SoundManager::findSoundForMember(*source_file_, member->rawChunk())) {
-                return lingo::Datum::of(static_cast<int>(std::lround(sound->durationSeconds() * 1000.0)));
+                const double seconds = sound->isMp3()
+                    ? libreshockwave::audio::SoundConverter::getMediaDuration(sound->audioData())
+                    : sound->durationSeconds();
+                return lingo::Datum::of(static_cast<int>(std::lround(seconds * 1000.0)));
             }
         }
         return lingo::Datum::of(0);
