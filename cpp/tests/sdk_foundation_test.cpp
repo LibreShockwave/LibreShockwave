@@ -5127,36 +5127,6 @@ void testPlayerFacadeFoundation() {
     assert(player.netManager().netError(after_shutdown_fetch_task) == 404);
     assert(shutdown_fetch_calls == 1);
 
-    Player update_player;
-    std::vector<std::string> update_calls;
-    const auto update_target = Datum::scriptInstance("updater");
-    const auto removed_during_update = Datum::scriptInstance("removed-during-update");
-    update_player.builtinContext().call_target_handler = [&](const Datum& target,
-                                                          const std::string& handler_name,
-                                                          const std::vector<Datum>& args) {
-        assert(target.type() == DatumType::ScriptInstanceRef);
-        assert(handler_name == "update");
-        assert(args.empty());
-        update_calls.push_back(target.scriptInstanceValue().scriptName());
-        if (target == update_target) {
-            update_player.removeUpdate(removed_during_update);
-        }
-        return Datum::voidValue();
-    };
-    update_player.receiveUpdate(Datum::voidValue());
-    update_player.receiveUpdate(Datum::of(std::string("ignored")));
-    update_player.receiveUpdate(update_target);
-    update_player.receiveUpdate(update_target);
-    update_player.receiveUpdate(removed_during_update);
-    update_player.play();
-    assert(update_player.tick());
-    assert((update_calls == std::vector<std::string>{"updater", "removed-during-update"}));
-    assert(update_player.tick());
-    assert((update_calls == std::vector<std::string>{"updater", "removed-during-update", "updater"}));
-    update_player.removeUpdate(update_target);
-    assert(update_player.tick());
-    assert((update_calls == std::vector<std::string>{"updater", "removed-during-update", "updater"}));
-
     Player initial_set_player;
     initial_set_player.setInitialBuiltinVariable("old.seed", Datum::of(1));
     initial_set_player.setInitialBuiltinVariables({

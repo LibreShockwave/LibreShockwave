@@ -345,20 +345,6 @@ lingo::vm::LingoVM& Player::vm() { return vm_; }
 lingo::builtin::BuiltinRegistry& Player::builtinRegistry() { return vm_.builtinRegistry(); }
 lingo::builtin::BuiltinContext& Player::builtinContext() { return vm_.builtinContext(); }
 
-void Player::receiveUpdate(const lingo::Datum& target) {
-    if (target.isVoid()) {
-        return;
-    }
-    if (std::find(updating_objects_.begin(), updating_objects_.end(), target) == updating_objects_.end()) {
-        updating_objects_.push_back(target);
-    }
-}
-
-void Player::removeUpdate(const lingo::Datum& target) {
-    updating_objects_.erase(std::remove(updating_objects_.begin(), updating_objects_.end(), target),
-                           updating_objects_.end());
-}
-
 PlayerState Player::state() const { return state_; }
 int Player::currentFrame() const { return frame_context_.currentFrame(); }
 int Player::effectiveFrame() const { return frame_context_.effectiveFrame(); }
@@ -664,7 +650,7 @@ void Player::stepFrame() {
         state_ = PlayerState::Paused;
     }
 
-    executeFrameCycle(false);
+    executeFrameCycle();
 }
 
 void Player::stepFrameAsync(std::function<void()> on_complete) {
@@ -675,7 +661,7 @@ void Player::stepFrameAsync(std::function<void()> on_complete) {
         }
 
         do {
-            executeFrameCycle(false);
+            executeFrameCycle();
         } while (debug_controller_ && debug_controller_->isAwaitingStepContinuation());
     }, std::move(on_complete));
 }
@@ -685,7 +671,7 @@ bool Player::tick() {
         return state_ == PlayerState::Paused;
     }
 
-    executeFrameCycle(true);
+    executeFrameCycle();
     return true;
 }
 
@@ -696,7 +682,7 @@ void Player::tickAsync(std::function<void()> on_complete) {
 
     launchVmWorker([this] {
         do {
-            executeFrameCycle(true);
+            executeFrameCycle();
         } while (debug_controller_ && debug_controller_->isAwaitingStepContinuation());
     }, std::move(on_complete));
 }
@@ -712,7 +698,7 @@ bool Player::fireTestError(std::string_view error_message) {
     }
 }
 
-void Player::executeFrameCycle(bool process_updates) {
+void Player::executeFrameCycle() {
     TickDeadlineGuard deadline_guard(vm_);
     refreshDebugControllerGlobals();
     (void)input_handler_.processInputEvents();
@@ -735,9 +721,6 @@ void Player::executeFrameCycle(bool process_updates) {
     sound_manager_.updateFades();
     sound_manager_.updateQueues();
     eventDispatcher().dispatchToMovieScripts(PlayerEvent::Idle);
-    if (process_updates) {
-        processUpdatingObjects();
-    }
     vm_.flushDeferredTasks();
     (void)frame_context_.advanceFrame();
 }
@@ -1947,24 +1930,6 @@ void Player::applyInitialBuiltinVariables() {
     for (const auto& [name, value] : initial_builtin_variables_) {
         if (vm_.globals().find(name) == vm_.globals().end()) {
             vm_.setGlobal(name, value.deepCopy());
-        }
-    }
-}
-
-void Player::processUpdatingObjects() {
-    if (updating_objects_.empty() || !vm_.builtinContext().call_target_handler) {
-        return;
-    }
-
-    const auto snapshot = updating_objects_;
-    for (const auto& target : snapshot) {
-        if (target.type() != lingo::DatumType::ScriptInstanceRef) {
-            continue;
-        }
-        try {
-            (void)vm_.builtinContext().call_target_handler(target, "update", {});
-        } catch (...) {
-            // Java's update-provider dispatch suppresses per-target handler failures.
         }
     }
 }

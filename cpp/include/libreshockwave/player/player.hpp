@@ -102,9 +102,6 @@ public:
     [[nodiscard]] lingo::builtin::BuiltinRegistry& builtinRegistry();
     [[nodiscard]] lingo::builtin::BuiltinContext& builtinContext();
 
-    void receiveUpdate(const lingo::Datum& target);
-    void removeUpdate(const lingo::Datum& target);
-
     [[nodiscard]] PlayerState state() const;
     [[nodiscard]] int currentFrame() const;
     [[nodiscard]] int effectiveFrame() const;
@@ -172,9 +169,8 @@ private:
     Player(std::shared_ptr<DirectorFile> file, bool register_socket_multiuser_xtra);
     void wireComponents();
     void prepareMovieFoundation();
-    void executeFrameCycle(bool process_updates);
+    void executeFrameCycle();
     void applyInitialBuiltinVariables();
-    void processUpdatingObjects();
     void refreshDebugControllerGlobals();
     [[nodiscard]] net::NetProvider& activeNetProvider();
     [[nodiscard]] const net::NetProvider& activeNetProvider() const;
@@ -234,7 +230,6 @@ private:
     // response can schedule the security cast; remember that dependency so
     // playback waits for that async cast cycle to settle.
     mutable bool external_cast_load_observed_{false};
-    std::vector<lingo::Datum> updating_objects_;
     std::string last_script_error_message_;
     std::string last_script_error_stack_;
     std::int64_t last_script_error_time_ms_{0};
