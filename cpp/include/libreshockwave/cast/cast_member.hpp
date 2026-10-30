@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "libreshockwave/cast/bitmap_info.hpp"
 #include "libreshockwave/cast/film_loop_info.hpp"
@@ -130,6 +131,10 @@ public:
                                    std::optional<std::string> palette_ref_system_name,
                                    bool remap_deep_bitmap_rgb);
     [[nodiscard]] std::shared_ptr<bitmap::Bitmap> runtimeBitmap() const;
+    // Playable audio bytes copied onto a runtime sound member. Empty when none.
+    [[nodiscard]] const std::optional<std::vector<std::uint8_t>>& runtimeSoundMedia() const;
+    // Replaces the runtime sound media with playable audio bytes.
+    void setRuntimeSoundMedia(std::vector<std::uint8_t> media);
     [[nodiscard]] bool shouldRedecodeAuthoredRuntimeBitmap() const;
     void setRuntimeBitmap(const bitmap::Bitmap& bitmap, bool mark_script_modified = true);
     void setRuntimeBitmapFromAuthoredSource(const bitmap::Bitmap& bitmap);
@@ -164,6 +169,7 @@ private:
     std::optional<Shockwave3DInfo> shockwave3d_info_;
     std::shared_ptr<chunks::ScriptChunk> runtime_script_;
     std::shared_ptr<bitmap::Bitmap> runtime_bitmap_;
+    std::optional<std::vector<std::uint8_t>> runtime_sound_media_;
     bool runtime_bitmap_authored_source_ = false;
     bool runtime_bitmap_decode_placeholder_ = false;
     int runtime_bitmap_palette_version_ = 0;

@@ -1109,16 +1109,15 @@ void Player::wireComponents() {
         if (!cast_lib) {
             return std::nullopt;
         }
-        auto source_file = cast_lib->sourceFile();
-        if (!source_file) {
+        auto member = cast_lib->getMember(ref.memberNum());
+        if (!member || !member->isSound()) {
             return std::nullopt;
         }
-        auto member = cast_lib->findMemberByNumber(ref.memberNum());
-        if (!member) {
-            return std::nullopt;
+        const auto media = cast_lib->getMemberProp(ref.memberNum(), "media");
+        if (const auto* bytes = media.asMedia()) {
+            return bytes->bytes;
         }
-        auto sound = audio::SoundManager::findSoundForMember(*source_file, member);
-        return sound ? audio::SoundManager::convertSoundToPlayable(*sound) : std::nullopt;
+        return std::nullopt;
     });
 
     cursor_manager_.setSpriteProvider([this] {

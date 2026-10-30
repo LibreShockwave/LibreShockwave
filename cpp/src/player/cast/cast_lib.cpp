@@ -978,6 +978,21 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
     }
     if (prop == "scripttext") return stringDatum("");
     if (prop == "media") {
+        if (member->isSound()) {
+            const auto& runtime_media = member->runtimeSoundMedia();
+            if (runtime_media.has_value()) {
+                return lingo::Datum::media(*runtime_media);
+            }
+            if (source_file_ != nullptr && member->rawChunk() != nullptr) {
+                if (const auto sound = player::audio::SoundManager::findSoundForMember(
+                        *source_file_, member->rawChunk())) {
+                    auto playable = player::audio::SoundManager::convertSoundToPlayable(*sound);
+                    if (playable.has_value()) {
+                        return lingo::Datum::media(std::move(*playable));
+                    }
+                }
+            }
+        }
         if (member->isBitmap()) {
             auto bitmap = member->runtimeBitmap();
             if (!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
@@ -1335,6 +1350,14 @@ bool CastLib::setMemberProp(int member_number, const std::string& prop_name, con
             return false;
         }
         member->setRuntimeBitmap(*image->bitmap);
+        return true;
+    }
+    if (prop == "media" && member->isSound()) {
+        const auto* media = value.asMedia();
+        if (media == nullptr) {
+            return false;
+        }
+        member->setRuntimeSoundMedia(media->bytes);
         return true;
     }
     if (prop == "media" && member->isBitmap()) {

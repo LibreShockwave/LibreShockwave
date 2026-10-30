@@ -39,6 +39,14 @@ void CastMember::setName(std::string name) { name_ = std::move(name); }
 int CastMember::scriptId() const { return script_id_; }
 const std::shared_ptr<chunks::CastMemberChunk>& CastMember::rawChunk() const { return raw_chunk_; }
 
+const std::optional<std::vector<std::uint8_t>>& CastMember::runtimeSoundMedia() const {
+    return runtime_sound_media_;
+}
+
+void CastMember::setRuntimeSoundMedia(std::vector<std::uint8_t> media) {
+    runtime_sound_media_ = std::move(media);
+}
+
 const std::optional<BitmapInfo>& CastMember::bitmapInfo() const { return bitmap_info_; }
 const std::optional<ShapeInfo>& CastMember::shapeInfo() const { return shape_info_; }
 const std::optional<FilmLoopInfo>& CastMember::filmLoopInfo() const { return film_loop_info_; }
@@ -463,6 +471,7 @@ void CastMember::resetRuntimePayload() {
     shockwave3d_info_.reset();
     runtime_script_.reset();
     runtime_bitmap_.reset();
+    runtime_sound_media_.reset();
     runtime_bitmap_authored_source_ = false;
     runtime_bitmap_decode_placeholder_ = false;
     runtime_bitmap_palette_version_ = 0;

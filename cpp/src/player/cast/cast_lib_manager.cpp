@@ -861,7 +861,14 @@ bool CastLibManager::setMemberProp(int cast_lib_number,
         }
         if (const auto* media = value.asMedia()) {
             auto member = resolveMember(cast_lib_number, member_number);
-            if (!member || !member->isBitmap()) {
+            if (!member) {
+                return false;
+            }
+            if (member->isSound()) {
+                auto cast_lib = getCastLib(cast_lib_number);
+                return cast_lib && cast_lib->setMemberProp(member_number, "media", value);
+            }
+            if (!member->isBitmap()) {
                 return false;
             }
             auto bitmap = decodeBitmapMedia(media->bytes, cast_lib_number, this);
@@ -1662,6 +1669,15 @@ bool CastLibManager::copyMemberMedia(int target_cast_lib_number,
         target->setTextGutterSize(source->textGutterSize());
         target->setEditable(source->editable());
         return true;
+    }
+
+    if (target->isSound() && source->isSound()) {
+        const auto media = getMemberProp(source->castLib(), source->memberNum(), "media");
+        if (const auto* bytes = media.asMedia()) {
+            target->setRuntimeSoundMedia(bytes->bytes);
+            return true;
+        }
+        return false;
     }
 
     if (target->isBitmap() && source->isBitmap()) {
