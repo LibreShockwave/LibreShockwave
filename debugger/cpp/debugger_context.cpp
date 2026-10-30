@@ -1,5 +1,9 @@
 #include "debugger_context.hpp"
 
+#include "audio/native_audio_backend.hpp"
+
+#include "libreshockwave/player/audio/audio_backend.hpp"
+
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -95,6 +99,7 @@ static std::optional<bitmap::Bitmap> decodeEmbeddedJpeg(const std::vector<std::u
 DebuggerContext::DebuggerContext(QObject* parent)
     : QObject(parent) {
     DirectorFile::setJpegDecoder(decodeEmbeddedJpeg);
+    audio_backend_ = createDebuggerAudioBackend();
     state_bridge_ = new DebugStateBridge(this);
     net_access_ = new QNetworkAccessManager(this);
     net_pump_timer_ = new QTimer(this);
@@ -196,6 +201,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     // active fetch provider to the queued one.
     queued_net_ = std::make_unique<libreshockwave::player::net::QueuedNetProvider>(base_path);
     player_ = std::make_unique<libreshockwave::player::Player>(director_file);
+    player_->setAudioBackend(audio_backend_.get());
     player_->setNetProvider(queued_net_.get());
     player_->setExternalParams(external_params_);
     // Authored debug output follows the Debug Window toggle: put/alert/debug
@@ -472,6 +478,9 @@ void DebuggerContext::shutdownWorker() {
         input_queue_.clear();
     }
 
+    if (audio_backend_ != nullptr) {
+        audio_backend_->stopAll();
+    }
     if (player_ != nullptr) {
         player_->stop();
         player_->shutdown();

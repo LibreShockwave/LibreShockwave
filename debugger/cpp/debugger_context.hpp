@@ -36,6 +36,9 @@ class DebugController;
 namespace net {
 class QueuedNetProvider;
 } // namespace net
+namespace audio {
+class AudioBackend;
+} // namespace audio
 } // namespace player
 } // namespace libreshockwave
 
@@ -177,6 +180,7 @@ private:
     /// locally and must not be fetched again.
     [[nodiscard]] bool isAlreadyLoadedCastRequest(std::string_view url) const;
 
+    std::unique_ptr<libreshockwave::player::audio::AudioBackend> audio_backend_;
     std::unique_ptr<libreshockwave::player::Player> player_;
     std::shared_ptr<libreshockwave::player::debug::DebugController> debug_controller_;
     DebugStateBridge* state_bridge_{nullptr};

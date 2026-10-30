@@ -41,6 +41,8 @@ add_executable(libreshockwave_debugger
     ui/highlight/lingo_highlighter.hpp
     ui/highlight/bytecode_highlighter.cpp
     ui/highlight/bytecode_highlighter.hpp
+    audio/native_audio_backend.cpp
+    audio/native_audio_backend.hpp
 )
 
 find_package(Qt6 QUIET COMPONENTS Network)
@@ -63,6 +65,16 @@ else()
     if(Qt5Test_FOUND)
         set(LIBRESHOCKWAVE_QT_TEST_TARGET Qt5::Test)
     endif()
+endif()
+
+# Native sound output is optional. The backend uses libmpg123 for MP3 decoding
+# and the ALSA runtime library through dlopen for playback.
+find_path(LIBRESHOCKWAVE_MPG123_INCLUDE_DIR mpg123.h)
+find_library(LIBRESHOCKWAVE_MPG123_LIBRARY NAMES mpg123)
+if(UNIX AND NOT APPLE AND LIBRESHOCKWAVE_MPG123_INCLUDE_DIR AND LIBRESHOCKWAVE_MPG123_LIBRARY)
+    target_compile_definitions(libreshockwave_debugger PRIVATE LIBRESHOCKWAVE_DEBUGGER_HAS_AUDIO=1)
+    target_include_directories(libreshockwave_debugger PRIVATE ${LIBRESHOCKWAVE_MPG123_INCLUDE_DIR})
+    target_link_libraries(libreshockwave_debugger PRIVATE ${LIBRESHOCKWAVE_MPG123_LIBRARY} ${CMAKE_DL_LIBS})
 endif()
 
 target_link_libraries(libreshockwave_debugger
