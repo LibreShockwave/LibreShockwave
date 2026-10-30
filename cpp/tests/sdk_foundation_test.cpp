@@ -14278,13 +14278,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(run_binary(Opcode::MOD,
                      Datum::list({Datum::of(7), Datum::of(8), Datum::of(9)}),
                      Datum::of(8)) == Datum::list({Datum::of(7), Datum::of(0), Datum::of(1)}));
-    bool modulo_threw = false;
-    try {
-        (void)run_binary(Opcode::MOD, Datum::of(1), Datum::of(0));
-    } catch (const LingoException& e) {
-        modulo_threw = std::string(e.what()) == "Modulo by zero";
-    }
-    assert(modulo_threw);
+    assert(run_binary(Opcode::MOD, Datum::of(1), Datum::of(0)).intValue() == 0);
 
     assert(run_unary(Opcode::INV, Datum::of(7)).intValue() == -7);
     assert(std::fabs(run_unary(Opcode::INV, Datum::of(1.5F)).floatValue() + 1.5F) < 0.0001F);

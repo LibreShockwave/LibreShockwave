@@ -714,11 +714,16 @@ Datum divideList(const Datum::List& list, const Datum& divisor) {
     return Datum::list(std::move(result));
 }
 
+// Director returns 0 for a zero modulus instead of raising a script error.
+int moduloOrZero(int dividend, int divisor) {
+    return divisor == 0 ? 0 : dividend % divisor;
+}
+
 Datum modList(const Datum::List& list, int divisor) {
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
-        result.emplace_back(Datum::of(toIntLikeJava(item) % divisor));
+        result.emplace_back(Datum::of(moduloOrZero(toIntLikeJava(item), divisor)));
     }
     return Datum::list(std::move(result));
 }
@@ -5373,19 +5378,13 @@ bool mod(ExecutionContext& context) {
         const auto* bi = b.asInt();
         const auto* ai = a.asInt();
         if (ai != nullptr && bi != nullptr) {
-            if (bi->value == 0) {
-                throw context.error("Modulo by zero");
-            }
-            context.scope().replaceTopTwo(Datum::of(ai->value % bi->value));
+            context.scope().replaceTopTwo(Datum::of(moduloOrZero(ai->value, bi->value)));
             return true;
         }
 
         if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
             const int divisor = toIntLikeJava(b);
-            if (divisor == 0) {
-                throw context.error("Modulo by zero");
-            }
-            context.scope().replaceTopTwo(Datum::of(toIntLikeJava(a) % divisor));
+            context.scope().replaceTopTwo(Datum::of(moduloOrZero(toIntLikeJava(a), divisor)));
             return true;
         }
     }
@@ -5393,14 +5392,11 @@ bool mod(ExecutionContext& context) {
     const Datum b = context.pop();
     const Datum a = context.pop();
     const int divisor = toIntLikeJava(b);
-    if (divisor == 0) {
-        throw context.error("Modulo by zero");
-    }
     if (a.isList()) {
         context.push(modList(a.listValue(), divisor));
         return true;
     }
-    context.push(Datum::of(toIntLikeJava(a) % divisor));
+    context.push(Datum::of(moduloOrZero(toIntLikeJava(a), divisor)));
     return true;
 }
 
