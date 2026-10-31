@@ -108,10 +108,6 @@ public:
     [[nodiscard]] int frameCount() const;
     [[nodiscard]] int tempo() const;
     [[nodiscard]] int baseTempo() const;
-    // Paces frame ticks. The Shockwave browser player ran at about 15 fps even
-    // when the movie or puppetTempo asked for more, so this caps tempo().
-    // Lingo still reads the authored value through tempo().
-    [[nodiscard]] int playbackTempo() const;
     [[nodiscard]] int getFrameForLabel(std::string_view label) const;
     [[nodiscard]] std::set<std::string> getFrameLabels() const;
     void setTempo(int tempo);

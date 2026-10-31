@@ -1387,7 +1387,7 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_set_tempo_override") void lswSetTempoOverri
 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_tempo") int lswTempo(int handle) {
     if (auto* ctx = getContext(handle); ctx != nullptr && ctx->player != nullptr) {
-        return std::max(1, ctx->player->playbackTempo());
+        return std::max(1, ctx->player->tempo());
     }
     return 15;
 }

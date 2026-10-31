@@ -587,10 +587,10 @@ function clampTempo(value) {
 }
 
 function applyDetectedTempoOverride() {
-  const baseTempo = clampTempo(bridgeCall("base tempo", () => api.baseTempo(handle), 15));
-  const detectedTempo = clampTempo(bridgeCall("tempo", () => api.tempo(handle), baseTempo));
+  const detectedTempo = clampTempo(bridgeCall("base tempo", () => api.baseTempo(handle), 15));
   tempoOverride = detectedTempo;
-  post("tempo", { tempo: detectedTempo, baseTempo, source: "movie" });
+  bridgeCall("set detected tempo override", () => api.setTempoOverride(handle, tempoOverride));
+  post("tempo", { tempo: tempoOverride, baseTempo: detectedTempo, source: "movie" });
   return detectedTempo;
 }
 
