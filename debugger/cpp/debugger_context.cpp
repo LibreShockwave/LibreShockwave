@@ -632,7 +632,7 @@ void DebuggerContext::runLoop() {
             // for one complete movie frame before the first tick advances the
             // score to frame 2.
             first_frame = true;
-            next_tick_at = Clock::now() + frameDuration(player_->tempo());
+            next_tick_at = Clock::now() + frameDuration(player_->playbackTempo());
         }
 
         if (first_frame) {
@@ -677,7 +677,7 @@ void DebuggerContext::runLoop() {
                 submit_current_frame();
             }
 
-            const auto delay = frameDuration(player_->tempo());
+            const auto delay = frameDuration(player_->playbackTempo());
             next_tick_at += delay;
             // A slow VM frame must not cause a burst of catch-up ticks. The
             // next tick is scheduled from the current time, preserving the
