@@ -35,6 +35,10 @@ public:
     void requestDisconnect(int instance_id) override;
     [[nodiscard]] bool isConnected(int instance_id) const override;
     [[nodiscard]] bool hasCompletedHandshake() const;
+    // True once the movie has asked for a text (non-SMUS) connection.
+    // Readiness gating uses this so a replay that starts outside a room
+    // is not blocked before the movie requests the connection.
+    [[nodiscard]] bool hasRequestedTextConnection() const;
     [[nodiscard]] std::vector<NetMessage> pollMessages(int instance_id) override;
     void destroyInstance(int instance_id) override;
 

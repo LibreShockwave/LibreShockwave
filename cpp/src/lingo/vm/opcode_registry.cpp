@@ -1041,6 +1041,33 @@ Datum getColorProp(const Datum::ColorRef& color, std::string_view prop_name) {
     return Datum::voidValue();
 }
 
+// Director exposes the hexadecimal RGB text of a color object through the
+// hexString() method.  Indexed colors resolve through the default system
+// palette; RGB colors keep their authored components.
+Datum colorObjectMethod(const Datum::ColorRef& color, std::string_view method_name) {
+    if (!equalsIgnoreCase(method_name, "hexString")) {
+        return Datum::voidValue();
+    }
+    int red = color.r;
+    int green = color.g;
+    int blue = color.b;
+    if (color.palette_index.has_value()) {
+        const auto rgb = bitmap::Palette::systemMacPalette().getRGB(*color.palette_index);
+        red = rgb[0];
+        green = rgb[1];
+        blue = rgb[2];
+    }
+    constexpr char kHexDigits[] = "0123456789ABCDEF";
+    std::string text = "#......";
+    text[1] = kHexDigits[(red >> 4) & 0x0F];
+    text[2] = kHexDigits[red & 0x0F];
+    text[3] = kHexDigits[(green >> 4) & 0x0F];
+    text[4] = kHexDigits[green & 0x0F];
+    text[5] = kHexDigits[(blue >> 4) & 0x0F];
+    text[6] = kHexDigits[blue & 0x0F];
+    return Datum::of(text);
+}
+
 Datum getImageProp(const Datum::ImageRef& image, std::string_view prop_name) {
     const auto& bitmap = image.bitmap;
     if (equalsIgnoreCase(prop_name, "rect")) {
@@ -1962,6 +1989,60 @@ struct ChunkSpec {
     int first;
     int last;
 };
+
+// Applies one compiled put command to a string chunk. Director encodes the
+// put type as 0 or 1 for into, 2 for after, and 3 for before.
+std::string applyPutToChunk(std::string_view current,
+                            StringChunkType type,
+                            int first,
+                            int last,
+                            int put_type,
+                            std::string_view value,
+                            char item_delimiter) {
+    if (type == StringChunkType::Char) {
+        switch (put_type) {
+            case 0:
+            case 1:
+                if (const auto range = charChunkReplaceRange(current, first, last)) {
+                    std::string replaced;
+                    replaced.reserve(current.size() -
+                                     static_cast<std::size_t>(range->second - range->first) + value.size());
+                    replaced.append(current.substr(0, static_cast<std::size_t>(range->first)));
+                    replaced.append(value);
+                    replaced.append(current.substr(static_cast<std::size_t>(range->second)));
+                    return replaced;
+                }
+                return std::string(current);
+            case 2:
+                return putAfterChunkValue(current, type, last == 0 ? first : last, value, item_delimiter);
+            case 3:
+                return putBeforeChunkValue(current, type, first, value, item_delimiter);
+            default:
+                return std::string(current);
+        }
+    }
+
+    if (first < 0 || last < 0) {
+        const int count = countChunks(current, type, item_delimiter);
+        if (first < 0) {
+            first = count;
+        }
+        if (last < 0) {
+            last = count;
+        }
+    }
+    switch (put_type) {
+        case 0:
+        case 1:
+            return putIntoChunkValue(current, type, first, last, value, item_delimiter);
+        case 2:
+            return putAfterChunkValue(current, type, last == 0 ? first : last, value, item_delimiter);
+        case 3:
+            return putBeforeChunkValue(current, type, first, value, item_delimiter);
+        default:
+            return std::string(current);
+    }
+}
 
 ChunkSpec chooseSingleChunkSpec(int first_char,
                                 int last_char,
@@ -4561,7 +4642,38 @@ void setContextVar(ExecutionContext& context,
 Datum chunkRefObjectMethod(ExecutionContext& context,
                            const Datum::ChunkRef& chunk_ref,
                            std::string_view method_name,
-                           const std::vector<Datum>&) {
+                           std::span<const Datum> args) {
+    // Director compiles chunk assignments as setContents, setContentsAfter,
+    // or setContentsBefore on the chunk reference. The value follows the
+    // receiver and is already stripped by the call dispatcher.
+    const bool set_contents = equalsIgnoreCase(method_name, "setContents");
+    const bool set_contents_after = equalsIgnoreCase(method_name, "setContentsAfter");
+    const bool set_contents_before = equalsIgnoreCase(method_name, "setContentsBefore");
+    if (set_contents || set_contents_after || set_contents_before) {
+        if (args.empty()) {
+            return Datum::voidValue();
+        }
+        const int put_type = set_contents ? 1 : (set_contents_after ? 2 : 3);
+        const Datum value = args.front();
+        const Datum current = getContextVar(context, chunk_ref.var_type, Datum::of(chunk_ref.raw_index));
+        std::string current_storage;
+        std::string value_storage;
+        const std::string_view current_string = stringViewLikeJava(current, current_storage);
+        const std::string_view value_string = stringViewLikeJava(value, value_storage);
+        const char item_delimiter = currentItemDelimiter(context);
+        std::string new_value = applyPutToChunk(current_string,
+                                                chunk_ref.chunk_type,
+                                                chunk_ref.start,
+                                                chunk_ref.end,
+                                                put_type,
+                                                value_string,
+                                                item_delimiter);
+        setContextVar(context,
+                      chunk_ref.var_type,
+                      Datum::of(chunk_ref.raw_index),
+                      Datum::of(std::move(new_value)));
+        return Datum::voidValue();
+    }
     if (!equalsIgnoreCase(method_name, "delete")) {
         return Datum::voidValue();
     }
@@ -4731,6 +4843,9 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
     if (auto* rect = target.asIntRect()) {
         return rectObjectMethod(*rect, method_name, args);
     }
+    if (const auto* color = target.asColorRef()) {
+        return colorObjectMethod(*color, method_name);
+    }
     if (const auto* image = target.asImageRef()) {
         return dispatch::ImageMethodDispatcher::dispatch(*image, method_name, args);
     }
@@ -4765,7 +4880,7 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
         return varRefObjectMethod(context, *var_ref, method_name, args);
     }
     if (const auto* chunk_ref = target.asChunkRef()) {
-        return chunkRefObjectMethod(context, *chunk_ref, method_name, emptyDatumArgs());
+        return chunkRefObjectMethod(context, *chunk_ref, method_name, args);
     }
     if (const auto* script_ref = target.asScriptRef()) {
         if (!equalsIgnoreCase(method_name, "new")) {
@@ -4798,6 +4913,9 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
     }
     if (auto* rect = target.asIntRect()) {
         return rectObjectMethod(*rect, method_name, args);
+    }
+    if (const auto* color = target.asColorRef()) {
+        return colorObjectMethod(*color, method_name);
     }
     if (const auto* cast_lib = target.asCastLibRef()) {
         return castLibObjectMethod(context, *cast_lib, method_name, args);
@@ -5997,64 +6115,13 @@ bool putChunk(ExecutionContext& context) {
     const std::string_view current_string = stringViewLikeJava(current, current_storage);
     const std::string_view value_string = stringViewLikeJava(value, value_storage);
     const char item_delimiter = currentItemDelimiter(context);
-    std::string new_string(current_string);
-
-    if (chunk.type == StringChunkType::Char) {
-        switch (put_type) {
-            case 1:
-                if (const auto range = charChunkReplaceRange(current_string, chunk.first, chunk.last)) {
-                    new_string.clear();
-                    new_string.reserve(current_string.size() - static_cast<std::size_t>(range->second - range->first) +
-                                      value_string.size());
-                    new_string.append(current_string.substr(0, static_cast<std::size_t>(range->first)));
-                    new_string.append(value_string);
-                    new_string.append(current_string.substr(static_cast<std::size_t>(range->second)));
-                }
-                break;
-            case 3:
-                new_string = putBeforeChunkValue(current_string, chunk.type, chunk.first, value_string, item_delimiter);
-                break;
-            case 2:
-                new_string = putAfterChunkValue(current_string,
-                                               chunk.type,
-                                               chunk.last == 0 ? chunk.first : chunk.last,
-                                               value_string,
-                                               item_delimiter);
-                break;
-            default:
-                break;
-        }
-        setContextVar(context, var_type, id_datum, Datum::of(std::move(new_string)), field_cast_id_datum);
-        return true;
-    }
-
-    if (chunk.first < 0 || chunk.last < 0) {
-        const int count = countChunks(current_string, chunk.type, item_delimiter);
-        if (chunk.first < 0) {
-            chunk.first = count;
-        }
-        if (chunk.last < 0) {
-            chunk.last = count;
-        }
-    }
-
-    switch (put_type) {
-        case 1:
-            new_string = putIntoChunkValue(current_string, chunk.type, chunk.first, chunk.last, value_string, item_delimiter);
-            break;
-        case 3:
-            new_string = putBeforeChunkValue(current_string, chunk.type, chunk.first, value_string, item_delimiter);
-            break;
-        case 2:
-            new_string = putAfterChunkValue(current_string,
-                                           chunk.type,
-                                           chunk.last == 0 ? chunk.first : chunk.last,
-                                           value_string,
-                                           item_delimiter);
-            break;
-        default:
-            break;
-    }
+    std::string new_string = applyPutToChunk(current_string,
+                                             chunk.type,
+                                             chunk.first,
+                                             chunk.last,
+                                             put_type,
+                                             value_string,
+                                             item_delimiter);
 
     setContextVar(context, var_type, id_datum, Datum::of(std::move(new_string)), field_cast_id_datum);
     return true;
