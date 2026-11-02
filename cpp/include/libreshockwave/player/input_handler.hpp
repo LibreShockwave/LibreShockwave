@@ -122,9 +122,6 @@ private:
     [[nodiscard]] int hitTestMoveableSprite(int stage_x, int stage_y) const;
     [[nodiscard]] std::vector<int> getInteractiveHits(int stage_x, int stage_y, bool force_bounding_box) const;
     [[nodiscard]] std::vector<int> getInteractiveHitPath(int stage_x, int stage_y) const;
-    // Sorts matching sprites front to back so the topmost sprite receives the
-    // event first, regardless of cursor-based hit selection order.
-    [[nodiscard]] std::vector<int> eventDispatchOrder(const std::vector<int>& path) const;
     [[nodiscard]] std::shared_ptr<::libreshockwave::cast::CastMember> resolveSpriteMember(int channel) const;
     [[nodiscard]] std::optional<render::pipeline::RenderSprite> findHitSprite(int channel) const;
     [[nodiscard]] std::optional<FocusedField> focusedEditableField() const;

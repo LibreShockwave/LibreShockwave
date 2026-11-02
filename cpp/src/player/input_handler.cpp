@@ -570,27 +570,6 @@ std::vector<int> InputHandler::getInteractiveHitPath(int stage_x, int stage_y) c
     return hits;
 }
 
-std::vector<int> InputHandler::eventDispatchOrder(const std::vector<int>& path) const {
-    if (stage_renderer_ == nullptr || path.size() < 2) {
-        return path;
-    }
-    std::vector<std::pair<int, int>> keyed;
-    keyed.reserve(path.size());
-    for (std::size_t index = 0; index < path.size(); ++index) {
-        const auto state = stage_renderer_->spriteRegistry().get(path[index]);
-        keyed.emplace_back(state != nullptr ? state->locZ() : 0, static_cast<int>(index));
-    }
-    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& left, const auto& right) {
-        return left.first > right.first;
-    });
-    std::vector<int> ordered;
-    ordered.reserve(path.size());
-    for (const auto& entry : keyed) {
-        ordered.push_back(path[static_cast<std::size_t>(entry.second)]);
-    }
-    return ordered;
-}
-
 void InputHandler::dispatchRolloverEvents() {
     if (input_state_ == nullptr) {
         return;
@@ -652,7 +631,7 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
                                    input_event.stage_y);
             dispatcher->resetEventStopped();
             if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
-                for (const int channel : eventDispatchOrder(hit_path)) {
+                for (const int channel : hit_path) {
                     dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
                     if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                         break;
@@ -671,22 +650,41 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
             dispatcher->resetEventStopped();
             const bool legacy_consumed = dispatchLegacyEventScript(PlayerEvent::MouseUp);
             if (!legacy_consumed && !dispatcher->isEventStopped()) {
-                if (pressed_sprite > 0 && std::ranges::find(release_path, pressed_sprite) != release_path.end()) {
-                    for (const int channel : eventDispatchOrder(release_path)) {
-                        dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
-                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
-                            break;
+                // The sprite that received the last mouseWithin owns the hover.
+                // Send it the release before overlapping window elements stop
+                // the event, so mouse-following event agents always receive
+                // mouseUp, including when the press left the pressed sprite.
+                const int hover_sprite = previous_rollover_sprite_;
+                const bool hover_in_path =
+                    hover_sprite > 0 && hover_sprite != pressed_sprite &&
+                    std::ranges::find(release_path, hover_sprite) != release_path.end();
+                if (hover_in_path) {
+                    dispatcher->dispatchSpriteEvent(hover_sprite, PlayerEvent::MouseUp);
+                }
+                if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
+                    if (pressed_sprite > 0 && std::ranges::find(release_path, pressed_sprite) != release_path.end()) {
+                        for (const int channel : release_path) {
+                            if (hover_in_path && channel == hover_sprite) {
+                                continue;
+                            }
+                            dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
+                            if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
+                                break;
+                            }
                         }
-                    }
-                } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, "mouseUpOutSide")) {
-                    dispatcher->dispatchSpriteEvent(pressed_sprite, "mouseUpOutSide");
-                } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, handlerName(PlayerEvent::MouseUp))) {
-                    dispatcher->dispatchSpriteEvent(pressed_sprite, PlayerEvent::MouseUp);
-                } else if (release_sprite > 0) {
-                    for (const int channel : eventDispatchOrder(release_path)) {
-                        dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
-                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
-                            break;
+                    } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, "mouseUpOutSide")) {
+                        dispatcher->dispatchSpriteEvent(pressed_sprite, "mouseUpOutSide");
+                    } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, handlerName(PlayerEvent::MouseUp))) {
+                        dispatcher->dispatchSpriteEvent(pressed_sprite, PlayerEvent::MouseUp);
+                    } else if (release_sprite > 0) {
+                        for (const int channel : release_path) {
+                            if (hover_in_path && channel == hover_sprite) {
+                                continue;
+                            }
+                            dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
+                            if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
+                                break;
+                            }
                         }
                     }
                 }
