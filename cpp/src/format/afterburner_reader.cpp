@@ -14,6 +14,33 @@ std::string trimChunkTag(std::string tag) {
     return tag;
 }
 
+bool hasZlibHeader(const std::vector<std::uint8_t>& data) {
+    if (data.size() < 2) {
+        return false;
+    }
+    const int cmf = data[0];
+    const int flg = data[1];
+    return (cmf & 0x0F) == 8 && (cmf >> 4) <= 7 && ((cmf << 8) | flg) % 31 == 0;
+}
+
+std::vector<std::uint8_t> decompressZlibChunk(const ChunkInfo& info,
+                                              std::vector<std::uint8_t> data) {
+    if (!info.isZlibCompressed()) {
+        return data;
+    }
+    if (info.compressed_size == info.uncompressed_size) {
+        if (!hasZlibHeader(data)) {
+            return data;
+        }
+        auto decompressed = io::BinaryReader::decompressZlib(data);
+        if (decompressed.size() != static_cast<std::size_t>(info.uncompressed_size)) {
+            return data;
+        }
+        return decompressed;
+    }
+    return io::BinaryReader::decompressZlib(data);
+}
+
 } // namespace
 
 AfterburnerReader::AfterburnerReader(io::BinaryReader reader, io::ByteOrder byte_order)
@@ -37,12 +64,11 @@ std::optional<std::vector<std::uint8_t>> AfterburnerReader::getChunkData(int res
     }
 
     if (const auto cached = cached_chunk_data_.find(resource_id); cached != cached_chunk_data_.end()) {
-        auto chunk_data = cached->second;
         const auto* info = getChunkInfo(resource_id);
-        if (info && info->compressed_size != info->uncompressed_size && info->isZlibCompressed()) {
-            chunk_data = io::BinaryReader::decompressZlib(chunk_data);
+        if (info == nullptr) {
+            return cached->second;
         }
-        return chunk_data;
+        return decompressZlibChunk(*info, cached->second);
     }
 
     const auto* info = getChunkInfo(resource_id);
@@ -63,11 +89,7 @@ std::optional<std::vector<std::uint8_t>> AfterburnerReader::getChunkData(int res
     reader_.seek(saved_position);
 
     cached_chunk_data_[resource_id] = chunk_data;
-    if (info->compressed_size != info->uncompressed_size && info->isZlibCompressed()) {
-        chunk_data = io::BinaryReader::decompressZlib(chunk_data);
-    }
-
-    return chunk_data;
+    return decompressZlibChunk(*info, std::move(chunk_data));
 }
 
 std::optional<std::vector<std::uint8_t>> AfterburnerReader::getChunkDataByType(const std::string& four_cc) {
