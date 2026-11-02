@@ -645,22 +645,57 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
                 break;
             }
             if (!legacy_consumed && !dispatcher->isEventStopped()) {
-                if (pressed_sprite > 0 && std::ranges::find(release_path, pressed_sprite) != release_path.end()) {
+                const bool pressed_in_release_path =
+                    pressed_sprite > 0 &&
+                    std::ranges::find(release_path, pressed_sprite) != release_path.end();
+                if (pressed_in_release_path) {
                     for (const int channel : release_path) {
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
                         if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                             break;
                         }
                     }
-                } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, "mouseUpOutSide")) {
-                    dispatcher->dispatchSpriteEvent(pressed_sprite, "mouseUpOutSide");
-                } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, handlerName(PlayerEvent::MouseUp))) {
-                    dispatcher->dispatchSpriteEvent(pressed_sprite, PlayerEvent::MouseUp);
-                } else if (release_sprite > 0) {
+                } else {
+                    // Mouse-following event agents register mouseWithin and
+                    // mouseUp without mouseDown. They must receive the release
+                    // even when the press left the pressed sprite, or the drag
+                    // agent keeps sending mouseWithin with stale bounds.
+                    const auto is_drag_agent = [dispatcher](int channel) {
+                        return dispatcher->spriteHasHandler(
+                                   channel, handlerName(PlayerEvent::MouseWithin)) &&
+                               dispatcher->spriteHasHandler(
+                                   channel, handlerName(PlayerEvent::MouseUp)) &&
+                               !dispatcher->spriteHasHandler(
+                                   channel, handlerName(PlayerEvent::MouseDown));
+                    };
+                    int released_agent = 0;
                     for (const int channel : release_path) {
+                        if (!is_drag_agent(channel)) {
+                            continue;
+                        }
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
-                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
-                            break;
+                        released_agent = channel;
+                        break;
+                    }
+                    if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
+                        if (pressed_sprite > 0 &&
+                            dispatcher->spriteHasHandler(pressed_sprite, "mouseUpOutSide")) {
+                            dispatcher->dispatchSpriteEvent(pressed_sprite, "mouseUpOutSide");
+                        } else if (pressed_sprite > 0 &&
+                                   dispatcher->spriteHasHandler(
+                                       pressed_sprite, handlerName(PlayerEvent::MouseUp))) {
+                            dispatcher->dispatchSpriteEvent(pressed_sprite, PlayerEvent::MouseUp);
+                        } else if (release_sprite > 0) {
+                            for (const int channel : release_path) {
+                                if (channel == released_agent) {
+                                    continue;
+                                }
+                                dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
+                                if (dispatcher->isEventStopped() ||
+                                    dispatcher->isPropagationStopped()) {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
