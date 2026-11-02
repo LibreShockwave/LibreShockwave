@@ -32,10 +32,6 @@ public:
     [[nodiscard]] int locH() const;
     [[nodiscard]] int locV() const;
     [[nodiscard]] int locZ() const;
-    // True when a script or caller explicitly set the axis position. Input
-    // hit testing uses the live value only in that case.
-    [[nodiscard]] bool locHExplicitlySet() const;
-    [[nodiscard]] bool locVExplicitlySet() const;
     [[nodiscard]] int width() const;
     [[nodiscard]] int height() const;
     [[nodiscard]] bool isVisible() const;

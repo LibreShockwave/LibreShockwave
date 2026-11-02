@@ -153,7 +153,6 @@ private:
     SpriteLocationSetter sprite_location_setter_;
     std::optional<MoveableDrag> moveable_drag_;
     int previous_rollover_sprite_{0};
-    bool mouse_moved_since_rollover_{false};
 };
 
 } // namespace libreshockwave::player

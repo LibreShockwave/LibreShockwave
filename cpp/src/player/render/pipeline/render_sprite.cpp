@@ -188,14 +188,6 @@ bool RenderSprite::hasDirectorHorizontalMirror() const {
     return normalizeTransformAngle(rotation_) == 180 && normalizeTransformAngle(skew_) == 180;
 }
 
-RenderSprite RenderSprite::withRuntimePosition(int x, int y, bool visible) const {
-    RenderSprite result = *this;
-    result.x_ = x;
-    result.y_ = y;
-    result.visible_ = visible;
-    return result;
-}
-
 RenderSprite RenderSprite::withBakedBitmap(std::shared_ptr<const bitmap::Bitmap> baked) const {
     RenderSprite result(channel_id_.value(),
                         x_,

@@ -20,8 +20,6 @@ int SpriteState::channel() const { return channel_id_.value(); }
 int SpriteState::locH() const { return loc_h_; }
 int SpriteState::locV() const { return loc_v_; }
 int SpriteState::locZ() const { return loc_z_; }
-bool SpriteState::locHExplicitlySet() const { return loc_h_explicitly_set_; }
-bool SpriteState::locVExplicitlySet() const { return loc_v_explicitly_set_; }
 int SpriteState::width() const { return width_; }
 int SpriteState::height() const { return height_; }
 bool SpriteState::isVisible() const { return visible_; }
