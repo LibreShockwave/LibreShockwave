@@ -22539,7 +22539,9 @@ void testQueuedNetProviderFoundation() {
 
     provider.drainPendingRequests();
     assert(provider.pendingRequests().empty());
-    assert(provider.netDone());
+    // The request left the pending queue but the host has not finished it.
+    // netDone() tracks the most recent operation, not the hand-off.
+    assert(!provider.netDone());
     assert(!provider.netDone(root_task));
     provider.onFetchComplete(root_task, {'O', 'K'});
     assert(provider.netDone(root_task));

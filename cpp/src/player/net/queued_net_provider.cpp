@@ -191,9 +191,10 @@ void QueuedNetProvider::completeMovieNavigationTasks() {
 }
 
 bool QueuedNetProvider::netDone(std::optional<int> task_id) const {
-    if (!task_id.has_value() && last_task_id_ > 0 && pending_requests_.empty()) {
-        return true;
-    }
+    // Director reports the most recent network operation until it completes.
+    // "Handed to the host" is not done: a request that left pending_requests_
+    // is still downloading, and reporting it as done makes authored loaders
+    // advance to empty results and reissue the same request.
     const auto* task = getTask(task_id);
     return task != nullptr && task->done;
 }

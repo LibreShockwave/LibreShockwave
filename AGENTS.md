@@ -744,12 +744,20 @@ Know which one you are testing:
   sends while CONNECTING. Incoming bytes are delivered back through
   `lsw_multiuser_message_bytes` and friends. The browser cannot open raw TCP
   sockets. So the WebSocket relay is the only transport there.
+  The same worker drives the VM tick loop. It must never await an asset fetch
+  or a JPEG decode inside that loop. Awaiting stops VM ticks and frame
+  presentation for the whole transfer, so the movie freezes and its loading
+  timers expire and reissue requests. Start the host work each tick and let
+  the bridge apply the staged results on a later tick.
 - **Native builds and the desktop debugger**: the plain `Player` registers
   `SocketMultiuserBridge`. It opens **raw TCP sockets** directly to the
   configured hosts. It uses `getaddrinfo` with `SOCK_STREAM`. Then
   `socket`/`connect`/`send`/`recv` on POSIX or Winsock. It has no WebSocket
   framing and no HTTP upgrade. The debugger connects straight to
   `connection.info.host:port` and the MUS port from the external parameters.
+  The debugger downloads movies and assets over Qt. It pins HTTP/1.1 because
+  Qt's HTTP/2 stalls against some CDNs until the transfer timeout fires, which
+  leaves the movie on its loading frame and makes it retry the same request.
 
 Implications:
 

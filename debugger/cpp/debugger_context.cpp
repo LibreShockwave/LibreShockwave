@@ -96,6 +96,15 @@ static std::optional<bitmap::Bitmap> decodeEmbeddedJpeg(const std::vector<std::u
 // DebuggerContext
 // ---------------------------------------------------------------------------
 
+QNetworkRequest makeDebuggerNetworkRequest(const QUrl& url) {
+    QNetworkRequest request(url);
+    // Qt 6 HTTP/2 stalls against some CDNs until the transfer timeout fires.
+    // The debugger only loads assets and movies, so HTTP/1.1 is enough and
+    // keeps every download deterministic.
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+    return request;
+}
+
 DebuggerContext::DebuggerContext(QObject* parent)
     : QObject(parent) {
     DirectorFile::setJpegDecoder(decodeEmbeddedJpeg);
@@ -841,7 +850,7 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
     }
 
     const QUrl url = urls.takeFirst();
-    QNetworkRequest net_request(url);
+    QNetworkRequest net_request = makeDebuggerNetworkRequest(url);
     net_request.setTransferTimeout(20000);
 
     QNetworkReply* reply = nullptr;

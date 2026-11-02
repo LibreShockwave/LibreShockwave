@@ -22,6 +22,7 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
+class QNetworkRequest;
 class QTimer;
 
 namespace libreshockwave {
@@ -46,6 +47,12 @@ class AudioBackend;
 namespace libreshockwave::debugger {
 
 class DebugStateBridge;
+
+/// Builds the QNetworkRequest used for every debugger asset, movie, and
+/// navigation download. It pins HTTP/1.1 because Qt's HTTP/2 negotiation
+/// stalls against some CDNs until the transfer timeout fires, which makes the
+/// movie wait on a download that already could have completed.
+[[nodiscard]] QNetworkRequest makeDebuggerNetworkRequest(const QUrl& url);
 
 /// Manages a Player + DebugController running on a dedicated std::thread.
 /// The worker thread runs a tick loop; step/continue commands are called

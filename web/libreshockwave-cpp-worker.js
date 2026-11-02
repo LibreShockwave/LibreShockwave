@@ -45,6 +45,9 @@ let slowHandlerWarningMs = 1000;
 let websocketPath = "";
 let websocketSsl = null;
 let fetchCache = new Map();
+// Bumped for every movie load so in-flight fetch and decode results from a
+// replaced session are dropped instead of being applied to the new provider.
+let sessionGeneration = 0;
 const sockets = new Map();
 const pendingSocketEvents = [];
 
@@ -312,7 +315,7 @@ async function fetchCandidateBytes(candidate, request) {
   throw lastError;
 }
 
-async function satisfyFetchRequest(request) {
+async function satisfyFetchRequest(request, generation) {
   const candidates = [request.url, ...(request.fallbacks || [])]
     .filter(Boolean)
     .flatMap((candidate) => fetchCandidates(candidate));
@@ -321,12 +324,16 @@ async function satisfyFetchRequest(request) {
   for (const candidate of uniqueCandidates) {
     try {
       const bytes = await fetchCandidateBytes(candidate, request);
+      // A movie reload replaced the session while this fetch was in flight.
+      // Its task ids belong to the previous provider and must not be applied.
+      if (generation !== sessionGeneration || !handle) return;
       withBytes(bytes, (ptr, length) => bridgeCall("fetch complete", () => api.fetchComplete(handle, request.taskId, ptr, length)));
       return;
     } catch (error) {
       lastError = error;
     }
   }
+  if (generation !== sessionGeneration || !handle) return;
   bridgeCall("fetch error", () => {
     api.fetchError(handle, request.taskId, lastError && /^(4|5)\d\d/.test(errorMessage(lastError))
       ? Number(errorMessage(lastError).slice(0, 3))
@@ -335,7 +342,7 @@ async function satisfyFetchRequest(request) {
   post("warning", { message: `Fetch failed for ${request.url}: ${lastError ? lastError.message : "no candidates"}` });
 }
 
-async function satisfyJpegDecodeRequest(request) {
+async function satisfyJpegDecodeRequest(request, generation) {
   try {
     const jpegBytes = decodeBase64(request.data);
     if (jpegBytes.byteLength === 0 || typeof createImageBitmap !== "function" ||
@@ -349,6 +356,7 @@ async function satisfyJpegDecodeRequest(request) {
       if (!context) throw new Error("2D canvas is unavailable for JPEG decode");
       context.drawImage(image, 0, 0);
       const rgba = context.getImageData(0, 0, image.width, image.height).data;
+      if (generation !== sessionGeneration || !handle) return true;
       withBytes(rgba, (ptr, length) => bridgeCall("JPEG decode complete", () =>
         api.jpegDecodeComplete(handle, request.id, image.width, image.height, ptr, length)));
     } finally {
@@ -357,7 +365,9 @@ async function satisfyJpegDecodeRequest(request) {
     return true;
   } catch (error) {
     post("warning", { message: `JPEG decode failed for ${request.id}: ${errorMessage(error)}` });
-    bridgeCall("discard failed JPEG decode", () => api.jpegDecodeComplete(handle, request.id, 0, 0, 0, 0));
+    if (generation === sessionGeneration && handle) {
+      bridgeCall("discard failed JPEG decode", () => api.jpegDecodeComplete(handle, request.id, 0, 0, 0, 0));
+    }
     return false;
   }
 }
@@ -533,19 +543,25 @@ function emitAudioCommands() {
   return commands.length;
 }
 
-async function pumpHostQueues() {
-  if (!handle) return;
+// Starts host work for the frame that just ticked and returns immediately.
+// Fetches and JPEG decodes must never be awaited here: the tick loop would
+// stop advancing the VM until each download finished. Results are staged in
+// the bridge. True means a movie navigation owns the next tick.
+function pumpHostQueues() {
+  if (!handle) return false;
   drainSocketEvents();
   for (let round = 0; round < 64; round += 1) {
     const jpegDecodes = parseJsonArray(bridgeCall("poll JPEG decodes", () => api.pollJpegDecodes(handle), "[]"));
-    if (jpegDecodes.length > 0) {
-      await Promise.all(jpegDecodes.map(satisfyJpegDecodeRequest));
+    for (const request of jpegDecodes) {
+      void satisfyJpegDecodeRequest(request, sessionGeneration);
     }
 
     const fetches = parseJsonArray(bridgeCall("poll fetches", () => api.pollFetches(handle), "[]"));
     if (fetches.length > 0) {
       bridgeCall("drain fetches", () => api.drainFetches(handle));
-      await Promise.all(fetches.map(satisfyFetchRequest));
+      for (const request of fetches) {
+        void satisfyFetchRequest(request, sessionGeneration);
+      }
     }
 
     const navigations = parseJsonArray(bridgeCall("poll movie navigations", () => api.pollMovieNavigations(handle), "[]"));
@@ -557,9 +573,9 @@ async function pumpHostQueues() {
           post("navigation", { url });
           continue;
         }
-        await loadMovie(url, true);
+        void loadMovie(url, true);
       }
-      return;
+      return true;
     }
 
     const socketRequests = parseJsonArray(bridgeCall("poll sockets", () => api.pollSockets(handle), "[]"));
@@ -575,6 +591,7 @@ async function pumpHostQueues() {
       break;
     }
   }
+  return false;
 }
 
 function currentDelayMs() {
@@ -608,7 +625,7 @@ function scheduleTick() {
   if (!nextTickAt || nextTickAt < now - 1000) {
     nextTickAt = now + currentDelayMs();
   }
-  timer = setTimeout(async () => {
+  timer = setTimeout(() => {
     timer = 0;
     if (!playing || !handle) return;
     try {
@@ -634,8 +651,7 @@ function scheduleTick() {
         const message = bridgeCall("last error", () => api.lastError(handle), "");
         if (message) {
           post("error", { message, detail: message });
-          await pumpHostQueues();
-          emitDebugMessages();
+          pumpHostQueues();
           sendFrame();
           scheduleTick();
           return;
@@ -643,14 +659,17 @@ function scheduleTick() {
         playing = false;
         return;
       }
-      await pumpHostQueues();
-      emitDebugMessages();
+      // Start host downloads for this frame and present it immediately. The
+      // tick loop must keep the movie cadence while HTTP requests are still
+      // in flight; the bridge applies their results on a later tick.
+      if (pumpHostQueues()) {
+        return;
+      }
       sendFrame();
     } catch (error) {
       post("error", { message: errorMessage(error), detail: errorDetails(error) });
       try {
-        await pumpHostQueues();
-        emitDebugMessages();
+        pumpHostQueues();
         sendFrame();
       } catch {}
     }
@@ -702,6 +721,9 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
   try {
     post("load-start", { url: movieUrl, requestId });
     const bytes = await fetchBytes(movieUrl);
+    // Replacing the session invalidates every in-flight fetch and decode of
+    // the previous movie; their task ids mean nothing to the new provider.
+    sessionGeneration += 1;
     tempoOverride = 0;
     bridgeCall("clear tempo override before load", () => api.setTempoOverride(handle, 0));
     bridgeCall("set debug playback before load", () => api.setDebugPlayback(handle, debugPlaybackEnabled ? 1 : 0));
@@ -710,7 +732,8 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
     if (!ok) {
       throw new Error(bridgeCall("last error", () => api.lastError(handle), "") || "load failed");
     }
-    await pumpHostQueues();
+    // Start the new session's host work without waiting for its downloads.
+    pumpHostQueues();
     emitDebugMessages();
     applyDetectedTempoOverride();
     bridgeCall("play", () => api.play(handle));
@@ -732,7 +755,7 @@ async function loadMovie(url, keepPlaying = false, requestId = 0) {
     if (wasPlaying) {
       playing = true;
       try {
-        await pumpHostQueues();
+        pumpHostQueues();
         emitDebugMessages();
         sendFrame();
       } catch {}
@@ -790,7 +813,7 @@ self.addEventListener("message", (event) => {
         drainSocketEvents();
         playing = true;
         bridgeCall("play", () => api.play(handle));
-        await pumpHostQueues();
+        pumpHostQueues();
         nextTickAt = performance.now() + currentDelayMs();
         scheduleTick();
         break;
@@ -798,14 +821,14 @@ self.addEventListener("message", (event) => {
         playing = false;
         bridgeCall("pause", () => api.pause(handle));
         clearTimer();
-        await pumpHostQueues();
+        pumpHostQueues();
         sendFrame();
         break;
       case "stop":
         playing = false;
         bridgeCall("stop", () => api.stop(handle));
         clearTimer();
-        await pumpHostQueues();
+        pumpHostQueues();
         sendFrame();
         break;
       case "tempo":
@@ -885,7 +908,7 @@ self.addEventListener("message", (event) => {
           handled: !!bridgeCall("fire test error", () => api.fireTestError(handle, message.message || "LibreShockwave test error"), 0)
         });
         emitDebugMessages();
-        await pumpHostQueues();
+        pumpHostQueues();
         sendFrame();
         break;
       case "cut":
@@ -896,6 +919,7 @@ self.addEventListener("message", (event) => {
         break;
       case "destroy":
         clearTimer();
+        sessionGeneration += 1;
         if (handle) bridgeCall("destroy", () => api.destroy(handle));
         handle = 0;
         break;

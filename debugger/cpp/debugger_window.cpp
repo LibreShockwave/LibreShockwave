@@ -1248,7 +1248,7 @@ void DebuggerWindow::loadMovieFromUrl(const QString& url) {
     statusBar()->showMessage(QStringLiteral("Downloading %1...").arg(url));
 
     auto* manager = new QNetworkAccessManager(this);
-    QNetworkRequest request{QUrl(url)};
+    QNetworkRequest request = makeDebuggerNetworkRequest(QUrl(url));
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("LibreShockwave Debugger/0.1"));
     request.setTransferTimeout(20000);
@@ -1768,7 +1768,7 @@ void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
     statusBar()->showMessage(QStringLiteral("Navigating to %1...").arg(url));
 
     auto* manager = new QNetworkAccessManager(this);
-    auto* reply = manager->get(QNetworkRequest(QUrl(url)));
+    auto* reply = manager->get(makeDebuggerNetworkRequest(QUrl(url)));
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, manager, url] {
         reply->deleteLater();
