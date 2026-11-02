@@ -127,6 +127,8 @@ private:
     [[nodiscard]] std::optional<FocusedField> focusedEditableField() const;
     [[nodiscard]] std::string memberText(const ::libreshockwave::cast::CastMember& member) const;
     [[nodiscard]] static std::pair<int, int> clampedSelection(int sel_start, int sel_end, int text_length);
+    [[nodiscard]] bool hasPointerCursor(int channel) const;
+    [[nodiscard]] bool isInteractiveChannel(int channel, bool has_behaviors) const;
     [[nodiscard]] bool isMoveableSprite(int channel) const;
     [[nodiscard]] bool isEditableFieldSprite(int channel, const ::libreshockwave::cast::CastMember& member) const;
     [[nodiscard]] bool canReceiveKeyboardTextInput(int channel, const ::libreshockwave::cast::CastMember& member) const;

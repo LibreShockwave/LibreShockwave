@@ -463,23 +463,13 @@ std::vector<int> InputHandler::getInteractiveHits(int stage_x, int stage_y, bool
     }
 
     auto sprites = hitSprites();
-    auto has_custom_cursor = [this](int channel) {
-        if (stage_renderer_ == nullptr) {
-            return false;
-        }
-        const auto sprite = stage_renderer_->spriteRegistry().get(channel);
-        return sprite != nullptr &&
-               (sprite->hasBitmapCursor() ||
-                (sprite->cursor() != CursorManager::DEFAULT_CURSOR && sprite->cursor() != CursorManager::ARROW_CURSOR));
-    };
-    auto has_authored_cursor_behavior = [&sprites, &has_custom_cursor](int channel) {
-        const bool has_behavior = std::ranges::any_of(sprites, [channel](const auto& sprite) {
+    auto has_behaviors = [&sprites](int channel) {
+        return std::ranges::any_of(sprites, [channel](const auto& sprite) {
             return sprite.channel() == channel && sprite.hasBehaviors();
         });
-        return has_behavior && has_custom_cursor(channel);
     };
-    auto is_interactive = [dispatcher, &has_authored_cursor_behavior](int channel) {
-        return dispatcher->isSpriteMouseInteractive(channel) || has_authored_cursor_behavior(channel);
+    auto is_interactive = [this, &has_behaviors](int channel) {
+        return isInteractiveChannel(channel, has_behaviors(channel));
     };
     auto hit_channels = input::HitTester::hitTestAll(
         sprites,
@@ -517,15 +507,6 @@ std::vector<int> InputHandler::getInteractiveHits(int stage_x, int stage_y, bool
 std::vector<int> InputHandler::getInteractiveHitPath(int stage_x, int stage_y) const {
     auto exact_hits = getInteractiveHits(stage_x, stage_y, false);
     auto bounding_hits = getInteractiveHits(stage_x, stage_y, true);
-    auto has_pointer_cursor = [this](int channel) {
-        if (stage_renderer_ == nullptr) {
-            return false;
-        }
-        const auto sprite = stage_renderer_->spriteRegistry().get(channel);
-        return sprite != nullptr &&
-               (sprite->hasBitmapCursor() ||
-                (sprite->cursor() != CursorManager::DEFAULT_CURSOR && sprite->cursor() != CursorManager::ARROW_CURSOR));
-    };
     std::vector<int> hits;
     hits.reserve(exact_hits.size() + bounding_hits.size());
     auto append_unique = [&hits](int channel) {
@@ -535,12 +516,12 @@ std::vector<int> InputHandler::getInteractiveHitPath(int stage_x, int stage_y) c
     };
 
     for (const int channel : exact_hits) {
-        if (has_pointer_cursor(channel)) {
+        if (hasPointerCursor(channel)) {
             append_unique(channel);
         }
     }
     for (const int channel : bounding_hits) {
-        if (has_pointer_cursor(channel)) {
+        if (hasPointerCursor(channel)) {
             append_unique(channel);
         }
     }
@@ -596,34 +577,73 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
             const int stage_hit_sprite = hitTestStage(input_event.stage_x, input_event.stage_y);
             const int editable_hit_sprite = hitTestEditableField(input_event.stage_x, input_event.stage_y);
             const int last_clicked = input_state_->clickOnSprite();
-            if (last_clicked > 0 && std::ranges::find(hit_path, last_clicked) == hit_path.end()) {
+            if (last_clicked > 0 && std::ranges::find(hit_path, last_clicked) == hit_path.end() &&
+                last_clicked != editable_hit_sprite) {
                 dispatcher->dispatchSpriteEvent(last_clicked, "mouseUpOutSide");
             }
 
-            input_state_->setClickOnSprite(hit_sprite);
-            autoFocusEditableField(editable_hit_sprite > 0 ? editable_hit_sprite : stage_hit_sprite,
-                                   input_event.stage_x,
-                                   input_event.stage_y);
-            dispatcher->resetEventStopped();
-            if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
-                for (const int channel : hit_path) {
-                    dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
-                    if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
-                        break;
+            auto dispatch_mouse_down = [&](const std::vector<int>& channels) {
+                dispatcher->resetEventStopped();
+                if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) &&
+                    !dispatcher->isEventStopped()) {
+                    for (const int channel : channels) {
+                        dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
+                        if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
+                            break;
+                        }
                     }
                 }
+                if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
+                    dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseDown);
+                }
+            };
+
+            if (editable_hit_sprite > 0) {
+                // A press inside an editable field starts a text selection. The
+                // field owns the pointer, so sprites under it must not receive
+                // a second mouseDown for the same press.
+                input_state_->setClickOnSprite(editable_hit_sprite);
+                autoFocusEditableField(editable_hit_sprite,
+                                       input_event.stage_x,
+                                       input_event.stage_y);
+                dispatch_mouse_down({editable_hit_sprite});
+                break;
             }
-            if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
-                dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseDown);
-            }
+
+            input_state_->setClickOnSprite(hit_sprite);
+            autoFocusEditableField(stage_hit_sprite, input_event.stage_x, input_event.stage_y);
+            dispatch_mouse_down(hit_path);
             break;
         }
         case input::InputEventType::MouseUp: {
             const int pressed_sprite = input_state_->clickOnSprite();
             const auto release_path = getInteractiveHitPath(input_event.stage_x, input_event.stage_y);
             const int release_sprite = release_path.empty() ? 0 : release_path.front();
+            auto pressed_member = resolveSpriteMember(pressed_sprite);
+            const bool pressed_editable =
+                pressed_member != nullptr && isEditableFieldSprite(pressed_sprite, *pressed_member);
             dispatcher->resetEventStopped();
             const bool legacy_consumed = dispatchLegacyEventScript(PlayerEvent::MouseUp);
+            if (!legacy_consumed && !dispatcher->isEventStopped() && pressed_editable) {
+                // The editable field owns the press, so its release must not
+                // reach sprites that sit under the field rectangle.
+                const auto pressed_render = findHitSprite(pressed_sprite);
+                const bool inside = pressed_render.has_value() &&
+                    input_event.stage_x >= pressed_render->x() &&
+                    input_event.stage_y >= pressed_render->y() &&
+                    input_event.stage_x < pressed_render->x() + pressed_render->width() &&
+                    input_event.stage_y < pressed_render->y() + pressed_render->height();
+                const std::string_view handler =
+                    inside ? handlerName(PlayerEvent::MouseUp) : "mouseUpOutSide";
+                if (dispatcher->spriteHasHandler(pressed_sprite, handler)) {
+                    dispatcher->dispatchSpriteEvent(pressed_sprite, handler);
+                }
+                input_state_->setClickOnSprite(0);
+                if (!dispatcher->isEventStopped() && !dispatcher->isPropagationStopped()) {
+                    dispatcher->dispatchFrameAndMovieEvent(PlayerEvent::MouseUp);
+                }
+                break;
+            }
             if (!legacy_consumed && !dispatcher->isEventStopped()) {
                 if (pressed_sprite > 0 && std::ranges::find(release_path, pressed_sprite) != release_path.end()) {
                     for (const int channel : release_path) {
@@ -718,8 +738,34 @@ int InputHandler::hitTestEditableField(int stage_x, int stage_y) const {
         if (member != nullptr && isEditableFieldSprite(sprite.channel(), *member)) {
             return sprite.channel();
         }
+        if (isInteractiveChannel(sprite.channel(), sprite.hasBehaviors()) &&
+            input::HitTester::hitTestSpritePixel(sprite, stage_x, stage_y)) {
+            // A higher pointer target owns the click. A field under it must not
+            // take keyboard focus or capture the press.
+            return 0;
+        }
     }
     return 0;
+}
+
+bool InputHandler::isInteractiveChannel(int channel, bool has_behaviors) const {
+    auto* dispatcher = eventDispatcher();
+    if (dispatcher == nullptr) {
+        return false;
+    }
+    return dispatcher->isSpriteMouseInteractive(channel) ||
+           (has_behaviors && hasPointerCursor(channel));
+}
+
+bool InputHandler::hasPointerCursor(int channel) const {
+    if (stage_renderer_ == nullptr) {
+        return false;
+    }
+    const auto sprite = stage_renderer_->spriteRegistry().get(channel);
+    return sprite != nullptr &&
+           (sprite->hasBitmapCursor() ||
+            (sprite->cursor() != CursorManager::DEFAULT_CURSOR &&
+             sprite->cursor() != CursorManager::ARROW_CURSOR));
 }
 
 int InputHandler::hitTestMoveableSprite(int stage_x, int stage_y) const {
