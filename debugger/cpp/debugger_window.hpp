@@ -60,6 +60,7 @@ private slots:
     void onEditParameters();
     void onLoadDefaultPreset();
     void onClearParameters();
+    void onClearCache();
     void onPlay();
     void onPlayAndRecord();
     void onPause();
@@ -172,13 +173,15 @@ private:
     // Movie loading helpers (files and URLs share one finish path)
     /// True if the given value is an http(s) URL (as opposed to a file path).
     static bool isUrl(const QString& value);
-    /// Fetch a movie from a URL asynchronously and hand the bytes to
-    /// finishLoadedMovie(). Used by Open URL, URL recents, and auto-load.
-    void loadMovieFromUrl(const QString& url);
+    /// Fetch a movie from a URL, using the on-disk HTTP cache when possible,
+    /// and hand the bytes to finishLoadedMovie(). Used by Open URL, URL
+    /// recents, auto-load, and runtime navigation.
+    void loadMovieFromUrl(const QString& url, bool resume_playback = false);
     /// Common tail for every successful load: install the bytes, apply the
     /// external params, update the UI, record the recent entry, and start
     /// in the ready state. Playback starts only from an explicit action.
-    void finishLoadedMovie(const QString& label,
+    /// Returns false when the bytes are not a valid Director movie.
+    bool finishLoadedMovie(const QString& label,
                            std::vector<std::uint8_t> data,
                            const std::string& base_path,
                            bool resume_playback = false);

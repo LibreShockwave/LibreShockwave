@@ -13,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -43,6 +44,7 @@
 #include "libreshockwave/player/debug/breakpoint_manager.hpp"
 #include "libreshockwave/player/debug/debug_controller.hpp"
 #include "libreshockwave/player/render/pipeline/frame_snapshot.hpp"
+#include "net/http_file_cache.hpp"
 #include "startup_session.hpp"
 #include "ui/call_stack_panel.hpp"
 #include "ui/code_view_panel.hpp"
@@ -494,6 +496,15 @@ void DebuggerWindow::setupMenuBar() {
 
     recent_sessions_menu_ = file_menu->addMenu(QStringLiteral("&Recent Sessions"));
     updateRecentSessionsMenu();
+
+    file_menu->addSeparator();
+
+    auto* clear_cache_action = file_menu->addAction(
+        QStringLiteral("Clear Download &Cache..."));
+    clear_cache_action->setStatusTip(
+        QStringLiteral("Delete files downloaded from HTTP URLs"));
+    connect(clear_cache_action, &QAction::triggered,
+            this, &DebuggerWindow::onClearCache);
 
     file_menu->addSeparator();
 
@@ -1244,34 +1255,51 @@ bool DebuggerWindow::isUrl(const QString& value) {
            value.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
 }
 
-void DebuggerWindow::loadMovieFromUrl(const QString& url) {
-    statusBar()->showMessage(QStringLiteral("Downloading %1...").arg(url));
+void DebuggerWindow::loadMovieFromUrl(const QString& url, bool resume_playback) {
+    const QUrl source(url);
+    if (auto cached = context_->httpCache().read(source); cached.has_value()) {
+        statusBar()->showMessage(QStringLiteral("Loading %1 from cache...").arg(url));
+        std::vector<std::uint8_t> bytes(cached->cbegin(), cached->cend());
+        finishLoadedMovie(url, std::move(bytes), url.toStdString(), resume_playback);
+        return;
+    }
+
+    const QString verb = resume_playback ? QStringLiteral("Navigating to")
+                                         : QStringLiteral("Downloading");
+    statusBar()->showMessage(QStringLiteral("%1 %2...").arg(verb, url));
 
     auto* manager = new QNetworkAccessManager(this);
-    QNetworkRequest request{QUrl(url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("LibreShockwave Debugger/0.1"));
-    request.setTransferTimeout(20000);
-    auto* reply = manager->get(request);
+    QNetworkRequest net_request{source};
+    net_request.setHeader(QNetworkRequest::UserAgentHeader,
+                          QStringLiteral("LibreShockwave Debugger/0.1"));
+    net_request.setTransferTimeout(20000);
+    auto* reply = manager->get(net_request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager, url] {
-        reply->deleteLater();
-        manager->deleteLater();
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, manager, url, source, resume_playback] {
+                reply->deleteLater();
+                manager->deleteLater();
 
-        if (reply->error() != QNetworkReply::NoError) {
-            pending_replay_.reset();
-            statusBar()->showMessage(
-                QStringLiteral("Failed to download: %1").arg(reply->errorString()), 5000);
-            return;
-        }
+                if (reply->error() != QNetworkReply::NoError) {
+                    if (!resume_playback) {
+                        pending_replay_.reset();
+                    }
+                    statusBar()->showMessage(
+                        QStringLiteral("Failed to download: %1").arg(reply->errorString()),
+                        5000);
+                    return;
+                }
 
-        const auto data = reply->readAll();
-        std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
-        finishLoadedMovie(url, std::move(bytes), url.toStdString());
-    });
+                const QByteArray data = reply->readAll();
+                std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
+                if (finishLoadedMovie(url, std::move(bytes), url.toStdString(),
+                                      resume_playback)) {
+                    (void)context_->httpCache().write(source, data);
+                }
+            });
 }
 
-void DebuggerWindow::finishLoadedMovie(const QString& label,
+bool DebuggerWindow::finishLoadedMovie(const QString& label,
                                        std::vector<std::uint8_t> data,
                                        const std::string& base_path,
                                        bool resume_playback) {
@@ -1279,7 +1307,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
     const bool ok = context_->loadMovieFromData(std::move(data), base_path);
     if (!ok) {
         statusBar()->showMessage(QStringLiteral("Failed to load movie"), 5000);
-        return;
+        return false;
     }
 
     stage_widget_->prepareForMovie();
@@ -1317,6 +1345,7 @@ void DebuggerWindow::finishLoadedMovie(const QString& label,
         play_requested_ = false;
         onPlay();
     }
+    return true;
 }
 
 void DebuggerWindow::onOpenRecent() {
@@ -1381,6 +1410,43 @@ void DebuggerWindow::onClearParameters() {
     saveSettings();
     updateParamsMenu();
     statusBar()->showMessage(QStringLiteral("Parameters cleared"), 3000);
+}
+
+void DebuggerWindow::onClearCache() {
+    auto& cache = context_->httpCache();
+    const auto stats = cache.stats();
+    const QString root_path = QDir::toNativeSeparators(cache.rootPath());
+    if (stats.file_count == 0) {
+        QMessageBox::information(
+            this, QStringLiteral("Clear Download Cache"),
+            QStringLiteral("The download cache is already empty.\n\n%1").arg(root_path));
+        return;
+    }
+
+    const QString size = QLocale().formattedDataSize(stats.byte_count);
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("Clear Download Cache"),
+        QStringLiteral("Delete %1 cached files (%2) from:\n%3?")
+            .arg(stats.file_count)
+            .arg(size, root_path),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes) {
+        return;
+    }
+
+    QString error;
+    if (!cache.clear(error)) {
+        QMessageBox::warning(
+            this, QStringLiteral("Clear Download Cache"),
+            QStringLiteral("Could not clear the download cache.\n\n%1").arg(error));
+        return;
+    }
+
+    statusBar()->showMessage(
+        QStringLiteral("Cleared download cache (%1 files, %2)")
+            .arg(stats.file_count)
+            .arg(size),
+        5000);
 }
 
 void DebuggerWindow::updateParamsMenu() {
@@ -1765,25 +1831,7 @@ void DebuggerWindow::onMovieNavigationRequested(const QString& url) {
         return;
     }
     pauseReplayForNavigation();
-    statusBar()->showMessage(QStringLiteral("Navigating to %1...").arg(url));
-
-    auto* manager = new QNetworkAccessManager(this);
-    auto* reply = manager->get(QNetworkRequest(QUrl(url)));
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager, url] {
-        reply->deleteLater();
-        manager->deleteLater();
-
-        if (reply->error() != QNetworkReply::NoError) {
-            statusBar()->showMessage(
-                QStringLiteral("Navigation failed: %1").arg(reply->errorString()), 5000);
-            return;
-        }
-
-        const auto data = reply->readAll();
-        std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
-        finishLoadedMovie(url, std::move(bytes), url.toStdString(), true);
-    });
+    loadMovieFromUrl(url, true);
 }
 
 // -----------------------------------------------------------------------

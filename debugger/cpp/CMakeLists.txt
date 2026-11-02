@@ -12,6 +12,8 @@ add_executable(libreshockwave_debugger
     debugger_context.hpp
     debug_state_bridge.cpp
     debug_state_bridge.hpp
+    net/http_file_cache.cpp
+    net/http_file_cache.hpp
     ui/movie_tree_panel.cpp
     ui/movie_tree_panel.hpp
     ui/code_view_panel.cpp

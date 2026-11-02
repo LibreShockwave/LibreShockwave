@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #include "model/debugger_model.hpp"
+#include "net/http_file_cache.hpp"
 #include "libreshockwave/player/input_handler.hpp"
 #include <atomic>
 #include <condition_variable>
@@ -82,6 +83,10 @@ public:
     [[nodiscard]] bool hasMovie() const;
     [[nodiscard]] bool isPlaying() const;
     [[nodiscard]] bool networkReady() const;
+
+    /// Disk cache for HTTP GET responses. Access it on the GUI thread only:
+    /// the network pump and the window's movie downloads share this instance.
+    [[nodiscard]] HttpFileCache& httpCache();
 
     /// Store external parameters for the current movie and for future fresh
     /// player sessions after Stop.
@@ -192,6 +197,7 @@ private:
     /// happens in runLoop().
     std::unique_ptr<libreshockwave::player::net::QueuedNetProvider> queued_net_;
     std::optional<MovieTreeSnapshot> last_cast_snapshot_;
+    HttpFileCache http_cache_;
     QNetworkAccessManager* net_access_{nullptr};
     QTimer* net_pump_timer_{nullptr};
     QTimer* frame_pump_timer_{nullptr};

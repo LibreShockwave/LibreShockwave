@@ -19,6 +19,7 @@ Thumbs.db
 
 # Logs
 *.log
+/_cache/
 /artifacts
 /tools/render/old_director/xmed
 

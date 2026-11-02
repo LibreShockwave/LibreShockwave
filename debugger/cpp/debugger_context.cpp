@@ -73,6 +73,10 @@ static bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs) {
     return toLowerAscii(lhs) == toLowerAscii(rhs);
 }
 
+static bool isCacheableFetchMethod(std::string_view method) {
+    return method.empty() || method == "GET";
+}
+
 static std::optional<bitmap::Bitmap> decodeEmbeddedJpeg(const std::vector<std::uint8_t>& data) {
     const auto* raw = reinterpret_cast<const uchar*>(data.data());
     QImage image = QImage::fromData(raw, static_cast<int>(data.size()), "JPEG");
@@ -326,6 +330,8 @@ bool DebuggerContext::hasMovie() const {
 }
 bool DebuggerContext::isPlaying() const { return playing_.load(); }
 bool DebuggerContext::networkReady() const { return network_ready_.load(std::memory_order_acquire); }
+
+HttpFileCache& DebuggerContext::httpCache() { return http_cache_; }
 
 void DebuggerContext::setExternalParams(
     std::vector<std::pair<std::string, std::string>> params) {
@@ -831,6 +837,18 @@ void DebuggerContext::issueFetch(NetFetchRequest request) {
         deliverFetchError(request.task_id, 404);
         return;
     }
+
+    const bool cacheable = isCacheableFetchMethod(request.method);
+    if (cacheable) {
+        for (const QUrl& url : urls) {
+            if (auto cached = http_cache_.read(url); cached.has_value()) {
+                std::vector<std::uint8_t> bytes(cached->cbegin(), cached->cend());
+                deliverFetchResult(request.task_id, std::move(bytes));
+                return;
+            }
+        }
+    }
+
     startFetchAttempt(std::move(request), urls);
 }
 
@@ -841,6 +859,8 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
     }
 
     const QUrl url = urls.takeFirst();
+    const bool cacheable = isCacheableFetchMethod(request.method);
+
     QNetworkRequest net_request(url);
     net_request.setTransferTimeout(20000);
 
@@ -857,12 +877,15 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
 
     active_replies_.insert(reply);
     connect(reply, &QNetworkReply::finished, this,
-            [this, request, urls, reply] {
+            [this, request, urls, reply, url, cacheable] {
                 active_replies_.erase(reply);
                 reply->deleteLater();
 
                 if (reply->error() == QNetworkReply::NoError) {
                     const QByteArray data = reply->readAll();
+                    if (cacheable) {
+                        (void)http_cache_.write(url, data);
+                    }
                     std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
                     deliverFetchResult(request.task_id, std::move(bytes));
                 } else if (!urls.isEmpty()) {
