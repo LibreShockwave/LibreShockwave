@@ -123,6 +123,10 @@ public:
     [[nodiscard]] RenderSprite withBakedBitmapAndSize(std::shared_ptr<const bitmap::Bitmap> baked,
                                                       int new_width,
                                                       int new_height) const;
+    // Returns a copy at the live sprite position. Input hit testing uses this
+    // so script-moved sprites are tested where they are now, not where the
+    // previous rendered frame captured them.
+    [[nodiscard]] RenderSprite withRuntimePosition(int x, int y, bool visible) const;
     [[nodiscard]] RenderSprite withShapeLineSize(int line_size) const;
     [[nodiscard]] RenderSprite withShapePattern(int pattern) const;
     [[nodiscard]] int castMemberId() const;

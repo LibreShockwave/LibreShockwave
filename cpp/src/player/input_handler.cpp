@@ -84,6 +84,7 @@ void InputHandler::onMouseMove(int stage_x, int stage_y) {
     input_state_->setMousePosition(stage_x, stage_y);
     updateMoveableSpriteDrag(stage_x, stage_y);
     input_state_->setRolloverSprite(hitTestExact(stage_x, stage_y));
+    mouse_moved_since_rollover_ = true;
 
     const int focus_channel = input_state_->keyboardFocusSprite();
     if (!moveable_drag_.has_value() && input_state_->isMouseDown() && focus_channel > 0) {
@@ -442,18 +443,34 @@ std::vector<render::pipeline::RenderSprite> InputHandler::hitSprites() const {
         return {};
     }
 
+    std::vector<render::pipeline::RenderSprite> sprites;
     const auto& baked = stage_renderer_->lastBakedSprites();
     if (!baked.empty()) {
-        return baked;
-    }
-
-    if (current_frame_supplier_) {
+        sprites = baked;
+    } else if (current_frame_supplier_) {
         const int frame = current_frame_supplier_();
         if (frame > 0) {
-            return stage_renderer_->getSpritesForFrame(frame);
+            sprites = stage_renderer_->getSpritesForFrame(frame);
         }
     }
-    return {};
+
+    // The baked list is a snapshot from the previous rendered frame. Scripts
+    // move sprites (event agents follow the mouse) after that snapshot, so use
+    // the live sprite position for hit testing.
+    for (auto& sprite : sprites) {
+        const int channel = sprite.channel();
+        if (channel <= 0) {
+            continue;
+        }
+        const auto state = stage_renderer_->spriteRegistry().get(channel);
+        if (state == nullptr) {
+            continue;
+        }
+        const int live_x = state->locHExplicitlySet() ? state->locH() : sprite.x();
+        const int live_y = state->locVExplicitlySet() ? state->locV() : sprite.y();
+        sprite = sprite.withRuntimePosition(live_x, live_y, state->isVisible());
+    }
+    return sprites;
 }
 
 std::vector<int> InputHandler::getInteractiveHits(int stage_x, int stage_y, bool force_bounding_box) const {
@@ -553,6 +570,27 @@ std::vector<int> InputHandler::getInteractiveHitPath(int stage_x, int stage_y) c
     return hits;
 }
 
+std::vector<int> InputHandler::eventDispatchOrder(const std::vector<int>& path) const {
+    if (stage_renderer_ == nullptr || path.size() < 2) {
+        return path;
+    }
+    std::vector<std::pair<int, int>> keyed;
+    keyed.reserve(path.size());
+    for (std::size_t index = 0; index < path.size(); ++index) {
+        const auto state = stage_renderer_->spriteRegistry().get(path[index]);
+        keyed.emplace_back(state != nullptr ? state->locZ() : 0, static_cast<int>(index));
+    }
+    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& left, const auto& right) {
+        return left.first > right.first;
+    });
+    std::vector<int> ordered;
+    ordered.reserve(path.size());
+    for (const auto& entry : keyed) {
+        ordered.push_back(path[static_cast<std::size_t>(entry.second)]);
+    }
+    return ordered;
+}
+
 void InputHandler::dispatchRolloverEvents() {
     if (input_state_ == nullptr) {
         return;
@@ -563,7 +601,15 @@ void InputHandler::dispatchRolloverEvents() {
         return;
     }
 
-    const int current_rollover = input_state_->rolloverSprite();
+    // Recompute after the frame prepare phase. Sprites that follow the mouse
+    // (event agents) have moved since the last host mouse move, so the cached
+    // rollover would target the previous position.
+    int current_rollover = input_state_->rolloverSprite();
+    if (mouse_moved_since_rollover_) {
+        current_rollover = hitTestExact(input_state_->mouseH(), input_state_->mouseV());
+        input_state_->setRolloverSprite(current_rollover);
+        mouse_moved_since_rollover_ = false;
+    }
     if (current_rollover != previous_rollover_sprite_) {
         if (previous_rollover_sprite_ > 0) {
             dispatcher->dispatchSpriteEvent(previous_rollover_sprite_, PlayerEvent::MouseLeave);
@@ -606,7 +652,7 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
                                    input_event.stage_y);
             dispatcher->resetEventStopped();
             if (!dispatchLegacyEventScript(PlayerEvent::MouseDown) && !dispatcher->isEventStopped()) {
-                for (const int channel : hit_path) {
+                for (const int channel : eventDispatchOrder(hit_path)) {
                     dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseDown);
                     if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                         break;
@@ -626,7 +672,7 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
             const bool legacy_consumed = dispatchLegacyEventScript(PlayerEvent::MouseUp);
             if (!legacy_consumed && !dispatcher->isEventStopped()) {
                 if (pressed_sprite > 0 && std::ranges::find(release_path, pressed_sprite) != release_path.end()) {
-                    for (const int channel : release_path) {
+                    for (const int channel : eventDispatchOrder(release_path)) {
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
                         if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                             break;
@@ -637,7 +683,7 @@ void InputHandler::dispatchInputEvent(const input::InputEvent& input_event) {
                 } else if (pressed_sprite > 0 && dispatcher->spriteHasHandler(pressed_sprite, handlerName(PlayerEvent::MouseUp))) {
                     dispatcher->dispatchSpriteEvent(pressed_sprite, PlayerEvent::MouseUp);
                 } else if (release_sprite > 0) {
-                    for (const int channel : release_path) {
+                    for (const int channel : eventDispatchOrder(release_path)) {
                         dispatcher->dispatchSpriteEvent(channel, PlayerEvent::MouseUp);
                         if (dispatcher->isEventStopped() || dispatcher->isPropagationStopped()) {
                             break;

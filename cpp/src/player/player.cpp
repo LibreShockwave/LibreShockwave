@@ -701,7 +701,6 @@ bool Player::fireTestError(std::string_view error_message) {
 void Player::executeFrameCycle() {
     TickDeadlineGuard deadline_guard(vm_);
     refreshDebugControllerGlobals();
-    (void)input_handler_.processInputEvents();
     input_state_.incrementCaretBlink();
     (void)frame_context_.executeFrame();
 
@@ -713,6 +712,10 @@ void Player::executeFrameCycle() {
         vm_.flushDeferredTasks();
         return;
     }
+
+    // Input is handled after prepare so sprites moved by prepare (event
+    // agents that track the mouse) are hit tested at their current position.
+    (void)input_handler_.processInputEvents();
 
     if (timeout_processor_) {
         timeout_processor_();

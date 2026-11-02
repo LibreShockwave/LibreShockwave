@@ -4793,6 +4793,29 @@ Datum varRefObjectMethod(ExecutionContext& context,
     return Datum::voidValue();
 }
 
+// Director's list.max() and list.min() return the highest or lowest value.
+// Property lists use their values, matching max() and min() on a list.
+std::optional<Datum> listMinMaxObjectMethod(ExecutionContext& context,
+                                            const Datum& target,
+                                            std::string_view method_name) {
+    if (!equalsIgnoreCase(method_name, "max") && !equalsIgnoreCase(method_name, "min")) {
+        return std::nullopt;
+    }
+    if (target.isList()) {
+        return context.invokeBuiltinIfPresent(method_name, {target});
+    }
+    if (target.isPropList()) {
+        std::vector<Datum> values;
+        const auto& properties = target.propListValue().properties();
+        values.reserve(properties.size());
+        for (const auto& [key, value] : properties) {
+            values.push_back(value);
+        }
+        return context.invokeBuiltinIfPresent(method_name, {Datum::list(std::move(values))});
+    }
+    return std::nullopt;
+}
+
 Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_view method_name, const std::vector<Datum>& args) {
     if (const auto* var_ref = target.asVarRef()) {
         return varRefObjectMethod(context, *var_ref, method_name, args);
@@ -4823,6 +4846,9 @@ Datum dispatchObjectMethod(ExecutionContext& context, Datum target, std::string_
     }
     if (const auto* accessor = target.asCastLibMemberAccessor()) {
         return castLibMemberAccessorObjectMethod(context, *accessor, method_name, args);
+    }
+    if (auto min_max = listMinMaxObjectMethod(context, target, method_name)) {
+        return std::move(*min_max);
     }
     if (target.isList()) {
         return dispatch::ListMethodDispatcher::dispatch(target.listValue(), method_name, args);
@@ -4894,6 +4920,9 @@ Datum dispatchObjectMethodSpan(ExecutionContext& context,
             return std::move(*result);
         }
         return Datum::voidValue();
+    }
+    if (auto min_max = listMinMaxObjectMethod(context, target, method_name)) {
+        return std::move(*min_max);
     }
     if (target.isList()) {
         return dispatch::ListMethodDispatcher::dispatch(target.listValue(), method_name, args);
