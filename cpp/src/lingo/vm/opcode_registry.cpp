@@ -555,12 +555,15 @@ std::optional<int> imageFillPaletteIndex(const Datum& color_datum, const bitmap:
 std::uint32_t imageCopyPixelsRemapColorArgb(const Datum& datum,
                                             const bitmap::Bitmap& src,
                                             const bitmap::Bitmap& dest) {
-    const auto* target = &dest;
-    if (const auto* color = datum.asColorRef();
-        color != nullptr && color->palette_index.has_value() && src.imagePalette() != nullptr) {
-        target = &src;
+    if (const auto* color = datum.asColorRef(); color != nullptr && color->palette_index.has_value()) {
+        // Palette indices only name entries in an indexed source. On an RGB
+        // source, the palette-index colour carries its own grey value.
+        if (src.bitDepth() <= 8 && src.imagePalette() != nullptr) {
+            return imageColorArgb(datum, &src);
+        }
+        return imageColorArgb(datum);
     }
-    return imageColorArgb(datum, target);
+    return imageColorArgb(datum, &dest);
 }
 
 int toIntLikeJava(const Datum& datum) {
