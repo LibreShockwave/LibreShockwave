@@ -39,6 +39,9 @@ public:
     [[nodiscard]] static const Palette& systemMacPalette();
     [[nodiscard]] static const Palette& rainbowPalette();
     [[nodiscard]] static const Palette& grayscalePalette();
+    [[nodiscard]] static const Palette& pastelsPalette();
+    [[nodiscard]] static const Palette& vividPalette();
+    [[nodiscard]] static const Palette& ntscPalette();
     [[nodiscard]] static const Palette& metallicPalette();
     [[nodiscard]] static const Palette& systemWinPalette();
 
