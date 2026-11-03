@@ -989,11 +989,6 @@ Datum MathBuiltins::integer(BuiltinContext&, const std::vector<Datum>& args) {
         if (trimmed.empty()) {
             return Datum::of(0);
         }
-        if (trimmed.front() == '*' && trimmed.size() > 1) {
-            if (const auto parsed = parseLongStrict(trimmed.substr(1), 16)) {
-                return Datum::of(static_cast<int>(*parsed));
-            }
-        }
         if (const auto parsed_int = parseIntStrict(trimmed)) {
             return Datum::of(*parsed_int);
         }

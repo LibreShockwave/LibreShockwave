@@ -5898,7 +5898,7 @@ void testBuiltinRegistryFoundation() {
     assert(registry.invoke("integer", context, {Datum::of(std::string("42"))}).intValue() == 42);
     assert(registry.invoke("integer", context, {Datum::of(std::string("3.7"))}).intValue() == 4);
     assert(registry.invoke("integer", context, {Datum::of(std::string(""))}).intValue() == 0);
-    assert(registry.invoke("integer", context, {Datum::of(std::string("*FF"))}).intValue() == 255);
+    assert(registry.invoke("integer", context, {Datum::of(std::string("*FF"))}).isVoid());
     assert(registry.invoke("integer", context, {Datum::of(std::string("hello"))}).isVoid());
     assert(registry.invoke("integer", context, {Datum::colorRef(1, 2, 3)}).intValue() == 0x010203);
     assert(std::fabs(registry.invoke("float", context).floatValue()) < 0.0001F);
@@ -11071,7 +11071,7 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     immediate_integer_context.push(Datum::of(std::string("*FF")));
     assert(opcode_registry.execute(Opcode::PUSH_ARG_LIST, immediate_integer_context));
     assert(immediate_integer_scope.bytecodeIndex() == 1);
-    assert(immediate_integer_context.pop().intValue() == 255);
+    assert(immediate_integer_context.pop().isVoid());
 
     auto immediate_min_handler = make_immediate_ext_handler(Opcode::PUSH_ARG_LIST, 2, 169);
     ScriptChunk immediate_min_script(nullptr,
