@@ -85,39 +85,44 @@ bool equalsIgnoreCase(const std::string& lhs, const std::string& rhs) {
     return true;
 }
 
-std::string lowerAscii(std::string_view value) {
-    std::string lowered(value);
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return lowered;
-}
-
-std::string propListKeyName(const Datum& datum) {
+// Returns the prop-list key name as a view. For datums that own their string
+// (symbol, string, stringChunk, fieldText) no allocation happens. For other
+// types (number, media, ...) the name is materialized into `out`.
+std::string_view propListKeyNameView(const Datum& datum, std::string& out) {
     if (const auto* symbol = datum.asSymbol()) {
         return symbol->name;
     }
     if (datum.isVoid() || datum.isNull()) {
         return "";
     }
-    if (datum.isString() || datum.isNumber()) {
-        return datum.stringValue();
+    if (const auto* str = datum.asString()) {
+        return str->value;
+    }
+    if (const auto* chunk = datum.asStringChunk()) {
+        return chunk->value;
+    }
+    if (const auto* field = datum.asFieldText()) {
+        return field->value;
     }
     try {
-        return datum.stringValue();
+        out = datum.stringValue();
     } catch (const LingoException&) {
-        return datum.typeString();
+        out = datum.typeString();
     }
+    return out;
 }
 
-std::string propListSameTypeKeyFromName(const Datum& datum, std::string_view key_name) {
-    std::string key = datum.asSymbol() != nullptr ? "s:" : "v:";
-    key += lowerAscii(key_name);
-    return key;
-}
-
-std::string propListSameTypeKey(const Datum& datum) {
-    return propListSameTypeKeyFromName(datum, propListKeyName(datum));
+// Appends the same-type key ("s:"/"v:" + lowercased name) to `out` and
+// returns a view into it. Reuses one buffer so the common short-name case
+// stays within small-string optimization (no heap allocation).
+std::string_view appendSameTypeKey(const Datum& datum, const std::string_view name, std::string& out) {
+    out.clear();
+    out.reserve(2 + name.size());
+    out += (datum.asSymbol() != nullptr) ? "s:" : "v:";
+    for (const char ch : name) {
+        out += static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return out;
 }
 
 std::uint64_t nextScriptInstanceIdentityId() {
@@ -869,22 +874,32 @@ bool Datum::PropList::contains(const Datum& key) const {
 
 int Datum::PropList::findSameTypeKey(const Datum& key) const {
     rebuildIndex();
-    const auto found = first_same_type_key_index_.find(propListSameTypeKey(key));
+    std::string name_buf;
+    const std::string_view name = propListKeyNameView(key, name_buf);
+    std::string full_key;
+    appendSameTypeKey(key, name, full_key);
+    const auto found = first_same_type_key_index_.find(full_key);
     return found != first_same_type_key_index_.end() ? found->second : -1;
 }
 
 int Datum::PropList::findTypedKey(const Datum& key) const {
     rebuildIndex();
-    const auto same_type = first_same_type_key_index_.find(propListSameTypeKey(key));
+    std::string name_buf;
+    const std::string_view name = propListKeyNameView(key, name_buf);
+    std::string full_key;
+    appendSameTypeKey(key, name, full_key);
+    const auto same_type = first_same_type_key_index_.find(full_key);
     if (same_type != first_same_type_key_index_.end()) {
         return same_type->second;
     }
-    const auto fallback = first_case_sensitive_key_index_.find(propListKeyName(key));
+    const auto fallback = first_case_sensitive_key_index_.find(name);
     return fallback != first_case_sensitive_key_index_.end() ? fallback->second : -1;
 }
 
 int Datum::PropList::findUntypedKey(const Datum& key) const {
-    return findUntypedKeyName(propListKeyName(key));
+    std::string name_buf;
+    const std::string_view name = propListKeyNameView(key, name_buf);
+    return findUntypedKeyName(name);
 }
 
 int Datum::PropList::findUntypedKeyName(std::string_view key_name) const {
@@ -934,10 +949,13 @@ void Datum::PropList::invalidateIndex() const {
 void Datum::PropList::indexEntry(std::size_t index) const {
     const int signed_index = static_cast<int>(index);
     const auto& key = properties_[index].first;
-    const std::string key_name = propListKeyName(key);
-    first_same_type_key_index_.try_emplace(propListSameTypeKeyFromName(key, key_name), signed_index);
-    first_untyped_key_index_.try_emplace(key_name, signed_index);
-    first_case_sensitive_key_index_.try_emplace(key_name, signed_index);
+    std::string name_buf;
+    const std::string_view key_name = propListKeyNameView(key, name_buf);
+    std::string same_type_key;
+    appendSameTypeKey(key, key_name, same_type_key);
+    first_same_type_key_index_.try_emplace(same_type_key, signed_index);
+    first_untyped_key_index_.try_emplace(std::string(key_name), signed_index);
+    first_case_sensitive_key_index_.try_emplace(std::string(key_name), signed_index);
 }
 
 void Datum::PropList::rebuildIndex() const {

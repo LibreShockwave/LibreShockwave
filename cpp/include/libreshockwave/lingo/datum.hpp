@@ -621,13 +621,15 @@ private:
     std::vector<std::pair<Datum, Datum>> properties_;
     bool sorted_;
     mutable bool index_dirty_{true};
-    mutable std::unordered_map<std::string, int> first_same_type_key_index_;
+    mutable std::unordered_map<std::string, int, TransparentStringHash, std::equal_to<>>
+        first_same_type_key_index_;
     mutable std::unordered_map<std::string,
                                int,
                                TransparentCaseInsensitiveStringHash,
                                TransparentCaseInsensitiveStringEqual>
         first_untyped_key_index_;
-    mutable std::unordered_map<std::string, int> first_case_sensitive_key_index_;
+    mutable std::unordered_map<std::string, int, TransparentStringHash, std::equal_to<>>
+        first_case_sensitive_key_index_;
 };
 
 class Datum::ScriptInstanceRef {
