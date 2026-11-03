@@ -368,7 +368,8 @@ chunks::ScriptChunkType castMemberScriptTypeToScriptChunkType(chunks::CastMember
 }
 
 lingo::Datum bitmapPaletteRefDatum(const std::shared_ptr<libreshockwave::cast::CastMember>& member,
-                                   id::CastLibId cast_lib_id) {
+                                   id::CastLibId cast_lib_id,
+                                   DirectorFile* source_file) {
     if (!member || !member->isBitmap()) {
         return lingo::Datum::voidValue();
     }
@@ -379,6 +380,18 @@ lingo::Datum bitmapPaletteRefDatum(const std::shared_ptr<libreshockwave::cast::C
     }
     if (const auto& system_name = member->paletteRefSystemName(); system_name.has_value()) {
         return lingo::Datum::symbol(*system_name);
+    }
+
+    // An authored member keeps its palette member reference even when the
+    // runtime bitmap was decoded with a temporary system palette.
+    if (member->rawChunk() != nullptr && source_file != nullptr) {
+        const auto& info = member->bitmapInfo();
+        if (info.has_value()) {
+            const auto authored_palette = source_file->resolvePaletteExact(info->palette_id);
+            if (authored_palette != nullptr && !isSystemPalette(authored_palette)) {
+                return lingo::Datum::castMemberRef(cast_lib_id, id::MemberId(info->palette_id + 1));
+            }
+        }
     }
 
     const auto runtime = member->runtimeBitmap();
@@ -1133,7 +1146,7 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
         return palette ? paletteColorListDatum(*palette) : lingo::Datum::voidValue();
     }
     if (member->isBitmap() && (prop == "paletteref" || prop == "palette")) {
-        return bitmapPaletteRefDatum(member, cast_lib_id_);
+        return bitmapPaletteRefDatum(member, cast_lib_id_, source_file_.get());
     }
     if (member->isShape()) {
         if (prop == "filled") return lingo::Datum::of(member->shapeFilled() ? 1 : 0);
