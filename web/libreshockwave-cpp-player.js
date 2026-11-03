@@ -71,12 +71,14 @@
   }
 
   function shouldPreventKey(event) {
-    if (event.ctrlKey || event.metaKey) return false;
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    // The canvas is not editable, so Firefox would treat printable keys such
+    // as ' and / as its quick find shortcut. Keep them for the movie instead.
+    if (event.key && event.key.length === 1) return true;
     return event.key === "Tab" ||
       event.key === "Enter" ||
       event.key === "Backspace" ||
       event.key === "Delete" ||
-      event.key === " " ||
       event.key.startsWith("Arrow");
   }
 
