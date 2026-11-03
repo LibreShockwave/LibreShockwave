@@ -262,6 +262,14 @@ else()
     message(STATUS "LibreShockwave zlib support: disabled")
 endif()
 
+if(ZLIB_FOUND)
+    add_executable(libreshockwave_cast_exporter
+        apps/tools/cast_exporter.cpp
+    )
+    target_link_libraries(libreshockwave_cast_exporter PRIVATE LibreShockwave::libreshockwave)
+    target_compile_features(libreshockwave_cast_exporter PRIVATE cxx_std_20)
+endif()
+
 # SocketMultiuserBridge uses winsock2 on Windows.
 if(WIN32)
     target_link_libraries(libreshockwave PRIVATE ws2_32)

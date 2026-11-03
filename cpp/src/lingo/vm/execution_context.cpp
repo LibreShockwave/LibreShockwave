@@ -261,4 +261,12 @@ LingoException ExecutionContext::error(const std::string& message) const {
     return LingoException(message);
 }
 
+std::vector<Datum>& ExecutionContext::tellTargetStack() {
+    static std::vector<Datum> empty_tell_target_stack;
+    if (callbacks_.tell_target_stack_getter) {
+        return callbacks_.tell_target_stack_getter();
+    }
+    return empty_tell_target_stack;
+}
+
 } // namespace libreshockwave::lingo::vm

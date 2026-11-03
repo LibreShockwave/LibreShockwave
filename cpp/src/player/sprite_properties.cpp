@@ -101,23 +101,20 @@ SpriteProperties::SpriteBounds normalizedBounds(SpriteProperties::SpriteBounds b
     return bounds;
 }
 
-bool hasPositiveArea(const SpriteProperties::SpriteBounds& bounds) {
-    return bounds.right > bounds.left && bounds.bottom > bounds.top;
-}
-
+// `intersects` uses STRICT comparisons: two sprites whose edges merely touch
+// do NOT intersect (matches the reference VM's AABB test). No positive-area
+// requirement — a zero-area sprite behaves like any other bounds rect.
 bool boundsIntersect(SpriteProperties::SpriteBounds first, SpriteProperties::SpriteBounds second) {
     first = normalizedBounds(first);
     second = normalizedBounds(second);
-    return hasPositiveArea(first) && hasPositiveArea(second) &&
-           first.right >= second.left && second.right >= first.left &&
-           first.bottom >= second.top && second.bottom >= first.top;
+    return first.right > second.left && second.right > first.left &&
+           first.bottom > second.top && second.bottom > first.top;
 }
 
 bool boundsWithin(SpriteProperties::SpriteBounds first, SpriteProperties::SpriteBounds second) {
     first = normalizedBounds(first);
     second = normalizedBounds(second);
-    return hasPositiveArea(first) && hasPositiveArea(second) &&
-           first.left >= second.left && first.top >= second.top &&
+    return first.left >= second.left && first.top >= second.top &&
            first.right <= second.right && first.bottom <= second.bottom;
 }
 

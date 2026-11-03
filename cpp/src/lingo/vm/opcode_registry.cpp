@@ -150,6 +150,10 @@ void pushImageOperationTrace(std::string entry) {
     image_operation_trace.push_back(std::move(entry));
 }
 
+// Forward declarations for helpers defined later in this file.
+std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char item_delimiter = ',');
+int charCountOf(std::string_view value);
+
 Datum literalToDatum(const chunks::ScriptChunk::LiteralEntry& literal) {
     switch (literal.type) {
         case 1:
@@ -188,6 +192,17 @@ bool truthy(const Datum& datum) {
     }
     if (const auto* value = datum.asStringChunk()) {
         return !value->value.empty();
+    }
+    // Match reference: Symbol("false") is falsy (case-insensitive).
+    if (const auto* value = datum.asSymbol()) {
+        if (value->name.size() == 5) {
+            return !(std::tolower(value->name[0]) == 'f' &&
+                     std::tolower(value->name[1]) == 'a' &&
+                     std::tolower(value->name[2]) == 'l' &&
+                     std::tolower(value->name[3]) == 's' &&
+                     std::tolower(value->name[4]) == 'e');
+        }
+        return true;
     }
     return true;
 }
@@ -591,6 +606,35 @@ int toIntLikeJava(const Datum& datum) {
     return 0;
 }
 
+// Match reference datum_is_zero semantics exactly.
+// Used by JMP_IF_Z for the conditional-jump-if-false test.
+bool datumIsZero(const Datum& datum) {
+    if (const auto* value = datum.asInt()) {
+        return value->value == 0;
+    }
+    if (const auto* value = datum.asFloat()) {
+        return value->value == 0.0F;
+    }
+    if (datum.isVoid()) {
+        return true;
+    }
+    if (datum.isNull()) {
+        return true;
+    }
+    if (datum.type() == DatumType::ScriptInstanceRef) {
+        return false;
+    }
+    if (const auto* point = datum.asIntPoint()) {
+        return point->x == 0 && point->y == 0;
+    }
+    if (const auto* rect = datum.asIntRect()) {
+        return rect->left == 0 && rect->top == 0 && rect->right == 0 && rect->bottom == 0;
+    }
+    // Fallback for all other types (String, Symbol, etc.):
+    // the reference calls int_value() which parses numeric strings or returns 0.
+    return toIntLikeJava(datum) == 0;
+}
+
 double toDoubleLikeJava(const Datum& datum) {
     if (const auto* value = datum.asInt()) {
         return static_cast<double>(value->value);
@@ -698,15 +742,19 @@ Datum subtractListFromScalar(const Datum& scalar_datum, const Datum::List& list)
     return Datum::list(std::move(result));
 }
 
+// A zero divisor is coerced to 1 (ScummVM
+// LC::divData) instead of erroring; Int/Int yields truncated Int, mixed
+// int/float yields Float.
 Datum divideList(const Datum::List& list, const Datum& divisor) {
     const double scalar = toDoubleLikeJava(divisor);
     const bool divisor_is_float = isFloatLike(divisor);
-    const int int_divisor = divisor_is_float ? 0 : toIntLikeJava(divisor);
+    const int int_divisor = divisor_is_float ? 1 : (toIntLikeJava(divisor) == 0 ? 1 : toIntLikeJava(divisor));
+    const double float_divisor = scalar == 0.0 ? 1.0 : scalar;
     std::vector<Datum> result;
     result.reserve(list.items().size());
     for (const auto& item : list.items()) {
         if (isFloatLike(item) || divisor_is_float) {
-            result.emplace_back(Datum::of(toDoubleLikeJava(item) / scalar));
+            result.emplace_back(Datum::of(toDoubleLikeJava(item) / float_divisor));
         } else {
             result.emplace_back(Datum::of(toIntLikeJava(item) / int_divisor));
         }
@@ -714,16 +762,39 @@ Datum divideList(const Datum::List& list, const Datum& divisor) {
     return Datum::list(std::move(result));
 }
 
-// Director returns 0 for a zero modulus instead of raising a script error.
-int moduloOrZero(int dividend, int divisor) {
-    return divisor == 0 ? 0 : dividend % divisor;
+// Mod: division by zero yields 0 (not an error); mixed int/float
+// operands yield a Float result. List elements always produce truncated Ints.
+double lingoModFloat(double left, double right) {
+    if (right == 0.0) {
+        return 0.0;
+    }
+    return std::fmod(left, right);
 }
 
-Datum modList(const Datum::List& list, int divisor) {
+Datum modList(const Datum::List& list, const Datum& divisor_datum, ExecutionContext& context) {
     std::vector<Datum> result;
     result.reserve(list.items().size());
+    if (const auto* divisor_int = divisor_datum.asInt()) {
+        for (const auto& item : list.items()) {
+            if (const auto* item_int = item.asInt()) {
+                result.emplace_back(Datum::of(divisor_int->value == 0 ? 0 : item_int->value % divisor_int->value));
+            } else if (const auto* item_float = item.asFloat()) {
+                result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(item_float->value, divisor_int->value))));
+            } else {
+                throw context.error("Modulus operator in list only works with ints and floats");
+            }
+        }
+        return Datum::list(std::move(result));
+    }
+    const double divisor = toDoubleLikeJava(divisor_datum);
     for (const auto& item : list.items()) {
-        result.emplace_back(Datum::of(moduloOrZero(toIntLikeJava(item), divisor)));
+        if (const auto* item_int = item.asInt()) {
+            result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(item_int->value, divisor))));
+        } else if (const auto* item_float = item.asFloat()) {
+            result.emplace_back(Datum::of(static_cast<int>(lingoModFloat(item_float->value, divisor))));
+        } else {
+            throw context.error("Modulus operator in list only works with ints and floats");
+        }
     }
     return Datum::list(std::move(result));
 }
@@ -746,6 +817,34 @@ bool lingoEquals(const Datum& a, const Datum& b) {
             }
         }
     }
+    // Director treats 2-element lists and points / 4-element lists and rects
+    // interchangeably (points are 2-element lists, rects are 4-element lists).
+    if (a.isList() && b.asIntPoint() != nullptr) {
+        const auto& items = a.listValue().items();
+        return items.size() == 2 && lingoEquals(items[0], Datum::of(b.asIntPoint()->x)) &&
+               lingoEquals(items[1], Datum::of(b.asIntPoint()->y));
+    }
+    if (b.isList() && a.asIntPoint() != nullptr) {
+        const auto& items = b.listValue().items();
+        return items.size() == 2 && lingoEquals(items[0], Datum::of(a.asIntPoint()->x)) &&
+               lingoEquals(items[1], Datum::of(a.asIntPoint()->y));
+    }
+    if (a.isList() && b.asIntRect() != nullptr) {
+        const auto& items = a.listValue().items();
+        const auto* rect = b.asIntRect();
+        return items.size() == 4 && lingoEquals(items[0], Datum::of(rect->left)) &&
+               lingoEquals(items[1], Datum::of(rect->top)) &&
+               lingoEquals(items[2], Datum::of(rect->right)) &&
+               lingoEquals(items[3], Datum::of(rect->bottom));
+    }
+    if (b.isList() && a.asIntRect() != nullptr) {
+        const auto& items = b.listValue().items();
+        const auto* rect = a.asIntRect();
+        return items.size() == 4 && lingoEquals(items[0], Datum::of(rect->left)) &&
+               lingoEquals(items[1], Datum::of(rect->top)) &&
+               lingoEquals(items[2], Datum::of(rect->right)) &&
+               lingoEquals(items[3], Datum::of(rect->bottom));
+    }
     if ((a.isString() || a.isSymbol()) && (b.isString() || b.isSymbol())) {
         const auto lhs = directStringViewLikeJava(a);
         const auto rhs = directStringViewLikeJava(b);
@@ -755,6 +854,296 @@ bool lingoEquals(const Datum& a, const Datum& b) {
                  (equalsIgnoreCase(*lhs, "text") && equalsIgnoreCase(*rhs, "field"))));
     }
     return a == b;
+}
+
+// Ordered comparison with the Director type matrix (less-than):
+// (vm-rust/src/player/compare.rs). Key rules:
+//   - StringChunk / FieldText compare as their resolved text
+//   - SpriteRef compares as its channel number
+//   - Symbol compares as its string name (case-insensitive lexicographic)
+//   - Void is < any number; numbers vs Void compare against 0
+//   - String vs number: numeric parse, fallback 0 (empty string = 0)
+//   - String vs String / Symbol vs Symbol: case-insensitive lexicographic
+//   - Point vs Point: BOTH components must satisfy
+//   - Point vs scalar: ANY component satisfying makes it true
+//   - List vs List: every corresponding element must satisfy (empty → false)
+//   - PropList vs PropList: compare first values recursively
+//   - ScriptInstanceRef: stable ordering by instance pointer
+bool lingoLessThan(const Datum& a, const Datum& b) {
+    // Pre-conversions (StringChunk → String text; SpriteRef →
+    // Int channel; Symbol → String name).
+    if (const auto* chunk = a.asStringChunk()) {
+        return lingoLessThan(Datum::of(chunk->value), b);
+    }
+    if (const auto* chunk = b.asStringChunk()) {
+        return lingoLessThan(a, Datum::of(chunk->value));
+    }
+    if (const auto* field = a.asFieldText()) {
+        return lingoLessThan(Datum::of(field->value), b);
+    }
+    if (const auto* field = b.asFieldText()) {
+        return lingoLessThan(a, Datum::of(field->value));
+    }
+    if (const auto* sprite = a.asSpriteRef()) {
+        return lingoLessThan(Datum::of(sprite->channel), b);
+    }
+    if (const auto* sprite = b.asSpriteRef()) {
+        return lingoLessThan(a, Datum::of(sprite->channel));
+    }
+    if (const auto* symbol = a.asSymbol()) {
+        return lingoLessThan(Datum::of(symbol->name), b);
+    }
+    if (const auto* symbol = b.asSymbol()) {
+        return lingoLessThan(a, Datum::of(symbol->name));
+    }
+
+    // Int comparisons
+    if (const auto* left = a.asInt()) {
+        if (const auto* right = b.asInt()) {
+            return left->value < right->value;
+        }
+        if (const auto* right = b.asFloat()) {
+            return static_cast<double>(left->value) < right->value;
+        }
+        if (b.isVoid()) {
+            return left->value < 0;
+        }
+        if (const auto right_string = directStringViewLikeJava(b)) {
+            if (const auto right_number = parseDoubleStrict(*right_string)) {
+                return static_cast<double>(left->value) < *right_number;
+            }
+            return !right_string->empty();
+        }
+    }
+
+    // Float comparisons
+    if (const auto* left = a.asFloat()) {
+        if (const auto* right = b.asInt()) {
+            return left->value < static_cast<double>(right->value);
+        }
+        if (const auto* right = b.asFloat()) {
+            return left->value < right->value;
+        }
+        if (b.isVoid()) {
+            return left->value < 0.0;
+        }
+        if (const auto right_string = directStringViewLikeJava(b)) {
+            if (const auto right_number = parseDoubleStrict(*right_string)) {
+                return left->value < *right_number;
+            }
+            return !right_string->empty();
+        }
+    }
+
+    // Void comparisons — Void is always < any number
+    if (a.isVoid() && (b.isNumber())) {
+        return true;
+    }
+
+    // Point comparisons
+    if (const auto* left = a.asIntPoint()) {
+        if (const auto* right = b.asIntPoint()) {
+            return left->x < right->x && left->y < right->y;
+        }
+        if (const auto* right = b.asInt()) {
+            return left->x < right->value || left->y < right->value;
+        }
+    }
+    if (const auto* right = b.asIntPoint()) {
+        if (const auto* left = a.asInt()) {
+            return left->value < right->x || left->value < right->y;
+        }
+    }
+
+    // String vs number: Director coerces strings to numbers (empty string = 0).
+    // NOTE: directStringViewLikeJava returns an EMPTY VIEW (not nullopt) for
+    // Void/Null, so guard those out — the catch-all yields false.
+    if (!a.isVoid() && !a.isNull()) {
+        if (const auto left_string = directStringViewLikeJava(a)) {
+            if (const auto* right = b.asInt()) {
+                const double left_number = parseDoubleStrict(*left_string).value_or(0.0);
+                return left_number < static_cast<double>(right->value);
+            }
+            if (const auto* right = b.asFloat()) {
+                const double left_number = parseDoubleStrict(*left_string).value_or(0.0);
+                return left_number < right->value;
+            }
+            if (!b.isVoid() && !b.isNull()) {
+                if (const auto right_string = directStringViewLikeJava(b)) {
+                    return lowerAscii(*left_string) < lowerAscii(*right_string);
+                }
+            }
+        }
+    }
+
+    // PropList comparisons — Director compares property lists by their first
+    // value (sorted lists used as priority queues, e.g. A* pathfinding).
+    if (a.isPropList() && b.isPropList()) {
+        const auto& left_pairs = a.propListValue().properties();
+        const auto& right_pairs = b.propListValue().properties();
+        if (!left_pairs.empty() && !right_pairs.empty()) {
+            return lingoLessThan(left_pairs.front().second, right_pairs.front().second);
+        }
+        return false;
+    }
+
+    // Linear list comparison — every corresponding element of the left must be
+    // < the right's (11.5 dictionary `<` entry for rects/points/lists).
+    if (a.isList() && b.isList()) {
+        const auto& left_items = a.listValue().items();
+        const auto& right_items = b.listValue().items();
+        if (left_items.empty() || right_items.empty()) {
+            return false;
+        }
+        const auto count = std::min(left_items.size(), right_items.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!lingoLessThan(left_items[index], right_items[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Script instances have no meaningful ordering in Director, but a movie
+    // that sorts or compares them needs a stable result — compare by pointer.
+    if (a.type() == DatumType::ScriptInstanceRef && b.type() == DatumType::ScriptInstanceRef) {
+        return std::less<const void*>{}(&a.scriptInstanceValue(), &b.scriptInstanceValue());
+    }
+
+    return false;
+}
+
+// Ordered comparison with the Director type matrix (greater-than):
+// (vm-rust/src/player/compare.rs). Same pre-conversions as `lingoLessThan`;
+// the numeric/string/point/list matrices mirror it.
+bool lingoGreaterThan(const Datum& a, const Datum& b) {
+    if (const auto* chunk = a.asStringChunk()) {
+        return lingoGreaterThan(Datum::of(chunk->value), b);
+    }
+    if (const auto* chunk = b.asStringChunk()) {
+        return lingoGreaterThan(a, Datum::of(chunk->value));
+    }
+    if (const auto* field = a.asFieldText()) {
+        return lingoGreaterThan(Datum::of(field->value), b);
+    }
+    if (const auto* field = b.asFieldText()) {
+        return lingoGreaterThan(a, Datum::of(field->value));
+    }
+    if (const auto* sprite = a.asSpriteRef()) {
+        return lingoGreaterThan(Datum::of(sprite->channel), b);
+    }
+    if (const auto* sprite = b.asSpriteRef()) {
+        return lingoGreaterThan(a, Datum::of(sprite->channel));
+    }
+    if (const auto* symbol = a.asSymbol()) {
+        return lingoGreaterThan(Datum::of(symbol->name), b);
+    }
+    if (const auto* symbol = b.asSymbol()) {
+        return lingoGreaterThan(a, Datum::of(symbol->name));
+    }
+
+    // Int comparisons
+    if (const auto* left = a.asInt()) {
+        if (const auto* right = b.asInt()) {
+            return left->value > right->value;
+        }
+        if (const auto* right = b.asFloat()) {
+            return static_cast<double>(left->value) > right->value;
+        }
+        if (b.isVoid()) {
+            return left->value > 0;
+        }
+        if (const auto right_string = directStringViewLikeJava(b)) {
+            if (const auto right_number = parseDoubleStrict(*right_string)) {
+                return static_cast<double>(left->value) > *right_number;
+            }
+            return right_string->empty();
+        }
+    }
+
+    // Float comparisons
+    if (const auto* left = a.asFloat()) {
+        if (const auto* right = b.asInt()) {
+            return left->value > static_cast<double>(right->value);
+        }
+        if (const auto* right = b.asFloat()) {
+            return left->value > right->value;
+        }
+        if (b.isVoid()) {
+            return left->value > 0.0;
+        }
+        if (const auto right_string = directStringViewLikeJava(b)) {
+            if (const auto right_number = parseDoubleStrict(*right_string)) {
+                return left->value > *right_number;
+            }
+            return right_string->empty();
+        }
+    }
+
+    // Void comparisons — Void is never > any number
+    if (a.isVoid() && (b.isNumber())) {
+        return false;
+    }
+
+    // Point comparisons
+    if (const auto* left = a.asIntPoint()) {
+        if (const auto* right = b.asIntPoint()) {
+            return left->x > right->x && left->y > right->y;
+        }
+        if (const auto* right = b.asInt()) {
+            return left->x > right->value || left->y > right->value;
+        }
+    }
+    if (const auto* right = b.asIntPoint()) {
+        if (const auto* left = a.asInt()) {
+            return left->value > right->x || left->value > right->y;
+        }
+    }
+
+    // String vs number: Director coerces strings to numbers (empty string = 0).
+    // NOTE: directStringViewLikeJava returns an EMPTY VIEW (not nullopt) for
+    // Void/Null, so guard those out — the catch-all yields false.
+    if (!a.isVoid() && !a.isNull()) {
+        if (const auto left_string = directStringViewLikeJava(a)) {
+            if (const auto* right = b.asInt()) {
+                const double left_number = parseDoubleStrict(*left_string).value_or(0.0);
+                return left_number > static_cast<double>(right->value);
+            }
+            if (const auto* right = b.asFloat()) {
+                const double left_number = parseDoubleStrict(*left_string).value_or(0.0);
+                return left_number > right->value;
+            }
+            if (!b.isVoid() && !b.isNull()) {
+                if (const auto right_string = directStringViewLikeJava(b)) {
+                    return lowerAscii(*left_string) > lowerAscii(*right_string);
+                }
+            }
+        }
+    }
+
+    // Linear list comparison — every corresponding element of the left must be
+    // > the right's.
+    if (a.isList() && b.isList()) {
+        const auto& left_items = a.listValue().items();
+        const auto& right_items = b.listValue().items();
+        if (left_items.empty() || right_items.empty()) {
+            return false;
+        }
+        const auto count = std::min(left_items.size(), right_items.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!lingoGreaterThan(left_items[index], right_items[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Script instances compare by pointer.
+    if (a.type() == DatumType::ScriptInstanceRef && b.type() == DatumType::ScriptInstanceRef) {
+        return std::less<const void*>{}(&b.scriptInstanceValue(), &a.scriptInstanceValue());
+    }
+
+    return false;
 }
 
 std::vector<Datum> argListItems(const Datum& datum) {
@@ -953,19 +1342,31 @@ std::optional<Datum> typeConversionProperty(const Datum& value, std::string_view
 
 Datum getStringProp(std::string_view value, std::string_view prop_name) {
     if (equalsIgnoreCase(prop_name, "length")) {
-        return Datum::of(static_cast<int>(value.size()));
+        // `the length of string` counts CHARACTERS, not bytes.
+        return Datum::of(charCountOf(value));
     }
     if (equalsIgnoreCase(prop_name, "linecount")) {
         return Datum::of(countLines(value));
     }
-    if (equalsIgnoreCase(prop_name, "line")) {
-        auto chunks = splitLines(value);
-        std::vector<Datum> lines;
-        lines.reserve(chunks.size());
-        for (auto& line : chunks) {
-            lines.emplace_back(Datum::of(std::move(line)));
+    if (equalsIgnoreCase(prop_name, "char") || equalsIgnoreCase(prop_name, "word") ||
+        equalsIgnoreCase(prop_name, "item") || equalsIgnoreCase(prop_name, "line")) {
+        // `string.char` / `.word` / `.item` / `.line` (no index) returns the
+        // collection of chunks of that kind (count / indexing work on it).
+        const char item_delimiter = ',';
+        const StringChunkType chunk_type = equalsIgnoreCase(prop_name, "char")
+                                              ? StringChunkType::Char
+                                              : (equalsIgnoreCase(prop_name, "word")
+                                                     ? StringChunkType::Word
+                                                     : (equalsIgnoreCase(prop_name, "item")
+                                                            ? StringChunkType::Item
+                                                            : StringChunkType::Line));
+        auto chunks = splitChunks(value, chunk_type, item_delimiter);
+        std::vector<Datum> chunk_datums;
+        chunk_datums.reserve(chunks.size());
+        for (auto& chunk : chunks) {
+            chunk_datums.emplace_back(Datum::of(std::move(chunk)));
         }
-        return Datum::list(std::move(lines));
+        return Datum::list(std::move(chunk_datums));
     }
     if (equalsIgnoreCase(prop_name, "ilk")) {
         return Datum::symbol("string");
@@ -1227,10 +1628,23 @@ Datum getChainedObjectProperty(ExecutionContext& context, const Datum& object, s
         return getPropListProp(object.propListValue(), prop_name);
     }
     if (const auto* str = object.asString()) {
-        return prop_name == "length" ? Datum::of(static_cast<int>(str->value.size())) : Datum::voidValue();
+        if (equalsIgnoreCase(prop_name, "length")) {
+            // `the length of string` counts CHARACTERS, not bytes.
+            return Datum::of(charCountOf(str->value));
+        }
+        return getObjectProperty(context, object, prop_name);
     }
-    if (object.asFieldText() != nullptr) {
-        return Datum::voidValue();
+    if (const auto* field = object.asFieldText()) {
+        if (equalsIgnoreCase(prop_name, "length")) {
+            return Datum::of(charCountOf(field->value));
+        }
+        return getObjectProperty(context, object, prop_name);
+    }
+    if (const auto* chunk = object.asStringChunk()) {
+        if (equalsIgnoreCase(prop_name, "length")) {
+            return Datum::of(charCountOf(chunk->value));
+        }
+        return getObjectProperty(context, object, prop_name);
     }
     if (const auto* point = object.asIntPoint()) {
         return equalsIgnoreCase(prop_name, "ilk") ? Datum::voidValue() : getPointProp(*point, prop_name);
@@ -1566,7 +1980,7 @@ int countLines(std::string_view value) {
     return util::countChunks(value, StringChunkType::Line);
 }
 
-std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char item_delimiter = ',') {
+std::vector<std::string> splitChunks(std::string_view value, StringChunkType type, char item_delimiter) {
     return util::splitIntoChunks(value, type, item_delimiter);
 }
 
@@ -1580,6 +1994,26 @@ std::string sourceChunkDelimiter(std::string_view value, StringChunkType type, c
 
 int countChunks(std::string_view value, StringChunkType type, char item_delimiter = ',') {
     return util::countChunks(value, type, item_delimiter);
+}
+
+// UTF-8 code-point count — `the length of string` counts CHARACTERS, not
+// bytes (the reference uses char counts; byte counts break multi-byte
+// text such as accented characters).
+int charCountOf(std::string_view value) {
+    int count = 0;
+    for (std::size_t index = 0; index < value.size(); ++count) {
+        const unsigned char lead = static_cast<unsigned char>(value[index]);
+        if ((lead & 0x80) == 0) {
+            index += 1;
+        } else if ((lead & 0xE0) == 0xC0) {
+            index += 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            index += 3;
+        } else {
+            index += 4;
+        }
+    }
+    return count;
 }
 
 void appendInt(std::string& output, int value) {
@@ -4999,6 +5433,13 @@ bool pushSymb(ExecutionContext& context) {
     return true;
 }
 
+// PushVarRef (0x46) — identical to PushSymb: both push a
+// Datum::Symbol named by the name-table operand.
+bool pushVarRef(ExecutionContext& context) {
+    context.push(Datum::symbol(context.resolveNameRef(context.argument())));
+    return true;
+}
+
 bool pushChunkVarRef(ExecutionContext& context) {
     const int raw_index = toIntLikeJava(context.peekRef());
     context.scope().replaceTop(Datum::varRef(id::varTypeFromCode(context.argument()), raw_index));
@@ -5190,8 +5631,8 @@ Datum executeScriptNewHandler(ExecutionContext& context, std::span<const Datum> 
 bool newObj(ExecutionContext& context) {
     const std::string& object_type = context.resolveNameRef(context.argument());
     if (!equalsIgnoreCase(object_type, "script")) {
-        context.push(Datum::voidValue());
-        return true;
+        // Match reference: raise ScriptError for non-script new().
+        throw context.error("Unknown new object type: " + object_type);
     }
 
     const Datum arg_list_datum = context.pop();
@@ -5237,9 +5678,9 @@ bool jmp(ExecutionContext& context) {
 }
 
 bool jmpIfZero(ExecutionContext& context) {
-    const bool condition = truthy(context.peekRef());
+    const bool condition = datumIsZero(context.peekRef());
     context.scope().drop(1);
-    if (!condition) {
+    if (condition) {
         context.scope().clearIndexedCollectionSnapshots(context.scope().bytecodeIndex());
         context.jumpTo(context.instructionOffset() + context.argument());
         return false;
@@ -5250,6 +5691,39 @@ bool jmpIfZero(ExecutionContext& context) {
 bool endRepeat(ExecutionContext& context) {
     context.jumpTo(context.instructionOffset() - context.argument());
     return false;
+}
+
+// starttell (0x1c) — pop the tell target and record it so enclosed tellcalls
+// know their dispatch target. Nested `tell` blocks stack. This player has no
+// nested sub-players, so the target is kept for balance; tellcall below
+// matches the no-nested-target path (ext_call behavior).
+bool startTell(ExecutionContext& context) {
+    if (context.hasTellTargetStack()) {
+        context.tellTargetStack().push_back(context.pop());
+    } else {
+        context.pop();
+    }
+    return true;
+}
+
+// endtell (0x1d) — pop the current tell target.
+bool endTell(ExecutionContext& context) {
+    if (context.hasTellTargetStack()) {
+        auto& stack = context.tellTargetStack();
+        if (!stack.empty()) {
+            stack.pop_back();
+        }
+    }
+    return true;
+}
+
+// calljavascript (0x26) — stub: pops the two arguments and
+// advances. No bridge to JS is implemented there either (it only logs a TODO
+// warning); the observable behavior is "consume operands and advance".
+bool callJavaScript(ExecutionContext& context) {
+    context.pop();
+    context.pop();
+    return true;
 }
 
 bool add(ExecutionContext& context) {
@@ -5339,6 +5813,14 @@ bool add(ExecutionContext& context) {
                                          std::min(255, lhs->b + rhs->b)));
             return true;
         }
+    }
+
+    // Match reference: String + anything → string concatenation.
+    if (a.asString() != nullptr) {
+        std::string a_storage;
+        std::string b_storage;
+        context.push(Datum::of(std::string(stringViewLikeJava(a, a_storage)) + std::string(stringViewLikeJava(b, b_storage))));
+        return true;
     }
 
     context.push(numericResult(a, b, toDoubleLikeJava(a) + toDoubleLikeJava(b)));
@@ -5496,42 +5978,47 @@ bool div(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            if (bi->value == 0) {
-                throw context.error("Division by zero");
-            }
-            context.scope().replaceTopTwo(Datum::of(ai->value / bi->value));
+
+        // Void / X → Int(0), X / Void → Int(0).
+        if (a.isVoid() || b.isVoid()) {
+            context.scope().replaceTopTwo(Datum::of(0));
             return true;
+        }
+
+        // A zero divisor is coerced to 1 (ScummVM LC::divData).
+        if (const auto* bi = b.asInt()) {
+            if (const auto* ai = a.asInt()) {
+                const int divisor = bi->value == 0 ? 1 : bi->value;
+                context.scope().replaceTopTwo(Datum::of(ai->value / divisor));
+                return true;
+            }
         }
 
         if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
             const double divisor = toDoubleLikeJava(b);
-            if (divisor == 0.0) {
-                throw context.error("Division by zero");
-            }
-            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) / divisor));
+            context.scope().replaceTopTwo(numericResult(a, b, toDoubleLikeJava(a) / (divisor == 0.0 ? 1.0 : divisor)));
             return true;
         }
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    const double divisor = toDoubleLikeJava(b);
-    if (divisor == 0.0) {
-        throw context.error("Division by zero");
+    if (a.isVoid() || b.isVoid()) {
+        context.push(Datum::of(0));
+        return true;
     }
+    const double divisor = toDoubleLikeJava(b);
+    const double safe_divisor = divisor == 0.0 ? 1.0 : divisor;
 
     if (const auto* point = a.asIntPoint()) {
-        context.push(Datum::intPoint(static_cast<int>(point->x / divisor), static_cast<int>(point->y / divisor)));
+        context.push(Datum::intPoint(static_cast<int>(point->x / safe_divisor), static_cast<int>(point->y / safe_divisor)));
         return true;
     }
     if (const auto* rect = a.asIntRect()) {
-        context.push(Datum::intRect(static_cast<int>(rect->left / divisor),
-                                    static_cast<int>(rect->top / divisor),
-                                    static_cast<int>(rect->right / divisor),
-                                    static_cast<int>(rect->bottom / divisor)));
+        context.push(Datum::intRect(static_cast<int>(rect->left / safe_divisor),
+                                    static_cast<int>(rect->top / safe_divisor),
+                                    static_cast<int>(rect->right / safe_divisor),
+                                    static_cast<int>(rect->bottom / safe_divisor)));
         return true;
     }
     if (a.isList()) {
@@ -5539,7 +6026,7 @@ bool div(ExecutionContext& context) {
         return true;
     }
 
-    context.push(numericResult(a, b, toDoubleLikeJava(a) / divisor));
+    context.push(numericResult(a, b, toDoubleLikeJava(a) / safe_divisor));
     return true;
 }
 
@@ -5547,29 +6034,60 @@ bool mod(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(Datum::of(moduloOrZero(ai->value, bi->value)));
+
+        // Void is treated as 0 (Director behavior).
+        // Void is converted to Int(0) first, so `Void % Float` stays a
+        // Float(0.0) while `Void % Int` is Int(0).
+        if (a.isVoid() || b.isVoid()) {
+            if (a.asFloat() != nullptr || b.asFloat() != nullptr) {
+                context.scope().replaceTopTwo(Datum::of(0.0));
+            } else {
+                context.scope().replaceTopTwo(Datum::of(0));
+            }
             return true;
         }
 
-        if (!isSpecialArithmeticDatum(a) && !isSpecialArithmeticDatum(b)) {
-            const int divisor = toIntLikeJava(b);
-            context.scope().replaceTopTwo(Datum::of(moduloOrZero(toIntLikeJava(a), divisor)));
+        // List % scalar — element-wise, truncated Int results.
+        if (a.isList()) {
+            context.scope().replaceTopTwo(modList(a.listValue(), b, context));
             return true;
         }
+
+        if (const auto* bi = b.asInt()) {
+            if (const auto* ai = a.asInt()) {
+                context.scope().replaceTopTwo(Datum::of(bi->value == 0 ? 0 : ai->value % bi->value));
+                return true;
+            }
+        }
+
+        // Mixed int/float and float/float produce Float results.
+        if (a.isNumber() && b.isNumber()) {
+            context.scope().replaceTopTwo(Datum::of(lingoModFloat(toDoubleLikeJava(a), toDoubleLikeJava(b))));
+            return true;
+        }
+
+        throw context.error("Modulus operator only works with ints and floats");
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    const int divisor = toIntLikeJava(b);
-    if (a.isList()) {
-        context.push(modList(a.listValue(), divisor));
+    if (a.isVoid() || b.isVoid()) {
+        if (a.asFloat() != nullptr || b.asFloat() != nullptr) {
+            context.push(Datum::of(0.0));
+        } else {
+            context.push(Datum::of(0));
+        }
         return true;
     }
-    context.push(Datum::of(moduloOrZero(toIntLikeJava(a), divisor)));
-    return true;
+    if (a.isList()) {
+        context.push(modList(a.listValue(), b, context));
+        return true;
+    }
+    if (a.isNumber() && b.isNumber()) {
+        context.push(Datum::of(lingoModFloat(toDoubleLikeJava(a), toDoubleLikeJava(b))));
+        return true;
+    }
+    throw context.error("Modulus operator only works with ints and floats");
 }
 
 bool inv(ExecutionContext& context) {
@@ -5581,13 +6099,45 @@ bool inv(ExecutionContext& context) {
 
     if (const auto* float_value = value.asFloat()) {
         context.scope().replaceTop(Datum::of(-float_value->value));
-    } else if (const auto* point = value.asIntPoint()) {
-        context.scope().replaceTop(Datum::intPoint(-point->x, -point->y));
-    } else if (const auto* rect = value.asIntRect()) {
-        context.scope().replaceTop(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
-    } else {
-        context.scope().replaceTop(Datum::of(-toIntLikeJava(value)));
+        return true;
     }
+
+    if (const auto* point = value.asIntPoint()) {
+        context.scope().replaceTop(Datum::intPoint(-point->x, -point->y));
+        return true;
+    }
+
+    if (const auto* rect = value.asIntRect()) {
+        context.scope().replaceTop(Datum::intRect(-rect->left, -rect->top, -rect->right, -rect->bottom));
+        return true;
+    }
+
+    // Director: negating a list negates each element (elements must be numeric).
+    if (value.isList()) {
+        const auto& items = value.listValue().items();
+        std::vector<Datum> result;
+        result.reserve(items.size());
+        for (const auto& item : items) {
+            if (const auto* iv = item.asInt()) {
+                result.emplace_back(Datum::of(-iv->value));
+            } else if (const auto* fv = item.asFloat()) {
+                result.emplace_back(Datum::of(-fv->value));
+            } else {
+                throw context.error("Cannot negate list element of type: " + std::string(typeName(item.type())));
+            }
+        }
+        context.scope().replaceTop(Datum::list(std::move(result)));
+        return true;
+    }
+
+    // Void → Int(0) (Director convention).
+    if (value.isVoid()) {
+        context.scope().replaceTop(Datum::of(0));
+        return true;
+    }
+
+    // Fallback for unsupported types: coerce to int and negate.
+    context.scope().replaceTop(Datum::of(-toIntLikeJava(value)));
     return true;
 }
 
@@ -5595,19 +6145,13 @@ bool lt(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value < bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) < toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoLessThan(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) < toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoLessThan(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5615,19 +6159,13 @@ bool ltEq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value <= bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) <= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoLessThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) <= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoLessThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5635,19 +6173,13 @@ bool gt(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value > bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) > toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoGreaterThan(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) > toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoGreaterThan(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5655,19 +6187,13 @@ bool gtEq(ExecutionContext& context) {
     if (context.scope().stackSize() >= 2) {
         const Datum& b = context.peekRef(0);
         const Datum& a = context.peekRef(1);
-        const auto* bi = b.asInt();
-        const auto* ai = a.asInt();
-        if (ai != nullptr && bi != nullptr) {
-            context.scope().replaceTopTwo(ai->value >= bi->value ? Datum::TRUE : Datum::FALSE);
-            return true;
-        }
-        context.scope().replaceTopTwo(toDoubleLikeJava(a) >= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+        context.scope().replaceTopTwo(lingoGreaterThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
         return true;
     }
 
     const Datum b = context.pop();
     const Datum a = context.pop();
-    context.push(toDoubleLikeJava(a) >= toDoubleLikeJava(b) ? Datum::TRUE : Datum::FALSE);
+    context.push(lingoGreaterThan(a, b) || lingoEquals(a, b) ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5774,8 +6300,26 @@ bool logicalOr(ExecutionContext& context) {
 }
 
 bool logicalNot(ExecutionContext& context) {
-    const bool result = truthy(context.peekRef());
-    context.scope().replaceTop(result ? Datum::FALSE : Datum::TRUE);
+    // Match reference not semantics exactly:
+    //   Void → true
+    //   Int(n) → n == 0
+    //   Float(n) → bits_as_u64 == 0
+    //   everything else → false
+    const Datum& value = context.peekRef();
+    bool result;
+    if (value.isVoid()) {
+        result = true;
+    } else if (const auto* iv = value.asInt()) {
+        result = iv->value == 0;
+    } else if (const auto* fv = value.asFloat()) {
+        // the reference: num.to_u64().unwrap() == 0
+        // Reinterpret f32 bits as u32 — NaN/negative-zero bits become non-zero → false
+        const std::uint32_t bits = std::bit_cast<std::uint32_t>(fv->value);
+        result = bits == 0;
+    } else {
+        result = false;
+    }
+    context.scope().replaceTop(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
 
@@ -5830,9 +6374,31 @@ bool containsStr(ExecutionContext& context) {
     const Datum& needle = context.peekRef(0);
     const Datum& haystack = context.peekRef(1);
     std::string needle_storage;
-    std::string haystack_storage;
-    const bool result = containsIgnoreCase(stringViewLikeJava(haystack, haystack_storage),
-                                           stringViewLikeJava(needle, needle_storage));
+    const std::string_view needle_string = stringViewLikeJava(needle, needle_storage);
+
+    bool result = false;
+    if (haystack.isList()) {
+        // For a list haystack, only STRING elements are searched; a match on
+        // any element's (case-insensitive) substring wins.
+        for (const auto& item : haystack.listValue().items()) {
+            if (!item.isString() && item.asStringChunk() == nullptr && item.asFieldText() == nullptr) {
+                continue;
+            }
+            std::string item_storage;
+            if (containsIgnoreCase(stringViewLikeJava(item, item_storage), needle_string)) {
+                result = true;
+                break;
+            }
+        }
+    } else if (haystack.isString() || haystack.asStringChunk() != nullptr || haystack.asFieldText() != nullptr) {
+        std::string haystack_storage;
+        result = containsIgnoreCase(stringViewLikeJava(haystack, haystack_storage), needle_string);
+    } else if (haystack.asSymbol() != nullptr || haystack.isNumber() || haystack.isVoid()) {
+        result = false;
+    } else {
+        std::string haystack_storage;
+        result = containsIgnoreCase(stringViewLikeJava(haystack, haystack_storage), needle_string);
+    }
     context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
     return true;
 }
@@ -5850,6 +6416,13 @@ bool contains0Str(ExecutionContext& context) {
                                              stringViewLikeJava(needle, needle_storage));
     context.scope().replaceTopTwo(result ? Datum::TRUE : Datum::FALSE);
     return true;
+}
+
+// hilitechunk (0x18) — no VM handler for this opcode; hitting
+// it raises "No handler for opcode hilitechunk (0x18)". Match that observable
+// behavior (a script error) rather than silently skipping.
+bool hiliteChunk(ExecutionContext& context) {
+    throw context.error("No handler for opcode hilitechunk (0x18)");
 }
 
 bool getChunk(ExecutionContext& context) {
@@ -5937,18 +6510,43 @@ Datum getContextVar(ExecutionContext& context,
                     const Datum& id_datum,
                     const std::optional<Datum>& field_cast_id_datum) {
     switch (var_type) {
-        case id::VarType::LOCAL:
+        case id::VarType::LOCAL: {
+            // A symbol id (PUSH_VAR_REF) carries the local's name; resolve it
+            // against the handler's local name ids (case-insensitive).
+            if (const auto* symbol = id_datum.asSymbol()) {
+                const auto& handler = context.scope().handler();
+                for (std::size_t index = 0; index < handler.local_name_ids.size(); ++index) {
+                    if (equalsIgnoreCase(context.resolveNameRef(handler.local_name_ids[index]), symbol->name)) {
+                        return context.getLocal(static_cast<int>(index));
+                    }
+                }
+                return Datum::voidValue();
+            }
             return context.getLocal(toIntLikeJava(id_datum) / context.variableMultiplier());
+        }
         case id::VarType::PARAM:
             return context.getParam(toIntLikeJava(id_datum) / context.variableMultiplier());
         case id::VarType::GLOBAL:
         case id::VarType::GLOBAL2:
+            // The id pushed for a global varref is a Symbol carrying the name
+            // (PUSH_VAR_REF). Using toIntLikeJava on a symbol would resolve
+            // name index 0 — use the symbol name directly.
+            if (const auto* symbol = id_datum.asSymbol()) {
+                return context.getGlobal(symbol->name);
+            }
             return context.getGlobal(context.resolveNameRef(toIntLikeJava(id_datum)));
         case id::VarType::PROPERTY: {
             const Datum& receiver = context.scope().receiver();
-            return getHandlerPropertyValue(context,
-                                           receiver,
-                                           context.resolveNameRef(toIntLikeJava(id_datum)));
+            if (receiver.type() == DatumType::ScriptInstanceRef) {
+                std::string prop_name;
+                if (const auto* symbol = id_datum.asSymbol()) {
+                    prop_name = symbol->name;
+                } else {
+                    prop_name = context.resolveNameRef(toIntLikeJava(id_datum));
+                }
+                return util::getProperty(receiver.scriptInstanceValue(), prop_name);
+            }
+            return Datum::voidValue();
         }
         case id::VarType::FIELD: {
             auto* builtin_context = context.builtinContext();
@@ -5968,20 +6566,43 @@ void setContextVar(ExecutionContext& context,
                    Datum value,
                    const std::optional<Datum>& field_cast_id_datum) {
     switch (var_type) {
-        case id::VarType::LOCAL:
+        case id::VarType::LOCAL: {
+            // See getContextVar: a symbol id carries the local's name.
+            if (const auto* symbol = id_datum.asSymbol()) {
+                const auto& handler = context.scope().handler();
+                for (std::size_t index = 0; index < handler.local_name_ids.size(); ++index) {
+                    if (equalsIgnoreCase(context.resolveNameRef(handler.local_name_ids[index]), symbol->name)) {
+                        context.setLocal(static_cast<int>(index), std::move(value));
+                        return;
+                    }
+                }
+                return;
+            }
             context.setLocal(toIntLikeJava(id_datum) / context.variableMultiplier(), std::move(value));
             return;
+        }
         case id::VarType::PARAM:
             context.setParam(toIntLikeJava(id_datum) / context.variableMultiplier(), std::move(value));
             return;
         case id::VarType::GLOBAL:
-        case id::VarType::GLOBAL2:
-            context.setGlobal(context.resolveNameRef(toIntLikeJava(id_datum)), std::move(value));
+        case id::VarType::GLOBAL2: {
+            // See getContextVar: a symbol id carries the global name directly.
+            if (const auto* symbol = id_datum.asSymbol()) {
+                context.setGlobal(symbol->name, std::move(value));
+            } else {
+                context.setGlobal(context.resolveNameRef(toIntLikeJava(id_datum)), std::move(value));
+            }
             return;
+        }
         case id::VarType::PROPERTY: {
             const Datum& receiver = context.scope().receiver();
             if (receiver.type() == DatumType::ScriptInstanceRef) {
-                const std::string& prop_name = context.resolveNameRef(toIntLikeJava(id_datum));
+                std::string prop_name;
+                if (const auto* symbol = id_datum.asSymbol()) {
+                    prop_name = symbol->name;
+                } else {
+                    prop_name = context.resolveNameRef(toIntLikeJava(id_datum));
+                }
                 auto instance = receiver.scriptInstancePtr();
                 if (!context.hasVariableSetListener()) {
                     setHandlerPropertyValue(context, *instance, prop_name, std::move(value));
@@ -6118,8 +6739,10 @@ bool putChunk(ExecutionContext& context) {
         field_cast_id_datum = context.pop();
     }
     const Datum id_datum = context.pop();
-    const Datum value = context.pop();
 
+    // Stack layout (verified against real-movie bytecode): the value is pushed
+    // FIRST (bottom), then the 8 chunk-range params, then the variable id on
+    // top. Pop order: id, 8 chunk params, then the value.
     const int last_line = toIntLikeJava(context.pop());
     const int first_line = toIntLikeJava(context.pop());
     const int last_item = toIntLikeJava(context.pop());
@@ -6128,6 +6751,7 @@ bool putChunk(ExecutionContext& context) {
     const int first_word = toIntLikeJava(context.pop());
     const int last_char = toIntLikeJava(context.pop());
     const int first_char = toIntLikeJava(context.pop());
+    const Datum value = context.pop();
 
     ChunkSpec chunk = chooseSingleChunkSpec(first_char,
                                             last_char,
@@ -6203,6 +6827,9 @@ bool pushPropList(ExecutionContext& context) {
     const Datum arg_list_datum = context.pop();
     std::vector<Datum> item_storage;
     const std::vector<Datum>& items = argListItemsRef(arg_list_datum, item_storage);
+    if (items.size() % 2 != 0) {
+        throw context.error("argList length must be even");
+    }
     Datum prop_list = Datum::propList();
     auto& properties = prop_list.propListValue().properties();
     properties.reserve(items.size() / 2);
@@ -6364,10 +6991,16 @@ bool getChainedProp(ExecutionContext& context) {
 
 bool getTopLevelProp(ExecutionContext& context) {
     const std::string& prop_name = context.resolveNameRef(context.argument());
-    if (equalsIgnoreCase(prop_name, "_player")) {
+    if (equalsIgnoreCase(prop_name, "_player") || equalsIgnoreCase(prop_name, "_key")) {
+        // _key properties (keyCode etc.) are player-level in the reference.
         context.push(Datum::playerRef());
-    } else if (equalsIgnoreCase(prop_name, "_movie")) {
+    } else if (equalsIgnoreCase(prop_name, "_movie") || equalsIgnoreCase(prop_name, "_system")) {
+        // _system properties (randomSeed etc.) are movie-level.
         context.push(Datum::movieRef());
+    } else if (equalsIgnoreCase(prop_name, "_mouse")) {
+        // Mouse properties (mouseH/mouseV/mouseLoc/...) resolve via the
+        // player's movie properties.
+        context.push(Datum::playerRef());
     } else if (equalsIgnoreCase(prop_name, "_sound")) {
         context.push(Datum::soundRef());
     } else {
@@ -6384,11 +7017,50 @@ bool setObjProp(ExecutionContext& context) {
     return true;
 }
 
+// Resolve a member-id datum (int member number or string/symbol name) plus
+// an optional cast library to a (cast library, member number) pair through
+// the engine's cast member resolvers. Returns false when unresolvable.
+bool resolveMemberIdForProperty(ExecutionContext& context,
+                                const Datum& member_id_datum,
+                                const std::optional<Datum>& cast_lib_datum,
+                                int& out_cast_lib,
+                                int& out_member_num) {
+    auto* builtin_context = context.builtinContext();
+    if (builtin_context == nullptr) {
+        return false;
+    }
+    const int cast_lib = cast_lib_datum ? toIntLikeJava(*cast_lib_datum) : 0;
+    Datum resolved;
+    if (const auto* num = member_id_datum.asInt()) {
+        if (builtin_context->cast_member_resolver == nullptr) {
+            return false;
+        }
+        resolved = builtin_context->cast_member_resolver(cast_lib, num->value);
+    } else {
+        if (builtin_context->cast_member_name_resolver == nullptr) {
+            return false;
+        }
+        resolved = builtin_context->cast_member_name_resolver(cast_lib, keyNameLikeJava(member_id_datum));
+    }
+    if (const auto* member_ref = resolved.asCastMemberRef()) {
+        out_cast_lib = member_ref->cast_lib;
+        out_member_num = member_ref->cast_member;
+        return true;
+    }
+    return false;
+}
+
 bool getLegacyProperty(ExecutionContext& context) {
     const int property_id = toIntLikeJava(context.pop());
     const int property_type = context.argument();
     const char item_delimiter = currentItemDelimiter(context);
     auto* builtin_context = context.builtinContext();
+
+    // For member/field props (0x09/0x0a/0x0b/0x0c) a cast library
+    // ref sits on the stack below the member id in D5+ movies.
+    const auto* script = context.scope().script();
+    const bool dir_version_at_least_500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
 
     if (property_type == 0x00) {
         if (property_id <= 0x0B) {
@@ -6432,7 +7104,7 @@ bool getLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
-    if (property_type == 0x07 || property_type == 0x09) {
+    if (property_type == 0x07) {
         if (const auto prop_name = PropertyIdMappings::getAnimPropName(property_id);
             prop_name && builtin_context != nullptr && builtin_context->movie_properties != nullptr) {
             context.push(builtin_context->movie_properties->getMovieProp(*prop_name));
@@ -6461,11 +7133,81 @@ bool getLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
-    if (property_type == 0x0B) {
+    if (property_type == 0x04) {
+        // Sound channel property (matches the decompiler's readV4Property).
         const int channel_num = toIntLikeJava(context.pop());
         const std::string prop_name = PropertyIdMappings::getSoundPropName(property_id);
-        if (channel_num >= 1 && channel_num <= 8) {
+        if (builtin_context != nullptr && channel_num >= 1 && channel_num <= 8) {
             context.push(dispatch::SoundChannelMethodDispatcher::getProperty(builtin_context, Datum::SoundChannel{channel_num}, prop_name));
+        } else {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+
+    if (property_type == 0x09 || property_type == 0x0B) {
+        // Cast member / field property (`the name of member X`, `the
+        // foreColor of field X`). Stack: cast_lib (D5+), member id.
+        std::optional<Datum> cast_lib_datum;
+        if (dir_version_at_least_500) {
+            cast_lib_datum = context.pop();
+        }
+        const Datum member_id_datum = context.pop();
+        int cast_lib = 0;
+        int member_num = 0;
+        if (builtin_context != nullptr && builtin_context->cast_member_property_getter != nullptr &&
+            resolveMemberIdForProperty(context, member_id_datum, cast_lib_datum, cast_lib, member_num)) {
+            context.push(builtin_context->cast_member_property_getter(
+                cast_lib, member_num, std::string(PropertyIdMappings::getCastMemberPropName(property_id))));
+        } else {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+
+    if (property_type == 0x0A || property_type == 0x0C) {
+        // Chunked cast member / field property (`the textStyle of char N of
+        // member X`). Stack: cast_lib (D5+), member id, then the 8 chunk-range
+        // values (last_line .. first_char, top first).
+        std::optional<Datum> cast_lib_datum;
+        if (dir_version_at_least_500) {
+            cast_lib_datum = context.pop();
+        }
+        const Datum member_id_datum = context.pop();
+        const int last_line = toIntLikeJava(context.pop());
+        const int first_line = toIntLikeJava(context.pop());
+        const int last_item = toIntLikeJava(context.pop());
+        const int first_item = toIntLikeJava(context.pop());
+        const int last_word = toIntLikeJava(context.pop());
+        const int first_word = toIntLikeJava(context.pop());
+        const int last_char = toIntLikeJava(context.pop());
+        const int first_char = toIntLikeJava(context.pop());
+        const ChunkSpec chunk = chooseSingleChunkSpec(first_char,
+                                                      last_char,
+                                                      first_word,
+                                                      last_word,
+                                                      first_item,
+                                                      last_item,
+                                                      first_line,
+                                                      last_line);
+        const std::string_view prop_name = PropertyIdMappings::getCastMemberPropName(property_id);
+        int cast_lib = 0;
+        int member_num = 0;
+        if (builtin_context != nullptr && builtin_context->cast_member_property_getter != nullptr &&
+            resolveMemberIdForProperty(context, member_id_datum, cast_lib_datum, cast_lib, member_num)) {
+            if (lowerAscii(prop_name) == "text") {
+                // `the text of char N of member` — resolve the chunk against
+                // the member's text.
+                const Datum text = builtin_context->cast_member_property_getter(cast_lib, member_num, "text");
+                std::string storage;
+                const std::string_view text_view = stringViewLikeJava(text, storage);
+                context.push(Datum::of(resolveChunkRange(text_view, chunk.type, chunk.first, chunk.last, item_delimiter)));
+            } else {
+                // textStyle/fontStyle chunked reads need the member's STXT
+                // formatting runs (engine-level) — fall back to the
+                // member-wide getter.
+                context.push(builtin_context->cast_member_property_getter(cast_lib, member_num, std::string(prop_name)));
+            }
         } else {
             context.push(Datum::voidValue());
         }
@@ -6477,9 +7219,17 @@ bool getLegacyProperty(ExecutionContext& context) {
 }
 
 bool getField(ExecutionContext& context) {
-    const Datum cast_id_datum = context.pop();
+    // A cast library ref sits on the stack below the field identifier only in
+    // D5+ movies (matches the reference's dir_version >= 500 gate).
+    const auto* script = context.scope().script();
+    const bool dir_version_at_least_500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
+    std::optional<Datum> cast_id_datum;
+    if (dir_version_at_least_500) {
+        cast_id_datum = context.pop();
+    }
     Datum field_name_or_num = context.pop();
-    const int cast_id = toIntLikeJava(cast_id_datum);
+    const int cast_id = cast_id_datum ? toIntLikeJava(*cast_id_datum) : 0;
 
     std::vector<Datum> args;
     args.reserve(2);
@@ -6540,6 +7290,60 @@ bool setLegacyProperty(ExecutionContext& context) {
         return true;
     }
 
+    // For member/field props (0x09/0x0a/0x0b/0x0c) a cast library
+    // ref sits on the stack below the member id in D5+ movies.
+    const auto* script = context.scope().script();
+    const bool dir_version_at_least_500 =
+        script != nullptr && script->file() != nullptr && script->file()->version() >= 500;
+
+    if (property_type == 0x09 || property_type == 0x0B) {
+        // Cast member / field property. Stack (top first): prop id, value,
+        // cast_lib (D5+), member id.
+        std::optional<Datum> cast_lib_datum;
+        if (dir_version_at_least_500) {
+            cast_lib_datum = context.pop();
+        }
+        const Datum member_id_datum = context.pop();
+        int cast_lib = 0;
+        int member_num = 0;
+        if (builtin_context != nullptr && builtin_context->cast_member_property_setter != nullptr &&
+            resolveMemberIdForProperty(context, member_id_datum, cast_lib_datum, cast_lib, member_num)) {
+            (void)builtin_context->cast_member_property_setter(
+                cast_lib, member_num, std::string(PropertyIdMappings::getCastMemberPropName(property_id)), value);
+        }
+        return true;
+    }
+
+    if (property_type == 0x0A || property_type == 0x0C) {
+        // Chunked cast member / field property. Stack: prop id, value,
+        // cast_lib (D5+), member id, then the 8 chunk-range values.
+        std::optional<Datum> cast_lib_datum;
+        if (dir_version_at_least_500) {
+            cast_lib_datum = context.pop();
+        }
+        const Datum member_id_datum = context.pop();
+        const int last_line = toIntLikeJava(context.pop());
+        const int first_line = toIntLikeJava(context.pop());
+        const int last_item = toIntLikeJava(context.pop());
+        const int first_item = toIntLikeJava(context.pop());
+        const int last_word = toIntLikeJava(context.pop());
+        const int first_word = toIntLikeJava(context.pop());
+        const int last_char = toIntLikeJava(context.pop());
+        const int first_char = toIntLikeJava(context.pop());
+        (void)chooseSingleChunkSpec(first_char, last_char, first_word, last_word, first_item, last_item, first_line, last_line);
+        int cast_lib = 0;
+        int member_num = 0;
+        if (builtin_context != nullptr && builtin_context->cast_member_property_setter != nullptr &&
+            resolveMemberIdForProperty(context, member_id_datum, cast_lib_datum, cast_lib, member_num)) {
+            // Per-character style writes (textStyle/fontStyle) need STXT
+            // formatting-run access (engine-level); non-style props ignore
+            // the chunk and set member-wide, matching the reference.
+            (void)builtin_context->cast_member_property_setter(
+                cast_lib, member_num, std::string(PropertyIdMappings::getCastMemberPropName(property_id)), value);
+        }
+        return true;
+    }
+
     return true;
 }
 
@@ -6549,7 +7353,11 @@ bool theBuiltin(ExecutionContext& context) {
     if (equalsIgnoreCase(prop_name, "paramcount")) {
         result = Datum::of(static_cast<int>(context.scope().arguments().size()));
     } else if (equalsIgnoreCase(prop_name, "result")) {
-        result = context.scope().returnValue();
+        // `the result` = the most recently completed handler call's return
+        // value (set in LingoVM::executeHandler).
+        if (auto* builtin_context = context.builtinContext(); builtin_context != nullptr) {
+            result = builtin_context->last_handler_result;
+        }
     } else if (auto* builtin_context = context.builtinContext(); builtin_context != nullptr && builtin_context->movie_properties != nullptr) {
         result = builtin_context->movie_properties->getMovieProp(prop_name);
         if (result.isVoid()) {
@@ -8609,6 +9417,80 @@ bool objCall(ExecutionContext& context) {
     return executeObjCallWithArgs(context, method_name, args, no_return);
 }
 
+// objcallv4 (0x58) — Director 4 calling convention. Unlike ObjCall, the
+// handler name comes from the STACK (a symbol pushed by pushvarref) instead
+// of the bytecode operand.
+//   Stack: [..., ArgList([receiver, args...]), Symbol(handler_name)]
+// Reference behavior:
+//   1. Pop the handler-name symbol, then the arg list.
+//   2. First arg = receiver; remaining args are the call args.
+//   3. If the receiver is a Symbol, resolve it through globals (a D4 object
+//      variable like #oTrackControl) when a global with that name exists.
+//   4. If the receiver is NOT a script instance/script ref AND a global
+//      (movie) handler with that name exists, route as a movie-handler call
+//      with the receiver prepended as the first argument (e.g. hackey's
+//      `vector(HERE, there)` where `vector` is `on vector HERE, there`).
+//   5. Otherwise dispatch as an object method call.
+bool objCallV4(ExecutionContext& context) {
+    const Datum handler_name_datum = context.pop();
+    const Datum arg_list_datum = context.pop();
+    const bool no_return = isNoReturnArgList(arg_list_datum);
+    std::vector<Datum> arg_storage;
+    const std::vector<Datum>& args = argListItemsRef(arg_list_datum, arg_storage);
+    if (args.empty()) {
+        if (!no_return) {
+            context.push(Datum::voidValue());
+        }
+        return true;
+    }
+    const std::string handler_name = handler_name_datum.asSymbol() != nullptr
+                                        ? handler_name_datum.asSymbol()->name
+                                        : toStringLikeJava(handler_name_datum);
+    Datum receiver = args.front();
+    if (receiver.asSymbol() != nullptr) {
+        const Datum resolved = context.getGlobal(receiver.asSymbol()->name);
+        if (!resolved.isVoid()) {
+            receiver = resolved;
+        }
+    }
+    const bool is_object_receiver = receiver.type() == DatumType::ScriptInstanceRef ||
+                                  receiver.asScriptRef() != nullptr;
+    if (!is_object_receiver && context.findHandler(handler_name).has_value()) {
+        // Movie-handler call: pass the receiver as the first argument so
+        // `on vector HERE, there` receives (HERE, there).
+        std::vector<Datum> full_args;
+        full_args.reserve(args.size());
+        full_args.push_back(std::move(receiver));
+        full_args.insert(full_args.end(), args.begin() + 1, args.end());
+        Datum result = Datum::voidValue();
+        if (const auto handler = context.findHandler(handler_name)) {
+            result = safeExecuteHandler(context, *handler, full_args, Datum::voidValue());
+        }
+        if (!no_return) {
+            context.push(std::move(result));
+        }
+        return true;
+    }
+    // Object-method call: rebuild the arg list with the resolved receiver.
+    std::vector<Datum> resolved_args;
+    resolved_args.reserve(args.size());
+    resolved_args.push_back(std::move(receiver));
+    resolved_args.insert(resolved_args.end(), args.begin() + 1, args.end());
+    return executeObjCallWithArgs(context, handler_name, resolved_args, no_return);
+}
+
+// tellcall (0x63) — like extcall but dispatched into the current `tell`
+// target. Without nested sub-players this falls back to plain ext_call
+// semantics. Match that fallback exactly.
+bool tellCall(ExecutionContext& context) {
+    const std::string& handler_name = context.resolveNameRef(context.argument());
+    const Datum arg_list_datum = context.pop();
+    const bool no_return = isNoReturnArgList(arg_list_datum);
+    std::vector<Datum> arg_storage;
+    const std::vector<Datum>& args = argListItemsRef(arg_list_datum, arg_storage);
+    return executeExtCallWithArgs(context, handler_name, args, no_return);
+}
+
 } // namespace
 
 std::string imageOperationTraceJson() {
@@ -8743,6 +9625,7 @@ void StackOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::PUSH_FLOAT32, pushFloat);
     registry.registerHandler(Opcode::PUSH_CONS, pushCons);
     registry.registerHandler(Opcode::PUSH_SYMB, pushSymb);
+    registry.registerHandler(Opcode::PUSH_VAR_REF, pushVarRef);
     registry.registerHandler(Opcode::PUSH_CHUNK_VAR_REF, pushChunkVarRef);
     registry.registerHandler(Opcode::SWAP, swap);
     registry.registerHandler(Opcode::POP, pop);
@@ -8756,6 +9639,9 @@ void ControlFlowOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::JMP, jmp);
     registry.registerHandler(Opcode::JMP_IF_Z, jmpIfZero);
     registry.registerHandler(Opcode::END_REPEAT, endRepeat);
+    registry.registerHandler(Opcode::START_TELL, startTell);
+    registry.registerHandler(Opcode::END_TELL, endTell);
+    registry.registerHandler(Opcode::CALL_JAVASCRIPT, callJavaScript);
 }
 
 void ArithmeticOpcodes::registerHandlers(OpcodeRegistry& registry) {
@@ -8786,6 +9672,7 @@ void LogicalOpcodes::registerHandlers(OpcodeRegistry& registry) {
 
 void StringOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::GET_CHUNK, getChunk);
+    registry.registerHandler(Opcode::HILITE_CHUNK, hiliteChunk);
     registry.registerHandler(Opcode::JOIN_STR, joinStr);
     registry.registerHandler(Opcode::JOIN_PAD_STR, joinPadStr);
     registry.registerHandler(Opcode::CONTAINS_STR, containsStr);
@@ -8832,6 +9719,8 @@ void CallOpcodes::registerHandlers(OpcodeRegistry& registry) {
     registry.registerHandler(Opcode::LOCAL_CALL, localCall);
     registry.registerHandler(Opcode::EXT_CALL, extCall);
     registry.registerHandler(Opcode::OBJ_CALL, objCall);
+    registry.registerHandler(Opcode::OBJ_CALL_V4, objCallV4);
+    registry.registerHandler(Opcode::TELL_CALL, tellCall);
 }
 
 } // namespace libreshockwave::lingo::vm

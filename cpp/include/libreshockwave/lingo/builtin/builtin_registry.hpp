@@ -149,6 +149,8 @@ struct BuiltinContext {
     std::vector<Datum> current_handler_args;
     const std::vector<Datum>* current_handler_args_view{nullptr};
     Datum return_value{Datum::voidValue()};
+    // Result of the most recently completed handler call. Backs `the result`.
+    Datum last_handler_result{Datum::voidValue()};
     std::vector<std::pair<std::string, std::string>> external_params;
     bool tell_stream_status_enabled{false};
     bool debug_playback_enabled{false};

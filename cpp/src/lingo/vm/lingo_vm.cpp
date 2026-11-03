@@ -270,7 +270,19 @@ const OpcodeRegistry& LingoVM::opcodeRegistry() const { return opcode_registry_;
 
 Datum LingoVM::getGlobal(std::string_view name) const {
     const auto found = globals_.find(name);
-    return found == globals_.end() ? Datum::voidValue() : found->second;
+    if (found != globals_.end()) {
+        return found->second;
+    }
+    // Lingo globals are case-insensitive: an Xtra may write a global in a
+    // different case than a script reads it, so fall back to a
+    // case-insensitive scan before yielding VOID. Only runs on a miss, so
+    // exact hits (constants like PI) are unaffected.
+    for (const auto& entry : globals_) {
+        if (lower(entry.first) == lower(name)) {
+            return entry.second;
+        }
+    }
+    return Datum::voidValue();
 }
 
 void LingoVM::setGlobal(std::string name, Datum value) {
@@ -939,6 +951,9 @@ Datum LingoVM::executeHandler(const HandlerRef& handler_ref,
             }
         }
         result = scope.takeReturnValue();
+        // `the result` reads the most recently completed handler call's
+        // return value (matches the reference VM's last_handler_result).
+        builtin_context_.last_handler_result = result;
     } catch (const std::exception& error) {
         fireTraceError("Error in " + current_handler_name, error.what());
         if (!is_alert_hook_handler && fireAlertHook("Script Error", error.what())) {
@@ -1022,6 +1037,9 @@ ExecutionContext::Callbacks LingoVM::baseCallbacksFor(
     };
     callbacks.builtin_invoker = [this](std::string_view name, const std::vector<Datum>& args) {
         return callBuiltin(name, args);
+    };
+    callbacks.tell_target_stack_getter = [this]() -> std::vector<Datum>& {
+        return tell_target_stack_;
     };
     callbacks.error_state_setter = [this](bool error_state) {
         setErrorState(error_state);

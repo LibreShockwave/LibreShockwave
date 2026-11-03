@@ -587,7 +587,34 @@ std::unique_ptr<HandlerNode> LingoDecompiler::translateHandler(const chunks::Scr
                             current_block_->current_case = nullptr;
                         }
                     } else if (case_node->expect() == CaseNode::EXPECT_POP) {
-                        current_block_->current_case = nullptr;
+                        // The no-match path lands on a selector-cleanup pop,
+                        // usually the case's own end. When matched branches jump
+                        // past it to a later case end, the gap is a real
+                        // otherwise body and must be captured, not flattened.
+                        const bool has_otherwise_body = [&]() {
+                            if (current_handler_ == nullptr || cases_stmt->end_pos <= exited_block->end_pos) {
+                                return false;
+                            }
+                            for (const auto& ins : current_handler_->instructions) {
+                                if (ins.offset > exited_block->end_pos && ins.offset < cases_stmt->end_pos) {
+                                    if (ins.opcode != Opcode::POP &&
+                                        ins.opcode != Opcode::RET &&
+                                        ins.opcode != Opcode::RET_FACTORY) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }();
+                        if (has_otherwise_body) {
+                            auto otherwise = std::make_unique<BlockNode>();
+                            otherwise->end_pos = cases_stmt->end_pos;
+                            auto* otherwise_block = otherwise.get();
+                            case_node->setOtherwise(std::move(otherwise));
+                            enterBlock(*otherwise_block);
+                        } else {
+                            current_block_->current_case = nullptr;
+                        }
                     }
                 }
             }
