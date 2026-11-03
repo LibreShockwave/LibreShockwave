@@ -386,7 +386,7 @@ lingo::Datum bitmapPaletteRefDatum(const std::shared_ptr<libreshockwave::cast::C
     // runtime bitmap was decoded with a temporary system palette.
     if (member->rawChunk() != nullptr && source_file != nullptr) {
         const auto& info = member->bitmapInfo();
-        if (info.has_value()) {
+        if (info.has_value() && info->palette_id >= 0) {
             const auto authored_palette = source_file->resolvePaletteExact(info->palette_id);
             if (authored_palette != nullptr && !isSystemPalette(authored_palette)) {
                 return lingo::Datum::castMemberRef(cast_lib_id, id::MemberId(info->palette_id + 1));
