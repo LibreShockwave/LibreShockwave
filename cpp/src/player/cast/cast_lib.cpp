@@ -54,6 +54,33 @@ bool isSystemMacPalette(const std::shared_ptr<const bitmap::Palette>& palette) {
            name == "system - mac" || name == "systemmac";
 }
 
+bool isSystemPalette(const std::shared_ptr<const bitmap::Palette>& palette) {
+    if (!palette) {
+        return false;
+    }
+    const auto name = lower(palette->name());
+    return isSystemMacPalette(palette) ||
+           palette.get() == &bitmap::Palette::systemWinPalette() ||
+           name == "system - windows" || name == "systemwin";
+}
+
+bool shouldReDecodeForAuthoredPalette(const libreshockwave::cast::CastMember& member) {
+    const auto info = member.bitmapInfo();
+    if (!info.has_value() || info->palette_id >= 0 ||
+        info->palette_id == bitmap::Palette::SYSTEM_MAC ||
+        info->palette_id == bitmap::Palette::SYSTEM_WIN ||
+        info->palette_id == bitmap::Palette::SYSTEM_WIN_DIR4) {
+        return false;
+    }
+    const auto override_palette = member.runtimePaletteOverride();
+    if (!override_palette || !isSystemPalette(override_palette)) {
+        return false;
+    }
+    const auto runtime = member.runtimeBitmap();
+    return runtime != nullptr && runtime->bitDepth() <= 8 &&
+           runtime->imagePalette() != nullptr && isSystemPalette(runtime->imagePalette());
+}
+
 std::string trim(const std::string& value) {
     auto begin = value.begin();
     while (begin != value.end() && std::isspace(static_cast<unsigned char>(*begin))) {
@@ -118,6 +145,18 @@ int directorPaletteId(const bitmap::Bitmap& bitmap) {
         if (normalized == "rainbow") {
             return bitmap::Palette::RAINBOW + 1;
         }
+        if (normalized == "pastels") {
+            return bitmap::Palette::PASTELS + 1;
+        }
+        if (normalized == "vivid") {
+            return bitmap::Palette::VIVID + 1;
+        }
+        if (normalized == "ntsc") {
+            return bitmap::Palette::NTSC + 1;
+        }
+        if (normalized == "metallic") {
+            return bitmap::Palette::METALLIC + 1;
+        }
         if (normalized == "systemMac") {
             return bitmap::Palette::SYSTEM_MAC + 1;
         }
@@ -127,18 +166,34 @@ int directorPaletteId(const bitmap::Bitmap& bitmap) {
     }
     if (bitmap.bitDepth() <= 8 && bitmap.imagePalette() != nullptr) {
         const auto palette_name = lower(bitmap.imagePalette()->name());
-        if (bitmap.imagePalette().get() == &bitmap::Palette::systemWinPalette() ||
-            palette_name == lower(bitmap::Palette::systemWinPalette().name())) {
+        const auto matches = [&](const bitmap::Palette& palette) {
+            return bitmap.imagePalette().get() == &palette ||
+                   palette_name == lower(palette.name());
+        };
+        if (matches(bitmap::Palette::rainbowPalette())) {
+            return bitmap::Palette::RAINBOW + 1;
+        }
+        if (matches(bitmap::Palette::grayscalePalette())) {
+            return bitmap::Palette::GRAYSCALE + 1;
+        }
+        if (matches(bitmap::Palette::pastelsPalette())) {
+            return bitmap::Palette::PASTELS + 1;
+        }
+        if (matches(bitmap::Palette::vividPalette())) {
+            return bitmap::Palette::VIVID + 1;
+        }
+        if (matches(bitmap::Palette::ntscPalette())) {
+            return bitmap::Palette::NTSC + 1;
+        }
+        if (matches(bitmap::Palette::metallicPalette())) {
+            return bitmap::Palette::METALLIC + 1;
+        }
+        if (matches(bitmap::Palette::systemWinPalette())) {
             return bitmap::Palette::SYSTEM_WIN + 1;
         }
-        if (bitmap.imagePalette().get() == &bitmap::Palette::systemMacPalette() ||
-            palette_name == lower(bitmap::Palette::systemMacPalette().name())) {
+        if (matches(bitmap::Palette::systemMacPalette())) {
             return bitmap::Palette::SYSTEM_MAC + 1;
         }
-    }
-    if (bitmap.bitDepth() <= 8 && bitmap.imagePalette() != nullptr &&
-        bitmap.imagePalette()->name() == bitmap::Palette::grayscalePalette().name()) {
-        return bitmap::Palette::GRAYSCALE + 1;
     }
     return 0;
 }
@@ -997,7 +1052,8 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
         if (member->isBitmap()) {
             auto bitmap = member->runtimeBitmap();
             if (!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
-                member->shouldRedecodeAuthoredRuntimeBitmap()) {
+                member->shouldRedecodeAuthoredRuntimeBitmap() ||
+                shouldReDecodeForAuthoredPalette(*member)) {
                 const auto image = getMemberProp(member_number, "image");
                 if (const auto* image_ref = image.asImageRef()) {
                     bitmap = image_ref->bitmap;
@@ -1005,7 +1061,14 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
             }
             if (bitmap) {
                 auto media_bitmap = bitmap->copy();
-                applyRuntimePaletteMetadata(media_bitmap, member);
+                const auto override_palette = member->runtimePaletteOverride();
+                const auto authored_palette = bitmap->imagePalette();
+                const bool keep_authored_palette =
+                    override_palette != nullptr && isSystemPalette(override_palette) &&
+                    authored_palette != nullptr && !isSystemPalette(authored_palette);
+                if (!keep_authored_palette) {
+                    applyRuntimePaletteMetadata(media_bitmap, member);
+                }
                 return lingo::Datum::media(encodeDirectorBitmapMedia(media_bitmap, member->regX(), member->regY()));
             }
         }
@@ -1109,8 +1172,10 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
             uses_unlinked_palette;
         const bool runtime_needs_host_palette = host_uses_windows_palette && bitmap != nullptr &&
             isSystemMacPalette(bitmap->imagePalette()) && member->runtimePaletteOverride() == nullptr;
+        const bool re_decode_authored_palette = shouldReDecodeForAuthoredPalette(*member);
         if ((!bitmap || member->hasRuntimeBitmapDecodePlaceholder() ||
-             member->shouldRedecodeAuthoredRuntimeBitmap() || runtime_needs_host_palette) &&
+             member->shouldRedecodeAuthoredRuntimeBitmap() || runtime_needs_host_palette ||
+             re_decode_authored_palette) &&
             member->isBitmap() &&
             member->rawChunk() &&
             source_file_) {
@@ -1131,7 +1196,9 @@ lingo::Datum CastLib::getMemberProp(int member_number, const std::string& prop_n
                 decoded = source_file_->decodeBitmap(member->rawChunk(), decode_palette);
             }
             if (decoded.has_value()) {
-                applyRuntimePaletteMetadata(*decoded, member);
+                if (!re_decode_authored_palette) {
+                    applyRuntimePaletteMetadata(*decoded, member);
+                }
                 member->setRuntimeBitmapFromAuthoredSource(*decoded);
                 bitmap = member->runtimeBitmap();
             } else if (!had_runtime_bitmap &&
