@@ -555,15 +555,12 @@ std::optional<int> imageFillPaletteIndex(const Datum& color_datum, const bitmap:
 std::uint32_t imageCopyPixelsRemapColorArgb(const Datum& datum,
                                             const bitmap::Bitmap& src,
                                             const bitmap::Bitmap& dest) {
-    if (const auto* color = datum.asColorRef(); color != nullptr && color->palette_index.has_value()) {
-        // Palette indices only name entries in an indexed source. On an RGB
-        // source, the palette-index colour carries its own grey value.
-        if (src.bitDepth() <= 8 && src.imagePalette() != nullptr) {
-            return imageColorArgb(datum, &src);
-        }
-        return imageColorArgb(datum);
+    const auto* target = &dest;
+    if (const auto* color = datum.asColorRef();
+        color != nullptr && color->palette_index.has_value() && src.imagePalette() != nullptr) {
+        target = &src;
     }
-    return imageColorArgb(datum, &dest);
+    return imageColorArgb(datum, target);
 }
 
 int toIntLikeJava(const Datum& datum) {
@@ -3940,7 +3937,13 @@ std::uint32_t imageRemapGrayscalePixel(std::uint32_t pixel,
         return pixel;
     }
     const int alpha = static_cast<int>((pixel >> 24) & 0xFFU);
-    const int gray = static_cast<int>(((pixel >> 16) & 0xFFU));
+    const int source_r = static_cast<int>((pixel >> 16) & 0xFFU);
+    const int source_g = static_cast<int>((pixel >> 8) & 0xFFU);
+    const int source_b = static_cast<int>(pixel & 0xFFU);
+    if (std::abs(source_r - source_g) > 2 || std::abs(source_g - source_b) > 2) {
+        return pixel;
+    }
+    const int gray = source_r;
     const int fg = color_remap.value_or(0);
     const int bg = bg_color_remap.value_or(0xFFFFFF);
     const int fg_r = (fg >> 16) & 0xFF;
