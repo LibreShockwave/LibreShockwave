@@ -25,6 +25,15 @@
   // Browser punctuation otherwise collides with navigation and editing codes.
   const syntheticPrintableCodeBase = 0x2000;
 
+  // A focused 1px textarea makes mobile browsers raise their soft keyboard.
+  // It must be focused inside the touch gesture; a later focus does not open
+  // the keyboard. Text mutations arrive through beforeinput.
+  const textInputClassName = "libreshockwave-text-input";
+  const textInputForwardedKeys = new Set([
+    "Tab", "Escape", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown",
+    "Home", "End", "PageUp", "PageDown"
+  ]);
+
   function printableKeyCode(character) {
     const upper = character.toUpperCase();
     if (upper.length === 1) {
@@ -220,6 +229,10 @@
     const overlayHost = canvas.parentElement || document.body;
     let contextMenu = null;
     let aboutPanel = null;
+    const onscreenKeyboardEnabled = options.onscreenKeyboard !== false;
+    let textInput = null;
+    let textInputRuntimeFocus = false;
+    let textInputModifiers = { shift: false, ctrl: false, alt: false };
 
     canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
     canvas.style.imageRendering = canvas.style.imageRendering || "pixelated";
@@ -600,6 +613,7 @@
 
     function drawFrame(info, pixels) {
       lastInfo = info || lastInfo;
+      syncOnscreenKeyboard(lastInfo);
       if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
       if (!info || !pixels || !info.width || !info.height) return;
       let resized = false;
@@ -769,6 +783,7 @@
           lastInfo = message.info || lastInfo;
           if (lastInfo && lastInfo.tempo) inputTempo = clampTempo(lastInfo.tempo);
           applyCursor(lastInfo && lastInfo.cursor);
+          syncOnscreenKeyboard(lastInfo);
         } else if (message.type === "load") {
           if (message.info && message.info.tempo) inputTempo = clampTempo(message.info.tempo);
           if (typeof options.onLoad === "function") options.onLoad(message.info || {});
@@ -844,11 +859,211 @@
       });
     }
 
+    function sendTextEntryKey(keyCode, text) {
+      send("keyDown", {
+        keyCode,
+        text,
+        shift: textInputModifiers.shift,
+        ctrl: textInputModifiers.ctrl,
+        alt: textInputModifiers.alt
+      });
+    }
+
+    function sendTextEntryCharacters(text) {
+      for (const character of text) {
+        const keyCode = character === " " ? 32 : printableKeyCode(character);
+        sendTextEntryKey(keyCode, character);
+      }
+    }
+
+    function ensureTextInput() {
+      if (textInput) return textInput;
+      textInput = document.createElement("textarea");
+      textInput.className = textInputClassName;
+      textInput.rows = 1;
+      textInput.autocomplete = "off";
+      textInput.autocapitalize = "off";
+      textInput.spellcheck = false;
+      textInput.setAttribute("autocorrect", "off");
+      textInput.setAttribute("aria-label", "Movie text input");
+      textInput.style.cssText = [
+        "position:fixed",
+        "width:1px",
+        "height:1px",
+        "padding:0",
+        "border:0",
+        "margin:0",
+        "opacity:0.01",
+        "color:transparent",
+        "background:transparent",
+        "caret-color:transparent",
+        "font-size:16px",
+        "line-height:1",
+        "resize:none",
+        "overflow:hidden",
+        "pointer-events:none",
+        "z-index:10000"
+      ].join(";");
+      textInput.addEventListener("beforeinput", handleTextInputBeforeInput);
+      textInput.addEventListener("input", handleTextInputInput);
+      textInput.addEventListener("compositionend", handleTextInputCompositionEnd);
+      textInput.addEventListener("keydown", (event) => {
+        void handleKeyDown(event, true);
+      });
+      textInput.addEventListener("keyup", handleKeyUp);
+      textInput.addEventListener("paste", handlePaste);
+      (document.body || document.documentElement).appendChild(textInput);
+      return textInput;
+    }
+
+    function showOnscreenKeyboard(clientX, clientY) {
+      if (!onscreenKeyboardEnabled || destroyed) return;
+      const input = ensureTextInput();
+      input.style.left = `${Math.max(0, Math.round(clientX))}px`;
+      input.style.top = `${Math.max(0, Math.round(clientY))}px`;
+      textInputRuntimeFocus = false;
+      try {
+        input.focus({ preventScroll: true });
+      } catch {
+        input.focus();
+      }
+    }
+
+    function hideOnscreenKeyboard() {
+      textInputRuntimeFocus = false;
+      if (textInput && document.activeElement === textInput) textInput.blur();
+    }
+
+    function stagePointHitsTextField(point) {
+      const fields = lastInfo && Array.isArray(lastInfo.textFields) ? lastInfo.textFields : [];
+      return fields.some((field) =>
+        point.x >= field.x && point.y >= field.y &&
+        point.x < field.x + field.width && point.y < field.y + field.height);
+    }
+
+    function handleCanvasTouch(clientX, clientY) {
+      const point = stagePointFromClient(clientX, clientY);
+      const keepsFocusedField = textInput !== null &&
+        document.activeElement === textInput &&
+        lastInfo && lastInfo.textFocus;
+      if (stagePointHitsTextField(point) || keepsFocusedField) {
+        showOnscreenKeyboard(clientX, clientY);
+        return;
+      }
+      hideOnscreenKeyboard();
+    }
+
+    function syncOnscreenKeyboard(info) {
+      if (!textInput || !info) return;
+      if (info.textFocus) {
+        textInputRuntimeFocus = true;
+        return;
+      }
+      // Custom bitmap inputs never report runtime focus, so they keep the
+      // keyboard until the user taps outside a field. Native fields release it
+      // when Lingo clears keyboard focus.
+      if (textInputRuntimeFocus) hideOnscreenKeyboard();
+    }
+
+    function handleTextInputBeforeInput(event) {
+      if (event.isComposing) return;
+      const inputType = event.inputType || "";
+      if (inputType === "insertText" && event.data) {
+        event.preventDefault();
+        sendTextEntryCharacters(event.data);
+      } else if (inputType === "insertLineBreak" || inputType === "insertParagraph") {
+        event.preventDefault();
+        sendTextEntryKey(13, "\r");
+      } else if (inputType === "deleteContentBackward") {
+        event.preventDefault();
+        sendTextEntryKey(8, "");
+      } else if (inputType === "deleteContentForward") {
+        event.preventDefault();
+        sendTextEntryKey(46, "");
+      }
+    }
+
+    function handleTextInputInput(event) {
+      if (event.isComposing) return;
+      const inputType = event.inputType || "";
+      if (inputType !== "insertCompositionText" && inputType !== "insertFromComposition") return;
+      if (event.data) sendTextEntryCharacters(event.data);
+      textInput.value = "";
+    }
+
+    function handleTextInputCompositionEnd() {
+      // The committed text arrives through the input event. Clear any residue
+      // on the next task so the browser insertion has finished first.
+      global.setTimeout(() => {
+        if (textInput && !textInput.isComposing) textInput.value = "";
+      }, 0);
+    }
+
+    function handlePaste(event) {
+      const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+      if (!text) return;
+      event.preventDefault();
+      send("paste", { text });
+    }
+
+    async function handleKeyDown(event, fromTextInput) {
+      void unlockAudio();
+      if (fromTextInput) {
+        textInputModifiers = {
+          shift: event.shiftKey,
+          ctrl: event.ctrlKey || event.metaKey,
+          alt: event.altKey
+        };
+      }
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === "a") {
+        event.preventDefault();
+        send("selectAll");
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && key === "c") {
+        event.preventDefault();
+        const text = await request("selectedText");
+        if (text && navigator.clipboard) await navigator.clipboard.writeText(text);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && key === "x") {
+        event.preventDefault();
+        const text = await request("cut");
+        if (text && navigator.clipboard) await navigator.clipboard.writeText(text);
+        return;
+      }
+      if (fromTextInput) {
+        // Text, Enter, Backspace, and Delete mutate through beforeinput.
+        if (event.isComposing || !textInputForwardedKeys.has(event.key)) return;
+        event.preventDefault();
+      } else if (shouldPreventKey(event)) {
+        event.preventDefault();
+      }
+      send("keyDown", {
+        keyCode: browserKeyCodeFromEvent(event),
+        text: keyTextFromEvent(event),
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey || event.metaKey,
+        alt: event.altKey
+      });
+    }
+
+    function handleKeyUp(event) {
+      send("keyUp", {
+        keyCode: browserKeyCodeFromEvent(event),
+        text: keyTextFromEvent(event),
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey || event.metaKey,
+        alt: event.altKey
+      });
+    }
+
     canvas.addEventListener("mousemove", (event) => {
       recordMouseClientPosition(event.clientX, event.clientY);
     }, { passive: true });
     canvas.addEventListener("mousedown", (event) => {
-      canvas.focus();
+      if (document.activeElement !== textInput) canvas.focus();
       event.preventDefault();
       void unlockAudio();
       recordMousePosition(event);
@@ -871,55 +1086,29 @@
       canvas.focus();
       showContextMenu(event);
     });
+    if (global.PointerEvent) {
+      canvas.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          handleCanvasTouch(event.clientX, event.clientY);
+        } else {
+          hideOnscreenKeyboard();
+        }
+      }, { passive: true });
+    } else {
+      canvas.addEventListener("touchstart", (event) => {
+        const touch = event.touches && event.touches[0];
+        if (touch) handleCanvasTouch(touch.clientX, touch.clientY);
+      }, { passive: true });
+    }
     document.addEventListener("pointerdown", handleDocumentPointerDown);
     document.addEventListener("keydown", handleDocumentKeyDown);
     global.addEventListener("resize", hideContextMenu);
     canvas.addEventListener("blur", () => send("blur"));
-    canvas.addEventListener("keydown", async (event) => {
-      void unlockAudio();
-      const key = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && key === "a") {
-        event.preventDefault();
-        send("selectAll");
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && key === "c") {
-        event.preventDefault();
-        const text = await request("selectedText");
-        if (text && navigator.clipboard) await navigator.clipboard.writeText(text);
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && key === "x") {
-        event.preventDefault();
-        const text = await request("cut");
-        if (text && navigator.clipboard) await navigator.clipboard.writeText(text);
-        return;
-      }
-      if (shouldPreventKey(event)) event.preventDefault();
-      send("keyDown", {
-        keyCode: browserKeyCodeFromEvent(event),
-        text: keyTextFromEvent(event),
-        shift: event.shiftKey,
-        ctrl: event.ctrlKey || event.metaKey,
-        alt: event.altKey
-      });
+    canvas.addEventListener("keydown", (event) => {
+      void handleKeyDown(event, false);
     });
-    canvas.addEventListener("keyup", (event) => {
-      send("keyUp", {
-        keyCode: browserKeyCodeFromEvent(event),
-        text: keyTextFromEvent(event),
-        shift: event.shiftKey,
-        ctrl: event.ctrlKey || event.metaKey,
-        alt: event.altKey
-      });
-    });
-    canvas.addEventListener("paste", (event) => {
-      const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
-      if (text) {
-        event.preventDefault();
-        send("paste", { text });
-      }
-    });
+    canvas.addEventListener("keyup", handleKeyUp);
+    canvas.addEventListener("paste", handlePaste);
 
     send("init", {
       url: options.url || "",
@@ -983,6 +1172,11 @@
         clearMouseInputTimer();
         if (contextMenu) contextMenu.remove();
         if (aboutPanel) aboutPanel.remove();
+        hideOnscreenKeyboard();
+        if (textInput) {
+          textInput.remove();
+          textInput = null;
+        }
         document.removeEventListener("pointerdown", handleDocumentPointerDown);
         document.removeEventListener("keydown", handleDocumentKeyDown);
         global.removeEventListener("resize", hideContextMenu);

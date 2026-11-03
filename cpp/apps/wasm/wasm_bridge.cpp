@@ -465,12 +465,16 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
     int cursor_code = libreshockwave::player::CursorManager::ARROW_CURSOR;
     std::optional<std::array<int, 2>> cursor_reg;
     std::optional<Bitmap> cursor_bitmap;
+    std::vector<InputHandler::EditableFieldBounds> text_fields;
+    bool text_focus = false;
     if (ctx.player != nullptr) {
         cursor_code = ctx.player->cursorManager().getCursorAtMouse();
         if (cursor_code == libreshockwave::player::CursorManager::CUSTOM_BITMAP_CURSOR) {
             cursor_reg = ctx.player->cursorManager().getCursorRegPoint();
             cursor_bitmap = ctx.player->cursorManager().getCursorBitmap();
         }
+        text_fields = ctx.player->inputHandler().editableFieldBounds();
+        text_focus = ctx.player->inputHandler().hasEditableFieldFocus();
     }
 
     out << '{'
@@ -489,6 +493,20 @@ std::string frameInfoJson(WasmPlayerContext& ctx) {
     appendJsonString(out, ctx.last_status);
     out << ",\"error\":";
     appendJsonString(out, ctx.last_error);
+    out << ",\"textFocus\":" << (text_focus ? "true" : "false")
+        << ",\"textFields\":[";
+    for (std::size_t index = 0; index < text_fields.size(); ++index) {
+        if (index > 0) {
+            out << ',';
+        }
+        const auto& field = text_fields[index];
+        out << "{\"x\":" << field.x
+            << ",\"y\":" << field.y
+            << ",\"width\":" << field.width
+            << ",\"height\":" << field.height
+            << '}';
+    }
+    out << ']';
     out << ",\"cursor\":{\"code\":" << cursor_code << ",\"css\":";
     appendJsonString(out, cursorCssForCode(cursor_code));
     if (cursor_reg.has_value()) {

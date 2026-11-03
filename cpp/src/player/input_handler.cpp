@@ -1,7 +1,6 @@
 #include "libreshockwave/player/input_handler.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <iterator>
 #include <optional>
 #include <utility>
@@ -75,6 +74,27 @@ int InputHandler::hitTestExact(int stage_x, int stage_y) const {
 
     const auto hits = getInteractiveHitPath(stage_x, stage_y);
     return hits.empty() ? 0 : hits.front();
+}
+
+std::vector<InputHandler::EditableFieldBounds> InputHandler::editableFieldBounds() const {
+    std::vector<EditableFieldBounds> bounds;
+    for (const auto& sprite : hitSprites()) {
+        if (!sprite.isVisible() || sprite.channel() <= 0 ||
+            sprite.width() <= 0 || sprite.height() <= 0) {
+            continue;
+        }
+        auto member = resolveSpriteMember(sprite.channel());
+        if (member == nullptr || !isEditableFieldSprite(sprite.channel(), *member)) {
+            continue;
+        }
+        bounds.push_back(EditableFieldBounds{
+            sprite.channel(), sprite.x(), sprite.y(), sprite.width(), sprite.height()});
+    }
+    return bounds;
+}
+
+bool InputHandler::hasEditableFieldFocus() const {
+    return focusedEditableField().has_value();
 }
 
 void InputHandler::onMouseMove(int stage_x, int stage_y) {
@@ -1025,10 +1045,18 @@ void InputHandler::handleEditableFieldInput(int channel, const std::string& key_
     const int key_code = input_state_->lastKeyCode();
 
     // Printable text wins over key codes. A punctuation code can collide with
-    // a navigation or editing code in the host keyboard mapping.
-    if (key_char.size() == 1 && std::isprint(static_cast<unsigned char>(key_char.front())) != 0) {
-        text.replace(static_cast<std::size_t>(sel_min), static_cast<std::size_t>(sel_max - sel_min), key_char);
-        sel_start = sel_end = sel_min + 1;
+    // a navigation or editing code in the host keyboard mapping. Multi-byte
+    // UTF-8 text from soft keyboards and IME commits inserts as one string.
+    const bool printable = !key_char.empty() &&
+        std::ranges::all_of(key_char, [](char character) {
+            const auto byte = static_cast<unsigned char>(character);
+            return byte >= 0x20 && byte != 0x7F;
+        });
+    if (printable) {
+        text.replace(static_cast<std::size_t>(sel_min),
+                     static_cast<std::size_t>(sel_max - sel_min),
+                     key_char);
+        sel_start = sel_end = sel_min + static_cast<int>(key_char.size());
         member->setDynamicText(text);
     } else if (key_code == 51) {
         if (sel_min != sel_max) {

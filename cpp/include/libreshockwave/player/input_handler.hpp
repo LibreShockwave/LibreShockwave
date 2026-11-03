@@ -53,6 +53,18 @@ public:
         bool right_button{false};
     };
 
+    /// Screen-space rectangle of a sprite that accepts keyboard text entry.
+    /// Hosts use these bounds to raise an on-screen keyboard inside the tap
+    /// gesture, before the runtime applies the queued input event. Coordinates
+    /// are stage pixels.
+    struct EditableFieldBounds {
+        int channel{0};
+        int x{0};
+        int y{0};
+        int width{0};
+        int height{0};
+    };
+
     using CurrentFrameSupplier = std::function<int()>;
     using EventDispatcherSupplier = std::function<event::EventDispatcher*()>;
     using HitSpritesSupplier = std::function<std::vector<render::pipeline::RenderSprite>()>;
@@ -80,6 +92,17 @@ public:
 
     [[nodiscard]] int previousRolloverSprite() const;
     [[nodiscard]] int hitTestExact(int stage_x, int stage_y) const;
+
+    /// Bounds of every visible sprite that accepts keyboard text entry. Mobile
+    /// hosts hit test these before forwarding a tap so a soft keyboard can be
+    /// focused in the touch gesture. Returns an empty list when no field can
+    /// accept text.
+    [[nodiscard]] std::vector<EditableFieldBounds> editableFieldBounds() const;
+
+    /// True when a live sprite owns keyboard focus for text entry. Hosts use
+    /// this to release an on-screen keyboard. It stays stable across caret
+    /// blink phases, unlike the caret overlay.
+    [[nodiscard]] bool hasEditableFieldFocus() const;
 
     void onMouseMove(int stage_x, int stage_y);
     void onMouseDown(int stage_x, int stage_y, bool right_button = false);
