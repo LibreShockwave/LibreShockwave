@@ -30,6 +30,54 @@ function pageProtocol() {
   }
 }
 
+// WASM host check. Off by default. When enabled, the WASM module loads only
+// when the page host is a loopback host (localhost, 127.0.0.1, ::1) or
+// matches an allowed host, exactly or as a subdomain. Deployers edit this
+// block to enable it. It is not read from the page.
+const hostCheck = {
+  enabled: false,
+  allowedHosts: ["classichabbo.com"]
+};
+const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function normalizeHost(host) {
+  const value = String(host || "").toLowerCase();
+  return value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
+}
+
+function pageHost() {
+  try {
+    return normalizeHost(new URL(pageUrl).hostname);
+  } catch (error) {
+    try {
+      return normalizeHost(self.location.hostname);
+    } catch (inner) {
+      return "";
+    }
+  }
+}
+
+function isHostAllowed(host) {
+  if (!host) return false;
+  if (loopbackHosts.has(host)) return true;
+  for (const entry of hostCheck.allowedHosts) {
+    const domain = String(entry).trim().toLowerCase();
+    if (!domain) continue;
+    if (host === domain || host.endsWith(`.${domain}`)) return true;
+  }
+  return false;
+}
+
+function assertHostAllowed() {
+  if (!hostCheck.enabled) return;
+  const host = pageHost();
+  if (isHostAllowed(host)) return;
+  throw new Error(
+    `WASM loading blocked: page host '${host || "unknown"}' is not allowed. ` +
+    `Allowed: localhost, ${hostCheck.allowedHosts.join(", ")}`
+  );
+}
+
 let modulePromise = null;
 let Module = null;
 let api = null;
@@ -100,6 +148,12 @@ self.addEventListener("unhandledrejection", (event) => {
 
 function ensureModule() {
   if (modulePromise) return modulePromise;
+  try {
+    assertHostAllowed();
+  } catch (error) {
+    modulePromise = Promise.reject(error);
+    return modulePromise;
+  }
   importScripts(assetUrl("libreshockwave-cpp-wasm.js"));
   modulePromise = createLibreShockwaveCppWasm({
     locateFile(path) {
