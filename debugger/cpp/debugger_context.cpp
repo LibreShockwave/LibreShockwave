@@ -16,6 +16,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 
 #include "debug_state_bridge.hpp"
@@ -104,6 +105,56 @@ QNetworkRequest makeDebuggerNetworkRequest(const QUrl& url) {
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     return request;
 }
+
+namespace {
+
+// A transfer that fails before the server answers is usually a short network
+// hiccup. Retry those, mirroring the WASM host worker, so a transient failure
+// does not surface as an authored download error. HTTP status replies are not
+// retried because the server already answered.
+constexpr int kFetchRetryDelaysMs[] = {350, 1200, 2400};
+constexpr int kFetchRetryCount = static_cast<int>(std::size(kFetchRetryDelaysMs));
+constexpr int kFetchTransferTimeoutMs = 20000;
+
+// Director netError() codes from the Director scripting reference.
+constexpr int kNetErrorConnectFailed = 4146;
+constexpr int kNetErrorUnexpectedClose = 4150;
+constexpr int kNetErrorTimeout = 4154;
+constexpr int kNetErrorAuthentication = 4157;
+constexpr int kNetErrorInvalidUrl = 4159;
+constexpr int kNetErrorInterrupted = 4167;
+constexpr int kNetErrorUnknown = 4836;
+
+bool hasHttpErrorStatus(const QNetworkReply& reply) {
+    const QVariant status = reply.attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    return status.isValid() && status.toInt() >= 400;
+}
+
+// A server reply keeps its HTTP status, because authored loaders already
+// branch on it. A fabricated 404 hides timeouts and socket failures, so those
+// become the matching Director code instead.
+int directorNetErrorCode(QNetworkReply::NetworkError error, int http_status) {
+    if (http_status >= 400) {
+        return http_status;
+    }
+    switch (error) {
+        case QNetworkReply::TimeoutError:
+            return kNetErrorTimeout;
+        case QNetworkReply::RemoteHostClosedError:
+            return kNetErrorUnexpectedClose;
+        case QNetworkReply::ConnectionRefusedError:
+        case QNetworkReply::HostNotFoundError:
+            return kNetErrorConnectFailed;
+        case QNetworkReply::SslHandshakeFailedError:
+            return kNetErrorAuthentication;
+        case QNetworkReply::OperationCanceledError:
+            return kNetErrorInterrupted;
+        default:
+            return kNetErrorUnknown;
+    }
+}
+
+} // namespace
 
 DebuggerContext::DebuggerContext(QObject* parent)
     : QObject(parent) {
@@ -476,6 +527,7 @@ void DebuggerContext::shutdownWorker() {
     // Stop the HTTP pump and cancel any in-flight replies so stale results
     // can never be delivered to a future session's QueuedNetProvider (task
     // ids restart from 1 per provider).
+    ++net_generation_;
     if (net_pump_timer_ != nullptr) {
         net_pump_timer_->stop();
     }
@@ -837,24 +889,27 @@ void DebuggerContext::issueFetch(NetFetchRequest request) {
         add_url(fallback);
     }
     if (urls.isEmpty()) {
-        deliverFetchError(request.task_id, 404);
+        deliverFetchError(request.task_id, kNetErrorInvalidUrl);
         return;
     }
     startFetchAttempt(std::move(request), urls);
 }
 
-void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> urls) {
+void DebuggerContext::startFetchAttempt(NetFetchRequest request,
+                                        QList<QUrl> urls,
+                                        int retry_index) {
     if (urls.isEmpty()) {
-        deliverFetchError(request.task_id, 404);
+        deliverFetchError(request.task_id, kNetErrorInvalidUrl);
         return;
     }
 
     const QUrl url = urls.takeFirst();
     QNetworkRequest net_request = makeDebuggerNetworkRequest(url);
-    net_request.setTransferTimeout(20000);
+    net_request.setTransferTimeout(kFetchTransferTimeoutMs);
 
+    const bool is_post = request.method == "POST" && !request.post_data.empty();
     QNetworkReply* reply = nullptr;
-    if (request.method == "POST" && !request.post_data.empty()) {
+    if (is_post) {
         net_request.setHeader(QNetworkRequest::ContentTypeHeader,
                              QStringLiteral("application/x-www-form-urlencoded"));
         reply = net_access_->post(
@@ -864,22 +919,56 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request, QList<QUrl> url
         reply = net_access_->get(net_request);
     }
 
+    // A retry that was scheduled before a movie swap must not touch the new
+    // session's provider: its task ids restart from 1.
+    const std::uint64_t generation = net_generation_;
     active_replies_.insert(reply);
     connect(reply, &QNetworkReply::finished, this,
-            [this, request, urls, reply] {
+            [this, request, urls, reply, url, is_post, generation, retry_index] {
                 active_replies_.erase(reply);
                 reply->deleteLater();
 
+                if (generation != net_generation_) {
+                    return;
+                }
                 if (reply->error() == QNetworkReply::NoError) {
                     const QByteArray data = reply->readAll();
                     std::vector<std::uint8_t> bytes(data.cbegin(), data.cend());
                     deliverFetchResult(request.task_id, std::move(bytes));
-                } else if (!urls.isEmpty()) {
-                    // Try the next fallback URL
-                    startFetchAttempt(request, urls);
-                } else {
-                    deliverFetchError(request.task_id, 404);
+                    return;
                 }
+
+                // A transport failure (no HTTP reply) gets a short retry so a
+                // one-off hiccup does not reach the authored download handler.
+                // Re-POSTing is not safe, so POST failures are final.
+                if (!is_post && !hasHttpErrorStatus(*reply) &&
+                    retry_index < kFetchRetryCount) {
+                    const int delay_ms = kFetchRetryDelaysMs[retry_index];
+                    QTimer::singleShot(
+                        delay_ms, this,
+                        [this, request, url, urls, generation, retry_index] {
+                            if (generation != net_generation_) {
+                                return;
+                            }
+                            QList<QUrl> retry_urls;
+                            retry_urls.append(url);
+                            for (const QUrl& fallback : urls) {
+                                retry_urls.append(fallback);
+                            }
+                            startFetchAttempt(request, retry_urls, retry_index + 1);
+                        });
+                    return;
+                }
+
+                if (!urls.isEmpty()) {
+                    // Try the next fallback URL.
+                    startFetchAttempt(request, urls, 0);
+                    return;
+                }
+                const int http_status =
+                    reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                deliverFetchError(request.task_id,
+                                  directorNetErrorCode(reply->error(), http_status));
             });
 }
 

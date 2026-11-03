@@ -177,7 +177,7 @@ private:
     void wakeWorker();
 
     void issueFetch(NetFetchRequest request);
-    void startFetchAttempt(NetFetchRequest request, QList<QUrl> urls);
+    void startFetchAttempt(NetFetchRequest request, QList<QUrl> urls, int retry_index = 0);
     void deliverFetchResult(int task_id, std::vector<std::uint8_t> data);
     void deliverFetchError(int task_id, int status);
 
@@ -203,6 +203,10 @@ private:
     QTimer* net_pump_timer_{nullptr};
     QTimer* frame_pump_timer_{nullptr};
     std::unordered_set<QNetworkReply*> active_replies_;
+
+    // Bumped whenever the session is replaced. A retry scheduled before the
+    // swap must not deliver a result to the next session's provider.
+    std::uint64_t net_generation_{0};
 
     // Network queues (thread-safe).  Worker → main: pending fetch requests;
     // main → worker: completed fetch results.

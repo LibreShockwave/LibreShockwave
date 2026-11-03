@@ -263,6 +263,18 @@ function isHttpStatusError(error) {
   return /^(4|5)\d\d\b/.test(errorMessage(error));
 }
 
+// Keep an HTTP status because authored loaders branch on it. A browser fetch
+// failure has no status, so report the Director unknown-network code (4836)
+// instead of a fabricated 404.
+function directorNetErrorCode(error) {
+  const match = /^(\d{3})\b/.exec(errorMessage(error));
+  if (match) {
+    const status = Number(match[1]);
+    if (status >= 400) return status;
+  }
+  return 4836;
+}
+
 function isRemoteCandidate(url) {
   try {
     return new URL(url).origin !== pageOrigin();
@@ -335,9 +347,7 @@ async function satisfyFetchRequest(request, generation) {
   }
   if (generation !== sessionGeneration || !handle) return;
   bridgeCall("fetch error", () => {
-    api.fetchError(handle, request.taskId, lastError && /^(4|5)\d\d/.test(errorMessage(lastError))
-      ? Number(errorMessage(lastError).slice(0, 3))
-      : 404);
+    api.fetchError(handle, request.taskId, directorNetErrorCode(lastError));
   });
   post("warning", { message: `Fetch failed for ${request.url}: ${lastError ? lastError.message : "no candidates"}` });
 }
