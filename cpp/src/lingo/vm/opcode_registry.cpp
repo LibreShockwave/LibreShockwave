@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <charconv>
 #include <cctype>
@@ -42,8 +43,16 @@ namespace {
 std::function<void()> image_mutation_callback;
 void* image_mutation_callback_owner = nullptr;
 std::deque<std::string> image_operation_trace;
+std::atomic<bool> image_operation_trace_capture{false};
 int image_operation_trace_next_id = 1;
 constexpr std::size_t k_max_image_operation_trace_entries = 512;
+
+// The image-operation trace is a debug view. Capture stays off until a
+// consumer asks for the trace, so ordinary playback does not pay for the
+// per-copy bitmap summaries.
+bool imageOperationTraceCapturing() {
+    return image_operation_trace_capture.load(std::memory_order_relaxed);
+}
 
 void appendTraceJsonString(std::ostringstream& out, std::string_view value) {
     out << '"';
@@ -4451,41 +4460,46 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view method_na
         const auto* src_ref = args.size() >= 1 ? args[0].asImageRef() : nullptr;
         const auto* dest_rect = args.size() >= 2 ? args[1].asIntRect() : nullptr;
         const auto* src_rect = args.size() >= 3 ? args[2].asIntRect() : nullptr;
+        const bool trace_capture = imageOperationTraceCapturing();
         int trace_ink = 0;
-        if (args.size() >= 4 && args[3].isPropList()) {
+        if (trace_capture && args.size() >= 4 && args[3].isPropList()) {
             const Datum ink_datum = getPropListKey(args[3].propListValue(), "ink");
             if (!ink_datum.isVoid()) {
                 trace_ink = toIntLikeJava(ink_datum);
             }
         }
-        std::ostringstream trace_before;
-        trace_before << "{\"id\":" << image_operation_trace_next_id++
-                    << ",\"op\":\"copyPixels.before\",\"ink\":" << trace_ink
-                    << ",\"destRect\":";
-        appendTraceRectJson(trace_before, dest_rect);
-        trace_before << ",\"srcRect\":";
-        appendTraceRectJson(trace_before, src_rect);
-        appendTraceBitmapSummary(trace_before, "dest", bmp);
-        if (src_ref != nullptr && src_ref->bitmap != nullptr) {
-            appendTraceBitmapSummary(trace_before, "src", *src_ref->bitmap);
+        if (trace_capture) {
+            std::ostringstream trace_before;
+            trace_before << "{\"id\":" << image_operation_trace_next_id++
+                        << ",\"op\":\"copyPixels.before\",\"ink\":" << trace_ink
+                        << ",\"destRect\":";
+            appendTraceRectJson(trace_before, dest_rect);
+            trace_before << ",\"srcRect\":";
+            appendTraceRectJson(trace_before, src_rect);
+            appendTraceBitmapSummary(trace_before, "dest", bmp);
+            if (src_ref != nullptr && src_ref->bitmap != nullptr) {
+                appendTraceBitmapSummary(trace_before, "src", *src_ref->bitmap);
+            }
+            trace_before << '}';
+            pushImageOperationTrace(trace_before.str());
         }
-        trace_before << '}';
-        pushImageOperationTrace(trace_before.str());
         notifyImageMutation(bmp);
         auto result = imageCopyPixels(bmp, args);
         if (image.mutation_callback) {
             image.mutation_callback(bmp);
         }
-        std::ostringstream trace_after;
-        trace_after << "{\"id\":" << image_operation_trace_next_id++
-                   << ",\"op\":\"copyPixels.after\",\"ink\":" << trace_ink
-                   << ",\"destRect\":";
-        appendTraceRectJson(trace_after, dest_rect);
-        trace_after << ",\"srcRect\":";
-        appendTraceRectJson(trace_after, src_rect);
-        appendTraceBitmapSummary(trace_after, "dest", bmp);
-        trace_after << '}';
-        pushImageOperationTrace(trace_after.str());
+        if (trace_capture) {
+            std::ostringstream trace_after;
+            trace_after << "{\"id\":" << image_operation_trace_next_id++
+                       << ",\"op\":\"copyPixels.after\",\"ink\":" << trace_ink
+                       << ",\"destRect\":";
+            appendTraceRectJson(trace_after, dest_rect);
+            trace_after << ",\"srcRect\":";
+            appendTraceRectJson(trace_after, src_rect);
+            appendTraceBitmapSummary(trace_after, "dest", bmp);
+            trace_after << '}';
+            pushImageOperationTrace(trace_after.str());
+        }
         return result;
     }
     if (equalsIgnoreCase(method_name, "duplicate")) {
@@ -4502,14 +4516,16 @@ Datum imageObjectMethod(const Datum::ImageRef& image, std::string_view method_na
     }
     if (equalsIgnoreCase(method_name, "trimWhiteSpace")) {
         const auto bounds = bmp.trimWhiteSpace();
-        std::ostringstream trace;
-        trace << "{\"id\":" << image_operation_trace_next_id++
-              << ",\"op\":\"trimWhiteSpace\",\"bounds\":";
-        const Datum::IntRect bounds_rect{bounds.left, bounds.top, bounds.right, bounds.bottom};
-        appendTraceRectJson(trace, &bounds_rect);
-        appendTraceBitmapSummary(trace, "src", bmp);
-        trace << '}';
-        pushImageOperationTrace(trace.str());
+        if (imageOperationTraceCapturing()) {
+            std::ostringstream trace;
+            trace << "{\"id\":" << image_operation_trace_next_id++
+                  << ",\"op\":\"trimWhiteSpace\",\"bounds\":";
+            const Datum::IntRect bounds_rect{bounds.left, bounds.top, bounds.right, bounds.bottom};
+            appendTraceRectJson(trace, &bounds_rect);
+            appendTraceBitmapSummary(trace, "src", bmp);
+            trace << '}';
+            pushImageOperationTrace(trace.str());
+        }
         if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
             auto empty = std::make_shared<bitmap::Bitmap>(1, 1, bmp.bitDepth());
             empty->fill(0xFFFFFFFFU);
@@ -8613,6 +8629,7 @@ bool objCall(ExecutionContext& context) {
 } // namespace
 
 std::string imageOperationTraceJson() {
+    image_operation_trace_capture.store(true, std::memory_order_relaxed);
     std::ostringstream out;
     out << "{\"events\":[";
     for (std::size_t index = 0; index < image_operation_trace.size(); ++index) {

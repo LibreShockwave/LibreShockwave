@@ -1249,6 +1249,8 @@ void Player::wireComponents() {
             ScriptHandlerFinderKeyHash>>();
     auto script_ref_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
     auto script_instance_target_cache = std::make_shared<std::unordered_map<std::uint64_t, ResolvedScriptTarget>>();
+    auto script_ref_candidates_cache =
+        std::make_shared<std::unordered_map<std::uint64_t, std::vector<std::pair<int, int>>>>();
 
     // An external cast can be rebound to a different file in the same cast
     // slot. Cached handler, script-reference, and script-instance resolutions
@@ -1256,11 +1258,13 @@ void Player::wireComponents() {
     invalidate_script_resolution_caches_ = [handler_lookup_cache,
                                             script_handler_finder_cache,
                                             script_ref_target_cache,
-                                            script_instance_target_cache] {
+                                            script_instance_target_cache,
+                                            script_ref_candidates_cache] {
         handler_lookup_cache->clear();
         script_handler_finder_cache->clear();
         script_ref_target_cache->clear();
         script_instance_target_cache->clear();
+        script_ref_candidates_cache->clear();
     };
 
     auto find_handler_in_script = [this, handler_lookup_cache](const std::shared_ptr<chunks::ScriptChunk>& script,
@@ -1345,14 +1349,22 @@ void Player::wireComponents() {
         return std::nullopt;
     };
 
-    auto canonical_script_ref_candidates = [this](int cast_lib, int member_num)
-        -> std::vector<std::pair<int, int>> {
+    auto canonical_script_ref_candidates = [this, script_ref_candidates_cache](int cast_lib, int member_num)
+        -> const std::vector<std::pair<int, int>>& {
+        static const std::vector<std::pair<int, int>> empty_candidates;
         cast_lib = cast_lib > 0 ? cast_lib : 1;
-        std::vector<std::pair<int, int>> candidates;
         if (member_num <= 0) {
-            return candidates;
+            return empty_candidates;
         }
 
+        const auto cache_key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(cast_lib)) << 32U) |
+                              static_cast<std::uint32_t>(member_num);
+        if (const auto cached = script_ref_candidates_cache->find(cache_key);
+            cached != script_ref_candidates_cache->end()) {
+            return cached->second;
+        }
+
+        std::vector<std::pair<int, int>> candidates;
         const auto member_name = cast_lib_manager_.getMemberProp(cast_lib, member_num, "name").stringValue();
         if (!member_name.empty() && member_name != "VOID") {
             if (const auto* canonical = cast_lib_manager_.getMemberByName(0, member_name).asCastMemberRef()) {
@@ -1365,7 +1377,7 @@ void Player::wireComponents() {
         }
 
         candidates.emplace_back(cast_lib, member_num);
-        return candidates;
+        return script_ref_candidates_cache->emplace(cache_key, std::move(candidates)).first->second;
     };
 
     auto resolve_script_instance = [resolve_script_ref, script_instance_target_cache](

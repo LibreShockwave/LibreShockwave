@@ -90,6 +90,10 @@ public:
     static void registerHandlers(OpcodeRegistry& registry);
 };
 
+// Enables capture on the first call and returns the captured image-operation
+// events. Capture stays off until a consumer asks for the trace, so ordinary
+// playback does not pay for the per-copy bitmap summaries. Events recorded
+// before the first call are not available.
 [[nodiscard]] std::string imageOperationTraceJson();
 void clearImageOperationTrace();
 
