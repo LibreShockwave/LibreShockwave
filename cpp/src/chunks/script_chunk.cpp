@@ -418,7 +418,11 @@ ScriptChunk ScriptChunk::read(const DirectorFile* file,
                             break;
                         }
                         case 9: {
-                            if (reader.bytesLeft() >= 4) {
+                            if (data_len >= 8 && reader.bytesLeft() >= 8) {
+                                const auto bits = static_cast<std::uint64_t>(reader.readI64());
+                                numeric_value = std::bit_cast<double>(bits);
+                                value = floatingToString(numeric_value);
+                            } else if (reader.bytesLeft() >= 4) {
                                 const auto bits = static_cast<std::uint32_t>(reader.readI32());
                                 numeric_value = static_cast<double>(std::bit_cast<float>(bits));
                                 value = floatingToString(numeric_value);
