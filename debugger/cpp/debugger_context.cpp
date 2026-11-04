@@ -717,12 +717,12 @@ void DebuggerContext::runLoop() {
 
             const auto delay = frameDuration(player_->tempo());
             next_tick_at += delay;
-            // A slow VM frame must not cause a burst of catch-up ticks. The
-            // next tick is scheduled from the current time, preserving the
-            // movie cadence while giving network/input work a chance to run.
+            // A slow frame must not cause a burst of catch-up ticks. Start the
+            // next tick immediately instead of adding a whole delay, so one
+            // overrun frame does not cost two frame intervals.
             const auto now = Clock::now();
             if (next_tick_at <= now) {
-                next_tick_at = now + delay;
+                next_tick_at = now;
             }
             continue;
         }
