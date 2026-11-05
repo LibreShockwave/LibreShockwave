@@ -10,6 +10,11 @@ namespace libreshockwave::player::render::pipeline {
 
 class InkProcessor {
 public:
+    // True when the bake stage keys the source background before the stage
+    // renderer applies the ink arithmetic. Copy is the only ink that keeps the
+    // whole sprite rectangle, so a script-built canvas under Lightest, Add,
+    // Matte, or any other processed ink would otherwise print its white
+    // backing as an opaque box around the artwork.
     [[nodiscard]] static bool shouldProcessInk(int ink);
     [[nodiscard]] static bool shouldProcessInk(id::InkMode ink);
     [[nodiscard]] static bool allowsColorize(int ink);

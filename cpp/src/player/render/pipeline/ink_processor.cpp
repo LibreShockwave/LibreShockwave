@@ -530,6 +530,8 @@ bool InkProcessor::shouldProcessInk(id::InkMode ink) {
            ink == id::InkMode::ADD ||
            ink == id::InkMode::SUBTRACT_PIN ||
            ink == id::InkMode::SUBTRACT ||
+           ink == id::InkMode::LIGHTEST ||
+           ink == id::InkMode::DARKEST ||
            ink == id::InkMode::BACKGROUND_TRANSPARENT ||
            ink == id::InkMode::BLEND ||
            ink == id::InkMode::LIGHTEN ||

@@ -396,6 +396,11 @@ tests. They are not a complete rendering specification.
   mistaken for the matte color while the original white backing remains visible.
 - Without valid indices, use the RGB flood-fill fallback. It is usually keyed
   from white.
+- `LIGHTTEST` and `DARKEST` key the source background at bake time like the
+  other processed inks. `Copy` is the only ink that keeps the whole sprite
+  rectangle. Without bake-time keying, a script-built canvas that starts opaque
+  white prints its backing as a solid box, because the stage renderer applies
+  `max()` or `min()` across the full rectangle.
 - `BACKGROUND_TRANSPARENT` ink defaults the background key to white unless
   `bgColor` provides a different key.
 - `BACKGROUND_TRANSPARENT` copies from indexed sources with the default white key
