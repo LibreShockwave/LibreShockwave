@@ -294,6 +294,11 @@ public:
         [[nodiscard]] static ColorRef fromPaletteIndex(int index);
         [[nodiscard]] static ColorRef fromRgb(int r, int g, int b);
 
+        // Director treats a colour as a number: an RGB colour is red << 16 |
+        // green << 8 | blue, and a palette colour is its palette index.
+        // integer(color), colour arithmetic, and int properties all use this.
+        [[nodiscard]] int packedValue() const;
+
         friend bool operator==(const ColorRef&, const ColorRef&) = default;
     };
 

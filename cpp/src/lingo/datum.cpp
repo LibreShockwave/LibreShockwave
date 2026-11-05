@@ -325,6 +325,13 @@ Datum::ColorRef Datum::ColorRef::fromRgb(int r, int g, int b) {
     return ColorRef{r, g, b, std::nullopt};
 }
 
+int Datum::ColorRef::packedValue() const {
+    if (palette_index.has_value()) {
+        return *palette_index;
+    }
+    return (r << 16) | (g << 8) | b;
+}
+
 const Datum Datum::TRUE = Datum::of(1);
 const Datum Datum::FALSE = Datum::of(0);
 
@@ -529,6 +536,7 @@ int Datum::intValue() const {
     if (const auto* value = std::get_if<DFloat>(&value_)) return static_cast<int>(value->value);
     if (const auto* value = std::get_if<Str>(&value_)) return parseIntSafe(value->value);
     if (const auto* value = std::get_if<FieldText>(&value_)) return parseIntSafe(value->value);
+    if (const auto* color = std::get_if<ColorRef>(&value_)) return color->packedValue();
     if (std::holds_alternative<Void>(value_)) return 0;
     throw LingoException("Cannot convert " + typeString() + " to int");
 }
@@ -538,6 +546,7 @@ float Datum::floatValue() const {
     if (const auto* value = std::get_if<Int>(&value_)) return static_cast<float>(value->value);
     if (const auto* value = std::get_if<Str>(&value_)) return parseFloatSafe(value->value);
     if (const auto* value = std::get_if<FieldText>(&value_)) return parseFloatSafe(value->value);
+    if (const auto* color = std::get_if<ColorRef>(&value_)) return static_cast<float>(color->packedValue());
     if (std::holds_alternative<Void>(value_)) return 0.0F;
     throw LingoException("Cannot convert " + typeString() + " to float");
 }
@@ -580,6 +589,7 @@ bool Datum::boolValue() const {
     if (const auto* value = std::get_if<DFloat>(&value_)) return value->value != 0.0F;
     if (const auto* value = std::get_if<Str>(&value_)) return !value->value.empty();
     if (const auto* value = std::get_if<FieldText>(&value_)) return !value->value.empty();
+    if (const auto* color = std::get_if<ColorRef>(&value_)) return color->packedValue() != 0;
     if (std::holds_alternative<Symbol>(value_)) return true;
     if (std::holds_alternative<Void>(value_) || std::holds_alternative<Null>(value_)) return false;
     throw LingoException("Cannot convert " + typeString() + " to bool");

@@ -84,10 +84,6 @@ std::optional<double> parseDoubleStrict(std::string_view value) {
     return result;
 }
 
-int packedColor(const Datum::ColorRef& color) {
-    return (color.r << 16) | (color.g << 8) | color.b;
-}
-
 int toIntLikeJava(const Datum& datum) {
     if (const auto* value = datum.asInt()) {
         return value->value;
@@ -105,7 +101,7 @@ int toIntLikeJava(const Datum& datum) {
         return value->channel;
     }
     if (const auto* color = datum.asColorRef()) {
-        return packedColor(*color);
+        return color->packedValue();
     }
     return 0;
 }
@@ -127,7 +123,7 @@ double toDoubleLikeJava(const Datum& datum) {
         return static_cast<double>(value->channel);
     }
     if (const auto* color = datum.asColorRef()) {
-        return static_cast<double>(packedColor(*color));
+        return static_cast<double>(color->packedValue());
     }
     return 0.0;
 }
