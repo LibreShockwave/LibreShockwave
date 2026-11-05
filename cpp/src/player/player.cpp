@@ -37,6 +37,21 @@ namespace {
 
 constexpr int DEFAULT_TEMPO = 15;
 
+// Marks the window where the runtime applies an external cast and movie load
+// callbacks can re-enter the VM. Restores the previous value so a cast-load
+// handler that loads another cast does not clear the boundary early.
+class ExternalCastApplyScope {
+public:
+    explicit ExternalCastApplyScope(bool& flag) : flag_(flag), previous_(flag) { flag_ = true; }
+    ExternalCastApplyScope(const ExternalCastApplyScope&) = delete;
+    ExternalCastApplyScope& operator=(const ExternalCastApplyScope&) = delete;
+    ~ExternalCastApplyScope() { flag_ = previous_; }
+
+private:
+    bool& flag_;
+    bool previous_;
+};
+
 class TickDeadlineGuard {
 public:
     explicit TickDeadlineGuard(lingo::vm::LingoVM& vm)
@@ -289,7 +304,7 @@ Player::Player(std::shared_ptr<DirectorFile> file, bool register_socket_multiuse
     if (register_socket_multiuser_xtra) {
         socket_multiuser_bridge_ = std::make_unique<xtra::SocketMultiuserBridge>();
         socket_multiuser_bridge_->setIncomingDataReadyPredicate([this] {
-            return externalCastsReady();
+            return !applyingExternalCastData();
         });
         registerMultiuserXtra(*socket_multiuser_bridge_);
     }
@@ -462,7 +477,7 @@ void Player::registerMultiuserXtra(lingo::xtra::MultiuserNetBridge& bridge) {
             }
         },
         [this] {
-            return externalCastsReady();
+            return !applyingExternalCastData();
         }));
 }
 
@@ -784,6 +799,10 @@ bool Player::externalCastsReady() const {
     return !activeNetProvider().hasPendingCastLoads();
 }
 
+bool Player::applyingExternalCastData() const {
+    return applying_external_cast_data_;
+}
+
 bool Player::networkReady() const {
     const bool casts_ready = externalCastsReady();
     bool has_unloaded_external_cast = false;
@@ -845,6 +864,7 @@ bool Player::loadExternalCastFromCachedData(int cast_lib_number,
 bool Player::applyExternalCastDataNow(int cast_lib_number,
                                       const std::vector<std::uint8_t>& data,
                                       std::function<void()> after_load) {
+    const ExternalCastApplyScope apply_scope(applying_external_cast_data_);
     if (!cast_lib_manager_.setExternalCastData(cast_lib_number, data)) {
         return false;
     }

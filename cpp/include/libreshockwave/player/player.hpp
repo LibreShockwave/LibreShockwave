@@ -154,6 +154,12 @@ public:
     void onNetFetchComplete(std::string_view url, const std::vector<std::uint8_t>& data);
     [[nodiscard]] int preloadAllCasts();
     [[nodiscard]] bool externalCastsReady() const;
+    // True only while the runtime is inside a synchronous external cast
+    // application, which can re-enter the movie through load callbacks.
+    // Multiuser delivery waits for this boundary and never for a cast
+    // download, so traffic keeps flowing while casts are still in flight.
+    // Usage: if (!player.applyingExternalCastData()) deliverBytes();
+    [[nodiscard]] bool applyingExternalCastData() const;
     [[nodiscard]] bool networkReady() const;
     void onSynchronousExternalCastLoad(int cast_lib_number);
     [[nodiscard]] bool loadExternalCastFromCachedData(int cast_lib_number,
@@ -230,6 +236,9 @@ private:
     // response can schedule the security cast; remember that dependency so
     // playback waits for that async cast cycle to settle.
     mutable bool external_cast_load_observed_{false};
+    // True only inside Player::applyExternalCastDataNow, where cast data is
+    // being applied and movie load callbacks can re-enter the VM.
+    bool applying_external_cast_data_{false};
     std::string last_script_error_message_;
     std::string last_script_error_stack_;
     std::int64_t last_script_error_time_ms_{0};
