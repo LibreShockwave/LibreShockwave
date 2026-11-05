@@ -33,8 +33,19 @@ struct BitmapCacheKey {
     int back_color{0};
     bool has_fore_color{false};
     bool has_back_color{false};
+    // Non-zero for entries produced from a script-owned runtime bitmap. The
+    // revision identifies that bitmap's exact content state, so a mutated
+    // image can never reuse an earlier result.
+    std::uint64_t source_revision{0};
 
     friend auto operator<=>(const BitmapCacheKey&, const BitmapCacheKey&) = default;
+};
+
+struct BitmapCacheEntry {
+    std::shared_ptr<const bitmap::Bitmap> bitmap;
+    // Keeps a runtime entry tied to the image it came from. Empty for entries
+    // produced from an authored cast member.
+    std::weak_ptr<const bitmap::Bitmap> runtime_source;
 };
 
 class BitmapCache {
@@ -55,6 +66,33 @@ public:
 
     void markDecodeFailed(const chunks::CastMemberChunk& member);
     [[nodiscard]] bool hasDecodeFailed(const chunks::CastMemberChunk& member) const;
+
+    /// Look up the processed result of a script-owned runtime image.
+    /// The source revision identifies the exact pixel state the result was
+    /// produced from, so the caller never sees a stale bitmap. Pass a null
+    /// member for images that have no authored cast backing.
+    /// Example: `if (auto hit = cache.getCachedRuntimeProcessed(member, live, ...)) return hit;`
+    [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> getCachedRuntimeProcessed(
+        const chunks::CastMemberChunk* member,
+        const std::shared_ptr<const bitmap::Bitmap>& source,
+        int ink,
+        int back_color,
+        int fore_color,
+        bool has_fore_color,
+        bool has_back_color) const;
+
+    /// Store the processed result of a script-owned runtime image.
+    /// Earlier results for the same source image are dropped, so a mutating
+    /// image holds at most one cached result per ink and colour combination.
+    void putRuntimeProcessed(const chunks::CastMemberChunk* member,
+                             const std::shared_ptr<const bitmap::Bitmap>& source,
+                             int ink,
+                             int back_color,
+                             int fore_color,
+                             bool has_fore_color,
+                             bool has_back_color,
+                             std::shared_ptr<const bitmap::Bitmap> bitmap);
+
     void invalidateMember(const chunks::CastMemberChunk& member);
     [[nodiscard]] bool invalidateIfPaletteChanged(const chunks::CastMemberChunk& member, int palette_version);
     void clear();
@@ -98,7 +136,19 @@ public:
         const std::optional<IndexedMatteColorRemap>& remap);
 
 private:
-    std::map<BitmapCacheKey, std::shared_ptr<const bitmap::Bitmap>> cache_;
+    [[nodiscard]] static BitmapCacheKey runtimeCacheKey(const chunks::CastMemberChunk* member,
+                                                        std::uint64_t source_revision,
+                                                        int ink,
+                                                        int back_color,
+                                                        int fore_color,
+                                                        bool has_fore_color,
+                                                        bool has_back_color);
+    [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> lookup(const BitmapCacheKey& key) const;
+    void store(const BitmapCacheKey& key,
+               std::shared_ptr<const bitmap::Bitmap> bitmap,
+               std::weak_ptr<const bitmap::Bitmap> runtime_source);
+
+    std::map<BitmapCacheKey, BitmapCacheEntry> cache_;
     std::map<BitmapCacheMemberId, bool> decode_failed_;
     std::map<BitmapCacheMemberId, int> palette_versions_;
 };

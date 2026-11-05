@@ -18954,7 +18954,9 @@ void testSpriteBakerFoundation() {
     assert(live_provider_calls == 1);
     assert(live_decode_calls == 0);
     assert(baked_live.bakedBitmap()->getPixel(0, 0) == 0xFF0000FFU);
-    assert(live_cache.cachedBitmapCount() == 1);
+    // The runtime result is cached under its own revision key, so the cache
+    // holds it next to the untouched authored processed entry.
+    assert(live_cache.cachedBitmapCount() == 2);
     assert(live_cache.getCachedProcessed(*live_member, 0, 0, 0, false, false) == stale_bitmap);
 
     auto live_copy_bitmap = std::make_shared<Bitmap>(2, 1, 32, std::vector<std::uint32_t>{

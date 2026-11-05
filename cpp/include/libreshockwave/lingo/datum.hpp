@@ -617,6 +617,7 @@ private:
     void invalidateIndex() const;
     void indexEntry(std::size_t index) const;
     void rebuildIndex() const;
+    void maintainIndexAfterErase(std::size_t position, int erased_index) const;
 
     std::vector<std::pair<Datum, Datum>> properties_;
     bool sorted_;

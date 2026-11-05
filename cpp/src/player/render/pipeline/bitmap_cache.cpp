@@ -24,6 +24,23 @@ bool isTransparentOrBlackMask(const bitmap::Bitmap& bitmap) {
     return has_opaque_black;
 }
 
+/// True when a cached runtime result can never be used again: its source image
+/// is gone, or the source image was mutated after the result was produced.
+/// Only meaningful for keys with a non-zero source revision.
+bool runtimeEntryIsStale(const BitmapCacheKey& key,
+                         const std::weak_ptr<const bitmap::Bitmap>& owner,
+                         const std::shared_ptr<const bitmap::Bitmap>& source) {
+    if (owner.expired()) {
+        return true;
+    }
+    if (source == nullptr) {
+        return false;
+    }
+    const auto current = owner.lock();
+    const bool same_image = current && current->revision() == source->revision();
+    return same_image && key.source_revision != source->revision();
+}
+
 } // namespace
 
 std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedProcessed(const chunks::CastMemberChunk& member,
@@ -32,9 +49,7 @@ std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedProcessed(const chun
                                                                       int fore_color,
                                                                       bool has_fore_color,
                                                                       bool has_back_color) const {
-    const auto key = cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color);
-    const auto it = cache_.find(key);
-    return it == cache_.end() ? nullptr : it->second;
+    return lookup(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color));
 }
 
 void BitmapCache::putProcessed(const chunks::CastMemberChunk& member,
@@ -44,12 +59,45 @@ void BitmapCache::putProcessed(const chunks::CastMemberChunk& member,
                                bool has_fore_color,
                                bool has_back_color,
                                std::shared_ptr<const bitmap::Bitmap> bitmap) {
-    const auto key = cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color);
-    if (bitmap) {
-        cache_[key] = std::move(bitmap);
-    } else {
-        cache_.erase(key);
+    store(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color), std::move(bitmap), {});
+}
+
+std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedRuntimeProcessed(
+    const chunks::CastMemberChunk* member,
+    const std::shared_ptr<const bitmap::Bitmap>& source,
+    int ink,
+    int back_color,
+    int fore_color,
+    bool has_fore_color,
+    bool has_back_color) const {
+    if (source == nullptr) {
+        return nullptr;
     }
+    return lookup(runtimeCacheKey(member, source->revision(), ink, back_color, fore_color, has_fore_color,
+                                  has_back_color));
+}
+
+void BitmapCache::putRuntimeProcessed(const chunks::CastMemberChunk* member,
+                                      const std::shared_ptr<const bitmap::Bitmap>& source,
+                                      int ink,
+                                      int back_color,
+                                      int fore_color,
+                                      bool has_fore_color,
+                                      bool has_back_color,
+                                      std::shared_ptr<const bitmap::Bitmap> bitmap) {
+    for (auto iter = cache_.begin(); iter != cache_.end();) {
+        if (iter->first.source_revision != 0 && runtimeEntryIsStale(iter->first, iter->second.runtime_source, source)) {
+            iter = cache_.erase(iter);
+        } else {
+            ++iter;
+        }
+    }
+
+    const std::weak_ptr<const bitmap::Bitmap> owner = source;
+    store(runtimeCacheKey(member, source != nullptr ? source->revision() : 0, ink, back_color, fore_color,
+                          has_fore_color, has_back_color),
+          std::move(bitmap),
+          owner);
 }
 
 void BitmapCache::markDecodeFailed(const chunks::CastMemberChunk& member) {
@@ -118,6 +166,39 @@ BitmapCacheMemberId BitmapCache::memberKey(const chunks::CastMemberChunk* member
         reinterpret_cast<std::uintptr_t>(member->file()),
         member->id().value()
     };
+}
+
+BitmapCacheKey BitmapCache::runtimeCacheKey(const chunks::CastMemberChunk* member,
+                                            std::uint64_t source_revision,
+                                            int ink,
+                                            int back_color,
+                                            int fore_color,
+                                            bool has_fore_color,
+                                            bool has_back_color) {
+    return BitmapCacheKey{
+        memberKey(member),
+        ink,
+        has_fore_color ? fore_color : 0,
+        back_color,
+        has_fore_color,
+        has_back_color,
+        source_revision
+    };
+}
+
+std::shared_ptr<const bitmap::Bitmap> BitmapCache::lookup(const BitmapCacheKey& key) const {
+    const auto it = cache_.find(key);
+    return it == cache_.end() ? nullptr : it->second.bitmap;
+}
+
+void BitmapCache::store(const BitmapCacheKey& key,
+                        std::shared_ptr<const bitmap::Bitmap> bitmap,
+                        std::weak_ptr<const bitmap::Bitmap> runtime_source) {
+    if (bitmap) {
+        cache_[key] = BitmapCacheEntry{std::move(bitmap), std::move(runtime_source)};
+    } else {
+        cache_.erase(key);
+    }
 }
 
 BitmapCacheKey BitmapCache::cacheKey(const chunks::CastMemberChunk& member,

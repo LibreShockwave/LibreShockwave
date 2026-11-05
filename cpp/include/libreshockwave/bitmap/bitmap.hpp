@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "libreshockwave/bitmap/bitmap_revision.hpp"
 #include "libreshockwave/bitmap/palette.hpp"
 
 namespace libreshockwave::bitmap {
@@ -23,6 +24,13 @@ public:
 
     Bitmap(int width, int height, int bit_depth);
     Bitmap(int width, int height, int bit_depth, std::vector<std::uint32_t> pixels);
+
+    /// Identity of the current content state of this bitmap.
+    /// Construction, copying, and every mutation assign a new value, so two
+    /// bitmaps that report the same revision hold identical pixels and
+    /// metadata. Caches key on it to detect stale results.
+    /// Example: `if (cache.revision() == image.revision()) reuse();`
+    [[nodiscard]] std::uint64_t revision() const;
 
     [[nodiscard]] int width() const;
     [[nodiscard]] int height() const;
@@ -108,6 +116,12 @@ private:
     [[nodiscard]] bool shouldQuantizeRgbFills() const;
     [[nodiscard]] static int clamp(int value, int min, int max);
 
+    // The identity is a member rather than a plain counter so the defaulted
+    // copy operations of Bitmap give a clone a fresh value without listing
+    // every other member here.
+    void touch();
+
+    BitmapRevision revision_;
     int width_;
     int height_;
     int bit_depth_;

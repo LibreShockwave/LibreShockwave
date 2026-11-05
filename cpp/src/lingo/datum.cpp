@@ -1,6 +1,7 @@
 #include "libreshockwave/lingo/datum.hpp"
 
 #include "libreshockwave/bitmap/bitmap.hpp"
+#include "libreshockwave/lingo/first_key_index.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -937,9 +938,41 @@ bool Datum::PropList::erasePropertyAt(int zero_based_index) {
     if (zero_based_index < 0 || zero_based_index >= static_cast<int>(properties_.size())) {
         return false;
     }
-    properties_.erase(properties_.begin() + zero_based_index);
-    invalidateIndex();
+    const std::size_t position = static_cast<std::size_t>(zero_based_index);
+    maintainIndexAfterErase(position, zero_based_index);
+    properties_.erase(properties_.begin() + position);
     return true;
+}
+
+void Datum::PropList::maintainIndexAfterErase(std::size_t position, int erased_index) const {
+    if (index_dirty_) {
+        return;
+    }
+
+    const Datum& erased = properties_[position].first;
+    std::string name_storage;
+    const std::string_view erased_name = propListKeyNameView(erased, name_storage);
+    std::string same_type_storage;
+    const std::string_view same_type_key = appendSameTypeKey(erased, erased_name, same_type_storage);
+    const std::string erased_same_type(same_type_key);
+    const std::string erased_name_key(erased_name);
+    const std::size_t count_before_erase = properties_.size();
+
+    const bool same_type_ok = maintainFirstKeyIndexAfterErase(first_same_type_key_index_,
+                                                              erased_same_type,
+                                                              erased_index,
+                                                              count_before_erase);
+    const bool untyped_ok = maintainFirstKeyIndexAfterErase(first_untyped_key_index_,
+                                                            erased_name_key,
+                                                            erased_index,
+                                                            count_before_erase);
+    const bool case_sensitive_ok = maintainFirstKeyIndexAfterErase(first_case_sensitive_key_index_,
+                                                                   erased_name_key,
+                                                                   erased_index,
+                                                                   count_before_erase);
+    if (!same_type_ok || !untyped_ok || !case_sensitive_ok) {
+        invalidateIndex();
+    }
 }
 
 void Datum::PropList::invalidateIndex() const {
@@ -1172,8 +1205,24 @@ bool Datum::ScriptInstanceRef::eraseLocalPropertyExact(std::string_view name) {
     if (index < 0) {
         return false;
     }
-    properties_.erase(properties_.begin() + index);
-    invalidatePropertyIndex();
+    const std::size_t position = static_cast<std::size_t>(index);
+    if (!property_index_dirty_) {
+        const std::string& erased_name = properties_[position].first;
+        const std::size_t count_before_erase = properties_.size();
+        const bool exact_ok = maintainFirstKeyIndexAfterErase(first_exact_property_index_,
+                                                             erased_name,
+                                                             index,
+                                                             count_before_erase);
+        const bool case_insensitive_ok =
+            maintainFirstKeyIndexAfterErase(first_case_insensitive_property_index_,
+                                            erased_name,
+                                            index,
+                                            count_before_erase);
+        if (!exact_ok || !case_insensitive_ok) {
+            invalidatePropertyIndex();
+        }
+    }
+    properties_.erase(properties_.begin() + position);
     return true;
 }
 

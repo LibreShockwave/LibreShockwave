@@ -813,7 +813,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeBitmap(const RenderSprite
         const bool has_runtime_dynamic_image =
             sprite.dynamicMember() != nullptr && live != nullptr && (live->width() > 1 || live->height() > 1);
         if (live != nullptr && (live->isScriptModified() || has_runtime_dynamic_image)) {
-            return std::make_shared<bitmap::Bitmap>(processLiveBitmap(*live, sprite));
+            return bakeLiveBitmap(live, sprite);
         }
     }
 
@@ -1438,17 +1438,55 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::cachedBitmap(const RenderSpri
     if (member == nullptr) {
         return nullptr;
     }
-    if (palette_version_provider_) {
-        if (const auto version = palette_version_provider_(sprite)) {
-            (void)bitmap_cache_->invalidateIfPaletteChanged(*member, *version);
-        }
-    }
+    invalidateStalePalette(sprite);
     return bitmap_cache_->getCachedProcessed(*member,
                                             sprite.ink(),
                                             sprite.backColor(),
                                             sprite.foreColor(),
                                             sprite.hasForeColor(),
                                             sprite.hasBackColor());
+}
+
+std::shared_ptr<const bitmap::Bitmap>
+SpriteBaker::bakeLiveBitmap(const std::shared_ptr<const bitmap::Bitmap>& live,
+                            const RenderSprite& sprite) const {
+    const bool cacheable = sprite.inkMode() != id::InkMode::MASK;
+    const auto member = sprite.castMember();
+    if (cacheable) {
+        invalidateStalePalette(sprite);
+        if (auto cached = bitmap_cache_->getCachedRuntimeProcessed(member.get(),
+                                                                   live,
+                                                                   sprite.ink(),
+                                                                   sprite.backColor(),
+                                                                   sprite.foreColor(),
+                                                                   sprite.hasForeColor(),
+                                                                   sprite.hasBackColor())) {
+            return cached;
+        }
+    }
+
+    auto processed = std::make_shared<bitmap::Bitmap>(processLiveBitmap(*live, sprite));
+    if (cacheable) {
+        bitmap_cache_->putRuntimeProcessed(member.get(),
+                                           live,
+                                           sprite.ink(),
+                                           sprite.backColor(),
+                                           sprite.foreColor(),
+                                           sprite.hasForeColor(),
+                                           sprite.hasBackColor(),
+                                           processed);
+    }
+    return processed;
+}
+
+void SpriteBaker::invalidateStalePalette(const RenderSprite& sprite) const {
+    const auto member = sprite.castMember();
+    if (member == nullptr || !palette_version_provider_) {
+        return;
+    }
+    if (const auto version = palette_version_provider_(sprite)) {
+        (void)bitmap_cache_->invalidateIfPaletteChanged(*member, *version);
+    }
 }
 
 void SpriteBaker::cacheBitmap(const RenderSprite& sprite, std::shared_ptr<const bitmap::Bitmap> bitmap) {

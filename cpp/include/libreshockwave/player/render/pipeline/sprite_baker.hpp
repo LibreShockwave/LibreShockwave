@@ -94,6 +94,18 @@ private:
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> cachedBitmap(const RenderSprite& sprite) const;
     void cacheBitmap(const RenderSprite& sprite, std::shared_ptr<const bitmap::Bitmap> bitmap);
 
+    /// Bake a script-owned runtime image, reusing the cached result while the
+    /// image content and the sprite ink and colours stay unchanged. MASK ink is
+    /// never cached because its result also depends on the following cast
+    /// member. Example: `return bakeLiveBitmap(live, sprite);`
+    [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> bakeLiveBitmap(
+        const std::shared_ptr<const bitmap::Bitmap>& live,
+        const RenderSprite& sprite) const;
+
+    /// Drop cached results for a sprite whose palette was rebuilt since the
+    /// last frame. Does nothing when no palette version is tracked.
+    void invalidateStalePalette(const RenderSprite& sprite) const;
+
     [[nodiscard]] static bitmap::Bitmap drawShapeBitmap(const RenderSprite& sprite,
                                                         const ::libreshockwave::cast::ShapeInfo* shape_info);
     static void drawAuthoredShape(bitmap::Bitmap& bitmap,

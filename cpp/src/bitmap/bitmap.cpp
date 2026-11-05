@@ -37,16 +37,23 @@ Bitmap::Bitmap(int width, int height, int bit_depth, std::vector<std::uint32_t> 
     }
 }
 
+std::uint64_t Bitmap::revision() const { return revision_.value(); }
+
+void Bitmap::touch() { revision_.refresh(); }
+
 int Bitmap::width() const { return width_; }
 int Bitmap::height() const { return height_; }
 int Bitmap::bitDepth() const { return bit_depth_; }
 
 const std::vector<std::uint32_t>& Bitmap::pixels() const { return pixels_; }
-std::vector<std::uint32_t>& Bitmap::pixels() { return pixels_; }
+std::vector<std::uint32_t>& Bitmap::pixels() {
+    touch();
+    return pixels_;
+}
 
 bool Bitmap::isScriptModified() const { return script_modified_; }
-void Bitmap::markScriptModified() { script_modified_ = true; }
-void Bitmap::clearScriptModified() { script_modified_ = false; }
+void Bitmap::markScriptModified() { script_modified_ = true; touch(); }
+void Bitmap::clearScriptModified() { script_modified_ = false; touch(); }
 
 bool Bitmap::hasTransparentPixels() const {
     if (bit_depth_ < 32) {
@@ -88,33 +95,39 @@ bool Bitmap::hasNativeMatteAlpha() const {
 }
 
 bool Bitmap::isNativeAlpha() const { return native_alpha_; }
-void Bitmap::setNativeAlpha(bool native_alpha) { native_alpha_ = native_alpha; }
+void Bitmap::setNativeAlpha(bool native_alpha) { native_alpha_ = native_alpha; touch(); }
 
 bool Bitmap::isRectangularMedia() const { return rectangular_media_; }
-void Bitmap::setRectangularMedia(bool rectangular_media) { rectangular_media_ = rectangular_media; }
+void Bitmap::setRectangularMedia(bool rectangular_media) {
+    rectangular_media_ = rectangular_media;
+    touch();
+}
 
 bool Bitmap::isTextRendered() const { return text_rendered_; }
-void Bitmap::markTextRendered() { text_rendered_ = true; }
-void Bitmap::clearTextRendered() { text_rendered_ = false; }
+void Bitmap::markTextRendered() { text_rendered_ = true; touch(); }
+void Bitmap::clearTextRendered() { text_rendered_ = false; touch(); }
 
 bool Bitmap::hasScriptFillBacking() const { return script_fill_backing_; }
 void Bitmap::markScriptFillBacking() {
     script_fill_backing_ = true;
     script_fill_backing_color_.reset();
+    touch();
 }
 void Bitmap::markScriptFillBacking(std::uint32_t argb) {
     script_fill_backing_ = true;
     script_fill_backing_color_ = argb;
+    touch();
 }
 void Bitmap::clearScriptFillBacking() {
     script_fill_backing_ = false;
     script_fill_backing_color_.reset();
+    touch();
 }
 std::optional<std::uint32_t> Bitmap::scriptFillBackingColor() const { return script_fill_backing_color_; }
 
 bool Bitmap::preservesScriptFillBacking() const { return preserve_script_fill_backing_; }
-void Bitmap::markPreserveScriptFillBacking() { preserve_script_fill_backing_ = true; }
-void Bitmap::clearPreserveScriptFillBacking() { preserve_script_fill_backing_ = false; }
+void Bitmap::markPreserveScriptFillBacking() { preserve_script_fill_backing_ = true; touch(); }
+void Bitmap::clearPreserveScriptFillBacking() { preserve_script_fill_backing_ = false; touch(); }
 
 Bitmap Bitmap::copyWithNonNativeAlphaOpaque() const {
     if (bit_depth_ != 32 || native_alpha_ || !hasTransparentPixels()) {
@@ -151,10 +164,12 @@ Bitmap Bitmap::copyWithDegenerateNativeAlphaOpaque() const {
 
 void Bitmap::setImagePalette(std::shared_ptr<const Palette> palette) {
     image_palette_ = std::move(palette);
+    touch();
 }
 
 void Bitmap::setImagePalette(const Palette* palette) {
     image_palette_ = borrowedPalette(palette);
+    touch();
 }
 
 std::shared_ptr<const Palette> Bitmap::imagePalette() const {
@@ -163,11 +178,10 @@ std::shared_ptr<const Palette> Bitmap::imagePalette() const {
 
 void Bitmap::setPaletteIndices(std::vector<std::uint8_t> palette_indices) {
     palette_indices_ = std::move(palette_indices);
+    touch();
 }
 
-void Bitmap::clearPaletteIndices() {
-    palette_indices_.reset();
-}
+void Bitmap::clearPaletteIndices() { palette_indices_.reset(); touch(); }
 
 std::optional<std::vector<std::uint8_t>> Bitmap::paletteIndices() const {
     return palette_indices_;
@@ -184,6 +198,7 @@ std::optional<int> Bitmap::paletteIndex(int x, int y) const {
 void Bitmap::setPixelPreservePaletteIndex(int x, int y, std::uint32_t argb) {
     if (x >= 0 && x < width_ && y >= 0 && y < height_) {
         pixels_[static_cast<std::size_t>(y * width_ + x)] = argb;
+        touch();
     }
 }
 
@@ -191,6 +206,7 @@ void Bitmap::fillRectPaletteIndex(int x, int y, int w, int h, int index, std::ui
     if (!palette_indices_.has_value() || palette_indices_->size() != pixels_.size()) {
         palette_indices_ = std::vector<std::uint8_t>(pixels_.size(), 0);
     }
+    touch();
 
     const int x2 = std::min(x + w, width_);
     const int y2 = std::min(y + h, height_);
@@ -212,6 +228,7 @@ void Bitmap::fillRectPaletteIndex(int x, int y, int w, int h, int index, std::ui
 int Bitmap::remapImagePalette(std::shared_ptr<const Palette> new_palette) {
     const auto old_palette = image_palette_;
     image_palette_ = std::move(new_palette);
+    touch();
 
     if (!image_palette_ || old_palette.get() == image_palette_.get()) {
         return 0;
@@ -272,6 +289,7 @@ void Bitmap::setPaletteRefCastMember(int cast_lib_number, int member_number) {
     palette_ref_cast_lib_ = cast_lib_number;
     palette_ref_member_num_ = member_number;
     palette_ref_system_name_.reset();
+    touch();
 }
 
 int Bitmap::paletteRefCastLib() const { return palette_ref_cast_lib_; }
@@ -281,6 +299,7 @@ void Bitmap::setPaletteRefSystemName(std::string system_name) {
     palette_ref_system_name_ = std::move(system_name);
     palette_ref_cast_lib_ = -1;
     palette_ref_member_num_ = -1;
+    touch();
 }
 
 const std::optional<std::string>& Bitmap::paletteRefSystemName() const {
@@ -291,12 +310,14 @@ void Bitmap::clearPaletteRefMetadata() {
     palette_ref_cast_lib_ = -1;
     palette_ref_member_num_ = -1;
     palette_ref_system_name_.reset();
+    touch();
 }
 
 void Bitmap::setAnchorPoint(int x, int y) {
     has_anchor_point_ = true;
     anchor_x_ = x;
     anchor_y_ = y;
+    touch();
 }
 
 bool Bitmap::hasAnchorPoint() const { return has_anchor_point_; }
@@ -307,9 +328,11 @@ void Bitmap::clearAnchorPoint() {
     has_anchor_point_ = false;
     anchor_x_ = 0;
     anchor_y_ = 0;
+    touch();
 }
 
 void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
+    touch();
     if (other == nullptr) {
         image_palette_.reset();
         palette_indices_.reset();
@@ -343,6 +366,7 @@ void Bitmap::copyPaletteMetadataFrom(const Bitmap* other) {
 }
 
 void Bitmap::copyPaletteStateFrom(const Bitmap* other) {
+    touch();
     if (other == nullptr) {
         image_palette_.reset();
         palette_indices_.reset();
@@ -510,29 +534,6 @@ Bitmap::Rect Bitmap::trimWhiteSpace() const {
 std::string Bitmap::toString() const {
     return "Bitmap[" + std::to_string(width_) + "x" + std::to_string(height_) + ", " +
            std::to_string(bit_depth_) + "-bit]";
-}
-
-Bitmap Bitmap::createPaletteSwatch(const std::vector<std::uint32_t>& colors, int swatch_size, int columns) {
-    if (colors.empty()) {
-        return Bitmap(1, 1, 32);
-    }
-    const int count = static_cast<int>(colors.size());
-    const int cols = columns > 0 ? columns : static_cast<int>(std::ceil(std::sqrt(count)));
-    const int rows = static_cast<int>(std::ceil(static_cast<double>(count) / cols));
-
-    Bitmap bitmap(cols * swatch_size, rows * swatch_size, 32);
-    bitmap.fill(0xFFFFFFFFU);
-    for (int i = 0; i < count; ++i) {
-        const int col = i % cols;
-        const int row = i / cols;
-        bitmap.fillRect(col * swatch_size, row * swatch_size, swatch_size, swatch_size,
-                        0xFF000000U | (colors[static_cast<std::size_t>(i)] & 0xFFFFFFU));
-    }
-    return bitmap;
-}
-
-Bitmap Bitmap::createPaletteSwatch(const Palette& palette, int swatch_size) {
-    return createPaletteSwatch(palette.colors(), swatch_size, 16);
 }
 
 int Bitmap::quantizeToImagePalette() {
