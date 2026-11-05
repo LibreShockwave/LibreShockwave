@@ -38,6 +38,7 @@
 #include <variant>
 
 namespace libreshockwave::lingo::vm {
+
 namespace {
 
 std::function<void()> image_mutation_callback;
@@ -6239,24 +6240,26 @@ bool tryImmediateObjCall(ExecutionContext& context, bool no_return);
 bool tryImmediateExtCall(ExecutionContext& context, bool no_return);
 
 bool pushArgList(ExecutionContext& context) {
+    const int arg_count = context.argument();
     if (tryImmediateObjCall(context, false)) {
         return true;
     }
     if (tryImmediateExtCall(context, false)) {
         return true;
     }
-    context.push(Datum::argList(context.popArgs(context.argument())));
+    context.push(Datum::argList(context.popArgs(arg_count)));
     return true;
 }
 
 bool pushArgListNoRet(ExecutionContext& context) {
+    const int arg_count = context.argument();
     if (tryImmediateObjCall(context, true)) {
         return true;
     }
     if (tryImmediateExtCall(context, true)) {
         return true;
     }
-    context.push(Datum::argListNoRet(context.popArgs(context.argument())));
+    context.push(Datum::argListNoRet(context.popArgs(arg_count)));
     return true;
 }
 

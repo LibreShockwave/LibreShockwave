@@ -756,7 +756,6 @@ Datum LingoVM::executeHandler(const HandlerRef& handler_ref,
     if (handler_ref.script == nullptr || handler_ref.handler == nullptr) {
         return Datum::voidValue();
     }
-
     const auto& script = *handler_ref.script;
     const auto& handler = *handler_ref.handler;
     const auto script_owner = handler_ref.script_owner;
@@ -1310,7 +1309,6 @@ void LingoVM::executeInstruction(Scope& scope, ExecutionContext& context, bool t
         scope.setReturned(true);
         return;
     }
-
     if (trace_instruction) {
         const bool include_snapshots =
             trace_enabled_ || trace_listener_ == nullptr ||
@@ -1326,41 +1324,56 @@ void LingoVM::executeInstruction(Scope& scope, ExecutionContext& context, bool t
 
     // Cooperative pause: if the trace listener (debugger) suspended execution,
     // unwind the handler BEFORE executing this instruction so the breakpoint
-    // lands on the correct offset.
-    if (trace_listener_ && trace_listener_->isExecutionSuspended()) {
+    // lands on the correct offset. The can_suspend_ fast-path flag lets a
+    // listener that can never suspend skip the virtual call entirely.
+    if (trace_listener_ && trace_listener_->can_suspend_ && trace_listener_->isExecutionSuspended()) {
         scope.setReturned(true);
         return;
     }
 
     context.setInstruction(*instruction);
+    // Inline fast path for the handful of opcodes handled here. The guard
+    // keeps custom handler overrides (registerHandler) in effect: only
+    // un-overridden built-in defaults take it. The gain is skipping the
+    // variable scaling setup for opcodes that do not use it.
     if (opcode_registry_.isDefaultRawHandler(instruction->opcode)) {
-        const int variable_multiplier = context.variableMultiplier();
-        auto scaled_argument = [&] {
-            if (variable_multiplier == 1) {
-                return instruction->argument;
-            }
-            if (variable_multiplier == 8) {
-                return instruction->argument / 8;
-            }
-            return instruction->argument / variable_multiplier;
-        };
         switch (instruction->opcode) {
             case Opcode::GET_LOCAL:
-                scope.pushLocal(scaled_argument());
-                scope.advanceBytecodeIndex();
-                return;
             case Opcode::GET_PARAM:
-                scope.pushParam(scaled_argument());
-                scope.advanceBytecodeIndex();
-                return;
             case Opcode::SET_LOCAL:
-                context.setLocal(scaled_argument(), context.pop());
-                scope.advanceBytecodeIndex();
-                return;
-            case Opcode::SET_PARAM:
-                context.setParam(scaled_argument(), context.pop());
-                scope.advanceBytecodeIndex();
-                return;
+            case Opcode::SET_PARAM: {
+                const int variable_multiplier = context.variableMultiplier();
+                auto scaled_argument = [&] {
+                    if (variable_multiplier == 1) {
+                        return instruction->argument;
+                    }
+                    if (variable_multiplier == 8) {
+                        return instruction->argument / 8;
+                    }
+                    return instruction->argument / variable_multiplier;
+                };
+                switch (instruction->opcode) {
+                    case Opcode::GET_LOCAL:
+                        scope.pushLocal(scaled_argument());
+                        scope.advanceBytecodeIndex();
+                        return;
+                    case Opcode::GET_PARAM:
+                        scope.pushParam(scaled_argument());
+                        scope.advanceBytecodeIndex();
+                        return;
+                    case Opcode::SET_LOCAL:
+                        context.setLocal(scaled_argument(), context.pop());
+                        scope.advanceBytecodeIndex();
+                        return;
+                    case Opcode::SET_PARAM:
+                        context.setParam(scaled_argument(), context.pop());
+                        scope.advanceBytecodeIndex();
+                        return;
+                    default:
+                        break;
+                }
+                break;
+            }
             case Opcode::PUSH_ZERO:
                 scope.push(Datum::of(0));
                 scope.advanceBytecodeIndex();

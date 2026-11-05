@@ -61,6 +61,12 @@ public:
     /// enables cooperative (non-blocking) pause in single-threaded
     /// environments like WASM.
     [[nodiscard]] virtual bool isExecutionSuspended() const { return false; }
+
+    /// Fast-path flag for the per-instruction suspension check.  Listeners that
+    /// can never suspend leave this false so the VM skips the virtual
+    /// isExecutionSuspended() call entirely.  A listener that overrides
+    /// isExecutionSuspended() to report a live pause sets this true.
+    bool can_suspend_{false};
 };
 
 } // namespace libreshockwave::lingo::vm

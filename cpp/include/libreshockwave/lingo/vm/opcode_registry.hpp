@@ -21,6 +21,9 @@ public:
 
     [[nodiscard]] const OpcodeHandler* get(Opcode opcode) const;
     [[nodiscard]] OpcodeHandlerFn getRaw(Opcode opcode) const;
+    // True only while the opcode's raw handler is still the un-overridden
+    // built-in default. False once registerHandler() has replaced it, so
+    // callers can fall back to the registered handler.
     [[nodiscard]] bool isDefaultRawHandler(Opcode opcode) const;
     [[nodiscard]] bool hasHandler(Opcode opcode) const;
     bool execute(Opcode opcode, ExecutionContext& context) const;

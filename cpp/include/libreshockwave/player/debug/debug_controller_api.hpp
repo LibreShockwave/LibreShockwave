@@ -22,6 +22,7 @@ enum class DebugState {
 
 class DebugControllerApi : public lingo::vm::TraceListener {
 public:
+    DebugControllerApi() { can_suspend_ = true; }
     ~DebugControllerApi() override = default;
 
     /// Debugger clients can leave tracing off during ordinary playback.  A
