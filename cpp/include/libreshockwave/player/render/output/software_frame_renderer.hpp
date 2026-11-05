@@ -28,6 +28,7 @@ private:
                            int dst_y,
                            int blend,
                            id::InkMode ink,
+                           int back_color,
                            bool flip_h,
                            bool flip_v);
 
@@ -43,15 +44,30 @@ private:
                                  int dst_h,
                                  int blend,
                                  id::InkMode ink,
+                                 int back_color,
                                  bool flip_h,
                                  bool flip_v);
 
     [[nodiscard]] static bool isSpecialCompositingInk(id::InkMode ink);
+
+    // Composites one source pixel onto the stage buffer. Both blit loops share
+    // this so ink arithmetic, blend scaling, and the background colour filter
+    // stay in one place.
+    static void compositePixel(std::vector<std::uint32_t>& argb,
+                               int dst_idx,
+                               std::uint32_t src,
+                               int src_a,
+                               int blend,
+                               id::InkMode ink,
+                               int back_color,
+                               bool use_special_ink);
+
     static void compositeSpecialInk(std::vector<std::uint32_t>& argb,
                                     int dst_idx,
                                     std::uint32_t src,
                                     int src_a,
-                                    id::InkMode ink);
+                                    id::InkMode ink,
+                                    int back_color);
     static void alphaComposite(std::vector<std::uint32_t>& argb, int dst_idx, std::uint32_t src, int src_a);
     static void alphaCompositePercent(std::vector<std::uint32_t>& argb,
                                       int dst_idx,

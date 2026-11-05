@@ -6,6 +6,9 @@
 namespace libreshockwave::player::render::output {
 namespace {
 
+constexpr int k_max_palette_back_color = 255;
+constexpr int k_default_back_color_rgb = 0x00FFFFFF;
+
 int channel(std::uint32_t argb, int shift) {
     return static_cast<int>((argb >> shift) & 0xFFU);
 }
@@ -15,6 +18,13 @@ std::uint32_t opaqueRgb(int r, int g, int b) {
            (static_cast<std::uint32_t>(r & 0xFF) << 16) |
            (static_cast<std::uint32_t>(g & 0xFF) << 8) |
            static_cast<std::uint32_t>(b & 0xFF);
+}
+
+// True when the sprite background colour filters the Not Copy negative. Palette
+// indices keep the plain negative, and so does the default white background.
+[[nodiscard]] bool filtersNotCopyNegative(int back_color) {
+    return back_color > k_max_palette_back_color &&
+           (back_color & 0x00FFFFFF) != k_default_back_color_rgb;
 }
 
 } // namespace
@@ -62,15 +72,16 @@ bitmap::Bitmap SoftwareFrameRenderer::renderFrame(const pipeline::FrameSnapshot&
         const int sh = sprite.height() > 0 ? sprite.height() : baked->height();
         const int blend = sprite.blend();
         const id::InkMode ink = sprite.inkMode();
+        const int back_color = sprite.backColor();
         const bool flip_h = sprite.isFlipH() ^ sprite.hasDirectorHorizontalMirror();
         const bool flip_v = sprite.isFlipV();
 
         if (sw == baked->width() && sh == baked->height()) {
             blitBitmap(argb, stage_width, stage_height, baked->pixels(), baked->width(), baked->height(),
-                       sx, sy, blend, ink, flip_h, flip_v);
+                       sx, sy, blend, ink, back_color, flip_h, flip_v);
         } else {
             blitBitmapScaled(argb, stage_width, stage_height, baked->pixels(), baked->width(), baked->height(),
-                             sx, sy, sw, sh, blend, ink, flip_h, flip_v);
+                             sx, sy, sw, sh, blend, ink, back_color, flip_h, flip_v);
         }
     }
 
@@ -87,6 +98,7 @@ void SoftwareFrameRenderer::blitBitmap(std::vector<std::uint32_t>& argb,
                                        int dst_y,
                                        int blend,
                                        id::InkMode ink,
+                                       int back_color,
                                        bool flip_h,
                                        bool flip_v) {
     if (src_w <= 0 || src_h <= 0 || src_pixels.size() < static_cast<std::size_t>(src_w * src_h)) {
@@ -120,21 +132,7 @@ void SoftwareFrameRenderer::blitBitmap(std::vector<std::uint32_t>& argb,
                 continue;
             }
 
-            if (use_special_ink) {
-                if (blend < 100) {
-                    src_a = (src_a * blend) / 100;
-                    if (src_a == 0) {
-                        continue;
-                    }
-                }
-                compositeSpecialInk(argb, dst_idx, src, src_a, ink);
-            } else if (blend < 100) {
-                alphaCompositePercent(argb, dst_idx, src, src_a, blend);
-            } else if (src_a >= 255) {
-                argb[static_cast<std::size_t>(dst_idx)] = src | 0xFF000000U;
-            } else {
-                alphaComposite(argb, dst_idx, src, src_a);
-            }
+            compositePixel(argb, dst_idx, src, src_a, blend, ink, back_color, use_special_ink);
         }
     }
 }
@@ -151,6 +149,7 @@ void SoftwareFrameRenderer::blitBitmapScaled(std::vector<std::uint32_t>& argb,
                                              int dst_h,
                                              int blend,
                                              id::InkMode ink,
+                                             int back_color,
                                              bool flip_h,
                                              bool flip_v) {
     if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0 ||
@@ -204,22 +203,33 @@ void SoftwareFrameRenderer::blitBitmapScaled(std::vector<std::uint32_t>& argb,
                 continue;
             }
 
-            if (use_special_ink) {
-                if (blend < 100) {
-                    src_a = (src_a * blend) / 100;
-                    if (src_a == 0) {
-                        continue;
-                    }
-                }
-                compositeSpecialInk(argb, dst_idx, src, src_a, ink);
-            } else if (blend < 100) {
-                alphaCompositePercent(argb, dst_idx, src, src_a, blend);
-            } else if (src_a >= 255) {
-                argb[static_cast<std::size_t>(dst_idx)] = src | 0xFF000000U;
-            } else {
-                alphaComposite(argb, dst_idx, src, src_a);
+            compositePixel(argb, dst_idx, src, src_a, blend, ink, back_color, use_special_ink);
+        }
+    }
+}
+
+void SoftwareFrameRenderer::compositePixel(std::vector<std::uint32_t>& argb,
+                                           int dst_idx,
+                                           std::uint32_t src,
+                                           int src_a,
+                                           int blend,
+                                           id::InkMode ink,
+                                           int back_color,
+                                           bool use_special_ink) {
+    if (use_special_ink) {
+        if (blend < 100) {
+            src_a = (src_a * blend) / 100;
+            if (src_a == 0) {
+                return;
             }
         }
+        compositeSpecialInk(argb, dst_idx, src, src_a, ink, back_color);
+    } else if (blend < 100) {
+        alphaCompositePercent(argb, dst_idx, src, src_a, blend);
+    } else if (src_a >= 255) {
+        argb[static_cast<std::size_t>(dst_idx)] = src | 0xFF000000U;
+    } else {
+        alphaComposite(argb, dst_idx, src, src_a);
     }
 }
 
@@ -237,7 +247,8 @@ void SoftwareFrameRenderer::compositeSpecialInk(std::vector<std::uint32_t>& argb
                                                 int dst_idx,
                                                 std::uint32_t src,
                                                 int src_a,
-                                                id::InkMode ink) {
+                                                id::InkMode ink,
+                                                int back_color) {
     if (dst_idx < 0 || dst_idx >= static_cast<int>(argb.size())) {
         return;
     }
@@ -292,6 +303,13 @@ void SoftwareFrameRenderer::compositeSpecialInk(std::vector<std::uint32_t>& argb
             out_r = ~src_r & 0xFF;
             out_g = ~src_g & 0xFF;
             out_b = ~src_b & 0xFF;
+            if (filtersNotCopyNegative(back_color)) {
+                // The background colour filters the negative: green and blue are
+                // the filter's own, and red keeps only the bits the filter allows.
+                out_r &= channel(back_color, 16);
+                out_g = channel(back_color, 8);
+                out_b = channel(back_color, 0);
+            }
             break;
         case id::InkMode::NOT_TRANSPARENT:
             out_r = src_r & dst_r;

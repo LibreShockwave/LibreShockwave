@@ -428,6 +428,28 @@ int resolveMatteColorForInk(const bitmap::Bitmap& src,
     return InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette);
 }
 
+constexpr int k_max_palette_back_color = 255;
+constexpr int k_opaque_white_rgb = 0xFFFFFF;
+
+// Only Background Transparent treats the sprite background colour as the key.
+// The other processed inks key the background of the source itself, so an
+// authored colour must not retarget the key of a script-built 32-bit canvas.
+int resolveTransparencyKey(const bitmap::Bitmap& src,
+                           id::InkMode ink,
+                           int back_color,
+                           bool use_alpha,
+                           const bitmap::Palette* palette) {
+    const int resolved = InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette);
+    if (ink == id::InkMode::BACKGROUND_TRANSPARENT || back_color < 0 ||
+        back_color <= k_max_palette_back_color) {
+        return resolved;
+    }
+    if (src.bitDepth() == 32 && !use_alpha) {
+        return k_opaque_white_rgb;
+    }
+    return resolved;
+}
+
 bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
                                 id::InkMode ink,
                                 int back_color,
@@ -503,7 +525,7 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
         return masked;
     }
 
-    const int bg_color = InkProcessor::resolveBackColor(input, ink, back_color, use_alpha, palette);
+    const int bg_color = resolveTransparencyKey(input, ink, back_color, use_alpha, palette);
     if (bg_color < 0) {
         return input.copy();
     }

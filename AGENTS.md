@@ -401,6 +401,11 @@ tests. They are not a complete rendering specification.
   rectangle. Without bake-time keying, a script-built canvas that starts opaque
   white prints its backing as a solid box, because the stage renderer applies
   `max()` or `min()` across the full rectangle.
+- Only `BACKGROUND_TRANSPARENT` uses the sprite background colour as the
+  transparency key. The other processed inks key the background of the source
+  itself, so an authored `bgColor` must not retarget that key. With a key the
+  source does not contain, the whole rectangle stays opaque, and an ink such as
+  `NOT_COPY` inverts the backing into a solid plate instead of the artwork.
 - `BACKGROUND_TRANSPARENT` ink defaults the background key to white unless
   `bgColor` provides a different key.
 - `BACKGROUND_TRANSPARENT` copies from indexed sources with the default white key
@@ -534,6 +539,21 @@ tests. They are not a complete rendering specification.
   indices.
 - Indexed darken color-ramp exactness still needs care when future work touches
   palette-index copy or refresh paths.
+
+### Not Copy And The Sprite Background Colour
+
+- `NOT_COPY` (ink 4) first takes the chromatic negative of the artwork. When the
+  sprite carries a packed `bgColor`, that colour then filters the negative.
+- The filter takes green and blue from the `bgColor`, and keeps only the red bits
+  that the `bgColor` red channel allows. Per channel: `out.r = negative.r &
+  bgColor.r`, `out.g = bgColor.g`, `out.b = bgColor.b`.
+- The filter is not a ramp and not a multiply. Measured output is non-monotonic,
+  so `lerp`, `min`, `max`, and scaled multiply cannot produce it. Do not replace
+  it with a tint ramp.
+- A palette-index `bgColor` (0 to 255) and the default white keep the plain
+  negative. Only a packed non-white `bgColor` filters.
+- Apply the filter after the negative, at composite time. The bake stage only
+  keys the source background for this ink.
 
 ### Rendering Verification
 
