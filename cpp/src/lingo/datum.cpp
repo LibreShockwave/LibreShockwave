@@ -1050,32 +1050,8 @@ const Datum::ScriptInstanceRef* Datum::ScriptInstanceRef::ancestorRaw() const {
 }
 
 void Datum::ScriptInstanceRef::setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor) {
-    // Object Manager creates an object by placing an ID-bearing base instance
-    // underneath the class instance.  The client can then replace
-    // that instance's ancestor with a subsystem object.  Preserve the base
-    // object's per-instance state when doing so; otherwise inherited identity
-    // and lifecycle handlers see the subsystem's empty `id` instead of the
-    // object's registered ID.
-    const auto* current = ancestor_.get();
-    for (int depth = 0; current != nullptr && depth < k_max_ancestor_depth; ++depth) {
-        const int id_index = current->findPropertyIndex("id");
-        const int valid_index = current->findPropertyIndex("valid");
-        const int delays_index = current->findPropertyIndex("delays");
-        const bool has_object_identity_state = current != this &&
-                                            id_index >= 0 &&
-                                            !current->properties_[static_cast<std::size_t>(id_index)].second.isVoid() &&
-                                            valid_index >= 0 &&
-                                            delays_index >= 0;
-        if (has_object_identity_state) {
-            for (const auto& property : current->properties_) {
-                if (findPropertyIndex(property.first) < 0) {
-                    appendLocalProperty(property.first, property.second);
-                }
-            }
-            break;
-        }
-        current = current->ancestor_.get();
-    }
+    // Copying the detached chain here would give the child private copies of
+    // state that the reference VM still shares with the new ancestor.
     ancestor_ = std::move(ancestor);
 }
 

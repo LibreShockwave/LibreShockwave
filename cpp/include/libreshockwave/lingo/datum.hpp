@@ -648,6 +648,10 @@ public:
     [[nodiscard]] std::shared_ptr<ScriptInstanceRef> ancestor() const;
     [[nodiscard]] ScriptInstanceRef* ancestorRaw();
     [[nodiscard]] const ScriptInstanceRef* ancestorRaw() const;
+    // Re-links this instance onto a new ancestor, so inherited handlers and
+    // properties resolve through the new chain from now on. The detached
+    // ancestor keeps its own property storage; nothing is copied here.
+    // Passing null makes the instance parentless.
     void setAncestor(std::shared_ptr<ScriptInstanceRef> ancestor);
 
     [[nodiscard]] Datum getProperty(const std::string& name) const;

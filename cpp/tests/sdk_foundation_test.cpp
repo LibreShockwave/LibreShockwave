@@ -1650,8 +1650,8 @@ void testLingoDatumTypes() {
     assert(instance.scriptInstanceValue().getProperty("baseValue").isVoid());
 
     // Object Manager replaces an object's base ancestor with a subsystem
-    // ancestor after construction.  The object's identity and
-    // lifecycle state must remain attached to the object instance.
+    // ancestor after construction.  The detached base keeps its own storage,
+    // so inherited state resolves through the new chain instead.
     auto object_base = Datum::scriptInstance("objectIdentityState");
     object_base.scriptInstanceValue().setProperty("id", Datum::symbol("component"));
     object_base.scriptInstanceValue().setProperty("valid", Datum::TRUE);
@@ -1659,10 +1659,11 @@ void testLingoDatumTypes() {
     auto subsystem_object = Datum::scriptInstance("subsystemObject");
     subsystem_object.scriptInstanceValue().setProperty("ancestor", object_base);
     auto subsystem = Datum::scriptInstance("subsystem");
+    subsystem.scriptInstanceValue().setProperty("valid", Datum::TRUE);
     subsystem_object.scriptInstanceValue().setProperty("ancestor", subsystem);
-    assert(subsystem_object.scriptInstanceValue().getProperty("id").asSymbol()->name == "component");
+    assert(subsystem_object.scriptInstanceValue().getProperty("id").isVoid());
     assert(subsystem_object.scriptInstanceValue().getProperty("valid").boolValue());
-    assert(subsystem_object.scriptInstanceValue().getProperty("delays").isPropList());
+    assert(subsystem_object.scriptInstanceValue().getProperty("delays").isVoid());
 
     instance.scriptInstanceValue().putLocalPropertyExact("ExactLocal", Datum::of(11));
     assert(instance.scriptInstanceValue().findExactPropertyIndex("ExactLocal") >= 0);
