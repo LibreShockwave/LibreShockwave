@@ -22535,9 +22535,13 @@ void testQueuedNetProviderFoundation() {
     auto loading_status = provider.getStreamStatusDatum(root_task);
     assert(statusProp(loading_status, "URL").stringValue() == "https://example.invalid/gamedata/external_variables.txt?cache=1");
     assert(statusProp(loading_status, "state").stringValue() == "Loading");
-    assert(statusProp(loading_status, "bytesSoFar").intValue() == 1);
+    assert(statusProp(loading_status, "bytesSoFar").intValue() == 0);
+    assert(statusProp(loading_status, "bytesTotal").intValue() == 0);
+    // Host-reported transfer progress becomes visible to getStreamStatus.
+    provider.onFetchProgress(root_task, 1, 2);
     loading_status = provider.getStreamStatusDatum(root_task);
-    assert(statusProp(loading_status, "bytesSoFar").intValue() == 2);
+    assert(statusProp(loading_status, "bytesSoFar").intValue() == 1);
+    assert(statusProp(loading_status, "bytesTotal").intValue() == 2);
 
     provider.drainPendingRequests();
     assert(provider.pendingRequests().empty());

@@ -123,6 +123,13 @@ public:
         std::vector<std::uint8_t> data;
         int error_status{0};
     };
+    /// Live transfer progress for an in-flight fetch (main → worker), staged
+    /// until the tick loop polls it. total == 0 when the reply has no size.
+    struct NetFetchProgress {
+        int task_id{0};
+        int received{0};
+        int total{0};
+    };
 
 public slots:
     void play();
@@ -180,6 +187,7 @@ private:
     void startFetchAttempt(NetFetchRequest request, QList<QUrl> urls, int retry_index = 0);
     void deliverFetchResult(int task_id, std::vector<std::uint8_t> data);
     void deliverFetchError(int task_id, int status);
+    void deliverFetchProgress(int task_id, qint64 received, qint64 expected);
 
     /// Recreate the player/provider from the retained movie bytes after a
     /// full Stop teardown.
@@ -212,6 +220,7 @@ private:
     // main → worker: completed fetch results.
     mutable std::mutex net_in_mutex_;
     std::vector<NetFetchResult> net_in_queue_;
+    std::vector<NetFetchProgress> net_progress_queue_;
     mutable std::mutex net_out_mutex_;
     std::vector<NetFetchRequest> net_out_queue_;
 

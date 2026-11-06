@@ -236,6 +236,7 @@ bool DebuggerContext::loadMovieFromData(std::vector<std::uint8_t> data,
     {
         std::lock_guard<std::mutex> lock(net_in_mutex_);
         net_in_queue_.clear();
+        net_progress_queue_.clear();
     }
     {
         std::lock_guard<std::mutex> lock(net_out_mutex_);
@@ -532,6 +533,7 @@ void DebuggerContext::shutdownWorker() {
     {
         std::lock_guard<std::mutex> lock(net_in_mutex_);
         net_in_queue_.clear();
+        net_progress_queue_.clear();
     }
     {
         std::lock_guard<std::mutex> lock(net_out_mutex_);
@@ -570,9 +572,17 @@ void DebuggerContext::runLoop() {
 
     const auto deliver_pending_fetch_results = [this] {
         std::vector<NetFetchResult> results;
+        std::vector<NetFetchProgress> progress_events;
         {
             std::lock_guard<std::mutex> lock(net_in_mutex_);
             results.swap(net_in_queue_);
+            progress_events.swap(net_progress_queue_);
+        }
+        // Progress first: a completion staged in the same window already
+        // carries the final size, and the provider ignores progress on done
+        // tasks anyway.
+        for (const auto& progress : progress_events) {
+            queued_net_->onFetchProgress(progress.task_id, progress.received, progress.total);
         }
         for (auto& result : results) {
             if (result.error_status == 0) {
@@ -900,6 +910,13 @@ void DebuggerContext::startFetchAttempt(NetFetchRequest request,
     // session's provider: its task ids restart from 1.
     const std::uint64_t generation = net_generation_;
     active_replies_.insert(reply);
+    connect(reply, &QNetworkReply::downloadProgress, this,
+            [this, task_id = request.task_id, generation](qint64 received, qint64 expected) {
+                if (generation != net_generation_) {
+                    return;
+                }
+                deliverFetchProgress(task_id, received, expected);
+            });
     connect(reply, &QNetworkReply::finished, this,
             [this, request, urls, reply, url, is_post, generation, retry_index] {
                 active_replies_.erase(reply);
@@ -959,6 +976,14 @@ void DebuggerContext::deliverFetchResult(int task_id, std::vector<std::uint8_t> 
 void DebuggerContext::deliverFetchError(int task_id, int status) {
     std::lock_guard<std::mutex> lock(net_in_mutex_);
     net_in_queue_.push_back(NetFetchResult{task_id, {}, status});
+}
+
+void DebuggerContext::deliverFetchProgress(int task_id, qint64 received, qint64 expected) {
+    std::lock_guard<std::mutex> lock(net_in_mutex_);
+    net_progress_queue_.push_back(NetFetchProgress{
+        task_id,
+        static_cast<int>(received),
+        expected > 0 ? static_cast<int>(expected) : 0});
 }
 
 bool DebuggerContext::isAlreadyLoadedCastRequest(std::string_view url) const {

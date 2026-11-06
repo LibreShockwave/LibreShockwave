@@ -79,7 +79,7 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
     if (url.empty()) {
         const int task_id = next_task_id_++;
         last_task_id_ = task_id;
-        tasks_.emplace(task_id, Task{task_id, std::move(url), std::nullopt, 0, 0, true});
+        tasks_.emplace(task_id, Task{task_id, std::move(url), std::nullopt, 0, 0, 0, 0, true});
         indexTask(tasks_.at(task_id));
         return task_id;
     }
@@ -88,7 +88,7 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
     if (isDirectoryOnlyUrl(resolved_url)) {
         const int task_id = next_task_id_++;
         last_task_id_ = task_id;
-        tasks_.emplace(task_id, Task{task_id, resolved_url, std::nullopt, 0, 0, true});
+        tasks_.emplace(task_id, Task{task_id, resolved_url, std::nullopt, 0, 0, 0, 0, true});
         indexTask(tasks_.at(task_id));
         return task_id;
     }
@@ -130,6 +130,8 @@ int QueuedNetProvider::preloadNetThing(std::string url) {
     if (auto cached = findCachedData(url, resolved_url); cached.has_value()) {
         task.data = *cached;
         task.byte_count = static_cast<int>(cached->size());
+        task.bytes_so_far = task.byte_count;
+        task.bytes_total = task.byte_count;
         task.done = true;
         if (fetch_complete_callback_) {
             fetch_complete_callback_(task.url, *cached);
@@ -230,7 +232,7 @@ lingo::Datum QueuedNetProvider::getStreamStatusDatum(std::optional<int> task_id)
 lingo::Datum QueuedNetProvider::getStreamStatusDatum(std::string_view url) const {
     const std::string normalized_url = normalizeLookupUrl(url);
     const Task* task = getTask(normalized_url);
-    Task directory_task{0, std::string(url), std::nullopt, 0, 0, true};
+    Task directory_task{0, std::string(url), std::nullopt, 0, 0, 0, 0, true};
     if (task == nullptr && isDirectoryOnlyUrl(normalized_url)) {
         task = &directory_task;
     }
@@ -258,7 +260,7 @@ std::string QueuedNetProvider::getDebugStatus() const {
             << " done=" << (task.done ? "true" : "false")
             << " error=" << task.error_code
             << " byteCount=" << task.byte_count
-            << " poll=" << task.poll_count
+            << " progress=" << task.bytes_so_far << "/" << task.bytes_total
             << " fallbackCount=" << task.fallback_urls.size()
             << '\n';
     }
@@ -327,6 +329,8 @@ void QueuedNetProvider::onFetchComplete(int task_id, std::vector<std::uint8_t> d
     }
 
     task->byte_count = static_cast<int>(data.size());
+    task->bytes_so_far = task->byte_count;
+    task->bytes_total = task->byte_count;
     markTaskDone(*task);
     task->error_code = 0;
     task->data = std::move(data);
@@ -360,6 +364,8 @@ void QueuedNetProvider::onFetchStatusComplete(int task_id, int byte_count) {
     }
     task->data = std::nullopt;
     task->byte_count = std::max(0, byte_count);
+    task->bytes_so_far = task->byte_count;
+    task->bytes_total = task->byte_count;
     markTaskDone(*task);
     task->error_code = 0;
 }
@@ -371,6 +377,18 @@ void QueuedNetProvider::onFetchError(int task_id, int status) {
     }
     task->error_code = status != 0 ? status : -1;
     markTaskDone(*task);
+}
+
+void QueuedNetProvider::onFetchProgress(int task_id, int bytes_so_far, int bytes_total) {
+    auto* task = getTask(task_id);
+    if (task == nullptr || task->done) {
+        return;
+    }
+    task->bytes_so_far = std::max(task->bytes_so_far, std::max(0, bytes_so_far));
+    if (bytes_total > 0) {
+        task->bytes_total = std::max(task->bytes_total, bytes_total);
+        task->bytes_so_far = std::min(task->bytes_so_far, task->bytes_total);
+    }
 }
 
 const std::string& QueuedNetProvider::basePath() const {
@@ -734,18 +752,17 @@ lingo::Datum QueuedNetProvider::streamStatusDatum(const Task* task) const {
         return props;
     }
 
-    auto* mutable_task = const_cast<Task*>(task);
-    int byte_count = task->byte_count;
-    if (!task->done) {
-        ++mutable_task->poll_count;
-        byte_count = mutable_task->poll_count;
-    }
+    // Authored loaders derive download percentages from these numbers. A
+    // fabricated so-far count makes them reach 100 percent while bytes are
+    // still in flight, so report the transport's real counters only.
+    const int bytes_so_far = task->done ? task->byte_count : task->bytes_so_far;
+    const int bytes_total = task->done ? task->byte_count : task->bytes_total;
 
     const std::string state = task->done ? (task->error_code == 0 ? "Complete" : "Error") : "Loading";
     putProp(props, "URL", lingo::Datum::of(task->url));
     putProp(props, "state", lingo::Datum::of(state));
-    putProp(props, "bytesSoFar", lingo::Datum::of(byte_count));
-    putProp(props, "bytesTotal", lingo::Datum::of(task->done ? task->byte_count : 0));
+    putProp(props, "bytesSoFar", lingo::Datum::of(bytes_so_far));
+    putProp(props, "bytesTotal", lingo::Datum::of(bytes_total));
     putProp(props, "error", task->error_code == 0
         ? lingo::Datum::of(std::string("OK"))
         : lingo::Datum::of(std::to_string(task->error_code)));

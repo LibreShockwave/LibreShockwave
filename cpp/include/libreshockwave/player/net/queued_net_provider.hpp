@@ -61,6 +61,12 @@ public:
     void onFetchStatusComplete(int task_id, int byte_count);
     void onFetchError(int task_id, int status);
 
+    // Reports transfer progress for an in-flight task so getStreamStatus can
+    // return the real bytesSoFar/bytesTotal. bytes_total may be 0 when the
+    // transport does not know the response size. Completed tasks ignore it.
+    // Example: onFetchProgress(task_id, received, expected);
+    void onFetchProgress(int task_id, int bytes_so_far, int bytes_total);
+
     [[nodiscard]] const std::string& basePath() const;
 
 private:
@@ -69,10 +75,11 @@ private:
         std::string url;
         std::optional<std::vector<std::uint8_t>> data;
         int byte_count = 0;
+        int bytes_so_far = 0;
+        int bytes_total = 0;
         int error_code = 0;
         bool done = false;
         std::vector<std::string> fallback_urls;
-        int poll_count = 0;
     };
 
     [[nodiscard]] Task* getTask(std::optional<int> task_id);
