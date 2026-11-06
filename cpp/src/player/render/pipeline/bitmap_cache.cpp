@@ -41,6 +41,19 @@ bool runtimeEntryIsStale(const BitmapCacheKey& key,
     return same_image && key.source_revision != source->revision();
 }
 
+/// True when `recorded` still denotes the same live member as `current`.
+/// A caller that holds no ownership cannot be checked, so its lookup falls back
+/// to the key alone. An entry recorded without ownership never matches a caller
+/// that does hold ownership, because its owner cannot be identified.
+bool memberOwnerStillMatches(const std::weak_ptr<const chunks::CastMemberChunk>& recorded,
+                             const std::shared_ptr<const chunks::CastMemberChunk>& current) {
+    if (current == nullptr) {
+        return true;
+    }
+    const auto live = recorded.lock();
+    return live != nullptr && live.get() == current.get();
+}
+
 } // namespace
 
 std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedProcessed(const chunks::CastMemberChunk& member,
@@ -48,8 +61,10 @@ std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedProcessed(const chun
                                                                       int back_color,
                                                                       int fore_color,
                                                                       bool has_fore_color,
-                                                                      bool has_back_color) const {
-    return lookup(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color));
+                                                                      bool has_back_color,
+                                                                      const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) const {
+    return lookup(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color), member_owner,
+                  nullptr);
 }
 
 void BitmapCache::putProcessed(const chunks::CastMemberChunk& member,
@@ -58,8 +73,10 @@ void BitmapCache::putProcessed(const chunks::CastMemberChunk& member,
                                int fore_color,
                                bool has_fore_color,
                                bool has_back_color,
-                               std::shared_ptr<const bitmap::Bitmap> bitmap) {
-    store(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color), std::move(bitmap), {});
+                               std::shared_ptr<const bitmap::Bitmap> bitmap,
+                               const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) {
+    store(cacheKey(member, ink, back_color, fore_color, has_fore_color, has_back_color), std::move(bitmap), {},
+          member_owner);
 }
 
 std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedRuntimeProcessed(
@@ -69,12 +86,15 @@ std::shared_ptr<const bitmap::Bitmap> BitmapCache::getCachedRuntimeProcessed(
     int back_color,
     int fore_color,
     bool has_fore_color,
-    bool has_back_color) const {
+    bool has_back_color,
+    const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) const {
     if (source == nullptr) {
         return nullptr;
     }
     return lookup(runtimeCacheKey(member, source->revision(), ink, back_color, fore_color, has_fore_color,
-                                  has_back_color));
+                                  has_back_color),
+                  member_owner,
+                  source);
 }
 
 void BitmapCache::putRuntimeProcessed(const chunks::CastMemberChunk* member,
@@ -83,8 +103,9 @@ void BitmapCache::putRuntimeProcessed(const chunks::CastMemberChunk* member,
                                       int back_color,
                                       int fore_color,
                                       bool has_fore_color,
-                                      bool has_back_color,
-                                      std::shared_ptr<const bitmap::Bitmap> bitmap) {
+                                                               bool has_back_color,
+                             std::shared_ptr<const bitmap::Bitmap> bitmap,
+                             const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) {
     for (auto iter = cache_.begin(); iter != cache_.end();) {
         if (iter->first.source_revision != 0 && runtimeEntryIsStale(iter->first, iter->second.runtime_source, source)) {
             iter = cache_.erase(iter);
@@ -97,15 +118,26 @@ void BitmapCache::putRuntimeProcessed(const chunks::CastMemberChunk* member,
     store(runtimeCacheKey(member, source != nullptr ? source->revision() : 0, ink, back_color, fore_color,
                           has_fore_color, has_back_color),
           std::move(bitmap),
-          owner);
+          owner,
+          member_owner);
 }
 
-void BitmapCache::markDecodeFailed(const chunks::CastMemberChunk& member) {
-    decode_failed_[memberKey(&member)] = true;
+void BitmapCache::markDecodeFailed(const chunks::CastMemberChunk& member,
+                                   const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) {
+    decode_failed_[memberKey(&member)] = member_owner;
 }
 
-bool BitmapCache::hasDecodeFailed(const chunks::CastMemberChunk& member) const {
-    return decode_failed_.contains(memberKey(&member));
+bool BitmapCache::hasDecodeFailed(const chunks::CastMemberChunk& member,
+                                  const std::shared_ptr<const chunks::CastMemberChunk>& member_owner) const {
+    const auto it = decode_failed_.find(memberKey(&member));
+    if (it == decode_failed_.end()) {
+        return false;
+    }
+    if (!memberOwnerStillMatches(it->second, member_owner)) {
+        decode_failed_.erase(it);
+        return false;
+    }
+    return true;
 }
 
 void BitmapCache::invalidateMember(const chunks::CastMemberChunk& member) {
@@ -186,16 +218,30 @@ BitmapCacheKey BitmapCache::runtimeCacheKey(const chunks::CastMemberChunk* membe
     };
 }
 
-std::shared_ptr<const bitmap::Bitmap> BitmapCache::lookup(const BitmapCacheKey& key) const {
+std::shared_ptr<const bitmap::Bitmap> BitmapCache::lookup(
+    const BitmapCacheKey& key,
+    const std::shared_ptr<const chunks::CastMemberChunk>& member_owner,
+    const std::shared_ptr<const bitmap::Bitmap>& source) const {
     const auto it = cache_.find(key);
-    return it == cache_.end() ? nullptr : it->second.bitmap;
+    if (it == cache_.end()) {
+        return nullptr;
+    }
+    const bool owner_matches = memberOwnerStillMatches(it->second.member_owner, member_owner);
+    const bool source_is_stale = key.source_revision != 0 &&
+                                 runtimeEntryIsStale(key, it->second.runtime_source, source);
+    if (!owner_matches || source_is_stale) {
+        cache_.erase(it);
+        return nullptr;
+    }
+    return it->second.bitmap;
 }
 
 void BitmapCache::store(const BitmapCacheKey& key,
                         std::shared_ptr<const bitmap::Bitmap> bitmap,
-                        std::weak_ptr<const bitmap::Bitmap> runtime_source) {
+                        std::weak_ptr<const bitmap::Bitmap> runtime_source,
+                        std::weak_ptr<const chunks::CastMemberChunk> member_owner) {
     if (bitmap) {
-        cache_[key] = BitmapCacheEntry{std::move(bitmap), std::move(runtime_source)};
+        cache_[key] = BitmapCacheEntry{std::move(bitmap), std::move(runtime_source), std::move(member_owner)};
     } else {
         cache_.erase(key);
     }
@@ -253,7 +299,8 @@ std::optional<IndexedMatteColorRemap> BitmapCache::resolveIndexedMatteColorRemap
     int back_color,
     bool has_fore_color,
     bool has_back_color,
-    const bitmap::Palette* palette) {
+    const bitmap::Palette* palette,
+    const bitmap::Palette* movie_palette) {
     if (raw == nullptr || raw->bitDepth() <= 1 || !raw->paletteIndices().has_value()) {
         return std::nullopt;
     }
@@ -268,7 +315,9 @@ std::optional<IndexedMatteColorRemap> BitmapCache::resolveIndexedMatteColorRemap
 
     const auto effective_fore_color = static_cast<std::uint32_t>(has_fore_color ? fore_color : 0x000000) & 0x00FFFFFFU;
     const auto effective_back_color = static_cast<std::uint32_t>(
-        has_back_color ? InkProcessor::resolveBackColor(*raw, id::InkMode::COPY, back_color, false, palette) : 0xFFFFFF
+        has_back_color
+            ? InkProcessor::resolveBackColor(*raw, id::InkMode::COPY, back_color, false, palette, movie_palette)
+            : 0xFFFFFF
     ) & 0x00FFFFFFU;
 
     if (effective_fore_color == 0x000000U && effective_back_color == 0xFFFFFFU) {
@@ -285,7 +334,8 @@ bitmap::Bitmap BitmapCache::applyIndexedMatteColorRemapIfNeeded(const bitmap::Bi
                                                                 int back_color,
                                                                 bool has_fore_color,
                                                                 bool has_back_color,
-                                                                const bitmap::Palette* palette) {
+                                                                const bitmap::Palette* palette,
+                                                                const bitmap::Palette* movie_palette) {
     const auto ink_mode = id::inkModeFromCode(ink);
     if (ink_mode == id::InkMode::DARKEN &&
         has_fore_color &&
@@ -295,10 +345,16 @@ bitmap::Bitmap BitmapCache::applyIndexedMatteColorRemapIfNeeded(const bitmap::Bi
         return InkProcessor::applyDarkenForeColorOffset(processed, static_cast<std::uint32_t>(fore_color));
     }
 
-    return applyIndexedMatteColorRemap(
-        raw,
-        processed,
-        resolveIndexedMatteColorRemap(raw, ink, fore_color, back_color, has_fore_color, has_back_color, palette));
+    return applyIndexedMatteColorRemap(raw,
+                                       processed,
+                                       resolveIndexedMatteColorRemap(raw,
+                                                                     ink,
+                                                                     fore_color,
+                                                                     back_color,
+                                                                     has_fore_color,
+                                                                     has_back_color,
+                                                                     palette,
+                                                                     movie_palette));
 }
 
 bitmap::Bitmap BitmapCache::applyIndexedMatteColorRemap(

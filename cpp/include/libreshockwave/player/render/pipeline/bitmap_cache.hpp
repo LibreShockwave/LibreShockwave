@@ -46,26 +46,46 @@ struct BitmapCacheEntry {
     // Keeps a runtime entry tied to the image it came from. Empty for entries
     // produced from an authored cast member.
     std::weak_ptr<const bitmap::Bitmap> runtime_source;
+    // Keeps an entry tied to the exact member object it was produced from.
+    // Cache keys hold a file pointer and a member number, and both are reused
+    // once a cast file is unloaded. This weak reference rejects an entry whose
+    // member object is gone, so a new member cannot inherit old pixels.
+    std::weak_ptr<const chunks::CastMemberChunk> member_owner;
 };
 
 class BitmapCache {
 public:
+    /// Look up the processed result of an authored cast member.
+    /// Pass the shared owner of the member as member_owner to tie the entry to
+    /// that object: an entry whose member died, or that belongs to a different
+    /// member object, is dropped instead of served. Omit member_owner when no
+    /// shared ownership exists, which keeps the older key-only behaviour.
+    /// Example: `if (auto hit = cache.getCachedProcessed(*member, ink, back, fore,
+    /// true, true, member)) return hit;`
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> getCachedProcessed(const chunks::CastMemberChunk& member,
                                                                            int ink,
                                                                            int back_color,
                                                                            int fore_color,
                                                                            bool has_fore_color,
-                                                                           bool has_back_color) const;
+                                                                           bool has_back_color,
+                                                                           const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {}) const;
     void putProcessed(const chunks::CastMemberChunk& member,
                       int ink,
                       int back_color,
                       int fore_color,
                       bool has_fore_color,
                       bool has_back_color,
-                      std::shared_ptr<const bitmap::Bitmap> bitmap);
+                      std::shared_ptr<const bitmap::Bitmap> bitmap,
+                      const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {});
 
-    void markDecodeFailed(const chunks::CastMemberChunk& member);
-    [[nodiscard]] bool hasDecodeFailed(const chunks::CastMemberChunk& member) const;
+    /// Record that a member could not be decoded, so the renderer stops
+    /// retrying it. Pass member_owner to bind the record to that member object:
+    /// a later member that reuses the same file pointer and number is not
+    /// poisoned by it. Example: `cache.markDecodeFailed(*member, member);`
+    void markDecodeFailed(const chunks::CastMemberChunk& member,
+                          const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {});
+    [[nodiscard]] bool hasDecodeFailed(const chunks::CastMemberChunk& member,
+                                       const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {}) const;
 
     /// Look up the processed result of a script-owned runtime image.
     /// The source revision identifies the exact pixel state the result was
@@ -79,7 +99,8 @@ public:
         int back_color,
         int fore_color,
         bool has_fore_color,
-        bool has_back_color) const;
+        bool has_back_color,
+        const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {}) const;
 
     /// Store the processed result of a script-owned runtime image.
     /// Earlier results for the same source image are dropped, so a mutating
@@ -91,7 +112,8 @@ public:
                              int fore_color,
                              bool has_fore_color,
                              bool has_back_color,
-                             std::shared_ptr<const bitmap::Bitmap> bitmap);
+                             std::shared_ptr<const bitmap::Bitmap> bitmap,
+                             const std::shared_ptr<const chunks::CastMemberChunk>& member_owner = {});
 
     void invalidateMember(const chunks::CastMemberChunk& member);
     [[nodiscard]] bool invalidateIfPaletteChanged(const chunks::CastMemberChunk& member, int palette_version);
@@ -113,6 +135,12 @@ public:
         bool use_alpha);
     [[nodiscard]] static bitmap::Bitmap coerceNonNativeAlphaToOpaque(const bitmap::Bitmap& raw, bool use_alpha);
 
+    // Builds the colour remap an indexed source needs under Matte or Background
+    // Transparent. back_color below 256 is a palette number that movie_palette
+    // resolves, matching the movie palette, and falls back to palette. Pass
+    // nullptr for movie_palette to keep the source table.
+    // Example: `resolveIndexedMatteColorRemap(&raw, sprite.ink(), fore, back,
+    // true, true, raw.imagePalette().get(), movie_palette.get())`.
     [[nodiscard]] static std::optional<IndexedMatteColorRemap> resolveIndexedMatteColorRemap(
         const bitmap::Bitmap* raw,
         int ink,
@@ -120,7 +148,8 @@ public:
         int back_color,
         bool has_fore_color,
         bool has_back_color,
-        const bitmap::Palette* palette);
+        const bitmap::Palette* palette,
+        const bitmap::Palette* movie_palette = nullptr);
     [[nodiscard]] static bitmap::Bitmap applyIndexedMatteColorRemapIfNeeded(
         const bitmap::Bitmap* raw,
         const bitmap::Bitmap& processed,
@@ -129,7 +158,8 @@ public:
         int back_color,
         bool has_fore_color,
         bool has_back_color,
-        const bitmap::Palette* palette);
+        const bitmap::Palette* palette,
+        const bitmap::Palette* movie_palette = nullptr);
     [[nodiscard]] static bitmap::Bitmap applyIndexedMatteColorRemap(
         const bitmap::Bitmap* raw,
         const bitmap::Bitmap& processed,
@@ -143,13 +173,22 @@ private:
                                                         int fore_color,
                                                         bool has_fore_color,
                                                         bool has_back_color);
-    [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> lookup(const BitmapCacheKey& key) const;
+    // Shared lookup for both cache families. An entry whose owning member or
+    // source image is gone is dropped here and reported as a miss, so a reused
+    // file pointer, member number, or bitmap address cannot return old pixels.
+    [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> lookup(
+        const BitmapCacheKey& key,
+        const std::shared_ptr<const chunks::CastMemberChunk>& member_owner,
+        const std::shared_ptr<const bitmap::Bitmap>& source) const;
     void store(const BitmapCacheKey& key,
                std::shared_ptr<const bitmap::Bitmap> bitmap,
-               std::weak_ptr<const bitmap::Bitmap> runtime_source);
+               std::weak_ptr<const bitmap::Bitmap> runtime_source,
+               std::weak_ptr<const chunks::CastMemberChunk> member_owner);
 
-    std::map<BitmapCacheKey, BitmapCacheEntry> cache_;
-    std::map<BitmapCacheMemberId, bool> decode_failed_;
+    // Lookups prune rejected entries, so the maps change even when a caller
+    // only reads. That makes a render cache logically mutable.
+    mutable std::map<BitmapCacheKey, BitmapCacheEntry> cache_;
+    mutable std::map<BitmapCacheMemberId, std::weak_ptr<const chunks::CastMemberChunk>> decode_failed_;
     std::map<BitmapCacheMemberId, int> palette_versions_;
 };
 

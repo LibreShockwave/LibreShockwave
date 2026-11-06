@@ -34,6 +34,11 @@ public:
         const bitmap::Palette* palette_override)>;
     using LiveBitmapProvider = std::function<std::shared_ptr<const bitmap::Bitmap>(const RenderSprite& sprite)>;
     using PaletteVersionProvider = std::function<std::optional<int>(const RenderSprite& sprite)>;
+    // Supplies the palette that sprite colour numbers resolve against, which is
+    // `the palette of movie`. The bake stage asks for it per sprite and holds it
+    // for that sprite only. Example:
+    // `setMoviePaletteProvider([this] { return bitmap_resolver_.getMoviePalette(); })`.
+    using MoviePaletteProvider = std::function<std::shared_ptr<const bitmap::Palette>()>;
     using TextBakeProvider = std::function<std::shared_ptr<const bitmap::Bitmap>(const RenderSprite& sprite)>;
     using FilmLoopBakeProvider = std::function<std::shared_ptr<const bitmap::Bitmap>(
         const RenderSprite& sprite,
@@ -63,6 +68,7 @@ public:
     void setBitmapDecodeProvider(BitmapDecodeProvider provider);
     void setLiveBitmapProvider(LiveBitmapProvider provider);
     void setPaletteVersionProvider(PaletteVersionProvider provider);
+    void setMoviePaletteProvider(MoviePaletteProvider provider);
     void setTextBakeProvider(TextBakeProvider provider);
     void setTextRenderer(output::TextRenderer* renderer);
     void setFilmLoopBakeProvider(FilmLoopBakeProvider provider);
@@ -84,6 +90,10 @@ private:
     [[nodiscard]] bitmap::Bitmap processLiveBitmap(const bitmap::Bitmap& live, const RenderSprite& sprite) const;
     [[nodiscard]] std::shared_ptr<const chunks::CastMemberChunk> resolveMaskMember(
         const RenderSprite& sprite) const;
+    /// The palette sprite colour numbers resolve against, or nullptr when the
+    /// movie has no palette member. Held by the caller for the sprite being
+    /// baked. Example: `const auto movie = moviePalette();`.
+    [[nodiscard]] std::shared_ptr<const bitmap::Palette> moviePalette() const;
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> decodeMaskBitmap(const RenderSprite& sprite) const;
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> bakeDynamicText(const RenderSprite& sprite);
     [[nodiscard]] std::shared_ptr<const bitmap::Bitmap> bakeFileBackedText(const RenderSprite& sprite);
@@ -106,8 +116,8 @@ private:
     /// last frame. Does nothing when no palette version is tracked.
     void invalidateStalePalette(const RenderSprite& sprite) const;
 
-    [[nodiscard]] static bitmap::Bitmap drawShapeBitmap(const RenderSprite& sprite,
-                                                        const ::libreshockwave::cast::ShapeInfo* shape_info);
+    [[nodiscard]] bitmap::Bitmap drawShapeBitmap(const RenderSprite& sprite,
+                                                 const ::libreshockwave::cast::ShapeInfo* shape_info) const;
     static void drawAuthoredShape(bitmap::Bitmap& bitmap,
                                   const RenderSprite& sprite,
                                   const ::libreshockwave::cast::ShapeInfo& shape_info);
@@ -121,6 +131,7 @@ private:
     BitmapDecodeProvider bitmap_decode_provider_;
     LiveBitmapProvider live_bitmap_provider_;
     PaletteVersionProvider palette_version_provider_;
+    MoviePaletteProvider movie_palette_provider_;
     TextBakeProvider text_bake_provider_;
     output::TextRenderer* text_renderer_{nullptr};
     FilmLoopBakeProvider film_loop_bake_provider_;

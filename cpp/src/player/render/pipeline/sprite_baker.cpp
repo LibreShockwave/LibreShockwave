@@ -45,52 +45,6 @@ const ::libreshockwave::cast::ShapeInfo* dynamicShapeInfo(const RenderSprite& sp
     return &dynamic->shapeInfo().value();
 }
 
-bool shouldNeutralizeOpaqueWhiteForScriptCanvas(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
-    if (bitmap.bitDepth() != 32 || bitmap.isNativeAlpha() || !bitmap.isScriptModified()) {
-        return false;
-    }
-    return sprite.inkMode() == id::InkMode::DARKEN || sprite.inkMode() == id::InkMode::LIGHTEN;
-}
-
-bool hasOpaqueWhiteEdgeAndContent(const bitmap::Bitmap& bitmap) {
-    const int width = bitmap.width();
-    const int height = bitmap.height();
-    if (width <= 0 || height <= 0) {
-        return false;
-    }
-
-    bool has_white_edge = false;
-    bool has_non_white_content = false;
-    const auto visit = [&](int x, int y, bool edge) {
-        const auto pixel = bitmap.getPixel(x, y);
-        if (((pixel >> 24U) & 0xFFU) == 0) {
-            return;
-        }
-        if ((pixel & 0x00FFFFFFU) == 0x00FFFFFFU) {
-            has_white_edge = has_white_edge || edge;
-        } else {
-            has_non_white_content = true;
-        }
-    };
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            visit(x, y, x == 0 || y == 0 || x == width - 1 || y == height - 1);
-        }
-    }
-    return has_white_edge && has_non_white_content;
-}
-
-bool shouldNeutralizeOpaqueWhiteForAuthoredTint(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
-    if (bitmap.isNativeAlpha() || bitmap.isRectangularMedia()) {
-        return false;
-    }
-    if (sprite.inkMode() != id::InkMode::DARKEN && sprite.inkMode() != id::InkMode::LIGHTEN) {
-        return false;
-    }
-    return hasOpaqueWhiteEdgeAndContent(bitmap);
-}
-
 bool shouldPreserveOutlinedWhiteBodyForScriptCanvas(const RenderSprite& sprite, const bitmap::Bitmap& bitmap) {
     if (sprite.inkMode() != id::InkMode::MATTE ||
         bitmap.bitDepth() != 32 ||
@@ -748,6 +702,14 @@ void SpriteBaker::setPaletteVersionProvider(PaletteVersionProvider provider) {
     palette_version_provider_ = std::move(provider);
 }
 
+void SpriteBaker::setMoviePaletteProvider(MoviePaletteProvider provider) {
+    movie_palette_provider_ = std::move(provider);
+}
+
+std::shared_ptr<const bitmap::Palette> SpriteBaker::moviePalette() const {
+    return movie_palette_provider_ ? movie_palette_provider_() : nullptr;
+}
+
 void SpriteBaker::setTextBakeProvider(TextBakeProvider provider) {
     text_bake_provider_ = std::move(provider);
 }
@@ -828,7 +790,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeBitmap(const RenderSprite
 
     auto raw = bitmap_decode_provider_(*member, nullptr);
     if (raw == nullptr) {
-        bitmap_cache_->markDecodeFailed(*member);
+        bitmap_cache_->markDecodeFailed(*member, member);
         return nullptr;
     }
 
@@ -885,8 +847,12 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoop(const RenderSpri
         return loop;
     }
 
-    return std::make_shared<bitmap::Bitmap>(
-        InkProcessor::applyInk(*loop, sprite.inkMode(), sprite.backColor(), false, loop->imagePalette().get()));
+    return std::make_shared<bitmap::Bitmap>(InkProcessor::applyInk(*loop,
+                                                                   sprite.inkMode(),
+                                                                   sprite.backColor(),
+                                                                   false,
+                                                                   loop->imagePalette().get(),
+                                                                   moviePalette().get()));
 }
 
 std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeShockwave3D(const RenderSprite& sprite) {
@@ -977,7 +943,8 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeShockwave3D(const RenderS
                                         sprite.inkMode(),
                                         sprite.backColor(),
                                         true,
-                                        bitmap.imagePalette().get());
+                                        bitmap.imagePalette().get(),
+                                        moviePalette().get());
     }
     return std::make_shared<bitmap::Bitmap>(std::move(bitmap));
 }
@@ -1018,7 +985,12 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeDynamicText(const RenderS
     }
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
         return std::make_shared<bitmap::Bitmap>(
-            InkProcessor::applyInk(*text_image, sprite.inkMode(), sprite.backColor(), false, nullptr));
+            InkProcessor::applyInk(*text_image,
+                                   sprite.inkMode(),
+                                   sprite.backColor(),
+                                   false,
+                                   nullptr,
+                                   moviePalette().get()));
     }
     return text_image;
 }
@@ -1048,7 +1020,12 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
         }
         if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
             return std::make_shared<bitmap::Bitmap>(
-                InkProcessor::applyInk(*text_image, sprite.inkMode(), sprite.backColor(), false, nullptr));
+                InkProcessor::applyInk(*text_image,
+                                       sprite.inkMode(),
+                                       sprite.backColor(),
+                                       false,
+                                       nullptr,
+                                       moviePalette().get()));
         }
         return text_image;
     }
@@ -1140,7 +1117,12 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedText(const Rend
     }
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
         return std::make_shared<bitmap::Bitmap>(
-            InkProcessor::applyInk(*text_image, sprite.inkMode(), sprite.backColor(), false, nullptr));
+            InkProcessor::applyInk(*text_image,
+                                   sprite.inkMode(),
+                                   sprite.backColor(),
+                                   false,
+                                   nullptr,
+                                   moviePalette().get()));
     }
     return text_image;
 }
@@ -1215,7 +1197,8 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFileBackedFilmLoop(const 
                                            sprite.inkMode(),
                                            sprite.backColor(),
                                            false,
-                                           composite.imagePalette().get());
+                                           composite.imagePalette().get(),
+                                           moviePalette().get());
     }
     return std::make_shared<bitmap::Bitmap>(std::move(composite));
 }
@@ -1256,7 +1239,7 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
 
     auto raw = bitmap_decode_provider_(*member, nullptr);
     if (raw == nullptr) {
-        bitmap_cache_->markDecodeFailed(*member);
+        bitmap_cache_->markDecodeFailed(*member, member);
         return nullptr;
     }
 
@@ -1266,19 +1249,24 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::bakeFilmLoopMemberBitmap(
 }
 
 bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, const RenderSprite& sprite) const {
+    const auto movie_palette = moviePalette();
     // Director's 32-bit bitmap records can carry RGB data with an all-zero
     // alpha byte even when the member did not opt into native alpha.  That
     // byte is padding in that case, not transparency.  Normalize it before
     // applying ink so the decoded pixels are composited with their authored
     // RGB values instead of the stage background.
     const auto normalized = BitmapCache::coerceNonNativeAlphaToOpaque(raw, raw.isNativeAlpha());
-    bitmap::Bitmap processed = shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, normalized)
-        ? InkProcessor::convertOpaqueWhiteToTransparent(normalized)
-        : normalized;
+    bitmap::Bitmap processed = normalized;
+    const int back_rgb = InkProcessor::resolveBackColor(processed,
+                                                        sprite.inkMode(),
+                                                        sprite.backColor(),
+                                                        false,
+                                                        raw.imagePalette().get(),
+                                                        movie_palette.get());
     if (processed.bitDepth() <= 1 && sprite.hasForeColor() && InkProcessor::allowsColorize(sprite.inkMode())) {
         processed = InkProcessor::applyForeColorRemap(processed,
                                                       static_cast<std::uint32_t>(sprite.foreColor()),
-                                                      static_cast<std::uint32_t>(sprite.backColor()));
+                                                      static_cast<std::uint32_t>(back_rgb));
     }
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
         if (sprite.inkMode() == id::InkMode::MASK) {
@@ -1289,14 +1277,16 @@ bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, cons
                                                    sprite.inkMode(),
                                                    sprite.backColor(),
                                                    processed.isNativeAlpha(),
-                                                   raw.imagePalette().get());
+                                                   raw.imagePalette().get(),
+                                                   movie_palette.get());
             }
         } else {
             processed = InkProcessor::applyInk(processed,
                                                sprite.inkMode(),
                                                sprite.backColor(),
                                                processed.isNativeAlpha(),
-                                               raw.imagePalette().get());
+                                               raw.imagePalette().get(),
+                                               movie_palette.get());
         }
     }
 
@@ -1307,26 +1297,30 @@ bitmap::Bitmap SpriteBaker::processDecodedBitmap(const bitmap::Bitmap& raw, cons
                                                                             sprite.backColor(),
                                                                             sprite.hasForeColor(),
                                                                             sprite.hasBackColor(),
-                                                                            raw.imagePalette().get());
+                                                                            raw.imagePalette().get(),
+                                                                            movie_palette.get());
     return result;
 }
 
 bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const RenderSprite& sprite) const {
+    const auto movie_palette = moviePalette();
     bitmap::Bitmap source = live.copy();
+    const int back_rgb = InkProcessor::resolveBackColor(source,
+                                                       sprite.inkMode(),
+                                                       sprite.backColor(),
+                                                       false,
+                                                       source.imagePalette().get(),
+                                                       movie_palette.get());
     if (source.bitDepth() <= 1 && sprite.hasForeColor()) {
         source = InkProcessor::applyForeColorRemap(source,
                                                    static_cast<std::uint32_t>(sprite.foreColor()),
-                                                   static_cast<std::uint32_t>(sprite.backColor()));
+                                                   static_cast<std::uint32_t>(back_rgb));
     }
 
     bitmap::Bitmap processed = source.copy();
     if (InkProcessor::shouldProcessInk(sprite.inkMode()) &&
         !shouldPreserveScriptFillBacking(sprite, source)) {
-        bitmap::Bitmap ink_source =
-            (shouldNeutralizeOpaqueWhiteForScriptCanvas(sprite, source) ||
-             shouldNeutralizeOpaqueWhiteForAuthoredTint(sprite, source))
-            ? InkProcessor::convertOpaqueWhiteToTransparent(source)
-            : source.copy();
+        bitmap::Bitmap ink_source = source.copy();
         const bool has_native_alpha = ink_source.bitDepth() == 32 && ink_source.isNativeAlpha();
         if (sprite.inkMode() == id::InkMode::MASK) {
             if (const auto mask = decodeMaskBitmap(sprite)) {
@@ -1336,7 +1330,8 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
                                                    sprite.inkMode(),
                                                    sprite.backColor(),
                                                    has_native_alpha,
-                                                   ink_source.imagePalette().get());
+                                                   ink_source.imagePalette().get(),
+                                                   movie_palette.get());
             }
         } else {
             processed = shouldPreserveOutlinedWhiteBodyForScriptCanvas(sprite, ink_source)
@@ -1344,12 +1339,14 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
                                                                     sprite.inkMode(),
                                                                     sprite.backColor(),
                                                                     has_native_alpha,
-                                                                    ink_source.imagePalette().get())
+                                                                    ink_source.imagePalette().get(),
+                                                                    movie_palette.get())
                 : InkProcessor::applyInk(ink_source,
                                          sprite.inkMode(),
                                          sprite.backColor(),
                                          has_native_alpha,
-                                         ink_source.imagePalette().get());
+                                         ink_source.imagePalette().get(),
+                                         movie_palette.get());
         }
     }
 
@@ -1360,11 +1357,11 @@ bitmap::Bitmap SpriteBaker::processLiveBitmap(const bitmap::Bitmap& live, const 
                                                                               sprite.backColor(),
                                                                               sprite.hasForeColor(),
                                                                               sprite.hasBackColor(),
-                                                                              source.imagePalette().get());
-    if (sprite.hasBackColor() &&
-        InkProcessor::allowsColorize(sprite.inkMode()) &&
-        (sprite.backColor() & 0x00FFFFFF) != 0x00FFFFFF) {
-        result = InkProcessor::remapExactColor(result, 0x00FFFFFFU, static_cast<std::uint32_t>(sprite.backColor()));
+                                                                              source.imagePalette().get(),
+                                                                              movie_palette.get());
+
+    if (sprite.hasBackColor() && InkProcessor::allowsColorize(sprite.inkMode()) && back_rgb != 0xFFFFFF) {
+        result = InkProcessor::remapExactColor(result, 0x00FFFFFFU, static_cast<std::uint32_t>(back_rgb));
     }
     return result;
 }
@@ -1444,7 +1441,8 @@ std::shared_ptr<const bitmap::Bitmap> SpriteBaker::cachedBitmap(const RenderSpri
                                             sprite.backColor(),
                                             sprite.foreColor(),
                                             sprite.hasForeColor(),
-                                            sprite.hasBackColor());
+                                            sprite.hasBackColor(),
+                                            member);
 }
 
 std::shared_ptr<const bitmap::Bitmap>
@@ -1460,7 +1458,8 @@ SpriteBaker::bakeLiveBitmap(const std::shared_ptr<const bitmap::Bitmap>& live,
                                                                    sprite.backColor(),
                                                                    sprite.foreColor(),
                                                                    sprite.hasForeColor(),
-                                                                   sprite.hasBackColor())) {
+                                                                   sprite.hasBackColor(),
+                                                                   member)) {
             return cached;
         }
     }
@@ -1474,7 +1473,8 @@ SpriteBaker::bakeLiveBitmap(const std::shared_ptr<const bitmap::Bitmap>& live,
                                            sprite.foreColor(),
                                            sprite.hasForeColor(),
                                            sprite.hasBackColor(),
-                                           processed);
+                                           processed,
+                                           member);
     }
     return processed;
 }
@@ -1500,11 +1500,12 @@ void SpriteBaker::cacheBitmap(const RenderSprite& sprite, std::shared_ptr<const 
                                sprite.foreColor(),
                                sprite.hasForeColor(),
                                sprite.hasBackColor(),
-                               std::move(bitmap));
+                               std::move(bitmap),
+                               member);
 }
 
 bitmap::Bitmap SpriteBaker::drawShapeBitmap(const RenderSprite& sprite,
-                                            const ::libreshockwave::cast::ShapeInfo* shape_info) {
+                                            const ::libreshockwave::cast::ShapeInfo* shape_info) const {
     const int width = sprite.width() > 0 ? sprite.width() : 50;
     const int height = sprite.height() > 0 ? sprite.height() : 50;
     bitmap::Bitmap bitmap(width, height, 32);
@@ -1516,7 +1517,12 @@ bitmap::Bitmap SpriteBaker::drawShapeBitmap(const RenderSprite& sprite,
     }
 
     if (InkProcessor::shouldProcessInk(sprite.inkMode())) {
-        return InkProcessor::applyInk(bitmap, sprite.inkMode(), sprite.backColor(), false, nullptr);
+        return InkProcessor::applyInk(bitmap,
+                                      sprite.inkMode(),
+                                      sprite.backColor(),
+                                      false,
+                                      nullptr,
+                                      moviePalette().get());
     }
     return bitmap;
 }

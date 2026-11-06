@@ -1122,6 +1122,7 @@ void Player::wireComponents() {
         }
         return std::nullopt;
     });
+    sprite_baker_.setMoviePaletteProvider([this]() { return bitmap_resolver_.getMoviePalette(); });
 
     sound_manager_.setAudioResolver([this](const lingo::Datum::CastMemberRef& ref)
         -> std::optional<std::vector<std::uint8_t>> {

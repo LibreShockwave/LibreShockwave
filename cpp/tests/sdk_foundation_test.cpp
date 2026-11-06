@@ -16796,7 +16796,7 @@ void testSpritePropertiesFoundation() {
     assert(props.setSpriteProp(14, "color", Datum::paletteIndexColor(45)));
     auto palette_color_sprite = registry.get(14);
     assert(palette_color_sprite != nullptr);
-    assert(palette_color_sprite->foreColor() == 0x2D2D2D);
+    assert(palette_color_sprite->foreColor() == 45);
     const auto* palette_sprite_color = props.getSpriteProp(14, "color").asColorRef();
     assert(palette_sprite_color != nullptr);
     assert(palette_sprite_color->palette_index.has_value());
@@ -21048,7 +21048,7 @@ void testBitmapCacheAndInkProcessorFoundation() {
 
     Bitmap darken_tint_source(2, 1, 32, {0xFFFFFFFFU, 0xFF808080U});
     Bitmap darken_tint = InkProcessor::applyInk(darken_tint_source, InkMode::DARKEN, 0x804020, false, nullptr);
-    assert(darken_tint.getPixel(0, 0) == 0xFF804020U);
+    assert(darken_tint.getPixel(0, 0) == 0x00000000U);
     assert(darken_tint.getPixel(1, 0) == 0xFF402010U);
 
     Bitmap rectangular_media_darken(3, 3, 8, {

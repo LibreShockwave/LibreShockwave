@@ -692,7 +692,7 @@ bool SpriteProperties::setColorValue(const lingo::Datum& value, const std::funct
         return true;
     }
     if (const auto* color = value.asColorRef()) {
-        setter((color->r << 16) | (color->g << 8) | color->b);
+        setter(color->packedValue());
     } else {
         setter(value.intValue());
     }

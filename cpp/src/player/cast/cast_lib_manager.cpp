@@ -1060,15 +1060,10 @@ std::shared_ptr<const bitmap::Palette> CastLibManager::resolvePaletteByMember(in
     }
 
     ensureInitialized();
-    for (const auto& [number, cast_lib] : cast_libs_) {
-        if (number == cast_lib_number) {
-            continue;
-        }
-        if (auto palette = paletteFromCastMember(cast_lib, member_number)) {
-            return palette;
-        }
-    }
-
+    // A member number identifies a member within one castlib only. Scanning the
+    // other loaded castlibs for the same number returns whichever cast happens
+    // to hold it, which depends on what the movie loaded so far. Callers that
+    // mean another castlib pass that number explicitly.
     return file_ != nullptr ? file_->resolvePaletteByMemberNumber(member_number) : nullptr;
 }
 
@@ -1090,17 +1085,10 @@ std::shared_ptr<const bitmap::Palette> CastLibManager::resolvePaletteById(int ca
         }
     }
 
-    for (const auto& [number, cast_lib] : cast_libs_) {
-        if (cast_lib_number > 0 && number == cast_lib_number) {
-            continue;
-        }
-        if (!cast_lib || !cast_lib->isLoaded()) {
-            continue;
-        }
-        if (auto palette = paletteFromCastById(cast_lib, palette_id)) {
-            return palette;
-        }
-    }
+    // A palette id is scoped to the castlib named in the member record. The
+    // caller already retried the movie's own castlib, so searching the other
+    // loaded castlibs would return a palette from an unrelated cast and vary
+    // with load order. Report not found and let the caller use its fallback.
     return nullptr;
 }
 

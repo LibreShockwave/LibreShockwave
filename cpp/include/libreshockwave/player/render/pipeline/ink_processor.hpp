@@ -27,16 +27,24 @@ public:
     // source itself, because a key the source does not contain would leave the
     // rectangle opaque. The renderer applies the ink arithmetic after this step.
     // Returns a copy of src for inks that shouldProcessInk rejects.
+    // `palette` is the colour table the source pixels were decoded with, and it
+    // is what matte keying looks up. `movie_palette` is `the palette of movie`,
+    // and it is what a sprite background colour in the 0..255 range is resolved
+    // against, because Director stores such a colour as a palette number and
+    // resolves it in the movie palette, never in the member's own table. Pass
+    // nullptr to fall back to `palette`.
     [[nodiscard]] static bitmap::Bitmap applyInk(const bitmap::Bitmap& src,
                                                  int ink,
                                                  int back_color,
                                                  bool use_alpha,
-                                                 const bitmap::Palette* palette);
+                                                 const bitmap::Palette* palette,
+                                                 const bitmap::Palette* movie_palette = nullptr);
     [[nodiscard]] static bitmap::Bitmap applyInk(const bitmap::Bitmap& src,
                                                  id::InkMode ink,
                                                  int back_color,
                                                  bool use_alpha,
-                                                 const bitmap::Palette* palette);
+                                                 const bitmap::Palette* palette,
+                                                 const bitmap::Palette* movie_palette = nullptr);
     // Variant of applyInk for sources whose white pixels are artwork rather than
     // backing. It keeps a white body that an outline encloses, and it keys the
     // white backing that reaches the sprite edge. Use it for authored low-depth
@@ -45,23 +53,32 @@ public:
                                                                             int ink,
                                                                             int back_color,
                                                                             bool use_alpha,
-                                                                            const bitmap::Palette* palette);
+                                                                            const bitmap::Palette* palette,
+                                                                            const bitmap::Palette* movie_palette = nullptr);
     [[nodiscard]] static bitmap::Bitmap applyInkPreservingOutlinedWhiteBody(const bitmap::Bitmap& src,
                                                                             id::InkMode ink,
                                                                             int back_color,
                                                                             bool use_alpha,
-                                                                            const bitmap::Palette* palette);
-    // Resolves a sprite background colour to packed RGB. back_color below 256 is
-    // a palette index in palette, above 255 it is already packed RGB, and a
-    // source with native matte alpha returns -1 unless the ink keys by colour.
-    // This is a colour lookup only. It does not decide which colour the bake
-    // stage keys, because only Background Transparent keys this colour.
+                                                                            const bitmap::Palette* palette,
+                                                                            const bitmap::Palette* movie_palette = nullptr);
+    // Resolves a sprite background colour to the packed RGB of that colour's
+    // transparency key. back_color at or below 255 is a palette number that
+    // movie_palette resolves, matching `the palette of movie`; a null
+    // movie_palette falls back to palette. Above 255 the value is already
+    // packed RGB, and a source with native matte alpha returns -1 unless the
+    // ink keys by colour.
+    // A 32-bit source without alpha has white backing, so its key is white for
+    // every ink but Copy. Use resolveBackColorIgnoringAlpha where the value is
+    // a colour in its own right, such as the Darken ink colour filter.
     [[nodiscard]] static int resolveBackColor(const bitmap::Bitmap& src,
                                               id::InkMode ink,
                                               int back_color,
                                               bool use_alpha,
-                                              const bitmap::Palette* palette);
-    [[nodiscard]] static int resolveBackColorIgnoringAlpha(int back_color, const bitmap::Palette* palette);
+                                              const bitmap::Palette* palette,
+                                              const bitmap::Palette* movie_palette = nullptr);
+    [[nodiscard]] static int resolveBackColorIgnoringAlpha(int back_color,
+                                                           const bitmap::Palette* palette,
+                                                           const bitmap::Palette* movie_palette = nullptr);
 
     [[nodiscard]] static bitmap::Bitmap applyForeColorRemap(const bitmap::Bitmap& src,
                                                             std::uint32_t fore_color,

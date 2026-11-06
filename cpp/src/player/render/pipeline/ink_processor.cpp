@@ -404,6 +404,7 @@ int resolveMatteColorForInk(const bitmap::Bitmap& src,
                             int back_color,
                             bool use_alpha,
                             const bitmap::Palette* palette,
+                            const bitmap::Palette* movie_palette,
                             bool preserve_script_outlined_white_body) {
     if (src.hasNativeMatteAlpha() && use_alpha) {
         return -1;
@@ -425,7 +426,7 @@ int resolveMatteColorForInk(const bitmap::Bitmap& src,
     if (!src.paletteIndices().has_value() && cornerContainsOpaqueRgb(src, 0xFFFFFF)) {
         return 0xFFFFFF;
     }
-    return InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette);
+    return InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette, movie_palette);
 }
 
 constexpr int k_max_palette_back_color = 255;
@@ -438,8 +439,9 @@ int resolveTransparencyKey(const bitmap::Bitmap& src,
                            id::InkMode ink,
                            int back_color,
                            bool use_alpha,
-                           const bitmap::Palette* palette) {
-    const int resolved = InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette);
+                           const bitmap::Palette* palette,
+                           const bitmap::Palette* movie_palette) {
+    const int resolved = InkProcessor::resolveBackColor(src, ink, back_color, use_alpha, palette, movie_palette);
     if (ink == id::InkMode::BACKGROUND_TRANSPARENT || back_color < 0 ||
         back_color <= k_max_palette_back_color) {
         return resolved;
@@ -455,6 +457,7 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
                                 int back_color,
                                 bool use_alpha,
                                 const bitmap::Palette* palette,
+                                const bitmap::Palette* movie_palette,
                                 bool preserve_script_outlined_white_body) {
     if (src.width() == 0 || src.height() == 0 || !InkProcessor::shouldProcessInk(ink)) {
         return src.copy();
@@ -486,7 +489,8 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
                 : (explicit_matte_index.has_value() ? explicit_matte_index : default_matte_index);
         const int matte_color = matte_palette_index.has_value() && palette_indices.has_value()
             ? bitmap::detail::resolvePaletteIndexRgb(input.pixels(), *palette_indices, *matte_palette_index)
-            : resolveMatteColorForInk(input, ink, back_color, use_alpha, palette, preserve_script_outlined_white_body);
+            : resolveMatteColorForInk(input, ink, back_color, use_alpha, palette, movie_palette,
+                                      preserve_script_outlined_white_body);
         if (matte_color < 0) {
             return input.copy();
         }
@@ -506,26 +510,27 @@ bitmap::Bitmap applyInkInternal(const bitmap::Bitmap& src,
     }
 
     if (ink == id::InkMode::DARKEN || ink == id::InkMode::LIGHTEN) {
-        bitmap::Bitmap masked = input.copy();
-        if (!(input.bitDepth() == 32 && !use_alpha) && !input.isRectangularMedia()) {
-            const int matte_color = InkProcessor::resolveBackColor(input, ink, back_color, use_alpha, palette);
-            if (matte_color >= 0) {
-                masked = input.bitDepth() >= 16
-                    ? InkProcessor::applyBackgroundTransparent(input, matte_color)
-                    : InkProcessor::applyMatte(input, matte_color);
-            }
-        }
-
-        if (ink == id::InkMode::DARKEN) {
-            const int tint_rgb = InkProcessor::resolveBackColor(input, ink, back_color, false, palette);
-            if (tint_rgb >= 0 && tint_rgb != 0xFFFFFF) {
-                masked = InkProcessor::multiplyColor(masked, tint_rgb);
-            }
+        // The background colour of these inks is the colour filter the sprite is
+        // viewed through, and white means "no filtering". It is never their
+        // transparency key, so it must not be resolved through the image depth:
+        // a 32-bit source would then lose its authored filter and draw untinted.
+        const int filter_rgb = InkProcessor::resolveBackColorIgnoringAlpha(back_color, palette, movie_palette);
+        // The sprite's own backing is keyed like any other ink: its alpha, else
+        // the white that reaches the border. A 32-bit source always has that
+        // backing because its alpha byte is padding. Interior white stays art,
+        // and unkeyed backing filters into an opaque rectangle over the scene.
+        const bool keys_white_backing =
+            !use_alpha && (input.bitDepth() == 32 || !input.isRectangularMedia());
+        bitmap::Bitmap masked = keys_white_backing
+            ? InkProcessor::convertOpaqueWhiteToTransparent(input)
+            : input.copy();
+        if (ink == id::InkMode::DARKEN && filter_rgb != k_opaque_white_rgb) {
+            masked = InkProcessor::multiplyColor(masked, filter_rgb);
         }
         return masked;
     }
 
-    const int bg_color = resolveTransparencyKey(input, ink, back_color, use_alpha, palette);
+    const int bg_color = resolveTransparencyKey(input, ink, back_color, use_alpha, palette, movie_palette);
     if (bg_color < 0) {
         return input.copy();
     }
@@ -572,41 +577,66 @@ bitmap::Bitmap InkProcessor::applyInk(const bitmap::Bitmap& src,
                                       int ink,
                                       int back_color,
                                       bool use_alpha,
-                                      const bitmap::Palette* palette) {
-    return applyInkInternal(src, id::inkModeFromCode(ink), back_color, use_alpha, palette, false);
+                                      const bitmap::Palette* palette,
+                                      const bitmap::Palette* movie_palette) {
+    return applyInkInternal(src, id::inkModeFromCode(ink), back_color, use_alpha, palette, movie_palette, false);
 }
 
 bitmap::Bitmap InkProcessor::applyInk(const bitmap::Bitmap& src,
                                       id::InkMode ink,
                                       int back_color,
                                       bool use_alpha,
-                                      const bitmap::Palette* palette) {
-    return applyInkInternal(src, ink, back_color, use_alpha, palette, false);
+                                      const bitmap::Palette* palette,
+                                      const bitmap::Palette* movie_palette) {
+    return applyInkInternal(src, ink, back_color, use_alpha, palette, movie_palette, false);
 }
 
 bitmap::Bitmap InkProcessor::applyInkPreservingOutlinedWhiteBody(const bitmap::Bitmap& src,
                                                                  int ink,
                                                                  int back_color,
                                                                  bool use_alpha,
-                                                                 const bitmap::Palette* palette) {
-    return applyInkInternal(src, id::inkModeFromCode(ink), back_color, use_alpha, palette, true);
+                                                                 const bitmap::Palette* palette,
+                                                                 const bitmap::Palette* movie_palette) {
+    return applyInkInternal(src, id::inkModeFromCode(ink), back_color, use_alpha, palette, movie_palette, true);
 }
 
 bitmap::Bitmap InkProcessor::applyInkPreservingOutlinedWhiteBody(const bitmap::Bitmap& src,
                                                                  id::InkMode ink,
                                                                  int back_color,
                                                                  bool use_alpha,
-                                                                 const bitmap::Palette* palette) {
-    return applyInkInternal(src, ink, back_color, use_alpha, palette, true);
+                                                                 const bitmap::Palette* palette,
+                                                                 const bitmap::Palette* movie_palette) {
+    return applyInkInternal(src, ink, back_color, use_alpha, palette, movie_palette, true);
 }
+
+namespace {
+
+// A sprite colour in the 0..255 range is a palette number, and Director resolves
+// it in the movie palette. The colour table the source pixels use is only the
+// fallback, because a dynamically loaded member carries its own table, which
+// need not hold the authored colour at that number.
+const bitmap::Palette* selectColorPalette(const bitmap::Palette* movie_palette,
+                                          const bitmap::Palette* image_palette,
+                                          int color_number) {
+    if (movie_palette != nullptr && color_number >= 0 && color_number < movie_palette->size()) {
+        return movie_palette;
+    }
+    if (image_palette != nullptr && color_number >= 0 && color_number < image_palette->size()) {
+        return image_palette;
+    }
+    return nullptr;
+}
+
+} // namespace
 
 int InkProcessor::resolveBackColor(const bitmap::Bitmap& src,
                                    id::InkMode ink,
                                    int back_color,
                                    bool use_alpha,
-                                   const bitmap::Palette* palette) {
+                                   const bitmap::Palette* palette,
+                                   const bitmap::Palette* movie_palette) {
     if (src.hasNativeMatteAlpha() && use_alpha) {
-        const int alpha_back_color = resolveBackColorIgnoringAlpha(back_color, palette);
+        const int alpha_back_color = resolveBackColorIgnoringAlpha(back_color, palette, movie_palette);
         if (ink == id::InkMode::BACKGROUND_TRANSPARENT && hasOpaqueBorderColor(src, alpha_back_color)) {
             return alpha_back_color;
         }
@@ -621,20 +651,22 @@ int InkProcessor::resolveBackColor(const bitmap::Bitmap& src,
         return 0xFFFFFF;
     }
 
-    if (palette != nullptr && back_color >= 0 && back_color < palette->size()) {
-        return static_cast<int>(palette->getColor(back_color) & 0x00FFFFFFU);
+    if (const auto* color_palette = selectColorPalette(movie_palette, palette, back_color); color_palette != nullptr) {
+        return static_cast<int>(color_palette->getColor(back_color) & 0x00FFFFFFU);
     }
 
     const int gray = 255 - back_color;
     return (gray << 16) | (gray << 8) | gray;
 }
 
-int InkProcessor::resolveBackColorIgnoringAlpha(int back_color, const bitmap::Palette* palette) {
+int InkProcessor::resolveBackColorIgnoringAlpha(int back_color,
+                                                const bitmap::Palette* palette,
+                                                const bitmap::Palette* movie_palette) {
     if (back_color > 255) {
         return back_color & 0x00FFFFFF;
     }
-    if (palette != nullptr && back_color >= 0 && back_color < palette->size()) {
-        return static_cast<int>(palette->getColor(back_color) & 0x00FFFFFFU);
+    if (const auto* color_palette = selectColorPalette(movie_palette, palette, back_color); color_palette != nullptr) {
+        return static_cast<int>(color_palette->getColor(back_color) & 0x00FFFFFFU);
     }
 
     const int gray = 255 - back_color;
