@@ -826,7 +826,7 @@ std::uint32_t applyInk(std::uint32_t src,
         return src_rgb == 0 ? dest : packArgb(255, 255 - src_r, 255 - src_g, 255 - src_b);
     }
     if (ink == id::InkMode::NOT_REVERSE) {
-        return packArgb(255, dest_r ^ (255 - src_r), dest_g ^ (255 - src_g), dest_b ^ (255 - src_b));
+        return packArgb(255, dest_r ^ src_r, dest_g ^ src_g, dest_b ^ src_b);
     }
     if (ink == id::InkMode::NOT_GHOST) {
         return packArgb(255,

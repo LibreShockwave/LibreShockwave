@@ -273,10 +273,15 @@ void SoftwareFrameRenderer::compositeSpecialInk(std::vector<std::uint32_t>& argb
             out_b = std::min(255, dst_b + src_b);
             break;
         case id::InkMode::SUBTRACT_PIN:
-        case id::InkMode::SUBTRACT:
             out_r = std::max(0, dst_r - src_r);
             out_g = std::max(0, dst_g - src_g);
             out_b = std::max(0, dst_b - src_b);
+            break;
+        case id::InkMode::SUBTRACT:
+            // Subtract wraps a negative result by 256. Only Subtract Pin stops at zero.
+            out_r = (dst_r - src_r) & 0xFF;
+            out_g = (dst_g - src_g) & 0xFF;
+            out_b = (dst_b - src_b) & 0xFF;
             break;
         case id::InkMode::DARKEST:
             out_r = std::min(dst_r, src_r);
@@ -317,9 +322,10 @@ void SoftwareFrameRenderer::compositeSpecialInk(std::vector<std::uint32_t>& argb
             out_b = src_b & dst_b;
             break;
         case id::InkMode::NOT_REVERSE:
-            out_r = (~src_r & 0xFF) ^ dst_r;
-            out_g = (~src_g & 0xFF) ^ dst_g;
-            out_b = (~src_b & 0xFF) ^ dst_b;
+            // Not Reverse flips the destination where the source bits are set.
+            out_r = src_r ^ dst_r;
+            out_g = src_g ^ dst_g;
+            out_b = src_b ^ dst_b;
             break;
         case id::InkMode::NOT_GHOST:
             out_r = (~src_r & 0xFF) | dst_r;
