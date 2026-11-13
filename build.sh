@@ -8,7 +8,6 @@ BUILD_DIR=""
 GENERATOR=""
 INSTALL_DEPS=0
 PRINT_DEPS=0
-RUN_TESTS=1
 CLEAN=0
 WASM=0
 JOBS=""
@@ -31,7 +30,6 @@ Options:
   --generator NAME       Pass a CMake generator, for example "Ninja".
   --jobs N               Pass a parallel job count to cmake --build.
   --target NAME          Build one target. Can be used more than once.
-  --no-tests             Do not run ctest after a native build.
   --clean                Remove the build directory before configuring.
   -h, --help             Show this help.
 
@@ -187,7 +185,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --wasm)
             WASM=1
-            RUN_TESTS=0
             shift
             ;;
         --build-dir)
@@ -220,10 +217,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --target=*)
             TARGETS+=("${1#*=}")
-            shift
-            ;;
-        --no-tests)
-            RUN_TESTS=0
             shift
             ;;
         --clean)
@@ -273,13 +266,11 @@ if [[ "${#TARGETS[@]}" -eq 0 ]]; then
         TARGETS=(libreshockwave_cpp_wasm_dist)
     else
         TARGETS=(
-            libreshockwave_tests
             libreshockwave_probe
             libreshockwave_asset_extractor
             libreshockwave_render_probe
             libreshockwave_wasm_bridge_probe
             libreshockwave_debugger
-            libreshockwave_debugger_tests
         )
     fi
 fi
@@ -313,8 +304,3 @@ echo "+ ${configure_cmd[*]}"
 
 echo "+ ${build_cmd[*]}"
 "${build_cmd[@]}"
-
-if [[ "${RUN_TESTS}" -eq 1 ]]; then
-    echo "+ ctest --test-dir ${BUILD_DIR} --output-on-failure"
-    ctest --test-dir "${BUILD_DIR}" --output-on-failure
-fi

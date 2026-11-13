@@ -41,7 +41,7 @@ Automatic installation is optional; by default the script only builds.
 ./build.sh
 ```
 
-By default this configures a Debug build, builds the C++ tests and native probe tools, and runs `ctest`.
+By default this configures a Debug build and builds the native probe tools and the desktop debugger.
 
 Useful variants:
 
@@ -49,7 +49,7 @@ Useful variants:
 ./build.sh --release
 ./build.sh --generator Ninja
 ./build.sh --jobs 8
-./build.sh --target libreshockwave_probe --no-tests
+./build.sh --target libreshockwave_probe
 ./build.sh --clean
 ```
 
@@ -109,7 +109,7 @@ LibreShockwave includes a Qt desktop debugger that exposes movie playback, Lingo
 The desktop debugger is built only when Qt6 Widgets or Qt5 Widgets is available. Build its target explicitly:
 
 ```bash
-./build.sh --target libreshockwave_debugger --no-tests
+./build.sh --target libreshockwave_debugger
 ./cmake-build-debug/cpp/libreshockwave_debugger_app/libreshockwave_debugger path/to/movie.dcr
 ```
 
@@ -487,7 +487,6 @@ cpp/
     tools/                      Native probes and browser fixture checker
     wasm/                       WASM bridge entry points
   resources/fonts/              Bundled runtime font assets
-  tests/                        C++ regression and contract tests
 web/
   ...                          Browser player and worker assets
 docs/

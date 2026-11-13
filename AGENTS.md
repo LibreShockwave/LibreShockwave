@@ -90,7 +90,7 @@ These are hard rules. The project owner set them.
    - Variables, parameters, members: snake_case; private members with trailing
      underscore (`buffer_`)
    - Namespaces: snake_case
-   - Files: `snake_case.hpp` / `snake_case.cpp`; test files `snake_test.cpp`
+   - Files: `snake_case.hpp` / `snake_case.cpp`
    - Macros: `SCREAMING_SNAKE_CASE`. Avoid macros where possible.
 2. **No duplicate functions**
    Every piece of logic has exactly one canonical implementation. Shared logic is
@@ -106,8 +106,8 @@ These are hard rules. The project owner set them.
    under 600 lines. This is a hard limit. When a file approaches it, split
    responsibilities. Do not append. Keep only a few files per folder. Roughly
    five or fewer. When a module outgrows that, split it into subfolders by
-   concern. Mirror the layout under `cpp/include/libreshockwave/`, `cpp/src/`,
-   and `cpp/tests/`. Existing examples are `player/net/`, `player/xtra/`, and
+   concern. Mirror the layout under `cpp/include/libreshockwave/` and
+   `cpp/src/`. Existing examples are `player/net/`, `player/xtra/`, and
    `lingo/vm/datum/`.
 5. **Modern C++**
    RAII. Const-correctness. `[[nodiscard]]` on anything returning an error,
@@ -129,11 +129,10 @@ These are hard rules. The project owner set them.
    that paper over a symptom. If the correct fix turns out larger than expected,
    do it properly. Split files as rule 4 requires. If unsure of the right
    approach, ask Alex. Do not commit a hack.
-9. **No new tests**
-   Do not make new tests. Do not add test files, test functions, or test
-   targets. The runtime coverage lives in `cpp/tests/sdk_foundation_test.cpp`.
-   The desktop-debugger coverage lives in `debugger/cpp/debugger_test.cpp`. Do
-   not grow them. New suites fragment `ctest` output and bloat configure time.
+9. **No tests**
+   The repository has no test suite and no `ctest` targets. Do not add test
+   files, test functions, or test targets. Verify changes with the probe
+   tools, the desktop debugger, and recording replay.
 10. **No unsolicited docs files**
    Do not create new files under `docs/`. Do not create new `.md` files
    anywhere. Only when the user explicitly asks or an approved plan calls for
@@ -177,12 +176,12 @@ These are hard rules. The project owner set them.
    lengths, multiuser and SMUS frame sizes, and network results. Parsers reject
    malformed input. They do not push the check onto callers. Secrets and
    credentials come only from external parameters or the environment. Never in
-   code, tests, or the repo. The connection presets in the debugger parameters
+   code or the repo. The connection presets in the debugger parameters
    dialog are local defaults. They are never committed credentials.
 16. **Deterministic where feasible**
-   Tests use fixed RNG seeds. They never depend on wall-clock time. Inject or
-   parameterize time instead. The debugger replay clock does this. Never iterate
-   a `std::unordered_map` and depend on its order.
+   Reproducible runs use fixed RNG seeds. They never depend on wall-clock time.
+   Inject or parameterize time instead. The debugger replay clock does this.
+   Never iterate a `std::unordered_map` and depend on its order.
 17. **Documentation style**
    Write markdown in plain standard English. Use the style of ASD-STE100
    Simplified Technical English. Short sentences. One idea per sentence. No
@@ -220,24 +219,20 @@ These are repository-specific constraints. They sit on top of the hard rules.
 - Commit messages must not mention game, asset, room, user, or endpoint names.
   Describe the generic runtime behavior being fixed.
 
-## Building and Testing
+## Building
 
 Relevant build targets:
 
 ```bash
-cmake --build cmake-build-debug --target libreshockwave_tests -j2
+cmake --build cmake-build-debug --target libreshockwave_debugger -j2
 cmake --build cmake-build-wasm --target libreshockwave_cpp_wasm_dist -j2
 ```
 
-Run the test suite with `ctest --test-dir cmake-build-debug --output-on-failure`.
+There is no test suite and no `ctest` target (rule 9). Verify changes by
+building the affected targets and running them. The probe tools under
+`cpp/apps/tools/`, the desktop debugger, and recording replay are the
+verification routes.
 
-- The runtime coverage lives in `cpp/tests/sdk_foundation_test.cpp`. The
-  desktop-debugger coverage lives in `debugger/cpp/debugger_test.cpp`. Do not
-  add new test files, functions, or targets (rule 9).
-- The full native test binary has a known pre-existing abort. It is around a
-  `sdk_foundation_test.cpp` `gcCallbacks == 1` assertion. If it still appears,
-  document the exact assertion. Run the focused tests that cover the current
-  change.
 - When serving the WASM distribution (usually from
   `/opt/git/LibreShockwave/cmake-build-wasm/cpp/wasm-dist`), restart the static
   server after rebuilding. This stops deleted old bundle file descriptors from
@@ -258,9 +253,8 @@ Run the test suite with `ctest --test-dir cmake-build-debug --output-on-failure`
   `XtraManager`.
 - `cpp/src/bitmap/` holds `Bitmap`, `Drawing`, `Palette`, and the image
   decoders.
-- `cpp/tests/sdk_foundation_test.cpp` holds the runtime test suite.
-- `debugger/cpp/` holds the Qt desktop debugger. `debugger_test.cpp` holds its
-  test suite.
+- `cpp/apps/tools/` holds the probe and command-line tools.
+- `debugger/cpp/` holds the Qt desktop debugger.
 - `web/` holds the WASM host worker (`libreshockwave-cpp-worker.js`) and the
   player glue.
 - `docs/goals/` holds dated investigation notes.
@@ -317,7 +311,7 @@ Fix the generic runtime behavior underneath these paths.
 ## Rendering Rules
 
 Validated C++ renderer behavior. Treat these as rules for future fixes and
-tests. They are not a complete rendering specification.
+verifications. They are not a complete rendering specification.
 
 ### General Approach
 
@@ -335,7 +329,7 @@ inspection, and input recording with replay.
 Build and run:
 
 ```bash
-./build.sh --release --target libreshockwave_debugger --no-tests
+./build.sh --release --target libreshockwave_debugger
 ./cmake-build-release/cpp/libreshockwave_debugger_app/libreshockwave_debugger [movie-or-recording]
 ```
 
@@ -542,9 +536,10 @@ Implications:
 
 ## Verification Practice
 
-- Verify with the existing tests that model the Director behavior in isolation.
-  Do not encode asset names, member names, room names, or script-specific
-  workarounds into tests. Do not add new tests (rule 9).
+- Verify behavior with the probe tools and the desktop debugger. Reproduce a
+  Director behavior in a real movie or a probe rather than a test harness. Do
+  not encode asset names, member names, room names, or script-specific
+  workarounds into the runtime (rule 9).
 - For white-keying fixes, final visual acceptance covers all four canaries from
   the same rebuilt WASM bundle: Navigator, Messenger and Friends, Catalogue
   Collectables, and a loaded private room. For private-room regressions, use

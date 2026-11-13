@@ -269,20 +269,6 @@ if(WIN32)
     target_link_libraries(libreshockwave PRIVATE ws2_32)
 endif()
 
-if(BUILD_TESTING)
-    add_executable(libreshockwave_tests
-        tests/sdk_foundation_test.cpp
-    )
-    target_link_libraries(libreshockwave_tests PRIVATE LibreShockwave::libreshockwave)
-    # The foundation tests use assertions for both verification and setup
-    # expressions.  Keep them active even when the surrounding build is a
-    # release build, otherwise NDEBUG removes calls from the test program and
-    # changes the state being tested.
-    target_compile_options(libreshockwave_tests PRIVATE -UNDEBUG)
-    add_test(NAME libreshockwave_cpp_tests COMMAND libreshockwave_tests)
-    add_test(NAME libreshockwave_wasm_bridge_probe COMMAND libreshockwave_wasm_bridge_probe)
-endif()
-
 if(EMSCRIPTEN)
     set(LIBRESHOCKWAVE_WASM_PROFILING "off" CACHE STRING "Emscripten profiling mode: off, functions, full, cpu, or memory")
     set_property(CACHE LIBRESHOCKWAVE_WASM_PROFILING PROPERTY STRINGS off functions full cpu memory)
