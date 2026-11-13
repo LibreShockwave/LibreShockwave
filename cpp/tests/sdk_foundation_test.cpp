@@ -264,6 +264,7 @@ using libreshockwave::lingo::vm::DebugConfig;
 using libreshockwave::lingo::vm::ExecutionContext;
 using libreshockwave::lingo::vm::HandlerRef;
 using libreshockwave::lingo::vm::LingoVM;
+using libreshockwave::lingo::vm::OpcodeHandlerFn;
 using libreshockwave::lingo::vm::OpcodeRegistry;
 using libreshockwave::lingo::vm::PropertyIdMappings;
 using libreshockwave::lingo::vm::Scope;
@@ -14369,10 +14370,12 @@ void testLingoVmScopeAndExecutionContextFoundation() {
     assert(repeat_scope.bytecodeIndex() == 0);
 
     assert(!opcode_registry.execute(Opcode::INVALID, op_context));
-    opcode_registry.registerHandler(Opcode::INVALID, [](ExecutionContext& custom_context) {
-        custom_context.push(Datum::of(99));
-        return true;
-    });
+    opcode_registry.registerHandler(Opcode::INVALID,
+                                   static_cast<OpcodeHandlerFn>(
+                                       [](ExecutionContext& custom_context) {
+                                           custom_context.push(Datum::of(99));
+                                           return true;
+                                       }));
     assert(opcode_registry.hasHandler(Opcode::INVALID));
     assert(opcode_registry.execute(Opcode::INVALID, op_context));
     assert(op_context.pop().intValue() == 99);
@@ -15766,9 +15769,11 @@ void testLingoVmRuntimeFoundation() {
     assert(vm.fireAlertHook("manual"));
     assert(alert_hook_calls == 1);
 
-    vm.opcodeRegistry().registerHandler(Opcode::ADD, [](ExecutionContext&) -> bool {
-        throw LingoException("alert boom");
-    });
+    vm.opcodeRegistry().registerHandler(Opcode::ADD,
+                                       static_cast<OpcodeHandlerFn>(
+                                           [](ExecutionContext&) -> bool {
+                                               throw LingoException("alert boom");
+                                           }));
     vm.builtinContext().alert_hook_handler = [&vm, &alert_hook_calls](
                                                const std::string& alert_type,
                                                const std::string& message) {

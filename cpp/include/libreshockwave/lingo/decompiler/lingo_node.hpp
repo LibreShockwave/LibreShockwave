@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include "libreshockwave/lingo/opcode.hpp"
@@ -14,11 +13,6 @@ class LingoNode;
 class LoopNodeBase;
 
 using NodePtr = std::unique_ptr<LingoNode>;
-
-template <typename T, typename... Args>
-std::unique_ptr<T> makeNode(Args&&... args) {
-    return std::make_unique<T>(std::forward<Args>(args)...);
-}
 
 enum class ValueType {
     Void,

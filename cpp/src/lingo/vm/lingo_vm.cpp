@@ -1206,7 +1206,7 @@ TraceListener::InstructionInfo LingoVM::buildInstructionInfo(
         scope, instruction, globals_, names.get(), include_snapshots);
 }
 
-std::unordered_map<std::string, Datum> LingoVM::captureLocals(const Scope& scope) const {
+RuntimeGlobals LingoVM::captureLocals(const Scope& scope) const {
     const auto* script = scope.script();
     const auto names = script != nullptr ? scriptNamesForScript(*script, scope.fileOwner(), scope.scriptNamesOwner())
                                         : nullptr;

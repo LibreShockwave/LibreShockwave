@@ -7,7 +7,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "libreshockwave/lingo/vm/trace_listener.hpp"
@@ -115,8 +114,8 @@ private:
     void notifyBreakpointsChanged();
     void notifyWatchExpressionsChanged();
     [[nodiscard]] std::vector<DebugStateListener*> listenersSnapshotLocked() const;
-    template <typename Map>
-    [[nodiscard]] static std::map<std::string, lingo::Datum> toOrderedMap(const Map& values) {
+    [[nodiscard]] static std::map<std::string, lingo::Datum> toOrderedMap(
+        const lingo::vm::RuntimeGlobals& values) {
         std::map<std::string, lingo::Datum> ordered;
         for (const auto& [key, value] : values) {
             ordered[key] = value;

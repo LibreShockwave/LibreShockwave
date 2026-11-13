@@ -2,7 +2,6 @@
 
 #include <array>
 #include <bit>
-#include <cstring>
 #include <limits>
 #include <stdexcept>
 
@@ -61,14 +60,6 @@ std::string decodeMacRoman(const std::vector<std::uint8_t>& bytes) {
         }
     }
     return output;
-}
-
-template <typename T>
-T bitCastFromUnsigned(std::uint64_t bits) {
-    T value{};
-    static_assert(sizeof(T) <= sizeof(bits));
-    std::memcpy(&value, &bits, sizeof(T));
-    return value;
 }
 
 } // namespace
@@ -306,7 +297,7 @@ double BinaryReader::readAppleFloat80() {
     }
 
     const auto bits = (sign << 63) | (f64exp << 52) | (fraction >> 11);
-    return bitCastFromUnsigned<double>(bits);
+    return std::bit_cast<double>(bits);
 }
 
 std::vector<std::uint8_t> BinaryReader::readZlibBytes(std::size_t compressed_length) {

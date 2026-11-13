@@ -181,11 +181,11 @@ public:
         if (library_ == nullptr) {
             return false;
         }
-        open_ = load<OpenFn>("snd_pcm_open");
-        set_params_ = load<SetParamsFn>("snd_pcm_set_params");
-        write_ = load<WriteFn>("snd_pcm_writei");
-        recover_ = load<RecoverFn>("snd_pcm_recover");
-        close_ = load<CloseFn>("snd_pcm_close");
+        open_ = reinterpret_cast<OpenFn>(load("snd_pcm_open"));
+        set_params_ = reinterpret_cast<SetParamsFn>(load("snd_pcm_set_params"));
+        write_ = reinterpret_cast<WriteFn>(load("snd_pcm_writei"));
+        recover_ = reinterpret_cast<RecoverFn>(load("snd_pcm_recover"));
+        close_ = reinterpret_cast<CloseFn>(load("snd_pcm_close"));
         if (open_ == nullptr || set_params_ == nullptr || write_ == nullptr ||
             recover_ == nullptr || close_ == nullptr) {
             close();
@@ -255,9 +255,8 @@ private:
     static constexpr int kFormatS16Le = 2;
     static constexpr int kAccessRwInterleaved = 3;
 
-    template <typename T>
-    T load(const char* name) {
-        return reinterpret_cast<T>(dlsym(library_, name));
+    void* load(const char* name) {
+        return dlsym(library_, name);
     }
 
     void* library_{nullptr};

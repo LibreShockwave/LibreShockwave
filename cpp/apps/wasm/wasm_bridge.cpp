@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <any>
 #include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -1158,8 +1160,8 @@ std::string operationError(std::string_view operation, std::string_view detail) 
     return message;
 }
 
-template <typename Callback>
-void guardedVoid(WasmPlayerContext& ctx, std::string_view operation, Callback&& callback) {
+void guardedVoid(WasmPlayerContext& ctx, std::string_view operation,
+                 const std::function<void()>& callback) {
     const auto start = std::chrono::steady_clock::now();
     try {
         callback();
@@ -1171,14 +1173,15 @@ void guardedVoid(WasmPlayerContext& ctx, std::string_view operation, Callback&& 
     }
 }
 
-template <typename Result, typename Callback>
-Result guardedResult(WasmPlayerContext& ctx,
-                     std::string_view operation,
-                     Result fallback,
-                     Callback&& callback) {
+// The result is type-erased so this helper serves both the int and
+// const char* bridge call sites without a template.
+std::any guardedResult(WasmPlayerContext& ctx,
+                       std::string_view operation,
+                       std::any fallback,
+                       const std::function<std::any()>& callback) {
     const auto start = std::chrono::steady_clock::now();
     try {
-        auto result = callback();
+        const auto result = callback();
         queueSlowOperationMessage(ctx, operation, start);
         return result;
     } catch (const std::exception& error) {
@@ -1595,12 +1598,12 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_fire_test_error") int lswFireTestError(int 
     if (ctx == nullptr || ctx->player == nullptr) {
         return 0;
     }
-    return guardedResult(*ctx, "fire test error", 0, [&]() {
+    return std::any_cast<int>(guardedResult(*ctx, "fire test error", 0, [&]() {
         const std::string text = message != nullptr && *message != '\0'
             ? std::string(message)
             : std::string("LibreShockwave test error");
         return ctx->player->fireTestError(text) ? 1 : 0;
-    });
+    }));
 }
 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_last_error") const char* lswLastError(int handle) {
@@ -1933,10 +1936,10 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_selected_text") const char* lswSelectedText
     if (ctx == nullptr || ctx->player == nullptr) {
         return "";
     }
-    return guardedResult<const char*>(*ctx, "selected text", "", [&]() {
+    return std::any_cast<const char*>(guardedResult(*ctx, "selected text", "", [&]() {
         const auto text = ctx->player->inputHandler().getSelectedText();
         return scratch(*ctx, text.value_or(std::string()));
-    });
+    }));
 }
 
 EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_select_all") void lswSelectAll(int handle) {
@@ -1952,10 +1955,10 @@ EMSCRIPTEN_KEEPALIVE LSW_EXPORT("lsw_cut_selected_text") const char* lswCutSelec
     if (ctx == nullptr || ctx->player == nullptr) {
         return "";
     }
-    return guardedResult<const char*>(*ctx, "cut selected text", "", [&]() {
+    return std::any_cast<const char*>(guardedResult(*ctx, "cut selected text", "", [&]() {
         const auto text = ctx->player->inputHandler().cutSelectedText();
         return scratch(*ctx, text.value_or(std::string()));
-    });
+    }));
 }
 
 } // extern "C"

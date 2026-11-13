@@ -21,12 +21,11 @@
 namespace libreshockwave::player::frame {
 namespace {
 
-template <typename T>
-T& requireDependency(T* value, const char* name) {
+void* requireDependency(void* value, const char* name) {
     if (value == nullptr) {
         throw std::runtime_error(std::string("FrameContext missing dependency: ") + name);
     }
-    return *value;
+    return value;
 }
 
 std::string behaviorParameterMetadataKey(const lingo::Datum& key) {
@@ -127,12 +126,27 @@ void FrameContext::setSpriteRegistry(render::SpriteRegistry* registry) {
 int FrameContext::currentFrame() const { return current_frame_; }
 int FrameContext::effectiveFrame() const { return pending_frame_ > 0 ? pending_frame_ : current_frame_; }
 int FrameContext::frameCount() const { return navigator().getFrameCount(); }
-score::ScoreNavigator& FrameContext::navigator() { return requireDependency(navigator_, "navigator"); }
-const score::ScoreNavigator& FrameContext::navigator() const { return requireDependency(navigator_, "navigator"); }
-behavior::BehaviorManager& FrameContext::behaviorManager() { return requireDependency(behavior_manager_, "behaviorManager"); }
-const behavior::BehaviorManager& FrameContext::behaviorManager() const { return requireDependency(behavior_manager_, "behaviorManager"); }
-event::EventDispatcher& FrameContext::eventDispatcher() { return requireDependency(event_dispatcher_, "eventDispatcher"); }
-const event::EventDispatcher& FrameContext::eventDispatcher() const { return requireDependency(event_dispatcher_, "eventDispatcher"); }
+score::ScoreNavigator& FrameContext::navigator() {
+    return *static_cast<score::ScoreNavigator*>(requireDependency(navigator_, "navigator"));
+}
+const score::ScoreNavigator& FrameContext::navigator() const {
+    return *static_cast<const score::ScoreNavigator*>(requireDependency(navigator_, "navigator"));
+}
+behavior::BehaviorManager& FrameContext::behaviorManager() {
+    return *static_cast<behavior::BehaviorManager*>(
+        requireDependency(behavior_manager_, "behaviorManager"));
+}
+const behavior::BehaviorManager& FrameContext::behaviorManager() const {
+    return *static_cast<const behavior::BehaviorManager*>(
+        requireDependency(behavior_manager_, "behaviorManager"));
+}
+event::EventDispatcher& FrameContext::eventDispatcher() {
+    return *static_cast<event::EventDispatcher*>(requireDependency(event_dispatcher_, "eventDispatcher"));
+}
+const event::EventDispatcher& FrameContext::eventDispatcher() const {
+    return *static_cast<const event::EventDispatcher*>(
+        requireDependency(event_dispatcher_, "eventDispatcher"));
+}
 const std::set<int>& FrameContext::activeChannels() const { return active_channels_; }
 bool FrameContext::inFrameScript() const { return in_frame_script_; }
 

@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <queue>
 #include <vector>
@@ -180,8 +181,8 @@ inline bool hasOpaqueNonPaletteIndexContent(const std::vector<std::uint32_t>& pi
     return false;
 }
 
-template <typename Predicate>
-std::vector<bool> computeEdgeConnectedMask(int width, int height, Predicate&& should_include) {
+inline std::vector<bool> computeEdgeConnectedMask(int width, int height,
+                                                  const std::function<bool(int)>& should_include) {
     std::vector<bool> connected(static_cast<std::size_t>(std::max(0, width) * std::max(0, height)), false);
     if (width <= 0 || height <= 0) {
         return connected;

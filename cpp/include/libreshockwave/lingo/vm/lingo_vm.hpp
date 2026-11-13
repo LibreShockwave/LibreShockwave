@@ -191,7 +191,7 @@ private:
         const Scope& scope,
         const chunks::ScriptChunk::Instruction& instruction,
         bool include_snapshots) const;
-    [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(const Scope& scope) const;
+    [[nodiscard]] RuntimeGlobals captureLocals(const Scope& scope) const;
     [[nodiscard]] bool handlerDeclaresReceiverAsFirstParam(
         const chunks::ScriptChunk& script,
         const chunks::ScriptChunk::Handler& handler,

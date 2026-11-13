@@ -32,15 +32,15 @@ TraceListener::InstructionInfo TracingHelper::buildInstructionInfo(
         include_snapshots ? buildAnnotation(scope, instruction, names) : std::string(),
         scope.stackSize(),
         std::move(stack_snapshot),
-        include_snapshots ? captureLocals(scope, names) : std::unordered_map<std::string, Datum>{},
+        include_snapshots ? captureLocals(scope, names) : RuntimeGlobals{},
         include_snapshots ? globals : RuntimeGlobals{},
     };
 }
 
-std::unordered_map<std::string, Datum> TracingHelper::captureLocals(
+RuntimeGlobals TracingHelper::captureLocals(
     const Scope& scope,
     const chunks::ScriptNamesChunk* names) const {
-    std::unordered_map<std::string, Datum> locals;
+    RuntimeGlobals locals;
     const auto* script = scope.script();
     if (script == nullptr) {
         return locals;

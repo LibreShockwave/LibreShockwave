@@ -2173,20 +2173,28 @@ Datum scriptInstanceNestedProperty(const Datum& container, const Datum& sub_key)
     return Datum::voidValue();
 }
 
-template <typename Instance>
-Instance* handlerPropertyNode(ExecutionContext& context, Instance& instance) {
+const Datum::ScriptInstanceRef* handlerPropertyNode(ExecutionContext& context,
+                                                     const Datum::ScriptInstanceRef& instance) {
     auto* builtin_context = context.builtinContext();
     const auto* script = context.scope().script();
     if (builtin_context == nullptr || script == nullptr ||
         !builtin_context->script_chunk_id_resolver) {
         return &instance;
     }
-    if (auto* node = util::findScriptNode(instance,
-                                          script->id().value(),
-                                          builtin_context->script_chunk_id_resolver)) {
+    if (const auto* node = util::findScriptNode(instance,
+                                                script->id().value(),
+                                                builtin_context->script_chunk_id_resolver)) {
         return node;
     }
     return &instance;
+}
+
+Datum::ScriptInstanceRef* handlerPropertyNode(ExecutionContext& context,
+                                               Datum::ScriptInstanceRef& instance) {
+    // The lookup is read-only, so the const result maps back to the
+    // non-const object that was passed in.
+    return const_cast<Datum::ScriptInstanceRef*>(
+        handlerPropertyNode(context, static_cast<const Datum::ScriptInstanceRef&>(instance)));
 }
 
 Datum getHandlerPropertyValue(ExecutionContext& context,
@@ -8744,11 +8752,11 @@ void OpcodeRegistry::registerHandler(Opcode opcode, OpcodeHandlerFn handler) {
     }
 }
 
-void OpcodeRegistry::registerFunctionHandler(Opcode opcode, OpcodeHandler handler) {
+void OpcodeRegistry::registerHandler(Opcode opcode, OpcodeHandler handler) {
     const auto index = static_cast<std::size_t>(code(opcode));
     if (index < handlers_.size()) {
         raw_handlers_[index] = nullptr;
-        handlers_[index] = handler;
+        handlers_[index] = std::move(handler);
     }
 }
 

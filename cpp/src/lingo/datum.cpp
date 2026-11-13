@@ -968,18 +968,39 @@ void Datum::PropList::maintainIndexAfterErase(std::size_t position, int erased_i
     const std::string erased_name_key(erased_name);
     const std::size_t count_before_erase = properties_.size();
 
-    const bool same_type_ok = maintainFirstKeyIndexAfterErase(first_same_type_key_index_,
-                                                              erased_same_type,
-                                                              erased_index,
-                                                              count_before_erase);
-    const bool untyped_ok = maintainFirstKeyIndexAfterErase(first_untyped_key_index_,
-                                                            erased_name_key,
-                                                            erased_index,
-                                                            count_before_erase);
-    const bool case_sensitive_ok = maintainFirstKeyIndexAfterErase(first_case_sensitive_key_index_,
-                                                                   erased_name_key,
-                                                                   erased_index,
-                                                                   count_before_erase);
+    const bool same_type_ok = maintainFirstKeyIndexAfterErase(
+        first_same_type_key_index_.size(),
+        erased_same_type,
+        erased_index,
+        count_before_erase,
+        [&](const std::string& key) { first_same_type_key_index_.erase(key); },
+        [&](const std::function<void(int&)>& visit) {
+            for (auto& entry : first_same_type_key_index_) {
+                visit(entry.second);
+            }
+        });
+    const bool untyped_ok = maintainFirstKeyIndexAfterErase(
+        first_untyped_key_index_.size(),
+        erased_name_key,
+        erased_index,
+        count_before_erase,
+        [&](const std::string& key) { first_untyped_key_index_.erase(key); },
+        [&](const std::function<void(int&)>& visit) {
+            for (auto& entry : first_untyped_key_index_) {
+                visit(entry.second);
+            }
+        });
+    const bool case_sensitive_ok = maintainFirstKeyIndexAfterErase(
+        first_case_sensitive_key_index_.size(),
+        erased_name_key,
+        erased_index,
+        count_before_erase,
+        [&](const std::string& key) { first_case_sensitive_key_index_.erase(key); },
+        [&](const std::function<void(int&)>& visit) {
+            for (auto& entry : first_case_sensitive_key_index_) {
+                visit(entry.second);
+            }
+        });
     if (!same_type_ok || !untyped_ok || !case_sensitive_ok) {
         invalidateIndex();
     }
@@ -1195,15 +1216,28 @@ bool Datum::ScriptInstanceRef::eraseLocalPropertyExact(std::string_view name) {
     if (!property_index_dirty_) {
         const std::string& erased_name = properties_[position].first;
         const std::size_t count_before_erase = properties_.size();
-        const bool exact_ok = maintainFirstKeyIndexAfterErase(first_exact_property_index_,
-                                                             erased_name,
-                                                             index,
-                                                             count_before_erase);
-        const bool case_insensitive_ok =
-            maintainFirstKeyIndexAfterErase(first_case_insensitive_property_index_,
-                                            erased_name,
-                                            index,
-                                            count_before_erase);
+        const bool exact_ok = maintainFirstKeyIndexAfterErase(
+            first_exact_property_index_.size(),
+            erased_name,
+            index,
+            count_before_erase,
+            [&](const std::string& key) { first_exact_property_index_.erase(key); },
+            [&](const std::function<void(int&)>& visit) {
+                for (auto& entry : first_exact_property_index_) {
+                    visit(entry.second);
+                }
+            });
+        const bool case_insensitive_ok = maintainFirstKeyIndexAfterErase(
+            first_case_insensitive_property_index_.size(),
+            erased_name,
+            index,
+            count_before_erase,
+            [&](const std::string& key) { first_case_insensitive_property_index_.erase(key); },
+            [&](const std::function<void(int&)>& visit) {
+                for (auto& entry : first_case_insensitive_property_index_) {
+                    visit(entry.second);
+                }
+            });
         if (!exact_ok || !case_insensitive_ok) {
             invalidatePropertyIndex();
         }

@@ -4,8 +4,6 @@
 #include <cstddef>
 #include <functional>
 #include <string>
-#include <type_traits>
-#include <utility>
 
 #include "libreshockwave/lingo/opcode.hpp"
 #include "libreshockwave/lingo/vm/execution_context.hpp"
@@ -28,15 +26,12 @@ public:
     [[nodiscard]] bool hasHandler(Opcode opcode) const;
     bool execute(Opcode opcode, ExecutionContext& context) const;
     void registerHandler(Opcode opcode, OpcodeHandlerFn handler);
-    template <typename Handler>
-        requires (!std::is_convertible_v<std::decay_t<Handler>, OpcodeHandlerFn>)
-    void registerHandler(Opcode opcode, Handler&& handler) {
-        registerFunctionHandler(opcode, OpcodeHandler(std::forward<Handler>(handler)));
-    }
+    // Registers a capturing callable (e.g. a lambda with captures). It clears
+    // the raw handler slot, so isDefaultRawHandler() reports false afterwards.
+    void registerHandler(Opcode opcode, OpcodeHandler handler);
 
 private:
     static constexpr std::size_t k_handler_count = 0x74;
-    void registerFunctionHandler(Opcode opcode, OpcodeHandler handler);
 
     std::array<OpcodeHandlerFn, k_handler_count> raw_handlers_{};
     std::array<OpcodeHandlerFn, k_handler_count> default_raw_handlers_{};

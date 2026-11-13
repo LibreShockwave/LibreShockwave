@@ -2,7 +2,6 @@
 
 #include <span>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "libreshockwave/lingo/datum.hpp"
@@ -24,7 +23,7 @@ public:
         const chunks::ScriptNamesChunk* names = nullptr,
         bool include_snapshots = true) const;
 
-    [[nodiscard]] std::unordered_map<std::string, Datum> captureLocals(
+    [[nodiscard]] RuntimeGlobals captureLocals(
         const Scope& scope,
         const chunks::ScriptNamesChunk* names = nullptr) const;
 

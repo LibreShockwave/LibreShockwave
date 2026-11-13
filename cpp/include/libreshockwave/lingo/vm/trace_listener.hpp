@@ -34,7 +34,7 @@ public:
         std::string annotation;
         int stack_size{0};
         std::vector<Datum> stack_snapshot;
-        std::unordered_map<std::string, Datum> locals_snapshot;
+        RuntimeGlobals locals_snapshot;
         RuntimeGlobals globals_snapshot;
     };
 
